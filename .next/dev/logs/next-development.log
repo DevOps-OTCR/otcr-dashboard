@@ -1,1 +1,56 @@
-[00:00:00.467] Server  LOG      ✓ Ready in 289ms
+[00:00:00.385] Server  LOG      ✓ Ready in 271ms
+[00:00:24.316] Server  ERROR    ⨯ Error: ENOENT: no such file or directory, open '/Users/darshshah/Desktop/otcr-dashboard/.next/dev/server/app/api/test-db/[__metadata_id__]/route/app-paths-manifest.json'
+[00:00:24.337] Server  ERROR    ⨯ Error: ENOENT: no such file or directory, open '/Users/darshshah/Desktop/otcr-dashboard/.next/dev/server/pages/_app/build-manifest.json'
+[00:00:24.351] Server  ERROR   Error: ENOENT: no such file or directory, open '/Users/darshshah/Desktop/otcr-dashboard/.next/dev/server/app/api/test-db/[__metadata_id__]/route/app-paths-manifest.json'
+[00:00:24.361] Server  ERROR    ⨯ Error: ENOENT: no such file or directory, open '/Users/darshshah/Desktop/otcr-dashboard/.next/dev/server/pages/_app/build-manifest.json'
+[00:00:24.370] Server  ERROR   Error: ENOENT: no such file or directory, open '/Users/darshshah/Desktop/otcr-dashboard/.next/dev/server/pages/_app/build-manifest.json'
+[00:00:31.385] Server  ERROR    ⨯ Error: Cannot find module '../../../chunks/[turbopack]_runtime.js'
+Require stack:
+- /Users/darshshah/Desktop/otcr-dashboard/.next/dev/server/app/api/users/route.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/server/require.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/server/load-components.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/build/utils.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/build/swc/options.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/build/swc/index.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/server/lib/router-server.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/server/lib/start-server.js
+[00:00:31.399] Server  ERROR    ⨯ Error: ENOENT: no such file or directory, open '/Users/darshshah/Desktop/otcr-dashboard/.next/dev/server/pages/_app/build-manifest.json'
+[00:00:31.409] Server  ERROR   Error: Cannot find module '../../../chunks/[turbopack]_runtime.js'
+Require stack:
+- /Users/darshshah/Desktop/otcr-dashboard/.next/dev/server/app/api/users/route.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/server/require.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/server/load-components.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/build/utils.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/build/swc/options.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/build/swc/index.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/server/lib/router-server.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/server/lib/start-server.js
+[00:00:31.420] Server  ERROR    ⨯ Error: ENOENT: no such file or directory, open '/Users/darshshah/Desktop/otcr-dashboard/.next/dev/server/pages/_app/build-manifest.json'
+[00:00:31.429] Server  ERROR   Error: ENOENT: no such file or directory, open '/Users/darshshah/Desktop/otcr-dashboard/.next/dev/server/pages/_app/build-manifest.json'
+[00:00:39.167] Server  ERROR    ⨯ Error: Cannot find module '../chunks/ssr/[turbopack]_runtime.js'
+Require stack:
+- /Users/darshshah/Desktop/otcr-dashboard/.next/dev/server/app/page.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/server/require.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/server/load-components.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/build/utils.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/build/swc/options.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/build/swc/index.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/server/lib/router-server.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/server/lib/start-server.js
+[00:00:39.179] Server  ERROR    ⨯ Error: ENOENT: no such file or directory, open '/Users/darshshah/Desktop/otcr-dashboard/.next/dev/server/pages/_app/build-manifest.json'
+[00:00:39.188] Server  ERROR   Error: Cannot find module '../chunks/ssr/[turbopack]_runtime.js'
+Require stack:
+- /Users/darshshah/Desktop/otcr-dashboard/.next/dev/server/app/page.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/server/require.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/server/load-components.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/build/utils.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/build/swc/options.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/build/swc/index.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/server/lib/router-server.js
+- /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/server/lib/start-server.js
+[00:00:39.199] Server  ERROR    ⨯ Error: ENOENT: no such file or directory, open '/Users/darshshah/Desktop/otcr-dashboard/.next/dev/server/pages/_app/build-manifest.json'
+[00:00:39.209] Server  ERROR   Error: ENOENT: no such file or directory, open '/Users/darshshah/Desktop/otcr-dashboard/.next/dev/server/pages/_app/build-manifest.json'
