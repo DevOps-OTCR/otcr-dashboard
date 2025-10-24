@@ -54,3 +54,10 @@ Require stack:
 - /Users/darshshah/Desktop/otcr-dashboard/node_modules/next/dist/server/lib/start-server.js
 [00:00:39.199] Server  ERROR    ⨯ Error: ENOENT: no such file or directory, open '/Users/darshshah/Desktop/otcr-dashboard/.next/dev/server/pages/_app/build-manifest.json'
 [00:00:39.209] Server  ERROR   Error: ENOENT: no such file or directory, open '/Users/darshshah/Desktop/otcr-dashboard/.next/dev/server/pages/_app/build-manifest.json'
+[00:01:36.851] Server  ERROR   Error: ENOENT: no such file or directory, scandir '/Users/darshshah/Desktop/otcr-dashboard/src/app'
+[00:01:36.856] Server  ERROR    ⨯ "unhandledRejection:" Error: ENOENT: no such file or directory, scandir '/Users/darshshah/Desktop/otcr-dashboard/src/app'
+[00:01:36.858] Server  ERROR    ⨯ "unhandledRejection: " Error: ENOENT: no such file or directory, scandir '/Users/darshshah/Desktop/otcr-dashboard/src/app'
+[00:01:48.172] Server  ERROR   Error: ENOENT: no such file or directory, scandir '/Users/darshshah/Desktop/otcr-dashboard/src/app'
+[00:01:48.173] Server  ERROR    ⨯ "unhandledRejection:" Error: ENOENT: no such file or directory, scandir '/Users/darshshah/Desktop/otcr-dashboard/src/app'
+[00:01:48.174] Server  ERROR    ⨯ "unhandledRejection: " Error: ENOENT: no such file or directory, scandir '/Users/darshshah/Desktop/otcr-dashboard/src/app'
+[00:01:48.265] Server  LOG      ✓ Compiled in 72ms
