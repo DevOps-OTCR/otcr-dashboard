@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
-import { ClerkProvider } from '@clerk/nextjs'
+import type { ReactNode } from "react";
+import { ClerkProvider } from '@clerk/nextjs';
+import { ThemeProvider } from '@/components/ThemeProvider';
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -10,13 +12,15 @@ export const metadata: Metadata = {
 export default function RootLayout({
   children,
 }: Readonly<{
-  children: React.Node;
+  children: ReactNode;
 }>) {
   return (
     <ClerkProvider>
-      <html lang="en">
+      <html lang="en" suppressHydrationWarning>
         <body className="antialiased">
-          {children}
+          <ThemeProvider>
+            {children}
+          </ThemeProvider>
         </body>
       </html>
     </ClerkProvider>

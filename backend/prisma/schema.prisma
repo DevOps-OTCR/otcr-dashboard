@@ -8,7 +8,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 // ============================================================================
@@ -153,9 +152,9 @@ model Submission {
   feedback     String?
 
   // Versioning
-  version    Int         @default(1)
+  version    Int          @default(1)
   replacesId String?
-  replaces   Submission? @relation("SubmissionVersions", fields: [replacesId], references: [id], onDelete: SetNull)
+  replaces   Submission?  @relation("SubmissionVersions", fields: [replacesId], references: [id], onDelete: SetNull)
   replacedBy Submission[] @relation("SubmissionVersions")
 
   // Timing
@@ -235,16 +234,16 @@ model TimeEntry {
 // ============================================================================
 
 model Notification {
-  id        String             @id @default(cuid())
+  id        String              @id @default(cuid())
   userId    String
   type      NotificationType
   title     String
   message   String
   channel   NotificationChannel
-  status    NotificationStatus @default(PENDING)
-  metadata  Json?              // Additional data (deliverable ID, project ID, etc.)
+  status    NotificationStatus  @default(PENDING)
+  metadata  Json?               // Additional data (deliverable ID, project ID, etc.)
   sentAt    DateTime?
-  createdAt DateTime           @default(now())
+  createdAt DateTime            @default(now())
 
   user User @relation(fields: [userId], references: [id])
 

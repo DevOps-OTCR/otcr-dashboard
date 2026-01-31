@@ -1,276 +1,186 @@
 # OTCR Dashboard
 
-Internal dashboard for managing OTCR consulting projects, deliverables, deadlines, and team collaboration.
+A full-stack project management dashboard for tracking consulting projects, deliverables, time tracking, and team coordination. Features role-based views for Project Managers, Consultants, and Admins.
 
-## 🏗 Architecture
+## Tech Stack
 
-This is a full-stack application with separated frontend and backend:
+**Frontend:** Next.js 16, React 19, TypeScript, Tailwind CSS, Clerk Auth
+**Backend:** NestJS 11, Prisma ORM, PostgreSQL, Redis, BullMQ
+**Integrations:** Clerk (Auth), Resend (Email), Slack (Notifications), Cloudflare R2 (File Storage)
+
+## Project Structure
 
 ```
 otcr-dashboard/
-├── backend/          # NestJS API server
-└── frontend/         # Next.js web application (coming soon)
+├── frontend/          # Next.js web application
+├── backend/           # NestJS API server
+├── docker-compose.prod.yml
+└── nginx.conf
 ```
 
-## 🚀 Tech Stack
+## Prerequisites
 
-### Backend
-- **Framework:** NestJS (TypeScript)
-- **Database:** PostgreSQL (Neon)
-- **ORM:** Prisma
-- **Auth:** Clerk
-- **Jobs:** BullMQ + Redis
-- **Notifications:** Slack + Resend
-
-### Frontend (Planned)
-- **Framework:** Next.js 15
-- **UI:** Tailwind CSS + shadcn/ui
-- **Auth:** Clerk (Google SSO)
-- **State:** React Query
-
-## 📦 What's Included
-
-### ✅ Completed Features
-
-#### Ticket 1: Database Schema
-- Complete Prisma schema with 8 models
-- User management (Admin, PM, Consultant roles)
-- Project and team assignment tracking
-- Deliverable management with deadlines
-- Submission workflow with versioning
-- Extension request system with approval flow
-- Time tracking
-- Notification history
-
-#### Ticket 2: Notifications & Background Jobs
-- BullMQ job queue with Redis
-- Slack webhook integration
-- Email notifications via Resend
-- Automated deadline reminders (24h, 1h)
-- Extension request/response notifications
-- Submission approval/rejection alerts
-- Cron jobs for:
-  - Hourly deadline checks
-  - Daily PM summaries
-  - Overdue status updates
-  - Notification cleanup
-
-## 🚀 Quick Start
-
-### Prerequisites
 - Node.js 18+
-- PostgreSQL database ([Neon](https://neon.tech) recommended)
-- Redis ([Upstash](https://upstash.com) for cloud, or local)
-- [Clerk](https://clerk.com) account
+- PostgreSQL 14+
+- Redis 6+
+- npm or yarn
 
-### Setup
+## Services & API Keys Required
 
-1. **Clone the repository**
-   ```bash
-   git clone <your-repo-url>
-   cd otcr-dashboard
-   ```
+You'll need accounts and API keys from these services:
 
-2. **Set up the backend**
-   ```bash
-   cd backend
-   npm install
-   cp .env.example .env
-   # Edit .env with your credentials
-   npm run prisma:generate
-   npm run prisma:push
-   npm run prisma:seed
-   npm run start:dev
-   ```
+| Service | Purpose | Get it from |
+|---------|---------|-------------|
+| **Clerk** | Authentication | https://clerk.com |
+| **PostgreSQL** | Database | Local install or Neon/Supabase |
+| **Redis** | Job queues & caching | Local install or Redis Cloud |
+| **Resend** | Email notifications | https://resend.com |
+| **Slack** | Slack notifications | Create a webhook in your Slack workspace |
+| **Cloudflare R2** | File storage (optional) | https://cloudflare.com |
 
-   See [backend/README.md](backend/README.md) for detailed instructions.
+## Setup Instructions
 
-3. **Set up the frontend** (coming soon)
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
+### 1. Clone and Install Dependencies
 
-## 📊 Database Schema Overview
+```bash
+git clone <your-repo-url>
+cd otcr-dashboard
 
-```
-User (Clerk-synced)
- └─ Projects (as PM)
-     ├─ ProjectMembers (consultants)
-     └─ Deliverables
-         ├─ Submissions (versioned)
-         └─ Extensions (approval workflow)
+# Install backend dependencies
+cd backend
+npm install
+
+# Install frontend dependencies
+cd ../frontend
+npm install
 ```
 
-### Key Models
-- **User**: ADMIN, PM, or CONSULTANT with Clerk integration
-- **Project**: Active consulting engagements
-- **Deliverable**: Work items with deadlines
-- **Submission**: File uploads with approval workflow
-- **Extension**: Deadline extension requests
-- **Notification**: All notification history
+### 2. Configure Environment Variables
 
-## 🔔 Notification System
+**Backend** - Create `backend/.env`:
+```env
+# Database
+DATABASE_URL=postgresql://username:password@localhost:5432/otcr_dashboard
 
-### Automatic Triggers
-- **Deadline approaching**: 24h and 1h before due
-- **Extension requested**: Alert PM
-- **Extension decided**: Alert consultant
-- **Submission reviewed**: Alert submitter
+# Authentication (from Clerk dashboard)
+CLERK_SECRET_KEY=sk_test_xxxxx
+CLERK_PUBLISHABLE_KEY=pk_test_xxxxx
 
-### Channels
-- **Slack**: Instant team notifications
-- **Email**: Official records via Resend
+# Redis
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_URL=redis://localhost:6379
 
-## 🛠 Development
+# Email (from Resend dashboard)
+RESEND_API_KEY=re_xxxxx
+EMAIL_FROM=notifications@yourdomain.com
 
-### Backend Development
+# Slack (create incoming webhook)
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/xxxxx
+
+# File Storage - Optional (from Cloudflare R2)
+R2_ACCOUNT_ID=xxxxx
+R2_ACCESS_KEY_ID=xxxxx
+R2_SECRET_ACCESS_KEY=xxxxx
+R2_BUCKET_NAME=otcr-deliverables
+
+# Server
+PORT=4000
+NODE_ENV=development
+FRONTEND_URL=http://localhost:3000
+```
+
+**Frontend** - Create `frontend/.env.local`:
+```env
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_xxxxx
+CLERK_SECRET_KEY=sk_test_xxxxx
+NEXT_PUBLIC_API_URL=http://localhost:4000
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
+
+### 3. Setup Database
+
 ```bash
 cd backend
-npm run start:dev        # Start with hot reload
-npm run prisma:studio    # Open database GUI
+
+# Generate Prisma client
+npx prisma generate
+
+# Run migrations
+npx prisma migrate dev
+
+# Seed with test data (optional)
+npx prisma db seed
 ```
 
-### Useful Commands
+### 4. Start the Application
+
+**Option A: Run separately (recommended for development)**
+
 ```bash
-# Database
-npm run prisma:migrate   # Create migration
-npm run prisma:push      # Push schema changes
-npm run prisma:seed      # Populate test data
+# Terminal 1 - Backend
+cd backend
+npm run start:dev
 
-# Testing
-npm run test             # Run tests
+# Terminal 2 - Frontend
+cd frontend
+npm run dev
 ```
 
-## 📁 Repository Structure
+**Option B: Docker (for production)**
 
-```
-otcr-dashboard/
-├── backend/
-│   ├── src/
-│   │   ├── auth/              # Clerk authentication
-│   │   ├── integrations/      # Slack, Email services
-│   │   ├── notifications/     # Queue & processor
-│   │   ├── jobs/              # Scheduled tasks
-│   │   ├── prisma/            # Database module
-│   │   └── common/            # Shared utilities
-│   ├── prisma/
-│   │   ├── schema.prisma      # Database schema
-│   │   └── seed.ts            # Test data
-│   └── README.md
-├── frontend/                   # (Coming soon)
-└── README.md                   # This file
-```
-
-## 🌍 Environment Variables
-
-### Backend `.env`
-```env
-DATABASE_URL=""              # PostgreSQL connection
-CLERK_SECRET_KEY=""          # Clerk authentication
-REDIS_URL=""                 # Redis for jobs
-SLACK_WEBHOOK_URL=""         # Slack notifications
-RESEND_API_KEY=""            # Email service
-```
-
-See [backend/.env.example](backend/.env.example) for full template.
-
-## 🚢 Deployment
-
-### Recommended Platforms
-- **Backend**: Railway, Fly.io, or Render
-- **Database**: Neon or Supabase
-- **Redis**: Upstash
-- **Frontend**: Vercel
-
-### Production Checklist
-- [ ] Set up production database (Neon)
-- [ ] Configure production Redis (Upstash)
-- [ ] Set up Clerk production keys
-- [ ] Configure Slack webhook
-- [ ] Set up Resend with verified domain
-- [ ] Deploy backend to Railway/Fly.io
-- [ ] Deploy frontend to Vercel
-- [ ] Set up monitoring (Sentry)
-
-## 👥 Team Roles
-
-### Admin
-- Full system access
-- Manage all users and projects
-
-### Project Manager (PM)
-- Create and manage projects
-- Assign consultants
-- Approve/deny extensions
-- Review submissions
-
-### Consultant
-- View assigned projects
-- Submit deliverables
-- Request extensions
-- Log time
-
-## 📝 API Documentation (Coming Soon)
-
-Once the backend is running, API docs will be available at:
-- Swagger UI: `http://localhost:4000/api`
-- OpenAPI Spec: `http://localhost:4000/api-json`
-
-## 🐛 Troubleshooting
-
-### Database Issues
 ```bash
-# Reset database
-npx prisma migrate reset
-
-# Check connection
-npx prisma db pull
+cp .env.production.example .env.production
+# Edit .env.production with your values
+docker-compose -f docker-compose.prod.yml up -d
 ```
 
-### Redis Issues
-```bash
-# Test local Redis
-redis-cli ping
+### 5. Access the Application
 
-# Or use Upstash (cloud Redis)
-```
+- **Frontend:** http://localhost:3000
+- **Backend API:** http://localhost:4000
+- **API Health Check:** http://localhost:4000/auth/health
 
-### Build Issues
-```bash
-# Clear and reinstall
-rm -rf node_modules package-lock.json
-npm install
-npm run prisma:generate
-```
+## Key Features
 
-## 📚 Documentation
+- **Role-Based Dashboards** - Different views for PM, Consultant, Admin
+- **Task Management** - Create, assign, and track deliverables
+- **Time Tracking** - Log hours per project
+- **Extension Requests** - Request and approve deadline extensions
+- **File Uploads** - Upload and manage deliverables
+- **Notifications** - Email and Slack alerts for deadlines
+- **Dark Mode** - Toggle between light and dark themes
 
-- [Backend README](backend/README.md) - Detailed backend setup
-- [Prisma Schema](backend/prisma/schema.prisma) - Database structure
-- [Tech Stack PDF](docs/Dashboard-Tech-Stack.pdf) - Original architecture
+## Deployment Options
 
-## 🎯 Next Steps
+1. **Vercel + Railway** - Frontend on Vercel, Backend on Railway
+2. **Docker** - Self-hosted using docker-compose
+3. **AWS** - Amplify (Frontend) + ECS (Backend) + RDS (Database)
 
-1. ✅ Database schema defined
-2. ✅ Notification system implemented
-3. 🔄 Build frontend (Next.js + Tailwind)
-4. 🔄 Implement file upload (R2/S3)
-5. 🔄 Add CRUD API endpoints
-6. 🔄 Deploy to production
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for detailed deployment instructions.
 
-## 🆘 Support
+## Documentation
 
-For questions or issues:
-1. Check the [backend/README.md](backend/README.md)
-2. Review the [prisma schema](backend/prisma/schema.prisma)
-3. Ask the team in Slack
+Additional documentation is available in the `docs/` folder:
 
-## 📄 License
+| Document | Description |
+|----------|-------------|
+| [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Deployment guide for all platforms |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture and design |
+| [PRODUCTION_CHECKLIST.md](docs/PRODUCTION_CHECKLIST.md) | Pre-launch checklist |
+| [GETTING_STARTED.md](docs/GETTING_STARTED.md) | Detailed onboarding guide |
+| [ROLE_DASHBOARDS.md](docs/ROLE_DASHBOARDS.md) | Role-based features documentation |
 
-Private - OTCR Internal Use Only
+## Environment Files Reference
 
----
+| File | Purpose | Commit? |
+|------|---------|---------|
+| `backend/.env` | Backend secrets | NO |
+| `backend/.env.example` | Backend template | YES |
+| `frontend/.env.local` | Frontend secrets | NO |
+| `frontend/.env.local.example` | Frontend template | YES |
+| `.env.production.example` | Production template | YES |
 
-**Status**: Backend Complete ✅ | Frontend In Progress 🔄
+## License
+
+Proprietary - All rights reserved

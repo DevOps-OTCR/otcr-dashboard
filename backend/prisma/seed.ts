@@ -1,6 +1,16 @@
-import { PrismaClient, Role } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { Pool } from 'pg';
+import { config } from 'dotenv';
 
-const prisma = new PrismaClient();
+config();
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+const prisma = new PrismaClient({
+  adapter: new PrismaPg(pool),
+});
 
 async function main() {
   console.log('🌱 Seeding database...');
@@ -14,7 +24,7 @@ async function main() {
       email: 'admin@otcr.com',
       firstName: 'Admin',
       lastName: 'User',
-      role: Role.ADMIN,
+      role: 'ADMIN',
     },
   });
 
@@ -26,7 +36,7 @@ async function main() {
       email: 'lsharma2@illinois.edu',
       firstName: 'Project',
       lastName: 'Manager',
-      role: Role.PM,
+      role: 'PM',
     },
   });
 
@@ -38,7 +48,7 @@ async function main() {
       email: 'consultant1@illinois.edu',
       firstName: 'John',
       lastName: 'Doe',
-      role: Role.CONSULTANT,
+      role: 'CONSULTANT',
     },
   });
 
@@ -50,7 +60,7 @@ async function main() {
       email: 'consultant2@illinois.edu',
       firstName: 'Jane',
       lastName: 'Smith',
-      role: Role.CONSULTANT,
+      role: 'CONSULTANT',
     },
   });
 
@@ -204,4 +214,5 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
+    await pool.end();
   });
