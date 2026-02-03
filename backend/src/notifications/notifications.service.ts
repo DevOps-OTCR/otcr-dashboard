@@ -29,7 +29,7 @@ export interface NotificationJob {
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
-  private notificationQueue: Queue;
+  private notificationQueue: Queue | null = null;
 
   constructor(
     private prisma: PrismaService,
@@ -39,27 +39,30 @@ export class NotificationsService {
   ) {
     const connection = createRedisConnection(this.configService);
 
-    this.notificationQueue = new Queue('notifications', {
-      connection,
-      defaultJobOptions: {
-        attempts: 3,
-        backoff: {
-          type: 'exponential',
-          delay: 2000,
-        },
-        removeOnComplete: 1000,
-        removeOnFail: 5000,
-      },
-    });
-
-    this.logger.log('Notification queue initialized');
+    if (connection) {
+      try {
+        this.notificationQueue = new Queue('notifications', {
+          connection,
+          defaultJobOptions: {
+            attempts: 3,
+            backoff: {
+              type: 'exponential',
+              delay: 2000,
+            },
+            removeOnComplete: 1000,
+            removeOnFail: 5000,
+          },
+        });
+        this.logger.log('Notification queue initialized');
+      } catch (error) {
+        this.logger.warn('Failed to initialize notification queue, notifications will be saved to database only');
+      }
+    } else {
+      this.logger.warn('Redis not available, notifications will be saved to database only (no background processing)');
+    }
   }
 
   async queueNotification(job: NotificationJob): Promise<void> {
-    await this.notificationQueue.add('send-notification', job, {
-      delay: 0,
-    });
-
     // Save to database
     await this.prisma.notification.create({
       data: {
@@ -68,12 +71,24 @@ export class NotificationsService {
         channel: job.channel,
         title: this.getNotificationTitle(job.type, job.data),
         message: this.getNotificationMessage(job.type, job.data),
-        status: 'PENDING',
+        status: this.notificationQueue ? 'PENDING' : 'SENT',
         metadata: job.data as any,
       },
     });
 
-    this.logger.log(`Notification queued for user ${job.userId}`);
+    // Queue for background processing if Redis is available
+    if (this.notificationQueue) {
+      try {
+        await this.notificationQueue.add('send-notification', job, {
+          delay: 0,
+        });
+        this.logger.log(`Notification queued for user ${job.userId}`);
+      } catch (error) {
+        this.logger.warn(`Failed to queue notification, saved to database only: ${error.message}`);
+      }
+    } else {
+      this.logger.log(`Notification saved to database for user ${job.userId} (Redis not available)`);
+    }
   }
 
   async scheduleDeadlineReminder(
@@ -111,25 +126,33 @@ export class NotificationsService {
     }
 
     // Schedule reminder for each consultant on the project
-    for (const member of deliverable.project.members) {
-      await this.notificationQueue.add(
-        'send-notification',
-        {
-          userId: member.user.id,
-          type: hoursBeforeDeadline === 1 ? 'DEADLINE_1H' : 'DEADLINE_24H',
-          channel: 'BOTH',
-          data: {
-            deliverableTitle: deliverable.title,
-            projectName: deliverable.project.name,
-            deadline: deliverable.deadline,
-            hoursRemaining: hoursBeforeDeadline,
-          },
-        } as NotificationJob,
-        {
-          delay,
-          jobId: `reminder-${deliverableId}-${member.userId}-${hoursBeforeDeadline}h`,
-        },
-      );
+    if (this.notificationQueue) {
+      for (const member of deliverable.project.members) {
+        try {
+          await this.notificationQueue.add(
+            'send-notification',
+            {
+              userId: member.user.id,
+              type: hoursBeforeDeadline === 1 ? 'DEADLINE_1H' : 'DEADLINE_24H',
+              channel: 'BOTH',
+              data: {
+                deliverableTitle: deliverable.title,
+                projectName: deliverable.project.name,
+                deadline: deliverable.deadline,
+                hoursRemaining: hoursBeforeDeadline,
+              },
+            } as NotificationJob,
+            {
+              delay,
+              jobId: `reminder-${deliverableId}-${member.userId}-${hoursBeforeDeadline}h`,
+            },
+          );
+        } catch (error) {
+          this.logger.warn(`Failed to schedule reminder: ${error.message}`);
+        }
+      }
+    } else {
+      this.logger.warn('Cannot schedule deadline reminders: Redis not available');
     }
 
     this.logger.log(
@@ -286,7 +309,7 @@ export class NotificationsService {
     }
   }
 
-  async getQueue(): Promise<Queue> {
+  async getQueue(): Promise<Queue | null> {
     return this.notificationQueue;
   }
 }

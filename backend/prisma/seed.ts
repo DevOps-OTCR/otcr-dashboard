@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Role } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { config } from 'dotenv';
@@ -13,18 +13,19 @@ const prisma = new PrismaClient({
 });
 
 async function main() {
-  console.log('🌱 Seeding database...');
+  console.log('Seeding database...');
 
-  // Create test users
+  // Create test users (these will be created when users sign in with Google)
+  // For seed purposes, we'll create placeholder users
   const admin = await prisma.user.upsert({
     where: { email: 'admin@otcr.com' },
     update: {},
     create: {
-      clerkId: 'clerk_admin_test',
+      googleId: 'google_admin_test',
       email: 'admin@otcr.com',
       firstName: 'Admin',
       lastName: 'User',
-      role: 'ADMIN',
+      role: Role.ADMIN,
     },
   });
 
@@ -32,11 +33,11 @@ async function main() {
     where: { email: 'lsharma2@illinois.edu' },
     update: {},
     create: {
-      clerkId: 'clerk_pm_test',
+      googleId: 'google_pm_test',
       email: 'lsharma2@illinois.edu',
       firstName: 'Project',
       lastName: 'Manager',
-      role: 'PM',
+      role: Role.PM,
     },
   });
 
@@ -44,11 +45,11 @@ async function main() {
     where: { email: 'consultant1@illinois.edu' },
     update: {},
     create: {
-      clerkId: 'clerk_consultant1_test',
+      googleId: 'google_consultant1_test',
       email: 'consultant1@illinois.edu',
       firstName: 'John',
       lastName: 'Doe',
-      role: 'CONSULTANT',
+      role: Role.CONSULTANT,
     },
   });
 
@@ -56,15 +57,46 @@ async function main() {
     where: { email: 'consultant2@illinois.edu' },
     update: {},
     create: {
-      clerkId: 'clerk_consultant2_test',
+      googleId: 'google_consultant2_test',
       email: 'consultant2@illinois.edu',
       firstName: 'Jane',
       lastName: 'Smith',
-      role: 'CONSULTANT',
+      role: Role.CONSULTANT,
     },
   });
 
   console.log('✅ Users created');
+
+  // Create allowed emails
+  const allowedEmails: Array<{ email: string; role: Role }> = [
+    { email: 'vrome@illinois.edu', role: Role.CONSULTANT },
+    { email: 'darshvs2@illinois.edu', role: Role.CONSULTANT },
+    { email: 'yjagtap2@illinois.edu', role: Role.CONSULTANT },
+    { email: 'tejavk2@illinois.edu', role: Role.CONSULTANT },
+    { email: 'sharngi2@illinois.edu', role: Role.CONSULTANT },
+    { email: 'kona3@illinois.edu', role: Role.CONSULTANT },
+    { email: 'crawat2@illinois.edu', role: Role.CONSULTANT },
+    { email: 'bchar@illinois.edu', role: Role.CONSULTANT },
+    { email: 'lsharma2@illinois.edu', role: Role.PM },
+    { email: 'admin@otcr.com', role: Role.ADMIN },
+    // Also add test users
+    { email: 'consultant1@illinois.edu', role: Role.CONSULTANT },
+    { email: 'consultant2@illinois.edu', role: Role.CONSULTANT },
+  ];
+
+  for (const allowedEmail of allowedEmails) {
+    await prisma.allowedEmail.upsert({
+      where: { email: allowedEmail.email },
+      update: { role: allowedEmail.role, active: true },
+      create: {
+        email: allowedEmail.email,
+        role: allowedEmail.role,
+        active: true,
+      },
+    });
+  }
+
+  console.log('✅ Allowed emails created');
 
   // Create test projects
   const project1 = await prisma.project.create({

@@ -1,10 +1,10 @@
 import { redirect } from 'next/navigation';
-import { currentUser } from '@clerk/nextjs/server';
+import { getSession } from '@/lib/auth';
 
 export default async function HomePage() {
-  const user = await currentUser();
+  const session = await getSession();
 
-  if (user) {
+  if (session?.user) {
     redirect('/dashboard');
   } else {
     redirect('/sign-in');

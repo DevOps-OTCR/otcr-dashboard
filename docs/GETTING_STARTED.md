@@ -19,15 +19,6 @@ Your two Jira tickets are **100% complete**:
 - Extension request workflows
 - Scheduled cron jobs
 
-## 📚 Documentation
-
-Before you start, familiarize yourself with these docs:
-
-1. **[SETUP_GUIDE.md](SETUP_GUIDE.md)** - Detailed step-by-step setup instructions
-2. **[README.md](README.md)** - Project overview and quick start
-3. **[backend/README.md](backend/README.md)** - Backend-specific documentation
-4. **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture diagrams
-5. **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - What was built
 
 ## ⚡ Quick Start (5 Minutes)
 

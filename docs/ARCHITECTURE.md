@@ -20,7 +20,7 @@
 │         └────────┐      ┌────────┴─────────┐                       │
 │                  │      │                  │                       │
 │           ┌──────▼──────▼──┐        ┌─────▼─────┐                 │
-│           │     Clerk       │        │   Redis   │                 │
+│           │     Google      │        │   Redis   │                 │
 │           │ Authentication  │        │ Job Queue │                 │
 │           │  (Google SSO)   │        │  (BullMQ) │                 │
 │           └─────────────────┘        └─────┬─────┘                 │
@@ -106,7 +106,7 @@ Cron Job (Hourly)
 │      User       │
 │─────────────────│
 │ id (PK)         │
-│ clerkId (UQ)    │◄──────────┐
+│ OAuth (UQ)    │◄──────────┐
 │ email (UQ)      │           │
 │ role (ENUM)     │           │
 │ ...             │           │
@@ -461,10 +461,3 @@ Uptime Monitoring (Production)
 ```
 
 ---
-
-**This architecture is designed for:**
-- ✅ Scalability (horizontal scaling ready)
-- ✅ Reliability (retry logic, error handling)
-- ✅ Maintainability (modular, documented)
-- ✅ Performance (indexes, caching ready)
-- ✅ Security (Clerk auth, input validation)

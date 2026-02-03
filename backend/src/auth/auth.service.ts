@@ -1,57 +1,69 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { clerkClient } from '@clerk/clerk-sdk-node';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class AuthService {
   constructor(private prisma: PrismaService) {}
 
-  async verifyToken(token: string) {
-    try {
-      // Verify the token with Clerk
-      const decoded = await clerkClient.verifyToken(token);
-      return decoded;
-    } catch (error) {
-      throw new UnauthorizedException('Invalid token');
-    }
+  async getUserByEmail(email: string) {
+    return this.prisma.user.findUnique({
+      where: { email },
+    });
   }
 
-  async getUserFromClerk(clerkId: string) {
-    try {
-      const clerkUser = await clerkClient.users.getUser(clerkId);
-      return clerkUser;
-    } catch (error) {
-      throw new UnauthorizedException('User not found');
-    }
+  async getUserByGoogleId(googleId: string) {
+    return this.prisma.user.findUnique({
+      where: { googleId },
+    });
   }
 
-  async syncUserWithDatabase(clerkId: string) {
-    const clerkUser = await this.getUserFromClerk(clerkId);
+  async syncUserWithDatabase(googleId: string, email: string, name?: string, image?: string) {
+    // Parse name into firstName and lastName
+    const nameParts = name?.split(' ') || [];
+    const firstName = nameParts[0] || null;
+    const lastName = nameParts.slice(1).join(' ') || null;
 
     // Find or create user in database
     let user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { googleId },
     });
 
     if (!user) {
-      // Create new user
-      user = await this.prisma.user.create({
-        data: {
-          clerkId,
-          email: clerkUser.emailAddresses[0].emailAddress,
-          firstName: clerkUser.firstName,
-          lastName: clerkUser.lastName,
-          role: this.determineRole(clerkUser.emailAddresses[0].emailAddress),
-        },
+      // Check if user exists by email
+      const existingUser = await this.prisma.user.findUnique({
+        where: { email },
       });
+
+      if (existingUser) {
+        // Update existing user with Google ID
+        user = await this.prisma.user.update({
+          where: { email },
+          data: {
+            googleId,
+            firstName: firstName || existingUser.firstName,
+            lastName: lastName || existingUser.lastName,
+          },
+        });
+      } else {
+        // Create new user
+        user = await this.prisma.user.create({
+          data: {
+            googleId,
+            email,
+            firstName,
+            lastName,
+            role: this.determineRole(email),
+          },
+        });
+      }
     } else {
       // Update existing user
       user = await this.prisma.user.update({
-        where: { clerkId },
+        where: { googleId },
         data: {
-          email: clerkUser.emailAddresses[0].emailAddress,
-          firstName: clerkUser.firstName,
-          lastName: clerkUser.lastName,
+          email,
+          firstName: firstName || user.firstName,
+          lastName: lastName || user.lastName,
         },
       });
     }
@@ -59,9 +71,51 @@ export class AuthService {
     return user;
   }
 
+  async isEmailAllowed(email: string): Promise<boolean> {
+    // Normalize email to lowercase for case-insensitive comparison
+    const normalizedEmail = email.toLowerCase().trim();
+    
+    const allowedEmail = await this.prisma.allowedEmail.findFirst({
+      where: {
+        email: {
+          equals: normalizedEmail,
+          mode: 'insensitive', // PostgreSQL case-insensitive search
+        },
+        active: true,
+      },
+    });
+
+    return allowedEmail !== null;
+  }
+
+  async getAllowedEmails() {
+    return this.prisma.allowedEmail.findMany({
+      where: { active: true },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async addAllowedEmail(email: string, role?: 'ADMIN' | 'PM' | 'CONSULTANT') {
+    return this.prisma.allowedEmail.create({
+      data: {
+        email,
+        role,
+      },
+    });
+  }
+
+  async removeAllowedEmail(email: string) {
+    return this.prisma.allowedEmail.update({
+      where: { email },
+      data: { active: false },
+    });
+  }
+
   private determineRole(email: string): 'ADMIN' | 'PM' | 'CONSULTANT' {
-    // Define role based on email
-    // You can customize this logic based on your requirements
+    // First check if email has a role in AllowedEmail table
+    // Otherwise, use default logic
+    // Note: This method is called during user sync, so we'll check the database
+    // For now, keep the default logic but it can be enhanced to check AllowedEmail table
     const adminEmails = ['admin@otcr.com'];
     const pmEmails = ['lsharma2@illinois.edu'];
 

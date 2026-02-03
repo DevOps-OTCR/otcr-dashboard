@@ -10,7 +10,7 @@ import { NotificationJob } from './notifications.service';
 @Injectable()
 export class NotificationsProcessor implements OnModuleInit {
   private readonly logger = new Logger(NotificationsProcessor.name);
-  private worker: Worker;
+  private worker: Worker | null = null;
 
   constructor(
     private prisma: PrismaService,
@@ -22,26 +22,35 @@ export class NotificationsProcessor implements OnModuleInit {
   onModuleInit() {
     const connection = createRedisConnection(this.configService);
 
-    this.worker = new Worker(
-      'notifications',
-      async (job: Job<NotificationJob>) => {
-        return this.processNotification(job);
-      },
-      {
-        connection,
-        concurrency: 5,
-      },
-    );
+    if (!connection) {
+      this.logger.warn('Redis not available, notification worker will not start');
+      return;
+    }
 
-    this.worker.on('completed', (job) => {
-      this.logger.log(`Job ${job.id} completed successfully`);
-    });
+    try {
+      this.worker = new Worker(
+        'notifications',
+        async (job: Job<NotificationJob>) => {
+          return this.processNotification(job);
+        },
+        {
+          connection,
+          concurrency: 5,
+        },
+      );
 
-    this.worker.on('failed', (job, error) => {
-      this.logger.error(`Job ${job?.id} failed:`, error);
-    });
+      this.worker.on('completed', (job) => {
+        this.logger.log(`Job ${job.id} completed successfully`);
+      });
 
-    this.logger.log('Notification worker started');
+      this.worker.on('failed', (job, error) => {
+        this.logger.error(`Job ${job?.id} failed:`, error);
+      });
+
+      this.logger.log('Notification worker started');
+    } catch (error) {
+      this.logger.warn(`Failed to start notification worker: ${error.message}`);
+    }
   }
 
   private async processNotification(job: Job<NotificationJob>): Promise<void> {

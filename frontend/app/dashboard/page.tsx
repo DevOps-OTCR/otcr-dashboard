@@ -1,6 +1,6 @@
 'use client';
 
-import { useUser, UserButton } from '@clerk/nextjs';
+import { useSession, signOut } from 'next-auth/react';
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -50,7 +50,6 @@ import {
   PolarAngleAxis,
   PolarRadiusAxis
 } from 'recharts';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -64,6 +63,7 @@ import {
 } from '@/data/mockData';
 import type { ActionItem, Document, ExtensionRequest, WorkstreamDeadline } from '@/types';
 import { cn, formatDate, getDaysUntil } from '@/lib/utils';
+import { authAPI } from '@/lib/api';
 
 const COLORS = ['#7c3aed', '#2563eb', '#f97316', '#10b981', '#f43f5e', '#a855f7'];
 
@@ -109,7 +109,7 @@ const statusColorMap: Record<string, string> = {
 };
 
 export default function DashboardPage() {
-  const { user, isLoaded } = useUser();
+  const { data: session, status } = useSession();
   const [role, setRole] = useState<'PM' | 'CONSULTANT' | 'ADMIN'>('CONSULTANT');
 
   const [actionItems, setActionItems] = useState<ActionItem[]>(mockActionItems);
@@ -163,13 +163,18 @@ export default function DashboardPage() {
     description: '',
   });
 
+  const overviewRef = useRef<HTMLDivElement>(null);
   const tasksRef = useRef<HTMLDivElement>(null);
   const docsRef = useRef<HTMLDivElement>(null);
   const projectsRef = useRef<HTMLDivElement>(null);
+  const extensionsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (user?.primaryEmailAddress?.emailAddress) {
-      const userRole = getUserRole(user.primaryEmailAddress.emailAddress);
+    // Email check is already handled in sign-in page
+    // Just set role and redirect based on role
+    if (session?.user?.email) {
+      const email = session.user.email;
+      const userRole = getUserRole(email);
       setRole(userRole);
 
       // Redirect to role-specific dashboard
@@ -180,7 +185,7 @@ export default function DashboardPage() {
       }
       // ADMIN stays on main dashboard
     }
-  }, [user]);
+  }, [session]);
 
   useEffect(() => {
     setChartsReady(true);
@@ -291,6 +296,14 @@ export default function DashboardPage() {
     }
   };
 
+  const sideNavItems = [
+    { label: 'Overview', icon: LayoutDashboard, ref: overviewRef },
+    { label: 'Tasks', icon: ClipboardCheck, ref: tasksRef },
+    { label: 'Workstreams', icon: Target, ref: projectsRef },
+    { label: 'Documents', icon: FileText, ref: docsRef },
+    { label: 'Extensions', icon: Calendar, ref: extensionsRef },
+  ];
+
   const handleMarkComplete = (id: string) => {
     setActionItems((prev) => prev.map((item) => (item.id === id ? { ...item, completed: true, status: 'completed' } : item)));
     setActionFeedback({ message: 'Task marked as completed', tone: 'success' });
@@ -310,7 +323,7 @@ export default function DashboardPage() {
       type: uploadForm.type as Document['type'],
       url: '#',
       workstream: uploadForm.workstream || 'General',
-      uploadedBy: user?.fullName || user?.firstName || 'You',
+      uploadedBy: session?.user?.name || session?.user?.email?.split('@')[0] || 'You',
       uploadedAt: new Date(),
       lastModified: new Date(),
     };
@@ -341,7 +354,7 @@ export default function DashboardPage() {
       requestedDeadline: requestedDate,
       reason: extensionForm.reason || 'Requesting buffer for quality.',
       status: 'pending',
-      requestedBy: user?.fullName || 'You',
+      requestedBy: session?.user?.name || 'You',
       requestedAt: new Date(),
     };
 
@@ -373,7 +386,7 @@ export default function DashboardPage() {
           ? {
               ...req,
               status,
-              reviewedBy: user?.fullName || 'Project Manager',
+              reviewedBy: session?.user?.name || 'Project Manager',
               reviewedAt: new Date(),
               reviewNotes: status === 'approved' ? 'Approved and updated timeline' : 'Keep existing deadline',
             }
@@ -419,7 +432,7 @@ export default function DashboardPage() {
       projectName: taskForm.projectName || 'OTCR Project',
       workstream: taskForm.workstream || 'General',
       status: 'pending',
-      assignedTo: user?.fullName || 'current_user',
+      assignedTo: session?.user?.name || 'current_user',
       description: taskForm.description || 'Created from dashboard',
       completed: false,
     };
@@ -436,26 +449,23 @@ export default function DashboardPage() {
     setActionFeedback({ message: 'Task created and queued', tone: 'success' });
   };
 
-  if (!isLoaded) {
+  if (status === 'loading') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--background)]">
-        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center">
-          <Activity className="w-12 h-12 mx-auto mb-4 text-[var(--primary)] animate-pulse" />
-          <div className="text-lg text-[var(--foreground)]">Loading dashboard...</div>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="flex flex-col items-center gap-3"
+        >
+          <Activity className="w-10 h-10 text-[var(--primary)] animate-pulse" />
+          <div className="text-sm font-medium text-[var(--foreground)]/70">Preparing your dashboard</div>
         </motion.div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] relative">
-      <div className="pointer-events-none fixed inset-0 opacity-70 -z-10">
-        <div className="absolute -top-32 -left-16 h-72 w-72 rounded-full bg-gradient-to-br from-indigo-500/20 via-purple-500/10 to-transparent blur-3xl" />
-        <div className="absolute top-10 right-0 h-64 w-64 rounded-full bg-gradient-to-br from-amber-400/20 via-pink-400/25 to-transparent blur-3xl animate-pulse" />
-        <div className="absolute bottom-0 left-1/4 h-64 w-64 rounded-full bg-gradient-to-br from-emerald-400/15 via-indigo-400/15 to-transparent blur-3xl animate-[pulse_8s_ease-in-out_infinite]" />
-        <div className="absolute -bottom-20 right-10 h-72 w-72 rounded-full bg-gradient-to-br from-blue-500/15 via-cyan-400/20 to-transparent blur-3xl animate-[ping_12s_ease-in-out_infinite]" />
-      </div>
-
+    <div className="min-h-screen flex flex-col bg-[var(--background)] text-[var(--foreground)]">
       <AnimatePresence>
         {actionFeedback && (
           <motion.div
@@ -481,69 +491,142 @@ export default function DashboardPage() {
         )}
       </AnimatePresence>
 
-      <header className="sticky top-0 z-40 bg-[var(--card)]/90 backdrop-blur-xl border-b border-[var(--border)]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/30">
-              <LayoutDashboard className="w-5 h-5" />
+      <header className="border-b border-[var(--border)] bg-[var(--card)] sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between py-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-[var(--primary)] text-white shadow-sm">
+                <LayoutDashboard className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-[var(--foreground)]/60">Operational dashboard</p>
+                <h1 className="text-xl font-semibold text-[var(--foreground)]">OTCR Control Room</h1>
+              </div>
+              <Badge variant="purple" size="sm" className="ml-2 flex items-center gap-1">
+                <Sparkles className="w-4 h-4" />
+                Live
+              </Badge>
             </div>
-            <div>
-              <p className="text-sm text-[var(--foreground)]/70">Operational dashboard</p>
-              <h1 className="text-xl font-semibold">OTCR Control Room</h1>
-            </div>
-            <Badge variant="purple" size="sm" className="ml-2 flex items-center gap-1">
-              <Sparkles className="w-4 h-4" />
-              Live
-            </Badge>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" className="hidden md:inline-flex" onClick={() => scrollToRef(tasksRef)}>
-              <PlayCircle className="w-4 h-4 mr-2" />
-              Resume work
-            </Button>
-            <ThemeToggle />
-            <Badge variant="info" size="sm" className="hidden sm:inline-flex uppercase">{role}</Badge>
-            <div className="hidden sm:flex items-center gap-2">
-              <button className="p-2 hover:bg-[var(--accent)] rounded-lg transition-colors relative">
-                <Bell className="w-5 h-5" />
-                <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-rose-500 animate-bounce" />
-              </button>
-              <button className="p-2 hover:bg-[var(--accent)] rounded-lg transition-colors">
+            <div className="flex items-center gap-3">
+              <Badge variant="info" size="sm" className="hidden sm:inline-flex uppercase">{role}</Badge>
+              <div className="hidden sm:flex items-center gap-2">
+                <button className="p-2 hover:bg-[var(--accent)] rounded-lg transition-colors relative">
+                  <Bell className="w-5 h-5" />
+                  <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-rose-500 animate-bounce" />
+                </button>
+                <button className="p-2 hover:bg-[var(--accent)] rounded-lg transition-colors">
+                  <Settings className="w-5 h-5" />
+                </button>
+              </div>
+              <button
+                onClick={() => signOut({ callbackUrl: '/sign-in' })}
+                className="p-2 hover:bg-[var(--accent)] rounded-lg transition-colors"
+              >
                 <Settings className="w-5 h-5" />
               </button>
+              <button
+                onClick={() => signOut({ callbackUrl: '/sign-in' })}
+                className="text-sm text-gray-600 hover:text-gray-900 font-medium transition-colors px-3 py-2 rounded-md hover:bg-gray-100"
+              >
+                Sign Out
+              </button>
             </div>
-            <UserButton afterSignOutUrl="/sign-in" />
           </div>
+          <nav className="flex items-center gap-1 border-t border-[var(--border)] py-2 overflow-x-auto">
+            {sideNavItems.map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                onClick={() => scrollToRef(item.ref)}
+                className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm text-[var(--foreground)]/75 hover:bg-[var(--accent)] hover:text-[var(--foreground)] transition-colors whitespace-nowrap"
+              >
+                <item.icon className="w-4 h-4 text-[var(--primary)]" />
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </nav>
         </div>
       </header>
 
-      <main className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-16 space-y-8">
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <main className="flex-1 overflow-y-auto">
+          <div
+            ref={overviewRef}
+            className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-16 space-y-8"
+          >
+            {/* Stat Boxes */}
+            <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <Card className="shadow-lg border-[var(--border)] bg-[var(--card)]">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-[var(--foreground)]/70">Pending</p>
+                    <Badge variant="warning" size="sm">{dashboardStats.pendingActionItems}</Badge>
+                  </div>
+                  <p className="text-3xl font-bold text-[var(--foreground)]">{dashboardStats.pendingActionItems}</p>
+                  <p className="text-xs text-[var(--foreground)]/60 mt-1">Tasks awaiting action</p>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-lg border-[var(--border)] bg-[var(--card)]">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-[var(--foreground)]/70">Completed</p>
+                    <Badge variant="success" size="sm">{dashboardStats.completed}</Badge>
+                  </div>
+                  <p className="text-3xl font-bold text-[var(--foreground)]">{dashboardStats.completed}</p>
+                  <p className="text-xs text-[var(--foreground)]/60 mt-1">Tasks finished</p>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-lg border-[var(--border)] bg-[var(--card)]">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-[var(--foreground)]/70">Deadlines</p>
+                    <Badge variant="danger" size="sm">{dashboardStats.upcomingDeadlines}</Badge>
+                  </div>
+                  <p className="text-3xl font-bold text-[var(--foreground)]">{dashboardStats.upcomingDeadlines}</p>
+                  <p className="text-xs text-[var(--foreground)]/60 mt-1">Due within 5 days</p>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-lg border-[var(--border)] bg-[var(--card)]">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-[var(--foreground)]/70">Workstreams</p>
+                    <Badge variant="info" size="sm">{dashboardStats.activeWorkstreams}</Badge>
+                  </div>
+                  <p className="text-3xl font-bold text-[var(--foreground)]">{dashboardStats.activeWorkstreams}</p>
+                  <p className="text-xs text-[var(--foreground)]/60 mt-1">Active projects</p>
+                </CardContent>
+              </Card>
+            </section>
+
+            <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="lg:col-span-2 rounded-3xl bg-gradient-to-br from-indigo-500/90 via-purple-500/80 to-blue-500/80 text-white shadow-2xl p-8 relative overflow-hidden"
+            className="lg:col-span-2 rounded-3xl bg-[var(--card)] border border-[var(--border)] shadow-sm p-8"
           >
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.15),transparent_25%),radial-gradient(circle_at_80%_0%,rgba(255,255,255,0.15),transparent_25%)]" />
-            <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
               <div className="space-y-4">
-                <p className="text-sm uppercase tracking-wide text-white/70">Welcome back{user?.firstName ? `, ${user.firstName}` : ''}</p>
-                <h2 className="text-3xl sm:text-4xl font-semibold leading-tight">
-                  A control tower for every client deliverable
+                <p className="text-xs uppercase tracking-wide text-[var(--foreground)]/60">
+                  Welcome back{session?.user?.name ? `, ${session.user.name.split(' ')[0]}` : ''}
+                </p>
+                <h2 className="text-3xl sm:text-4xl font-semibold leading-tight text-[var(--foreground)]">
+                  Central view of your client work
                 </h2>
-                <p className="text-white/80 max-w-2xl">
-                  Monitor workstreams, unblock timelines, and launch quick actions without leaving this page.
-                  Every button below is wired to update the dashboard state instantly.
+                <p className="text-sm text-[var(--foreground)]/70 max-w-2xl">
+                  Monitor workstreams, deadlines, and deliverables in one place. Use the quick actions below to update
+                  what you are working on without leaving this page.
                 </p>
                 <div className="flex flex-wrap gap-3">
-                  <Button variant="secondary" size="md" onClick={() => setTaskModalOpen(true)}>
+                  <Button variant="primary" size="md" onClick={() => setTaskModalOpen(true)}>
                     <Wand2 className="w-4 h-4 mr-2" />
                     Plan new task
                   </Button>
                   <Button
-                    variant="primary"
+                    variant="outline"
                     size="md"
-                    className="bg-white/15 border border-white/30 hover:bg-white/20"
+                    className="border-[var(--border)] text-[var(--primary)]"
                     onClick={() => scrollToRef(projectsRef)}
                   >
                     <Target className="w-4 h-4 mr-2" />
@@ -552,7 +635,7 @@ export default function DashboardPage() {
                   <Button
                     variant="ghost"
                     size="md"
-                    className="text-white hover:bg-white/15"
+                    className="text-[var(--primary)]"
                     onClick={() => scrollToRef(docsRef)}
                   >
                     <BookOpen className="w-4 h-4 mr-2" />
@@ -560,38 +643,58 @@ export default function DashboardPage() {
                   </Button>
                 </div>
               </div>
-              <div className="bg-white/10 rounded-2xl p-4 border border-white/20 backdrop-blur-xl w-full md:w-72">
+              <div className="w-full md:w-72 rounded-2xl border border-[var(--border)] bg-[var(--secondary)]/60 p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm text-white/80">This week</span>
-                  <Badge variant="success" size="sm" className="bg-white text-indigo-600">On track</Badge>
+                  <span className="text-xs font-medium text-[var(--foreground)]/70">This week</span>
+                  <Badge
+                    variant="success"
+                    size="sm"
+                    className="bg-emerald-50 text-emerald-700"
+                  >
+                    On track
+                  </Badge>
                 </div>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-xs text-white/70">Hours logged</p>
-                      <p className="text-2xl font-semibold">{dashboardStats.hoursThisWeek}h</p>
+                      <p className="text-xs text-[var(--foreground)]/60">Hours logged</p>
+                      <p className="text-2xl font-semibold text-[var(--foreground)]">
+                        {dashboardStats.hoursThisWeek}h
+                      </p>
                     </div>
-                    <div className="flex items-center gap-2 text-sm bg-white/20 px-3 py-1.5 rounded-full">
-                      <TrendingUp className="w-4 h-4" />
-                      +8%
+                    <div className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-full bg-[var(--card)] border border-[var(--border)]">
+                      <TrendingUp className="w-4 h-4 text-[var(--primary)]" />
+                      <span className="font-medium text-[var(--foreground)]/80">+8% vs last week</span>
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-xs text-white/70">Active streams</p>
-                      <p className="text-xl font-semibold">{dashboardStats.activeWorkstreams}</p>
+                      <p className="text-xs text-[var(--foreground)]/60">Active streams</p>
+                      <p className="text-xl font-semibold text-[var(--foreground)]">
+                        {dashboardStats.activeWorkstreams}
+                      </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs text-white/70">Due soon</p>
-                      <p className="text-xl font-semibold">{dashboardStats.upcomingDeadlines}</p>
+                      <p className="text-xs text-[var(--foreground)]/60">Due soon</p>
+                      <p className="text-xl font-semibold text-[var(--foreground)]">
+                        {dashboardStats.upcomingDeadlines}
+                      </p>
                     </div>
                   </div>
-                  <div className="w-full h-2 bg-white/15 rounded-full overflow-hidden">
-                    <div className="h-2 bg-white/80 rounded-full" style={{ width: `${Math.min(100, (dashboardStats.completed / Math.max(actionItems.length, 1)) * 100)}%` }} />
+                  <div className="w-full h-2 rounded-full bg-[var(--accent)] overflow-hidden">
+                    <div
+                      className="h-2 bg-[var(--primary)] rounded-full"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          (dashboardStats.completed / Math.max(actionItems.length, 1)) * 100
+                        )}%`,
+                      }}
+                    />
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-white/80">
-                    <Shield className="w-4 h-4" />
-                    All critical milestones have owners
+                  <div className="flex items-center gap-2 text-xs text-[var(--foreground)]/70">
+                    <Shield className="w-4 h-4 text-[var(--primary)]" />
+                    <span>All critical milestones have owners</span>
                   </div>
                 </div>
               </div>
@@ -626,62 +729,56 @@ export default function DashboardPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
                 className={cn(
-                  'relative overflow-hidden rounded-2xl border border-white/10 shadow-2xl text-white bg-gradient-to-br',
-                  statGradients[index % statGradients.length]
+                  'relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-sm'
                 )}
               >
-                <div className="absolute inset-0 opacity-40 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.3),transparent_35%),radial-gradient(circle_at_80%_0%,rgba(255,255,255,0.4),transparent_35%)]" />
-                <div className="relative p-5 space-y-4">
+                <div className="relative p-5 space-y-3">
                   <div className="flex items-start justify-between">
-                    <div className="p-3 rounded-xl bg-white/15 backdrop-blur">
-                      <stat.icon className="w-5 h-5" />
+                    <div className="p-3 rounded-xl bg-[var(--accent)]">
+                      <stat.icon className="w-5 h-5 text-[var(--primary)]" />
                     </div>
-                    <Badge variant="purple" size="sm" className="bg-white/20 text-white border-white/20">
+                    <Badge variant="default" size="sm">
                       {stat.delta}
                     </Badge>
                   </div>
                   <div className="flex items-end justify-between">
                     <div>
-                      <p className="text-sm text-white/80">{stat.label}</p>
-                      <p className="text-3xl font-semibold">{stat.value}</p>
+                      <p className="text-xs text-[var(--foreground)]/60 uppercase tracking-wide">
+                        {stat.label}
+                      </p>
+                      <p className="text-2xl font-semibold text-[var(--foreground)]">{stat.value}</p>
                     </div>
-                    <div className="flex items-center gap-1 text-sm bg-white/15 px-3 py-1.5 rounded-full">
-                      <ArrowUpRight className="w-4 h-4" />
-                      Momentum
+                    <div className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-full bg-[var(--secondary)] text-[var(--foreground)]/70">
+                      <ArrowUpRight className="w-4 h-4 text-[var(--primary)]" />
+                      Status
                     </div>
                   </div>
                 </div>
-                <div className="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-white/10 blur-2xl" />
               </motion.div>
             ))}
           </div>
-        </section>
+            </section>
 
-        <section className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-5 gap-4">
+            <section className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-5 gap-4">
           {[{
             label: 'Upload deliverable',
             icon: Upload,
-            gradient: 'gradient-primary',
             onClick: () => setUploadModalOpen(true),
           }, {
             label: 'Request extension',
             icon: Calendar,
-            gradient: 'gradient-warning',
             onClick: () => setExtensionModalOpen(true),
           }, {
             label: 'Log time',
             icon: Clock,
-            gradient: 'gradient-success',
             onClick: () => setTimeModalOpen(true),
           }, {
             label: 'New task',
             icon: CheckCircle2,
-            gradient: 'gradient-info',
             onClick: () => setTaskModalOpen(true),
           }, {
             label: 'View documents',
             icon: Download,
-            gradient: 'gradient-danger',
             onClick: () => scrollToRef(docsRef),
           }].map((action) => (
             <motion.button
@@ -690,20 +787,21 @@ export default function DashboardPage() {
               whileHover={{ scale: 1.02, y: -2 }}
               whileTap={{ scale: 0.98 }}
               className={cn(
-                'p-4 rounded-2xl text-white shadow-lg card-hover flex flex-col items-start gap-3 h-full border border-white/10 backdrop-blur',
-                action.gradient
+                'p-4 rounded-2xl bg-[var(--card)] text-[var(--foreground)] shadow-sm flex flex-col items-start gap-3 h-full border border-[var(--border)] hover:border-[var(--primary)]/60'
               )}
             >
-              <div className="p-2 rounded-lg bg-white/20">
-                <action.icon className="w-5 h-5" />
+              <div className="p-2 rounded-lg bg-[var(--accent)]">
+                <action.icon className="w-5 h-5 text-[var(--primary)]" />
               </div>
               <span className="font-semibold text-sm text-left">{action.label}</span>
-              <span className="text-xs text-white/80">Instantly updates your dashboard state</span>
+              <span className="text-xs text-[var(--foreground)]/60">
+                Updates dashboard metrics immediately
+              </span>
             </motion.button>
           ))}
-        </section>
+            </section>
 
-        <section className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <section className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           <Card className="shadow-lg border-[var(--border)] bg-[var(--card)]/90">
             <CardHeader className="flex items-start justify-between">
               <div>
@@ -759,58 +857,6 @@ export default function DashboardPage() {
           <Card className="shadow-lg border-[var(--border)] bg-[var(--card)]/90">
             <CardHeader className="flex items-start justify-between">
               <div>
-                <CardTitle>Task distribution</CardTitle>
-                <CardDescription>Pie chart of completed, in progress, pending, and overdue.</CardDescription>
-              </div>
-              <Badge variant="warning" size="sm">{taskDistributionData.reduce((sum, item) => sum + item.value, 0)} tasks</Badge>
-            </CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {chartsReady ? (
-                <ResponsiveContainer width="100%" height={220}>
-                  <PieChart>
-                    <Pie
-                      data={taskDistributionData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      innerRadius={50}
-                      paddingAngle={3}
-                    >
-                      {taskDistributionData.map((entry) => (
-                        <Cell key={entry.name} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: 'var(--card)',
-                        border: '1px solid var(--border)',
-                        borderRadius: '12px',
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-[220px] rounded-xl bg-[var(--secondary)] animate-pulse" />
-              )}
-              <div className="space-y-3">
-                {taskDistributionData.map((item) => (
-                  <div key={item.name} className="flex items-center justify-between p-3 rounded-xl border border-[var(--border)]">
-                    <div className="flex items-center gap-3">
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                      <p className="text-sm">{item.name}</p>
-                    </div>
-                    <Badge variant="default" size="sm">{item.value}</Badge>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-lg border-[var(--border)] bg-[var(--card)]/90">
-            <CardHeader className="flex items-start justify-between">
-              <div>
                 <CardTitle>Team radar</CardTitle>
                 <CardDescription>Completion, efficiency, and quality metrics.</CardDescription>
               </div>
@@ -854,9 +900,9 @@ export default function DashboardPage() {
               </div>
             </CardContent>
           </Card>
-        </section>
+            </section>
 
-        <section className="grid grid-cols-1 xl:grid-cols-3 gap-6" ref={tasksRef}>
+            <section className="grid grid-cols-1 xl:grid-cols-3 gap-6" ref={tasksRef}>
           <div className="xl:col-span-2 space-y-6">
             <Card className="border-[var(--border)] bg-[var(--card)]/90 shadow-lg">
               <CardHeader className="flex flex-col gap-4">
@@ -938,10 +984,10 @@ export default function DashboardPage() {
                             </span>
                             <span className={cn('px-2 py-1 rounded-full text-xs font-semibold',
                               daysLeft <= 1
-                                ? 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-100'
+                                ? 'bg-red-100 text-red-800'
                                 : daysLeft <= 4
-                                ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-100'
-                                : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-100'
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : 'bg-emerald-100 text-emerald-800'
                             )}>
                               {daysLeft <= 0 ? 'Due today' : `${daysLeft}d left`}
                             </span>
@@ -1039,10 +1085,10 @@ export default function DashboardPage() {
                             <span className={cn(
                               'px-2 py-1 rounded-full text-[10px] font-semibold',
                               stream.daysRemaining <= 2
-                                ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-100'
+                                ? 'bg-red-100 text-red-700'
                                 : stream.daysRemaining <= 5
-                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-100'
-                                : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-100'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-emerald-100 text-emerald-800'
                             )}>
                               {stream.daysRemaining} days
                             </span>
@@ -1057,59 +1103,6 @@ export default function DashboardPage() {
           </div>
 
           <div className="space-y-6">
-            <Card className="shadow-lg">
-              <CardHeader className="flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>Weekly cadence</CardTitle>
-                    <CardDescription>Hours logged by day with live updates.</CardDescription>
-                  </div>
-                  <Button size="sm" variant="outline" onClick={() => setTimeModalOpen(true)}>
-                    <Clock className="w-4 h-4 mr-2" />
-                    Log time
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={220}>
-                  <AreaChart data={activityData}>
-                    <defs>
-                      <linearGradient id="colorHours" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4} />
-                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="name" stroke="var(--foreground)" opacity={0.7} />
-                    <YAxis stroke="var(--foreground)" opacity={0.7} />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: 'var(--card)',
-                        border: '1px solid var(--border)',
-                        borderRadius: '12px',
-                      }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="hours"
-                      stroke="#6366f1"
-                      strokeWidth={2}
-                      fillOpacity={1}
-                      fill="url(#colorHours)"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-                <div className="flex items-center justify-between text-sm text-[var(--foreground)]/70 mt-3">
-                  <span>Total hours this week</span>
-                  <span className="font-semibold">{dashboardStats.hoursThisWeek}h</span>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-[var(--foreground)]/60 mt-2">
-                  <ArrowDownRight className="w-4 h-4" />
-                  Momentum steady and healthy
-                </div>
-              </CardContent>
-            </Card>
-
             <Card className="shadow-lg">
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -1187,83 +1180,91 @@ export default function DashboardPage() {
               </Card>
             </div>
 
-            <Card className="shadow-lg">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>Extension requests</CardTitle>
-                    <CardDescription>Approve or decline in one click.</CardDescription>
+            <div ref={extensionsRef}>
+              <Card className="shadow-lg">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Extension requests</CardTitle>
+                      <CardDescription>Approve or decline in one click.</CardDescription>
+                    </div>
+                    <Badge variant="warning" size="sm">
+                      {pendingExtensions} pending
+                    </Badge>
                   </div>
-                  <Badge variant="warning" size="sm">{pendingExtensions} pending</Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {extensionRequests.map((req) => (
-                  <motion.div
-                    key={req.id}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={cn(
-                      'p-3 rounded-2xl border bg-[var(--secondary)]/60 backdrop-blur transition-all',
-                      req.status === 'pending'
-                        ? 'border-amber-400/60 shadow-[0_0_0_1px_rgba(251,191,36,0.2),0_10px_30px_-12px_rgba(251,191,36,0.4)]'
-                        : 'border-[var(--border)]'
-                    )}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-semibold flex items-center gap-2">
-                          {req.workstream}
-                          {req.status === 'pending' && <Sparkles className="w-4 h-4 text-amber-500" />}
-                        </p>
-                        <p className="text-xs text-[var(--foreground)]/60">Requested by {req.requestedBy}</p>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {extensionRequests.map((req) => (
+                    <motion.div
+                      key={req.id}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={cn(
+                        'p-3 rounded-2xl border bg-[var(--secondary)]/60 backdrop-blur transition-all',
+                        req.status === 'pending'
+                          ? 'border-amber-400/60 shadow-[0_0_0_1px_rgba(251,191,36,0.2),0_10px_30px_-12px_rgba(251,191,36,0.4)]'
+                          : 'border-[var(--border)]'
+                      )}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-semibold flex items-center gap-2">
+                            {req.workstream}
+                            {req.status === 'pending' && <Sparkles className="w-4 h-4 text-amber-500" />}
+                          </p>
+                          <p className="text-xs text-[var(--foreground)]/60">Requested by {req.requestedBy}</p>
+                        </div>
+                        <Badge
+                          variant={
+                            req.status === 'approved'
+                              ? 'success'
+                              : req.status === 'pending'
+                              ? 'warning'
+                              : 'danger'
+                          }
+                          size="sm"
+                        >
+                          {req.status}
+                        </Badge>
                       </div>
-                      <Badge
-                        variant={
-                          req.status === 'approved' ? 'success' : req.status === 'pending' ? 'warning' : 'danger'
-                        }
-                        size="sm"
-                      >
-                        {req.status}
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-[var(--foreground)]/70 mt-2">{req.reason}</p>
-                    <div className="flex items-center justify-between text-xs text-[var(--foreground)]/60 mt-3 flex-wrap gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-1 rounded-full bg-[var(--accent)] text-[var(--foreground)] text-[11px]">
-                          Current: {formatDate(req.originalDeadline)}
-                        </span>
-                        <span className="px-2 py-1 rounded-full bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-300/40 text-[11px]">
-                          Requested: {formatDate(req.requestedDeadline)}
-                        </span>
+                      <p className="text-sm text-[var(--foreground)]/70 mt-2">{req.reason}</p>
+                      <div className="flex items-center justify-between text-xs text-[var(--foreground)]/60 mt-3 flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-1 rounded-full bg-[var(--accent)] text-[var(--foreground)] text-[11px]">
+                            Current: {formatDate(req.originalDeadline)}
+                          </span>
+                          <span className="px-2 py-1 rounded-full bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-300/40 text-[11px]">
+                            Requested: {formatDate(req.requestedDeadline)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {role !== 'CONSULTANT' && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="border border-emerald-400/60 bg-emerald-500/10 hover:bg-emerald-500/20"
+                                onClick={() => handleReviewExtension(req.id, 'approved')}
+                              >
+                                Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="border border-rose-400/60 bg-rose-500/10 hover:bg-rose-500/20"
+                                onClick={() => handleReviewExtension(req.id, 'denied')}
+                              >
+                                Deny
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        {role !== 'CONSULTANT' && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="border border-emerald-400/60 bg-emerald-500/10 hover:bg-emerald-500/20"
-                              onClick={() => handleReviewExtension(req.id, 'approved')}
-                            >
-                              Approve
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="border border-rose-400/60 bg-rose-500/10 hover:bg-rose-500/20"
-                              onClick={() => handleReviewExtension(req.id, 'denied')}
-                            >
-                              Deny
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-              </CardContent>
-            </Card>
+                    </motion.div>
+                  ))}
+                </CardContent>
+              </Card>
+            </div>
 
             <Card className="shadow-lg">
               <CardHeader>
@@ -1291,8 +1292,9 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
           </div>
-        </section>
-      </main>
+            </section>
+          </div>
+        </main>
 
       <Modal isOpen={uploadModalOpen} onClose={() => setUploadModalOpen(false)} title="Upload deliverable" size="lg">
         <div className="space-y-4">

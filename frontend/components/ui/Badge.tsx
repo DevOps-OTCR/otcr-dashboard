@@ -13,8 +13,8 @@ export function Badge({ children, variant = 'default', size = 'md', className }:
     success: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
     warning: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
     danger: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-    info: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-    purple: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+    info: 'bg-[rgb(0,51,96)]/10 text-[rgb(0,51,96)]',
+    purple: 'bg-[rgb(0,51,96)]/10 text-[rgb(0,51,96)]',
   };
 
   const sizes = {
