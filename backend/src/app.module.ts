@@ -4,6 +4,10 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { ProjectsModule } from './projects/projects.module';
+import { DeliverablesController } from './deliverables/deliverables.controller';
+import { DeliverablesService } from './deliverables/deliverables.service';
+import { DeliverablesModule } from './deliverables/deliverables.module';
 
 @Module({
   imports: [
@@ -15,6 +19,10 @@ import { NotificationsModule } from './notifications/notifications.module';
     PrismaModule,
     AuthModule,
     NotificationsModule,
+    ProjectsModule,
+    DeliverablesModule,
   ],
+  controllers: [DeliverablesController],
+  providers: [DeliverablesService],
 })
 export class AppModule {}
