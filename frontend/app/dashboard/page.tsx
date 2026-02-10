@@ -63,18 +63,10 @@ import {
 } from '@/data/mockData';
 import type { ActionItem, Document, ExtensionRequest, WorkstreamDeadline } from '@/types';
 import { cn, formatDate, getDaysUntil } from '@/lib/utils';
-import { authAPI } from '@/lib/api';
+import { authAPI, projectsAPI } from '@/lib/api';
+import { getEffectiveRole, getDefaultDashboardPath, type AppRole } from '@/lib/permissions';
 
 const COLORS = ['#7c3aed', '#2563eb', '#f97316', '#10b981', '#f43f5e', '#a855f7'];
-
-function getUserRole(email: string): 'PM' | 'CONSULTANT' | 'ADMIN' {
-  const pmEmails = ['lsharma2@illinois.edu', 'crawat2@illinois.edu'];
-  const adminEmails = ['admin@otcr.com'];
-
-  if (adminEmails.includes(email)) return 'ADMIN';
-  if (pmEmails.includes(email)) return 'PM';
-  return 'CONSULTANT';
-}
 
 type TaskFilter = 'all' | 'pending' | 'in_progress' | 'overdue' | 'completed';
 type HoursDay = { name: string; hours: number };
@@ -110,12 +102,13 @@ const statusColorMap: Record<string, string> = {
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
-  const [role, setRole] = useState<'PM' | 'CONSULTANT' | 'ADMIN'>('CONSULTANT');
+  const [role, setRole] = useState<AppRole>('CONSULTANT');
 
   const [actionItems, setActionItems] = useState<ActionItem[]>(mockActionItems);
   const [workstreams, setWorkstreams] = useState<WorkstreamDeadline[]>(mockWorkstreamDeadlines);
   const [extensionRequests, setExtensionRequests] = useState<ExtensionRequest[]>(mockExtensionRequests);
   const [documents, setDocuments] = useState<Document[]>(mockDocuments);
+  const [projectsFromApi, setProjectsFromApi] = useState<{ id: string; name: string; status?: string }[]>([]);
   const [activityData, setActivityData] = useState<HoursDay[]>([
     { name: 'Mon', hours: 6 },
     { name: 'Tue', hours: 7 },
@@ -170,22 +163,23 @@ export default function DashboardPage() {
   const extensionsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Email check is already handled in sign-in page
-    // Just set role and redirect based on role
-    if (session?.user?.email) {
-      const email = session.user.email;
-      const userRole = getUserRole(email);
+    if (session) {
+      const userRole = getEffectiveRole(session);
       setRole(userRole);
-
-      // Redirect to role-specific dashboard
-      if (userRole === 'PM') {
-        window.location.href = '/pm';
-      } else if (userRole === 'CONSULTANT') {
-        window.location.href = '/consultant';
+      // Redirect to role-specific dashboard; only ADMIN stays on /dashboard
+      if (userRole !== 'ADMIN') {
+        window.location.href = getDefaultDashboardPath(userRole);
       }
-      // ADMIN stays on main dashboard
     }
   }, [session]);
+
+  useEffect(() => {
+    if (!session?.user?.email) return;
+    projectsAPI
+      .getAll({ status: 'ACTIVE', includeMembers: true, limit: 100 })
+      .then((res) => setProjectsFromApi(res.data?.projects ?? []))
+      .catch(() => setProjectsFromApi([]));
+  }, [session?.user?.email]);
 
   useEffect(() => {
     setChartsReady(true);
@@ -202,11 +196,12 @@ export default function DashboardPage() {
       pendingActionItems: actionItems.filter((item) => !item.completed).length,
       upcomingDeadlines: actionItems.filter((item) => !item.completed && getDaysUntil(item.dueDate) <= 5).length,
       activeWorkstreams: workstreams.length,
+      activeProjects: projectsFromApi.length,
       hoursThisWeek: activityData.reduce((sum, day) => sum + day.hours, 0),
       documents: documents.length,
       completed: actionItems.filter((item) => item.completed).length,
     }),
-    [actionItems, workstreams.length, activityData, documents.length]
+    [actionItems, workstreams.length, projectsFromApi.length, activityData, documents.length]
   );
 
   const statusDistribution = useMemo(() => {
@@ -591,10 +586,10 @@ export default function DashboardPage() {
               <Card className="shadow-lg border-[var(--border)] bg-[var(--card)]">
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-medium text-[var(--foreground)]/70">Workstreams</p>
-                    <Badge variant="info" size="sm">{dashboardStats.activeWorkstreams}</Badge>
+                  <p className="text-sm font-medium text-[var(--foreground)]/70">Projects</p>
+                  <Badge variant="info" size="sm">{dashboardStats.activeProjects}</Badge>
                   </div>
-                  <p className="text-3xl font-bold text-[var(--foreground)]">{dashboardStats.activeWorkstreams}</p>
+                  <p className="text-3xl font-bold text-[var(--foreground)]">{dashboardStats.activeProjects}</p>
                   <p className="text-xs text-[var(--foreground)]/60 mt-1">Active projects</p>
                 </CardContent>
               </Card>

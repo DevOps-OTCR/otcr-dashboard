@@ -27,12 +27,15 @@ export class ProjectsController {
     if (!authorization) {
       throw new UnauthorizedException('No authorization header');
     }
-
-    const user = await this.authService.getUserByEmail(authorization);
+    // Support "Bearer <email>" (e.g. from frontend) or plain email
+    const email = authorization.replace(/^Bearer\s+/i, '').trim();
+    if (!email) {
+      throw new UnauthorizedException('No user identifier in authorization');
+    }
+    const user = await this.authService.getUserByEmail(email);
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
-
     return user;
   }
 
@@ -53,8 +56,10 @@ export class ProjectsController {
   ) {
     const user = await this.getUserFromHeader(authorization);
 
-    if (user.role !== 'ADMIN' && user.role !== 'PM') {
-      throw new ForbiddenException('Only Admins and PMs can create projects');
+    // Teams UI allows PM, LC, and Admin to create/manage teams (projects),
+    // so LC should also be allowed here.
+    if (user.role !== 'ADMIN' && user.role !== 'PM' && user.role !== 'LC') {
+      throw new ForbiddenException('Only Admins, PMs, and LCs can create projects');
     }
 
     return this.projectsService.create(body, user.id);
@@ -163,10 +168,9 @@ export class ProjectsController {
       throw new NotFoundException('Project not found');
     }
 
-    if (user.role !== 'ADMIN' && project.pmId !== user.id) {
-      throw new ForbiddenException(
-        'Only the PM or Admin can update this project',
-      );
+    // Allow Admins, the owning PM, and LCs to update projects (teams)
+    if (user.role !== 'ADMIN' && user.role !== 'LC' && project.pmId !== user.id) {
+      throw new ForbiddenException('Only the PM, LC, or Admin can update this project');
     }
 
     return this.projectsService.update(id, body);
@@ -179,19 +183,25 @@ export class ProjectsController {
     @Headers('authorization') authorization: string,
   ) {
     const user = await this.getUserFromHeader(authorization);
+    const project = await this.projectsService.findOne(id);
 
-    if (user.role !== 'ADMIN') {
-      throw new ForbiddenException('Only Admins can delete projects');
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    // Allow Admins, the owning PM, and LCs to delete projects
+    if (user.role !== 'ADMIN' && user.role !== 'LC' && project.pmId !== user.id) {
+      throw new ForbiddenException('Only the PM, LC, or Admin can delete this project');
     }
 
     return this.projectsService.remove(id);
   }
 
-  // Add member to project
+  // Add member to project (userId or email)
   @Post(':id/members')
   async addMember(
     @Param('id') id: string,
-    @Body() body: { userId: string },
+    @Body() body: { userId?: string; email?: string },
     @Headers('authorization') authorization: string,
   ) {
     const user = await this.getUserFromHeader(authorization);
@@ -201,11 +211,16 @@ export class ProjectsController {
       throw new NotFoundException('Project not found');
     }
 
-    if (user.role !== 'ADMIN' && project.pmId !== user.id) {
-      throw new ForbiddenException('Only the PM or Admin can add members');
+    // Allow Admins, the owning PM, and LCs to add members
+    if (user.role !== 'ADMIN' && user.role !== 'LC' && project.pmId !== user.id) {
+      throw new ForbiddenException('Only the PM, LC, or Admin can add members');
     }
 
-    return this.projectsService.addMember(id, body.userId);
+    const identifier = body.email ?? body.userId;
+    if (!identifier) {
+      throw new BadRequestException('userId or email is required');
+    }
+    return this.projectsService.addMember(id, identifier);
   }
 
   // Remove member from project
@@ -222,8 +237,9 @@ export class ProjectsController {
       throw new NotFoundException('Project not found');
     }
 
-    if (user.role !== 'ADMIN' && project.pmId !== user.id) {
-      throw new ForbiddenException('Only the PM or Admin can remove members');
+    // Allow Admins, the owning PM, and LCs to remove members
+    if (user.role !== 'ADMIN' && user.role !== 'LC' && project.pmId !== user.id) {
+      throw new ForbiddenException('Only the PM, LC, or Admin can remove members');
     }
 
     return this.projectsService.removeMember(id, userId);

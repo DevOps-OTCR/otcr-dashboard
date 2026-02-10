@@ -7,7 +7,7 @@ NestJS backend server for the OTCR Dashboard with database management, authentic
 - **Framework:** NestJS (Node.js + TypeScript)
 - **Database:** PostgreSQL (via Neon or Supabase)
 - **ORM:** Prisma
-- **Authentication:** Clerk
+- **Authentication:** NextAuth + Google OAuth (frontend); email/sync endpoints (backend)
 - **Job Queue:** BullMQ + Redis
 - **Notifications:** Slack Webhooks + Resend (Email)
 - **File Storage:** Cloudflare R2 / AWS S3
@@ -20,7 +20,7 @@ Before running this project, ensure you have:
 - npm or yarn
 - PostgreSQL database (we recommend [Neon](https://neon.tech))
 - Redis instance (local or [Upstash](https://upstash.com))
-- Clerk account for authentication
+- Google OAuth credentials (from frontend NextAuth setup)
 - (Optional) Slack workspace for notifications
 - (Optional) Resend account for email notifications
 
@@ -45,10 +45,6 @@ Then fill in your credentials in `.env`:
 ```env
 # Database (Get from Neon.tech or Supabase)
 DATABASE_URL="postgresql://user:password@host.neon.tech/dbname?sslmode=require"
-
-# Authentication (Get from clerk.com)
-CLERK_SECRET_KEY="sk_test_..."
-CLERK_PUBLISHABLE_KEY="pk_test_..."
 
 # Redis (Local or Upstash)
 REDIS_URL="redis://localhost:6379"
@@ -117,7 +113,7 @@ The server will start on `http://localhost:4000`
 ```
 backend/
 ├── src/
-│   ├── auth/                    # Authentication module (Clerk integration)
+│   ├── auth/                    # Authentication module (Google OAuth sync)
 │   │   ├── auth.controller.ts
 │   │   ├── auth.service.ts
 │   │   └── auth.module.ts
@@ -151,7 +147,7 @@ backend/
 The database includes these main entities:
 
 ### Core Tables
-- **User** - User accounts (synced with Clerk)
+- **User** - User accounts (synced via NextAuth + Google OAuth)
 - **Project** - Consulting projects
 - **ProjectMember** - Project team assignments
 - **Deliverable** - Project deliverables with deadlines
@@ -216,28 +212,23 @@ npm run test               # Run tests
 
 ## 🔐 Authentication
 
-The backend uses Clerk for authentication. Users sign in via the frontend (Next.js), and the backend verifies JWT tokens.
+The backend works with NextAuth + Google OAuth. Users sign in via the frontend (Next.js), and the backend provides email/sync endpoints for the auth flow.
 
 ### Endpoints
 
-- `GET /auth/me` - Get current user (requires Bearer token)
 - `GET /auth/health` - Health check
+- `GET /auth/check-email?email=` - Check if email is allowed (used during sign-in)
+- `GET /auth/role?email=` - Get user role by email
+- `POST /auth/sync-user` - Sync user from Google OAuth to database
+- `GET /auth/me` - Get current user (requires Bearer token)
+- `GET /auth/allowed-emails` - List allowed emails (admin)
 
-### Usage Example
+### Auth Flow
 
-```typescript
-// Frontend sends request with token
-const response = await fetch('http://localhost:4000/auth/me', {
-  headers: {
-    'Authorization': `Bearer ${clerkToken}`
-  }
-});
-```
-
-The backend will:
-1. Verify the token with Clerk
-2. Sync user data with database
-3. Return user object with role
+1. Frontend uses NextAuth with Google OAuth
+2. During sign-in, frontend calls `/auth/check-email` to verify email is allowed
+3. Frontend calls `/auth/sync-user` to create/update user in database
+4. Frontend calls `/auth/role` to fetch user role for session
 
 ## 📊 Database Management
 
@@ -317,7 +308,6 @@ Ensure these are set in production:
 NODE_ENV=production
 DATABASE_URL=...          # Production database
 REDIS_URL=...            # Production Redis
-CLERK_SECRET_KEY=...     # Production Clerk key
 SLACK_WEBHOOK_URL=...
 RESEND_API_KEY=...
 ```
@@ -334,14 +324,14 @@ RESEND_API_KEY=...
 
 - **Prisma Issues**: [Prisma Documentation](https://www.prisma.io/docs)
 - **NestJS Questions**: [NestJS Documentation](https://docs.nestjs.com)
-- **Clerk Auth**: [Clerk Documentation](https://clerk.com/docs)
+- **NextAuth**: [NextAuth Documentation](https://authjs.dev)
 - **BullMQ Jobs**: [BullMQ Documentation](https://docs.bullmq.io)
 
 ## ✅ Completed Features
 
 ### Ticket 1: Database Schema ✅
 - [x] Complete Prisma schema with all models
-- [x] User management with Clerk integration
+- [x] User management with NextAuth + Google OAuth integration
 - [x] Project and deliverable tracking
 - [x] Extension request workflow
 - [x] Submission versioning

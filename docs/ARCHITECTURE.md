@@ -39,21 +39,20 @@
 
 ### 1. User Authentication Flow
 ```
-User → Frontend → Clerk → Backend → Database
-  │                │         │          │
-  1. Click login   │         │          │
-  │                2. Google SSO        │
-  │                │         │          │
-  │                3. Get JWT token     │
-  │                │         │          │
-  4. ←────────────┘          │          │
-  │                          │          │
-  5. Request with Bearer token          │
-  │                          6. Verify token
-  │                          │          │
-  │                          7. Sync user data
-  │                          │          │
-  8. ←──────────────────────┴──────────┘
+User → Frontend → NextAuth (Google OAuth) → Backend → Database
+  │                │                              │          │
+  1. Click login   │                              │          │
+  │                2. Google OAuth flow           │          │
+  │                │                              │          │
+  │                3. Get session/JWT             │          │
+  │                │                              │          │
+  4. ←────────────┘                              │          │
+  │                                              │          │
+  5. Request with session credentials            │          │
+  │                    6. /auth/check-email, sync-user      │
+  │                    7. Sync user to database  │          │
+  │                                              │          │
+  8. ←──────────────────────────────────────────┴──────────┘
   │
   User authenticated ✓
 ```
@@ -249,10 +248,13 @@ AppModule (root)
 ├── AuthModule
 │   ├── AuthController
 │   │   ├── GET /auth/me
-│   │   └── GET /auth/health
+│   │   ├── GET /auth/health
+│   │   ├── GET /auth/check-email
+│   │   ├── GET /auth/role
+│   │   └── POST /auth/sync-user
 │   └── AuthService
-│       ├── verifyToken()
-│       ├── getUserFromClerk()
+│       ├── getUserByEmail()
+│       ├── getUserByGoogleId()
 │       └── syncUserWithDatabase()
 │
 └── NotificationsModule
@@ -295,12 +297,12 @@ AppModule (root)
 ```
 1. Frontend
    POST /api/deliverables/{id}/submit
-   Headers: Authorization: Bearer {clerkToken}
+   Headers: Authorization: Bearer {nextAuthSessionToken}
    Body: { fileUrl: "...", fileName: "..." }
 
 2. Backend (AuthGuard)
    ├─→ Extract Bearer token
-   ├─→ Verify with Clerk
+   ├─→ Verify NextAuth session / JWT
    └─→ Load user from database
 
 3. Backend (SubmissionsController)
@@ -345,33 +347,33 @@ AppModule (root)
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                   Auth Flow (Clerk)                       │
+│              Auth Flow (NextAuth + Google OAuth)          │
 └──────────────────────────────────────────────────────────┘
 
 Frontend                    Backend                  Database
 ────────                    ───────                  ────────
 User clicks login
    │
-   └─→ Redirect to Clerk
+   └─→ Redirect to Google OAuth
            │
    ┌───────┘
    │
-Google OAuth flow
+NextAuth handles OAuth flow
    │
-   └─→ Receive JWT token
+   └─→ Receive session / JWT
            │
    ┌───────┘
    │
-Store token in cookies
+Store session in cookies
    │
 Make API request
-with Bearer token ──→ AuthGuard intercepts
+with session token ──→ AuthGuard intercepts
                           │
-                    Verify JWT with Clerk
+                    Verify NextAuth session
                           │
-                    Extract clerkId ────→ Find/Create User
-                          │                     │
-                    Load user data ←────────────┘
+                    Extract googleId/email ──→ Find/Create User
+                          │                            │
+                    Load user data ←───────────────────┘
                           │
                     Attach user to request
                           │
@@ -391,8 +393,10 @@ DATABASE_URL                   DATABASE_URL
 REDIS_URL                      REDIS_URL
   → redis://localhost:6379       → Upstash Redis
 
-CLERK_SECRET_KEY               CLERK_SECRET_KEY
-  → sk_test_...                  → sk_live_...
+GOOGLE_CLIENT_ID / SECRET       GOOGLE_CLIENT_ID / SECRET
+  → From Google Console           → Production OAuth credentials
+NEXTAUTH_SECRET                 NEXTAUTH_SECRET
+  → dev secret                    → Production secret
 
 SLACK_WEBHOOK_URL              SLACK_WEBHOOK_URL
   → Test channel                 → Production channel

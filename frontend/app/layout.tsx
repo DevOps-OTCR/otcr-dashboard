@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { SessionProvider } from '@/components/SessionProvider';
+import { AuthApiSync } from '@/components/AuthApiSync';
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -17,6 +18,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className="antialiased">
         <SessionProvider>
+          <AuthApiSync />
           {children}
         </SessionProvider>
       </body>

@@ -108,9 +108,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return true;
     },
     async jwt({ token, account, user }) {
-      if (account && user) {
+      if (account && user?.email) {
         token.sub = account.providerAccountId;
         token.email = user.email;
+        // Fetch role from backend (DB) so permissions use database as source of truth
+        try {
+          const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+          const res = await fetch(
+            `${API_URL}/auth/role?email=${encodeURIComponent(user.email)}`,
+            { cache: 'no-store' }
+          );
+          const data = await res.json();
+          if (data.success && data.role) token.role = data.role;
+        } catch {
+          // keep token.role undefined; frontend will fall back to getActualUserRole(email)
+        }
       }
       return token;
     },
@@ -118,6 +130,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (session.user && token) {
         session.user.id = token.sub as string;
         session.user.email = token.email as string;
+        session.user.role = token.role;
       }
       return session;
     },

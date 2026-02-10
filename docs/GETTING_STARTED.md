@@ -10,7 +10,7 @@ Your two Jira tickets are **100% complete**:
 - Complete Prisma schema with 8 models
 - User, Project, Deliverable, Submission, Extension, TimeEntry, Notification, ProjectMember
 - Full relational structure with proper indexes
-- Clerk authentication integration
+- NextAuth with Google OAuth integration
 
 ### ✅ Ticket 2: Notifications & Background Jobs
 - BullMQ job queue with Redis
@@ -33,8 +33,8 @@ You'll need:
    - Install locally: `brew install redis && brew services start redis`
    - OR use [Upstash](https://upstash.com) (cloud Redis)
 
-3. **Clerk Authentication** - [Sign up at Clerk](https://clerk.com)
-   - Create app → Enable Google only → Copy API keys
+3. **Google OAuth** - [Google Cloud Console](https://console.cloud.google.com)
+   - Create OAuth 2.0 credentials → Copy Client ID and Client Secret
 
 4. **Slack Webhook** (Optional) - [Create webhook](https://api.slack.com/messaging/webhooks)
 
@@ -51,7 +51,6 @@ cp .env.example .env
 Edit `.env` with your credentials:
 ```env
 DATABASE_URL="postgresql://..." # From Neon
-CLERK_SECRET_KEY="sk_test_..."  # From Clerk
 REDIS_URL="redis://localhost:6379"
 SLACK_WEBHOOK_URL="..."         # Optional
 RESEND_API_KEY="..."            # Optional
@@ -103,11 +102,11 @@ Opens at http://localhost:5555 - You'll see:
 
 ### 2. Test Authentication
 
-The backend is ready to authenticate users via Clerk. When you build the frontend, users will:
-1. Sign in with Google via Clerk
-2. Frontend gets JWT token
-3. Frontend sends requests with `Authorization: Bearer {token}`
-4. Backend verifies and syncs user to database
+The backend is ready to authenticate users via NextAuth + Google OAuth. When you run the frontend, users will:
+1. Sign in with Google via NextAuth
+2. Frontend gets session/JWT from NextAuth
+3. Frontend sends requests with session credentials
+4. Backend syncs user to database via `/auth/sync-user` and `/auth/check-email`
 
 ### 3. Explore the Code
 
@@ -117,7 +116,7 @@ Key files to understand:
 - [backend/prisma/schema.prisma](backend/prisma/schema.prisma) - All models
 
 **Authentication:**
-- [backend/src/auth/auth.service.ts](backend/src/auth/auth.service.ts) - Clerk integration
+- [backend/src/auth/auth.service.ts](backend/src/auth/auth.service.ts) - Google OAuth & user sync
 
 **Notifications:**
 - [backend/src/notifications/notifications.service.ts](backend/src/notifications/notifications.service.ts) - Queue manager
@@ -180,7 +179,7 @@ PORT=4001
 ```
 backend/
 ├── src/
-│   ├── auth/              ← Authentication with Clerk
+│   ├── auth/              ← Authentication (NextAuth + Google OAuth)
 │   ├── notifications/     ← Notification system
 │   ├── integrations/      ← Slack & Email
 │   ├── jobs/              ← Scheduled cron jobs
@@ -278,7 +277,7 @@ To see job logs, watch the console when running `npm run start:dev`.
 2. **Common issues:**
    - Database: Check DATABASE_URL format
    - Redis: Ensure it's running (`redis-cli ping`)
-   - Clerk: Verify both keys are set
+   - NextAuth: Verify GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, NEXTAUTH_SECRET are set in frontend
    - Prisma: Run `npm run prisma:generate`
 
 3. **Still stuck?**

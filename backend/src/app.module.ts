@@ -8,6 +8,7 @@ import { ProjectsModule } from './projects/projects.module';
 import { DeliverablesController } from './deliverables/deliverables.controller';
 import { DeliverablesService } from './deliverables/deliverables.service';
 import { DeliverablesModule } from './deliverables/deliverables.module';
+import { TasksModule } from './tasks/tasks.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { DeliverablesModule } from './deliverables/deliverables.module';
     NotificationsModule,
     ProjectsModule,
     DeliverablesModule,
+    TasksModule,
   ],
   controllers: [DeliverablesController],
   providers: [DeliverablesService],
