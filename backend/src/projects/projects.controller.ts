@@ -8,36 +8,28 @@ import {
   Param,
   Query,
   Headers,
-  UnauthorizedException,
   ForbiddenException,
   NotFoundException,
-  BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { AuthService } from '@/auth/auth.service';
-
+import { AuthGuard } from '@/auth/auth.guard';
+import { Roles } from '@/common/roles.decorator';
+import { GetUser } from '@/common/get-user.decorator';
+//TODO Implement GETUSER IN PARAMS?
+//TODO IMPLEMENT AUTHGUARD IN ALL ROUTES WITH PROPER ROLES AND TEST
 @Controller('projects')
+@UseGuards(AuthGuard)
 export class ProjectsController {
   constructor(
     private readonly projectsService: ProjectsService,
     private readonly authService: AuthService,
+    private readonly authGuard: AuthGuard
   ) {}
 
-  private async getUserFromHeader(authorization: string) {
-    if (!authorization) {
-      throw new UnauthorizedException('No authorization header');
-    }
-
-    const user = await this.authService.getUserByEmail(authorization);
-    if (!user) {
-      throw new UnauthorizedException('User not found');
-    }
-
-    return user;
-  }
-
-  // Create project
   @Post()
+  @Roles('ADMIN', 'PM')
   async create(
     @Body()
     body: {
@@ -50,8 +42,8 @@ export class ProjectsController {
       memberIds?: string[];
     },
     @Headers('authorization') authorization: string,
+    @GetUser() user: any
   ) {
-    const user = await this.getUserFromHeader(authorization);
 
     if (user.role !== 'ADMIN' && user.role !== 'PM') {
       throw new ForbiddenException('Only Admins and PMs can create projects');
@@ -62,6 +54,7 @@ export class ProjectsController {
 
   // Get all projects with param based filtering
   @Get()
+  @Roles('ADMIN', 'PM', 'CONSULTANT')
   async findAll(
     @Query()
     query: {
@@ -75,8 +68,8 @@ export class ProjectsController {
       limit?: string;
     },
     @Headers('authorization') authorization: string,
+    @GetUser() user: any
   ) {
-    const user = await this.getUserFromHeader(authorization);
 
     const parsedQuery = {
       status: query.status,
@@ -105,6 +98,7 @@ export class ProjectsController {
 
   // Get single project
   @Get(':id')
+  @Roles('ADMIN', 'PM', 'CONSULTANT')
   async findOne(
     @Param('id') id: string,
     @Query()
@@ -113,8 +107,8 @@ export class ProjectsController {
       includeDeliverables?: string;
     },
     @Headers('authorization') authorization: string,
+    @GetUser() user: any
   ) {
-    const user = await this.getUserFromHeader(authorization);
     const project = await this.projectsService.findOne(id, {
       includeMembers: query.includeMembers === 'true',
       includeDeliverables: query.includeDeliverables === 'true',
@@ -143,6 +137,7 @@ export class ProjectsController {
 
   // Update project
   @Patch(':id')
+  @Roles("ADMIN", "PM")
   async update(
     @Param('id') id: string,
     @Body()
@@ -155,8 +150,8 @@ export class ProjectsController {
       status?: "ACTIVE" | "COMPLETED" | "ON_HOLD" | "CANCELLED";
     },
     @Headers('authorization') authorization: string,
+    @GetUser() user: any
   ) {
-    const user = await this.getUserFromHeader(authorization);
     const project = await this.projectsService.findOne(id);
 
     if (!project) {
@@ -174,11 +169,12 @@ export class ProjectsController {
 
   // Delete project
   @Delete(':id')
+  @Roles("ADMIN")
   async remove(
     @Param('id') id: string,
     @Headers('authorization') authorization: string,
+    @GetUser() user: any
   ) {
-    const user = await this.getUserFromHeader(authorization);
 
     if (user.role !== 'ADMIN') {
       throw new ForbiddenException('Only Admins can delete projects');
@@ -189,12 +185,13 @@ export class ProjectsController {
 
   // Add member to project
   @Post(':id/members')
+  @Roles("ADMIN", "PM")
   async addMember(
     @Param('id') id: string,
     @Body() body: { userId: string },
     @Headers('authorization') authorization: string,
+    @GetUser() user: any
   ) {
-    const user = await this.getUserFromHeader(authorization);
     const project = await this.projectsService.findOne(id);
 
     if (!project) {
@@ -210,12 +207,13 @@ export class ProjectsController {
 
   // Remove member from project
   @Delete(':id/members/:userId')
+  @Roles("ADMIN", "PM")
   async removeMember(
     @Param('id') id: string,
     @Param('userId') userId: string,
     @Headers('authorization') authorization: string,
+    @GetUser() user: any
   ) {
-    const user = await this.getUserFromHeader(authorization);
     const project = await this.projectsService.findOne(id);
 
     if (!project) {

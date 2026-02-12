@@ -8,80 +8,37 @@ import {
   Param,
   Query,
   Headers,
-  UnauthorizedException,
   ForbiddenException,
   NotFoundException,
+  UseGuards,
 } from '@nestjs/common';
 import { DeliverablesService } from './deliverables.service';
-import { AuthService } from '@/auth/auth.service';
 import { ProjectsService } from '@/projects/projects.service';
+import { AuthGuard } from '@/auth/auth.guard';
+import { Roles } from '@/common/roles.decorator';
+import { GetUser } from '@/common/get-user.decorator';
 
 @Controller('deliverables')
+@UseGuards(AuthGuard)
 export class DeliverablesController {
   constructor(
     private readonly deliverablesService: DeliverablesService,
-    private readonly authService: AuthService,
     private readonly projectsService: ProjectsService,
   ) {}
 
-  // Helper method to get user from authorization header
-  private async getUserFromHeader(authorization: string) {
-    if (!authorization) {
-      throw new UnauthorizedException('No authorization header');
-    }
-
-    const user = await this.authService.getUserByEmail(authorization);
-    if (!user) {
-      throw new UnauthorizedException('User not found');
-    }
-
-    return user;
-  }
-
-  // Check if user can access project
-  private async checkProjectAccess(projectId: string, user: any) {
-    const project = await this.projectsService.findOne(projectId);
-
-    if (!project) {
-      throw new NotFoundException('Project not found');
-    }
-
-    // Admin can access all
-    if (user.role === 'ADMIN') return project;
-
-    // PM can access their projects
-    if (user.role === 'PM' && project.pmId === user.id) return project;
-
-    // Check if user is a member
-    const isMember = await this.projectsService.isMember(projectId, user.id);
-    if (!isMember) {
-      throw new ForbiddenException('You do not have access to this project');
-    }
-
-    return project;
-  }
-
   // Create deliverable - PM or ADMIN
   @Post()
+  @Roles('ADMIN', 'PM')
   async create(
-    @Body()
-    body: {
-      projectId: string;
-      title: string;
-      description?: string;
-      type: string;
-      deadline: string;
-    },
-    @Headers('authorization') authorization: string,
+    @Body() body: { projectId: string; title: string; description?: string; type: string; deadline: string; },
+    @GetUser() user: any,
   ) {
-    const user = await this.getUserFromHeader(authorization);
-    const project = await this.checkProjectAccess(body.projectId, user);
+    const project = await this.projectsService.findOne(body.projectId);
+    if (!project) throw new NotFoundException('Project not found');
 
-    // Only PM of project or ADMIN can create deliverables
+    // Authority Check
     if (user.role !== 'ADMIN' && project.pmId !== user.id) {
-      throw new ForbiddenException(
-        'Only the PM or Admin can create deliverables',
-      );
+      throw new ForbiddenException('Only the PM or Admin can create deliverables');
     }
 
     return this.deliverablesService.create(body.projectId, body);
@@ -89,28 +46,20 @@ export class DeliverablesController {
 
   // Get deliverables with param based filtering
   @Get()
+  @Roles('ADMIN', 'PM', 'CONSULTANT')
   async findAll(
-    @Query()
-    query: {
-      projectId?: string;
-      status?: string;
-      type?: string;
-      overdue?: string;
-      upcoming?: string; 
-      userId?: string; 
-      page?: string;
-      limit?: string;
-    },
-    @Headers('authorization') authorization: string,
+    @Query() query: { projectId?: string; status?: string; type?: string; overdue?: string; upcoming?: string; userId?: string; page?: string; limit?: string; },
+    @GetUser() user: any,
   ) {
-    const user = await this.getUserFromHeader(authorization);
-
-    // If projectId is specified, check access
     if (query.projectId) {
-      await this.checkProjectAccess(query.projectId, user);
+      const isMember = await this.projectsService.isMember(query.projectId, user.id);
+      const project = await this.projectsService.findOne(query.projectId);
+      
+      if (user.role !== 'ADMIN' && !isMember && project?.pmId !== user.id) {
+        throw new ForbiddenException('You do not have access to this project');
+      }
     }
 
-    // Parse query params
     const parsedQuery = {
       projectId: query.projectId,
       status: query.status,
@@ -125,79 +74,43 @@ export class DeliverablesController {
     return this.deliverablesService.findAll(user, parsedQuery);
   }
 
-  // Get single deliverable
   @Get(':id')
-  async findOne(
-    @Param('id') id: string,
-    @Headers('authorization') authorization: string,
-  ) {
-    const user = await this.getUserFromHeader(authorization);
+  @Roles('ADMIN', 'PM', 'CONSULTANT')
+  async findOne(@Param('id') id: string, @GetUser() user: any) {
     const deliverable = await this.deliverablesService.findOne(id);
+    if (!deliverable) throw new NotFoundException('Deliverable not found');
 
-    if (!deliverable) {
-      throw new NotFoundException('Deliverable not found');
+    const isMember = await this.projectsService.isMember(deliverable.projectId, user.id);
+    const project = await this.projectsService.findOne(deliverable.projectId);
+
+    if (user.role !== 'ADMIN' && !isMember && project?.pmId !== user.id) {
+      throw new ForbiddenException('Access denied');
     }
-
-    await this.checkProjectAccess(deliverable.projectId, user);
 
     return deliverable;
   }
 
-  // Update deliverable: PM or ADMIN
   @Patch(':id')
-  async update(
-    @Param('id') id: string,
-    @Body()
-    body: {
-      title?: string;
-      description?: string;
-      type?: string;
-      deadline?: string;
-      status?: string;
-    },
-    @Headers('authorization') authorization: string,
-  ) {
-    const user = await this.getUserFromHeader(authorization);
+  @Roles('ADMIN', 'PM')
+  async update(@Param('id') id: string, @Body() body: any, @GetUser() user: any) {
     const deliverable = await this.deliverablesService.findOne(id);
+    if (!deliverable) throw new NotFoundException('Deliverable not found');
 
-    if (!deliverable) {
-      throw new NotFoundException('Deliverable not found');
-    }
-
-    const project = await this.checkProjectAccess(deliverable.projectId, user);
-
-    // Only PM of project or ADMIN can update
-    if (user.role !== 'ADMIN' && project.pmId !== user.id) {
-      throw new ForbiddenException(
-        'Only the PM or Admin can update deliverables',
-      );
+    const project = await this.projectsService.findOne(deliverable.projectId);
+    if (user.role !== 'ADMIN' && project?.pmId !== user.id) {
+      throw new ForbiddenException('Only the PM or Admin can update');
     }
 
     return this.deliverablesService.update(id, body);
   }
 
-  // Delete deliverable: PM or ADMIN
   @Delete(':id')
-  async remove(
-    @Param('id') id: string,
-    @Headers('authorization') authorization: string,
-  ) {
-    const user = await this.getUserFromHeader(authorization);
+  @Roles('ADMIN')
+  async remove(@Param('id') id: string, @GetUser() user: any) {
     const deliverable = await this.deliverablesService.findOne(id);
+    if (!deliverable) throw new NotFoundException('Deliverable not found');
 
-    if (!deliverable) {
-      throw new NotFoundException('Deliverable not found');
-    }
-
-    const project = await this.checkProjectAccess(deliverable.projectId, user);
-
-    // Only PM of project or ADMIN can delete
-    if (user.role !== 'ADMIN' && project.pmId !== user.id) {
-      throw new ForbiddenException(
-        'Only the PM or Admin can delete deliverables',
-      );
-    }
-
+    // Typically only Admins delete records in this flow
     return this.deliverablesService.remove(id);
   }
 }

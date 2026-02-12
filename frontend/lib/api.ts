@@ -27,18 +27,24 @@ export const authAPI = {
 };
 
 export const projectsAPI = {
-  getAll: () => api.get('/projects'),
+  getAll: (params?: any) => api.get('/projects', { params }),
   getById: (id: string) => api.get(`/projects/${id}`),
   create: (data: any) => api.post('/projects', data),
-  update: (id: string, data: any) => api.put(`/projects/${id}`, data),
+  update: (id: string, data: any) => api.patch(`/projects/${id}`, data),
   delete: (id: string) => api.delete(`/projects/${id}`),
+  addMember: (projectId: string, userId: string) => 
+    api.post(`/projects/${projectId}/members`, { userId }),
+  removeMember: (projectId: string, userId: string) => 
+    api.delete(`/projects/${projectId}/members/${userId}`),
 };
 
 export const deliverablesAPI = {
-  getAll: () => api.get('/deliverables'),
-  getByProject: (projectId: string) => api.get(`/projects/${projectId}/deliverables`),
+  getAll: (params?: any) => api.get('/deliverables', { params }),
+  getByProject: (projectId: string) => api.get('/deliverables', { 
+    params: { projectId } 
+  }),
   create: (data: any) => api.post('/deliverables', data),
-  update: (id: string, data: any) => api.put(`/deliverables/${id}`, data),
+  update: (id: string, data: any) => api.patch(`/deliverables/${id}`, data),
   delete: (id: string) => api.delete(`/deliverables/${id}`),
 };
 
