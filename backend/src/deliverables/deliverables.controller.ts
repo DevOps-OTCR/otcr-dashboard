@@ -36,7 +36,6 @@ export class DeliverablesController {
     const project = await this.projectsService.findOne(body.projectId);
     if (!project) throw new NotFoundException('Project not found');
 
-    // Authority Check
     if (user.role !== 'ADMIN' && project.pmId !== user.id) {
       throw new ForbiddenException('Only the PM or Admin can create deliverables');
     }
@@ -110,7 +109,6 @@ export class DeliverablesController {
     const deliverable = await this.deliverablesService.findOne(id);
     if (!deliverable) throw new NotFoundException('Deliverable not found');
 
-    // Typically only Admins delete records in this flow
     return this.deliverablesService.remove(id);
   }
 }

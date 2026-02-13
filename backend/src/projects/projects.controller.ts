@@ -82,17 +82,14 @@ export class ProjectsController {
       limit: query.limit ? parseInt(query.limit) : 10,
     };
 
-    // Consultants only see their assigned projects
     if (user.role === 'CONSULTANT') {
       return this.projectsService.findByMember(user.id, parsedQuery);
     }
 
-    // PMs see their projects by default unless pmId is specified
     if (user.role === 'PM' && !query.pmId) {
       return this.projectsService.findAll({ ...parsedQuery, pmId: user.id });
     }
 
-    // Admins see everything
     return this.projectsService.findAll(parsedQuery);
   }
 
@@ -118,7 +115,6 @@ export class ProjectsController {
       throw new NotFoundException('Project not found');
     }
 
-    // Check access permissions
     if (user.role === 'ADMIN') {
       return project;
     }
