@@ -1,6 +1,6 @@
 'use client';
 
-import { useSession, signOut } from 'next-auth/react';
+import { useAuth } from '@/components/AuthContext';
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -63,13 +63,15 @@ import {
 } from '@/data/mockData';
 import type { ActionItem, Document, ExtensionRequest, WorkstreamDeadline } from '@/types';
 import { cn, formatDate, getDaysUntil } from '@/lib/utils';
+import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
+import { useRouter } from 'next/navigation';
 import { authAPI } from '@/lib/api';
 
 const COLORS = ['#7c3aed', '#2563eb', '#f97316', '#10b981', '#f43f5e', '#a855f7'];
 
 function getUserRole(email: string): 'PM' | 'CONSULTANT' | 'ADMIN' {
-  const pmEmails = ['lsharma2@illinois.edu', 'crawat2@illinois.edu'];
-  const adminEmails = ['admin@otcr.com'];
+  const pmEmails = ['lsharma2@illinois.edu', 'crawat2@illinois.edu', 'mpate449@illinois.edu'];
+  const adminEmails = ['admin@otcr.com', 'mpate449@illinois.edu'];
 
   if (adminEmails.includes(email)) return 'ADMIN';
   if (pmEmails.includes(email)) return 'PM';
@@ -109,7 +111,8 @@ const statusColorMap: Record<string, string> = {
 };
 
 export default function DashboardPage() {
-  const { data: session, status } = useSession();
+  const router = useRouter();
+  const session = useAuth();
   const [role, setRole] = useState<'PM' | 'CONSULTANT' | 'ADMIN'>('CONSULTANT');
 
   const [actionItems, setActionItems] = useState<ActionItem[]>(mockActionItems);
@@ -172,7 +175,7 @@ export default function DashboardPage() {
   useEffect(() => {
     // Email check is already handled in sign-in page
     // Just set role and redirect based on role
-    if (session?.user?.email) {
+    if (session.isLoggedIn && session?.user?.email) {
       const email = session.user.email;
       const userRole = getUserRole(email);
       setRole(userRole);
@@ -186,6 +189,17 @@ export default function DashboardPage() {
       // ADMIN stays on main dashboard
     }
   }, [session]);
+
+  useEffect(() => {
+    // If loading is done and user is NOT logged in, kick them to sign-in
+    if (!session.loading && !session.isLoggedIn) {
+      router.replace('/sign-in'); // replace prevents back-button loops
+    }
+  }, [session, router]);
+
+  if (session.loading || !session.isLoggedIn) {
+    return <FullScreenLoader />;
+  }
 
   useEffect(() => {
     setChartsReady(true);
@@ -303,6 +317,14 @@ export default function DashboardPage() {
     { label: 'Documents', icon: FileText, ref: docsRef },
     { label: 'Extensions', icon: Calendar, ref: extensionsRef },
   ];
+
+  if (session.loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--background)]">
+        <Activity className="w-10 h-10 text-[var(--primary)] animate-pulse" />
+      </div>
+    );
+  }
 
   const handleMarkComplete = (id: string) => {
     setActionItems((prev) => prev.map((item) => (item.id === id ? { ...item, completed: true, status: 'completed' } : item)));
@@ -514,18 +536,18 @@ export default function DashboardPage() {
                   <Bell className="w-5 h-5" />
                   <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-rose-500 animate-bounce" />
                 </button>
-                <button className="p-2 hover:bg-[var(--accent)] rounded-lg transition-colors">
+                <button onClick={() => console.log(session.getToken())} className="p-2 hover:bg-[var(--accent)] rounded-lg transition-colors">
                   <Settings className="w-5 h-5" />
                 </button>
               </div>
               <button
-                onClick={() => signOut({ callbackUrl: '/sign-in' })}
+                onClick={() => console.log(session.getToken())}
                 className="p-2 hover:bg-[var(--accent)] rounded-lg transition-colors"
               >
                 <Settings className="w-5 h-5" />
               </button>
               <button
-                onClick={() => signOut({ callbackUrl: '/sign-in' })}
+                onClick={() => session.logout()}
                 className="text-sm text-gray-600 hover:text-gray-900 font-medium transition-colors px-3 py-2 rounded-md hover:bg-gray-100"
               >
                 Sign Out

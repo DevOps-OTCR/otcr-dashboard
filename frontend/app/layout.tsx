@@ -1,24 +1,34 @@
-import type { Metadata } from "next";
-import type { ReactNode } from "react";
-import { SessionProvider } from '@/components/SessionProvider';
+'use client';
+
 import "./globals.css";
+import { PublicClientApplication } from "@azure/msal-browser";
+import { MsalProvider } from "@azure/msal-react";
+import { AuthProvider } from "../components/AuthContext";
+import { ReactNode, useMemo } from "react";
 
-export const metadata: Metadata = {
-  title: "OTCR Dashboard",
-  description: "Project Management & Team Collaboration Platform",
-};
+export default function MsalWrapper({ children }: { children: ReactNode }) {
+  // We initialize the PCA inside useMemo so it only creates one instance 
+  // and only runs in the browser.
+  const pca = useMemo(() => new PublicClientApplication({
+    auth: {
+      clientId: process.env.NEXT_PUBLIC_MSAL_CLIENT_ID || "294bcae4-d5c3-44e2-9e06-06cc230a9bfd",
+      authority: process.env.NEXT_PUBLIC_MSAL_AUTHORITY || "https://login.microsoftonline.com/44467e6f-462c-4ea2-823f-7800de5434e3",
+      redirectUri: process.env.NEXT_PUBLIC_MSAL_REDIRECT_URI || "http://localhost:3000/auth/callback",
+      postLogoutRedirectUri: "http://localhost:3000/sign-up",
+    },
+    cache: {
+      cacheLocation: "sessionStorage",
+    },
+  }), []);
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: ReactNode;
-}>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className="antialiased">
-        <SessionProvider>
-          {children}
-        </SessionProvider>
+    <html>
+      <body>
+        <MsalProvider instance={pca}>
+          <AuthProvider>
+            {children}
+          </AuthProvider>
+        </MsalProvider>
       </body>
     </html>
   );

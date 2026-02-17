@@ -1,6 +1,6 @@
 'use client';
 
-import { useSession, signOut } from 'next-auth/react';
+import { useAuth } from '@/components/AuthContext';
 import { useState, useEffect, useMemo, useRef, type RefObject } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -19,11 +19,14 @@ import { Modal } from '@/components/ui/Modal';
 import { cn, formatDate, getDaysUntil } from '@/lib/utils';
 import { mockActionItems, mockWorkstreamDeadlines, mockExtensionRequests } from '@/data/mockData';
 import type { ActionItem, ExtensionRequest, WorkstreamDeadline } from '@/types';
+import { useRouter } from 'next/navigation';
+import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 
 const CHART_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6'];
 
 export default function PMDashboard() {
-  const { data: session } = useSession();
+  const router = useRouter();
+  const session = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [extensionRequests, setExtensionRequests] = useState<ExtensionRequest[]>(mockExtensionRequests);
   const [actionItems, setActionItems] = useState<ActionItem[]>(mockActionItems);
@@ -39,6 +42,16 @@ export default function PMDashboard() {
   const reportsRef = useRef<HTMLDivElement>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    // If loading is done and user is NOT logged in, kick them to sign-in
+    if (!session.loading && !session.isLoggedIn) {
+      router.replace('/sign-in'); // replace prevents back-button loops
+    }
+  }, [session, router]);
+
+  if (session.loading || !session.isLoggedIn) {
+    return <FullScreenLoader />;
+  }
 
   const pmStats = useMemo(() => {
     const totalTasks = actionItems.length;
@@ -78,6 +91,14 @@ export default function PMDashboard() {
     completion: Math.round((member.tasksCompleted / member.tasksAssigned) * 100),
     efficiency: Math.random() * 30 + 70,
   }));
+
+  if (session.loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--background)]">
+        <Activity className="w-10 h-10 text-[var(--primary)] animate-pulse" />
+      </div>
+    );
+  }
 
   const scrollToRef = (ref: RefObject<HTMLElement | null>) => {
     if (ref.current) {
@@ -158,7 +179,7 @@ export default function PMDashboard() {
           <div className="p-4 border-t border-[var(--border)]">
             <div className="flex items-center gap-3 p-3 rounded-xl bg-[var(--secondary)]">
               <button
-                onClick={() => signOut({ callbackUrl: '/sign-in' })}
+                onClick={() => session.logout()}
                 className="p-2 rounded-full bg-[var(--accent)] hover:bg-[var(--primary)]/20 transition-colors"
               >
                 <Settings className="w-5 h-5" />

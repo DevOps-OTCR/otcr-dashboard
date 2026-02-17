@@ -1,6 +1,6 @@
 'use client';
 
-import { useSession, signOut } from 'next-auth/react';
+import { useAuth } from '@/components/AuthContext';
 import { useState, useEffect, useMemo, useRef, type RefObject } from 'react';
 import { motion } from 'framer-motion';
 import Image from 'next/image';
@@ -57,9 +57,12 @@ import {
   mockDashboardStats,
 } from '@/data/mockData';
 import type { ActionItem, ExtensionRequest, Document as DocType } from '@/types';
+import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
+import { useRouter } from 'next/navigation';
 
 export default function ConsultantDashboard() {
-  const { data: session } = useSession();
+  const router = useRouter();
+  const session = useAuth();
   const [extensionModalOpen, setExtensionModalOpen] = useState(false);
   const [actionItems, setActionItems] = useState(mockActionItems);
   const [extensionRequests, setExtensionRequests] = useState(mockExtensionRequests);
@@ -73,6 +76,17 @@ export default function ConsultantDashboard() {
   const tasksRef = useRef<HTMLDivElement>(null);
   const docsRef = useRef<HTMLDivElement>(null);
   const requestsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // If loading is done and user is NOT logged in, kick them to sign-in
+    if (!session.loading && !session.isLoggedIn) {
+      router.replace('/sign-in'); // replace prevents back-button loops
+    }
+  }, [session, router]);
+
+  if (session.loading || !session.isLoggedIn) {
+    return <FullScreenLoader />;
+  }
 
 
   const toggleActionItem = (id: string) => {
@@ -213,7 +227,7 @@ export default function ConsultantDashboard() {
                 )}
               </motion.button>
               <button
-                onClick={() => signOut({ callbackUrl: '/sign-in' })}
+                onClick={() => session.logout()}
                 className="p-2 rounded-full bg-[var(--accent)] hover:bg-[var(--primary)]/20 transition-colors"
               >
                 <Settings className="w-5 h-5" />
