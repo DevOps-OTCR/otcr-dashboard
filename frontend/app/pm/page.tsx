@@ -1,8 +1,9 @@
 'use client';
 
-import { useAuth } from '@/components/AuthContext';
-import { useState, useEffect, useMemo, useRef, type RefObject } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useSession } from 'next-auth/react';
+import { useState, useRef, useEffect, type RefObject } from 'react';
+import { setLastDashboard } from '@/lib/dashboard-context';
+import { motion } from 'framer-motion';
 import {
   Bell,
   FileText,
@@ -22,6 +23,9 @@ import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/utils';
 import { mockWorkstreamDeadlines } from '@/data/mockData';
 import type { WorkstreamDeadline } from '@/types';
+import { useAuth } from '@/components/AuthContext';
+import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
+import { useRouter } from 'next/navigation';
 
 type NotificationType = 'upload' | 'comment' | 'revision_request' | 'doc_updated';
 interface Notification {
@@ -63,6 +67,7 @@ function formatNotificationTime(at: Date, now: number): string {
 
 export default function PMDashboard() {
   const session = useAuth();
+  const router = useRouter();
   const [workstreams] = useState<WorkstreamDeadline[]>(mockWorkstreamDeadlines);
   const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
   const [now, setNow] = useState<number | null>(null);
@@ -74,6 +79,8 @@ export default function PMDashboard() {
   const callNotesRef = useRef<HTMLDivElement>(null);
   const engagementRef = useRef<HTMLDivElement>(null);
 
+  const unreadCount = notifications.filter((n) => !n.read).length;
+
   useEffect(() => {
     // If loading is done and user is NOT logged in, kick them to sign-in
     if (!session.loading && !session.isLoggedIn) {
@@ -84,8 +91,6 @@ export default function PMDashboard() {
   if (session.loading || !session.isLoggedIn) {
     return <FullScreenLoader />;
   }
-
-  const unreadCount = notifications.filter((n) => !n.read).length;
 
   const scrollToRef = (ref: RefObject<HTMLElement | null>) => {
     if (ref.current) ref.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -240,22 +245,17 @@ export default function PMDashboard() {
                               {ws.status.replace('_', ' ')}
                             </Badge>
                           </div>
-                          <p className="text-sm mb-4 bg-slate-50 p-3 rounded-lg">{request.reason}</p>
-                          <div className="flex items-center gap-2 text-xs mb-4 bg-slate-100 p-2 rounded-lg">
-                            <Calendar className="w-4 h-4" />
-                            <span className="font-medium">{formatDate(request.originalDeadline)}</span>
-                            <span>→</span>
-                            <span className="font-bold text-yellow-600">{formatDate(request.requestedDeadline)}</span>
-                          </div>
-                          <div className="flex gap-2">
-                            <Button size="sm" onClick={() => handleExtensionReview(request.id, 'approved')}
-                              className="flex-1 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600">
-                              <CheckCircle2 className="w-4 h-4 mr-1" />Approve
-                            </Button>
-                            <Button size="sm" variant="outline" onClick={() => handleExtensionReview(request.id, 'denied')}
-                              className="flex-1 border-red-300 text-red-600 hover:bg-red-50">
-                              <XCircle className="w-4 h-4 mr-1" />Deny
-                            </Button>
+                          <div className="mt-3 space-y-1">
+                            <div className="flex justify-between text-xs text-[var(--foreground)]/60">
+                              <span>Progress</span>
+                              <span>{ws.progress ?? 0}%</span>
+                            </div>
+                            <div className="h-2 bg-[var(--accent)] rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-[var(--primary)]"
+                                style={{ width: `${ws.progress ?? 0}%` }}
+                              />
+                            </div>
                           </div>
                           <p className="text-xs text-[var(--foreground)]/60 mt-2">{ws.daysRemaining}d remaining</p>
                         </div>

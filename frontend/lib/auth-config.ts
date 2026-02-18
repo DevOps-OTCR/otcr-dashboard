@@ -9,7 +9,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     // If you ever use auth() in middleware, this just returns true if 
     // the user exists, otherwise redirects to sign-in.
-    authorized({ auth, request: { nextUrl } }) {
+    authorized({ auth, request: { nextUrl } }: any) {
       const isLoggedIn = !!auth?.user;
       return isLoggedIn;
     },

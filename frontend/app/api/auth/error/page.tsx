@@ -1,10 +1,12 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
+import { useAuth } from '@/components/AuthContext';
 import { signIn } from 'next-auth/react';
 import Link from 'next/link';
 
 export default function AuthErrorPage() {
+  const session = useAuth();
   const searchParams = useSearchParams();
   const error = searchParams.get('error');
   
@@ -47,7 +49,7 @@ export default function AuthErrorPage() {
           </div>
           <div className="space-y-3">
             <button
-              onClick={() => signIn('google', { callbackUrl: '/dashboard' })}
+              onClick={() => session.login()}
               className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
             >
               Try Again

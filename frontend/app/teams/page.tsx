@@ -1,6 +1,5 @@
 'use client';
 
-import { useSession } from 'next-auth/react';
 import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Users, UserPlus, UserMinus, Trash2, CheckCircle, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -15,6 +14,8 @@ import { AdminRoleSwitcher } from '@/components/AdminRoleSwitcher';
 import { getLastDashboard } from '@/lib/dashboard-context';
 import { useRouter } from 'next/navigation';
 import { projectsAPI, authAPI } from '@/lib/api';
+import { useAuth } from '@/components/AuthContext';
+import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 
 type ProjectMember = { user: { id: string; email: string; firstName?: string; lastName?: string; role?: string } };
 type ProjectFromApi = {
@@ -30,7 +31,7 @@ function getMemberEmails(project: ProjectFromApi): string[] {
 }
 
 export default function TeamsPage() {
-  const { data: session, status } = useSession();
+  const session = useAuth();
   const router = useRouter();
   const [role, setRole] = useState<AppRole>('CONSULTANT');
   const [hasMounted, setHasMounted] = useState(false);
@@ -56,12 +57,12 @@ export default function TeamsPage() {
   }, []);
 
   useEffect(() => {
-    if (!session?.user?.email) return;
+    if (!session.isLoggedIn || !session.user?.email) return;
     fetchProjects();
-  }, [session?.user?.email, fetchProjects]);
+  }, [session.isLoggedIn, session.user?.email, fetchProjects]);
 
   useEffect(() => {
-    if (!session?.user?.email) return;
+    if (!session.isLoggedIn || !session.user?.email) return;
     authAPI
       .getAllowedEmails()
       .then((res) => {
@@ -72,17 +73,39 @@ export default function TeamsPage() {
         setAllowedEmails(emails);
       })
       .catch(() => setAllowedEmails([]));
-  }, [session?.user?.email]);
+  }, [session.isLoggedIn, session.user?.email]);
 
   useEffect(() => {
-    if (session) setRole(getEffectiveRole(session));
+    const syncRole = async () => {
+      if (session.isLoggedIn) {
+        try {
+          const token = await session.getToken();
+          const email = session.user?.email || '';
+          const userRole = await getEffectiveRole(token, email);
+          setRole(userRole);
+        } catch {
+          setRole('CONSULTANT');
+        }
+      }
+    };
+    syncRole();
   }, [session]);
 
-  const resolvedRole = hasMounted && session ? getEffectiveRole(session) : role;
+  useEffect(() => {
+    if (!session.loading && !session.isLoggedIn) {
+      router.replace('/sign-in');
+    }
+  }, [session, router]);
+
+  if (session.loading || !session.isLoggedIn) {
+    return <FullScreenLoader />;
+  }
+
+  const resolvedRole = hasMounted && session.isLoggedIn ? role : role;
   const canManageTeams = resolvedRole === 'PM' || resolvedRole === 'LC' || resolvedRole === 'ADMIN';
   const isPartner = resolvedRole === 'PARTNER';
   const isConsultant = resolvedRole === 'CONSULTANT';
-  const currentUserEmail = session?.user?.email ?? null;
+  const currentUserEmail = session.user?.email ?? null;
 
   const myTeam =
     currentUserEmail && isConsultant
@@ -170,25 +193,8 @@ export default function TeamsPage() {
       .catch(() => setActionFeedback({ message: 'Failed to delete team', tone: 'warning' }));
   };
 
-  if (status === 'loading') {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--background)]">
-        <div className="animate-pulse text-[var(--foreground)]/70">Loading...</div>
-      </div>
-    );
-  }
-
-  if (status === 'unauthenticated') {
-    router.replace('/sign-in');
-    return null;
-  }
-
   if (!hasMounted) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--background)]">
-        <div className="animate-pulse text-[var(--foreground)]/70">Loading...</div>
-      </div>
-    );
+    return <FullScreenLoader />;
   }
 
   const lastDashboard = getLastDashboard();

@@ -23,6 +23,7 @@ export const setAuthToken = (token: string | null) => {
 export const authAPI = {
   getCurrentUser: () => api.get('/auth/me'),
   health: () => api.get('/auth/health'),
+  getRole: () => api.get('/auth/roles'),
   checkEmail: (email: string) => api.get(`/auth/check-email?email=${encodeURIComponent(email)}`),
   getAllowedEmails: () => api.get('/auth/allowed-emails'),
 };

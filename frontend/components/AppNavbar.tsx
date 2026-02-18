@@ -1,6 +1,6 @@
 'use client';
 
-import { useSession, signOut } from 'next-auth/react';
+import { useAuth } from './AuthContext';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
@@ -47,6 +47,7 @@ interface AppNavbarProps {
 const ROLES: AppRole[] = ['CONSULTANT', 'LC', 'PM', 'ADMIN'];
 
 export function AppNavbar({ role, currentPath = '/dashboard', onNavClick, onRoleChange }: AppNavbarProps) {
+  const session = useAuth();
   const handleRoleSwitch = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value as AppRole;
     if (value) {
@@ -97,7 +98,7 @@ export function AppNavbar({ role, currentPath = '/dashboard', onNavClick, onRole
               <Settings className="w-5 h-5" />
             </button>
             <button
-              onClick={() => signOut({ callbackUrl: '/sign-in' })}
+              onClick={() => session.logout()}
               className="text-sm font-medium px-3 py-2 rounded-lg hover:bg-[var(--accent)] transition-colors"
             >
               Sign Out

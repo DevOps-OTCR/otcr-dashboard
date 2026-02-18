@@ -1,5 +1,6 @@
 'use client';
 
+import { useAuth } from '@/components/AuthContext';
 import { useState, useRef, useEffect, type RefObject } from 'react';
 import { setLastDashboard } from '@/lib/dashboard-context';
 import {
@@ -21,6 +22,8 @@ import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/utils';
 import { mockWorkstreamDeadlines } from '@/data/mockData';
 import type { WorkstreamDeadline } from '@/types';
+import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
+import { useRouter } from 'next/navigation';
 
 type NotificationType = 'upload' | 'comment' | 'doc_updated';
 interface Notification {
@@ -60,6 +63,8 @@ function formatNotificationTime(at: Date, now: number): string {
 }
 
 export default function PartnerDashboard() {
+  const session = useAuth();
+  const router = useRouter();
   const [workstreams] = useState<WorkstreamDeadline[]>(mockWorkstreamDeadlines);
   const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
   const [now, setNow] = useState<number | null>(null);
@@ -81,6 +86,18 @@ export default function PartnerDashboard() {
     finalslides: finalSlidesRef,
     callnotes: callNotesRef,
   };
+
+  useEffect(() => {
+    // If loading is done and user is NOT logged in, kick them to sign-in
+    if (!session.loading && !session.isLoggedIn) {
+      router.replace('/sign-in'); // replace prevents back-button loops
+    }
+  }, [session, router]);
+
+  if (session.loading || !session.isLoggedIn) {
+    return <FullScreenLoader />;
+  }
+
   const handleNavClick = (key: string) => {
     const ref = navScrollMap[key];
     if (ref?.current) ref.current.scrollIntoView({ behavior: 'smooth', block: 'start' });

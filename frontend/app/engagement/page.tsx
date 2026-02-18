@@ -26,13 +26,17 @@ import { notifyTaskAssigned } from '@/lib/notifications-storage';
 import { getEffectiveRole } from '@/lib/permissions';
 import type { WorkstreamDeadline } from '@/types';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/components/AuthContext';
+import { AppRole } from '@/lib/permissions';
+import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
+
 
 function formatDate(d: Date): string {
   return new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 export default function EngagementPage() {
-  const { data: session, status } = useSession();
+  const session = useAuth();
   const router = useRouter();
   const [workstreams] = useState<WorkstreamDeadline[]>(mockWorkstreamDeadlines);
   const [tasks, setTasks] = useState<TaskFromApi[]>([]);
@@ -49,9 +53,32 @@ export default function EngagementPage() {
     assigneeEmail: '',
     dueDate: '',
   });
-
-  const resolvedRole = session ? getEffectiveRole(session) : 'CONSULTANT';
+  const [resolvedRole, setResolvedRole] = useState<AppRole>('CONSULTANT');
   const canEdit = resolvedRole === 'PM' || resolvedRole === 'ADMIN';
+
+  useEffect(() => {
+    if (!session.loading && !session.isLoggedIn) {
+      router.replace('/sign-in'); 
+    }
+  }, [session, router]);
+
+  if (session.loading || !session.isLoggedIn) {
+    return <FullScreenLoader />;
+  }
+
+  useEffect(() => {
+    const fetchRole = async () => {
+      if (session) {
+        const token = await session.getToken(); 
+        const email = session.user?.email || '';
+        
+        const role = await getEffectiveRole(token, email);
+        setResolvedRole(role);
+      }
+    };
+
+    fetchRole();
+  }, [session]);
 
   useEffect(() => {
     setHasMounted(true);
@@ -165,7 +192,7 @@ export default function EngagementPage() {
   const getAssigneeLabel = (task: TaskFromApi) =>
     task.assigneeType === 'ALL' || task.assigneeType === 'ALL_TEAM' ? 'All team members' : (task.assigneeEmail ?? '—');
 
-  if (status === 'loading' || !hasMounted) {
+  if (session.loading || !hasMounted) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--background)]">
         <div className="animate-pulse text-[var(--foreground)]/70">Loading...</div>
@@ -173,7 +200,7 @@ export default function EngagementPage() {
     );
   }
 
-  if (status === 'unauthenticated') {
+  if (!session.isLoggedIn) {
     router.replace('/sign-in');
     return null;
   }

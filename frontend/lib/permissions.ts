@@ -3,6 +3,8 @@
  * R = Read | W = Write | C = Comment | A = Approve | — = No access
  */
 
+import { api } from "./api";
+
 export type AppRole = 'CONSULTANT' | 'LC' | 'PM' | 'PARTNER' | 'ADMIN';
 
 const ROLES: AppRole[] = ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'ADMIN'];
@@ -54,14 +56,29 @@ export function getUserRole(email: string | null | undefined): AppRole {
  * Prefer role from session (from backend DB when set at login). Uses dev override first, then
  * session.user.role from API, then falls back to getActualUserRole(email).
  */
-export function getEffectiveRole(
-  session: { user?: { email?: string | null; role?: string } } | null
-): AppRole {
+export async function getEffectiveRole(token: string | null, email: string | undefined): Promise<AppRole> {
   const override = getDevRoleOverride();
   if (override) return override;
-  const role = session?.user?.role;
-  if (role && isValidAppRole(role)) return role;
-  return getActualUserRole(session?.user?.email);
+  if(!token || !email) {
+    throw new Error("Did not pass proper permission to getEffectiveRole");
+  }
+  try {
+    // 1. Wait for the response
+    const response = await api.get("/auth/role");
+
+    // 2. Extract the string from the response data
+    const roleString = response.data.role;
+
+    // 3. Validate it is a string and a valid AppRole
+    if (typeof roleString === 'string' && isValidAppRole(roleString)) {
+      return roleString;
+    }
+  } catch (error) {
+    console.error("Failed to fetch role from API, falling back to email check", error);
+  }
+
+  // 4. Fallback if API fails or role is invalid
+  return getActualUserRole(email);
 }
 
 /** Default dashboard path for a role (for redirects and admin switcher). */

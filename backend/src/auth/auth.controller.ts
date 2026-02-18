@@ -1,7 +1,10 @@
-import { Controller, Get, Post, Headers, Query, Body, UnauthorizedException } from '@nestjs/common';
+import { Controller, Get, Post, Headers, Query, Body, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
+import { AuthGuard } from './auth.guard';
+import { GetUser } from '@/common/get-user.decorator';
 
 @Controller('auth')
+@UseGuards(AuthGuard)
 export class AuthController {
   constructor(private authService: AuthService) {}
 
@@ -10,14 +13,6 @@ export class AuthController {
     if (!authorization) {
       throw new UnauthorizedException('No authorization header');
     }
-
-    // For NextAuth, we'll verify the session token
-    // The frontend will send the session token
-    const token = authorization.replace('Bearer ', '');
-
-    // TODO: Verify NextAuth session token
-    // For now, we'll use a simple approach - the frontend sends user email
-    // In production, verify the NextAuth JWT token properly
     
     return {
       success: true,
@@ -34,12 +29,9 @@ export class AuthController {
   }
 
   @Get('role')
-  async getRole(@Query('email') email: string) {
-    if (!email) {
-      return { success: false, role: null, message: 'Email is required' };
-    }
+  async getRole(@GetUser() user: any) {
     try {
-      const role = await this.authService.getRoleByEmail(email);
+      const role = await this.authService.getRoleByEmail(user.email);
       return { success: true, role: role ?? 'CONSULTANT' };
     } catch (error) {
       console.error('Error fetching role:', error);
@@ -49,7 +41,6 @@ export class AuthController {
 
   @Get('check-email')
   async checkEmail(@Query('email') email: string) {
-    // This endpoint can be called without auth for sign-in checks
     if (!email) {
       return {
         success: false,
@@ -84,11 +75,6 @@ export class AuthController {
     if (!authorization) {
       throw new UnauthorizedException('No authorization header');
     }
-
-    // TODO: Verify NextAuth session token properly
-    // For now, skip token verification for development
-    // const token = authorization.replace('Bearer ', '');
-    // await this.authService.verifyToken(token);
 
     const emails = await this.authService.getAllowedEmails();
     return {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useAuth } from '@/components/AuthContext';
+import { useSession, signOut } from 'next-auth/react';
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -63,10 +63,11 @@ import {
 } from '@/data/mockData';
 import type { ActionItem, Document, ExtensionRequest, WorkstreamDeadline } from '@/types';
 import { cn, formatDate, getDaysUntil } from '@/lib/utils';
-import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
-import { useRouter } from 'next/navigation';
 import { authAPI, projectsAPI } from '@/lib/api';
 import { getEffectiveRole, getDefaultDashboardPath, type AppRole } from '@/lib/permissions';
+import { useAuth } from '@/components/AuthContext';
+import { useRouter } from 'next/navigation';
+import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 
 const COLORS = ['#7c3aed', '#2563eb', '#f97316', '#10b981', '#f43f5e', '#a855f7'];
 
@@ -103,10 +104,9 @@ const statusColorMap: Record<string, string> = {
 };
 
 export default function DashboardPage() {
-  const router = useRouter();
   const session = useAuth();
+  const router = useRouter();
   const [role, setRole] = useState<AppRole>('CONSULTANT');
-
   const [actionItems, setActionItems] = useState<ActionItem[]>(mockActionItems);
   const [workstreams, setWorkstreams] = useState<WorkstreamDeadline[]>(mockWorkstreamDeadlines);
   const [extensionRequests, setExtensionRequests] = useState<ExtensionRequest[]>(mockExtensionRequests);
@@ -166,26 +166,36 @@ export default function DashboardPage() {
   const extensionsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (session.isLoggedIn && session) {
-      const userRole = getEffectiveRole(session);
-      setRole(userRole);
-      // Redirect to role-specific dashboard; only ADMIN stays on /dashboard
-      if (userRole !== 'ADMIN') {
-        window.location.href = getDefaultDashboardPath(userRole);
-      }
-    }
-  }, [session]);
-
-  useEffect(() => {
-    // If loading is done and user is NOT logged in, kick them to sign-in
     if (!session.loading && !session.isLoggedIn) {
-      router.replace('/sign-in'); // replace prevents back-button loops
+      router.replace('/sign-in'); 
     }
   }, [session, router]);
 
   if (session.loading || !session.isLoggedIn) {
     return <FullScreenLoader />;
   }
+
+  useEffect(() => {
+    const syncDashboardWithRole = async () => {
+      if (session.isLoggedIn) {
+        try {
+          const token = await session.getToken();
+          const email = session.user?.email || '';
+          
+          const userRole = await getEffectiveRole(token, email);
+          setRole(userRole);
+          if (userRole !== 'ADMIN') {
+            router.replace(getDefaultDashboardPath(userRole));
+          }
+        } catch (error) {
+          console.error("Auth sync failed:", error);
+          setRole('CONSULTANT'); 
+        }
+      }
+    };
+
+    syncDashboardWithRole();
+  }, [session, router]);
 
   useEffect(() => {
     if (!session?.user?.email) return;
@@ -312,14 +322,6 @@ export default function DashboardPage() {
     { label: 'Documents', icon: FileText, ref: docsRef },
     { label: 'Extensions', icon: Calendar, ref: extensionsRef },
   ];
-
-  if (session.loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--background)]">
-        <Activity className="w-10 h-10 text-[var(--primary)] animate-pulse" />
-      </div>
-    );
-  }
 
   const handleMarkComplete = (id: string) => {
     setActionItems((prev) => prev.map((item) => (item.id === id ? { ...item, completed: true, status: 'completed' } : item)));
@@ -531,12 +533,12 @@ export default function DashboardPage() {
                   <Bell className="w-5 h-5" />
                   <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-rose-500 animate-bounce" />
                 </button>
-                <button onClick={() => console.log(session.getToken())} className="p-2 hover:bg-[var(--accent)] rounded-lg transition-colors">
+                <button className="p-2 hover:bg-[var(--accent)] rounded-lg transition-colors">
                   <Settings className="w-5 h-5" />
                 </button>
               </div>
               <button
-                onClick={() => console.log(session.getToken())}
+                onClick={() => session.logout()}
                 className="p-2 hover:bg-[var(--accent)] rounded-lg transition-colors"
               >
                 <Settings className="w-5 h-5" />

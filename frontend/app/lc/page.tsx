@@ -22,6 +22,9 @@ import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/utils';
 import { mockWorkstreamDeadlines } from '@/data/mockData';
 import type { WorkstreamDeadline } from '@/types';
+import { useAuth } from '@/components/AuthContext';
+import { useRouter } from 'next/navigation';
+import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 
 type NotificationType = 'upload' | 'comment' | 'revision_request' | 'doc_updated';
 interface Notification {
@@ -62,6 +65,8 @@ function formatNotificationTime(at: Date, now: number): string {
 }
 
 export default function LCDashboard() {
+  const router = useRouter();
+  const session = useAuth();
   const [workstreams] = useState<WorkstreamDeadline[]>(mockWorkstreamDeadlines);
   const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
   const [now, setNow] = useState<number | null>(null);
@@ -74,6 +79,17 @@ export default function LCDashboard() {
   const engagementRef = useRef<HTMLDivElement>(null);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
+
+  useEffect(() => {
+    // If loading is done and user is NOT logged in, kick them to sign-in
+    if (!session.loading && !session.isLoggedIn) {
+      router.replace('/sign-in'); // replace prevents back-button loops
+    }
+  }, [session, router]);
+
+  if (session.loading || !session.isLoggedIn) {
+    return <FullScreenLoader />;
+  }
 
   const navScrollMap: Record<string, RefObject<HTMLDivElement | null>> = {
     overview: dashboardRef,

@@ -1,6 +1,6 @@
 'use client';
 
-import { useSession } from 'next-auth/react';
+import { useAuth } from './AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
 import { getActualUserRole, getDevRoleOverride, setDevRoleOverride, getDefaultDashboardPath, ROLE_FULL_LABELS, isValidAppRole, type AppRole } from '@/lib/permissions';
 import { ChevronDown } from 'lucide-react';
@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 
 /** Inline dropdown for admin to switch "View as" role. Renders nothing if user is not admin. Place next to role name in blue. */
 export function AdminRoleSwitcher({ className }: { className?: string }) {
-  const { data: session, status } = useSession();
+  const session = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -23,7 +23,7 @@ export function AdminRoleSwitcher({ className }: { className?: string }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  if (status !== 'authenticated' || !session?.user?.email) return null;
+  if (!session.isLoggedIn) return null;
   const sessionUser = session.user as { email?: string | null; role?: string };
   // Prefer admin based on email whitelist for showing the switcher; otherwise fall back to DB role
   const emailRole = getActualUserRole(sessionUser.email);

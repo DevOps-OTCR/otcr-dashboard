@@ -1,6 +1,6 @@
 'use client';
 
-import { signOut } from 'next-auth/react';
+import { useAuth } from './AuthContext';
 import Image from 'next/image';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
@@ -40,6 +40,7 @@ interface LCPartnerNavbarProps {
 }
 
 export function LCPartnerNavbar({ role, currentPath, unreadNotificationCount = 0, onNavClick }: LCPartnerNavbarProps) {
+  const { logout: signOut} = useAuth();
   const basePath = role === 'LC' ? '/lc' : '/partner';
   const isOnDashboard = currentPath === basePath;
 
@@ -78,7 +79,7 @@ export function LCPartnerNavbar({ role, currentPath, unreadNotificationCount = 0
             </Link>
             <button
               type="button"
-              onClick={() => signOut({ callbackUrl: '/sign-in' })}
+              onClick={() => signOut()}
               className="p-2 rounded-full bg-[var(--accent)] hover:bg-[var(--primary)]/20 transition-colors"
               aria-label="Settings"
             >

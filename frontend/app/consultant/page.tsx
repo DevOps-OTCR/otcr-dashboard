@@ -1,6 +1,5 @@
 'use client';
 
-import { useAuth } from '@/components/AuthContext';
 import { useState, useEffect, useMemo, useRef, type RefObject } from 'react';
 import { motion } from 'framer-motion';
 import Image from 'next/image';
@@ -49,6 +48,10 @@ import { getNotificationsForUser, markNotificationRead } from '@/lib/notificatio
 import { getEffectiveRole, ROLE_FULL_LABELS } from '@/lib/permissions';
 import { AdminRoleSwitcher } from '@/components/AdminRoleSwitcher';
 import type { ActionItem, Document as DocType } from '@/types';
+import { AppRole } from '@/lib/permissions';
+import { useAuth } from '@/components/AuthContext';
+import { useRouter } from 'next/navigation';
+import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 
 function formatNotificationTime(at: Date): string {
   const mins = Math.floor((Date.now() - at.getTime()) / 60000);
@@ -61,6 +64,7 @@ function formatNotificationTime(at: Date): string {
 
 export default function ConsultantDashboard() {
   const session = useAuth();
+  const router = useRouter();
   const [tasksFromApi, setTasksFromApi] = useState<TaskFromApi[]>([]);
   const [teamsForTasks, setTeamsForTasks] = useState<TeamForTasks[]>([]);
   const [documentsFromApi, setDocumentsFromApi] = useState<DocType[]>([]);
@@ -72,13 +76,35 @@ export default function ConsultantDashboard() {
   const initialSlidesRef = useRef<HTMLDivElement>(null);
   const finalSlidesRef = useRef<HTMLDivElement>(null);
   const engagementRef = useRef<HTMLDivElement>(null);
-
-  const userEmail = session?.user?.email ?? null;
-  const resolvedRole = session ? getEffectiveRole(session) : 'CONSULTANT';
+  const [resolvedRole, setResolvedRole] = useState<AppRole>('CONSULTANT');
+  let userEmail = session.user?.email ? session.user.email : '';
 
   useEffect(() => {
-    setNotifications(getNotificationsForUser(userEmail));
-  }, [userEmail]);
+    const syncRole = async () => {
+      if (session.isLoggedIn) {
+        const token = await session.getToken();
+        const email = session.user?.email || '';
+        const role = await getEffectiveRole(token, email);
+        setResolvedRole(role);
+      }
+    };
+    syncRole();
+  }, [session]);
+  
+  useEffect(() => {
+    if (!session.loading && !session.isLoggedIn) {
+      router.replace('/sign-in'); 
+    }
+  }, [session, router]);
+
+  if (session.loading || !session.isLoggedIn) {
+    return <FullScreenLoader />;
+  }
+
+  useEffect(() => {
+    if(session.user?.email)
+    setNotifications(getNotificationsForUser(session.user?.email));
+  }, [session]);
 
   useEffect(() => {
     tasksAPI.getAll({ includeCompleted: true }).then((res) => setTasksFromApi(Array.isArray(res.data) ? res.data : [])).catch(() => setTasksFromApi([]));

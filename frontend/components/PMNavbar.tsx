@@ -1,6 +1,6 @@
 'use client';
 
-import { signOut } from 'next-auth/react';
+import { useAuth } from './AuthContext';
 import Image from 'next/image';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
@@ -39,6 +39,7 @@ interface PMNavbarProps {
 
 export function PMNavbar({ currentPath, unreadNotificationCount = 0, onNavClick }: PMNavbarProps) {
   const isOnPm = currentPath === '/pm';
+  const {logout: signOut} = useAuth();
 
   return (
     <header className="border-b border-[var(--border)] bg-[var(--card)] sticky top-0 z-50">
@@ -75,7 +76,7 @@ export function PMNavbar({ currentPath, unreadNotificationCount = 0, onNavClick 
             </Link>
             <button
               type="button"
-              onClick={() => signOut({ callbackUrl: '/sign-in' })}
+              onClick={() => signOut()}
               className="p-2 rounded-full bg-[var(--accent)] hover:bg-[var(--primary)]/20 transition-colors"
               aria-label="Settings"
             >
