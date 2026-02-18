@@ -281,3 +281,13 @@ export const mockDashboardStats: DashboardStats = {
   activeWorkstreams: mockWorkstreamDeadlines.length,
   hoursThisWeek: 12,
 };
+
+/** Allowed emails that can be added to teams (PM/Admin/Consultants with dashboard access). */
+export const mockAllowedEmails: string[] = [
+  'lsharma2@illinois.edu',
+  'crawat2@illinois.edu',
+  'admin@otcr.com',
+  'kona3@illinois.edu',
+  'consultant1@illinois.edu',
+  'consultant2@illinois.edu',
+];

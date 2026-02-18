@@ -36,6 +36,7 @@ model User {
   submissionReviews  Submission[]     @relation("SubmissionReviewer")
   timeEntries        TimeEntry[]
   notifications      Notification[]
+  tasksCreated       Task[]
 
   @@index([googleId])
   @@index([email])
@@ -45,6 +46,8 @@ model User {
 enum Role {
   ADMIN
   PM
+  LC
+  PARTNER
   CONSULTANT
 }
 
@@ -105,6 +108,49 @@ model ProjectMember {
   @@unique([projectId, userId])
   @@index([projectId])
   @@index([userId])
+}
+
+// ============================================================================
+// TASKS (Action items / Engagement tasks)
+// ============================================================================
+
+model Task {
+  id            String       @id @default(cuid())
+  taskName      String
+  description   String?
+  dueDate       DateTime
+  projectName   String
+  workstream    String
+  workstreamId  String?      // For engagement page grouping
+  status        TaskStatus   @default(PENDING)
+  completed     Boolean      @default(false)
+  createdById   String
+  assigneeType  TaskAssigneeType
+  assigneeEmail String?
+  projectId     String?      // For ALL_TEAM: which project's members
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  createdBy User @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([createdById])
+  @@index([dueDate])
+  @@index([assigneeType])
+  @@index([workstreamId])
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  OVERDUE
+  COMPLETED
+}
+
+enum TaskAssigneeType {
+  PERSON
+  ALL
+  ALL_PMS
+  ALL_TEAM
 }
 
 // ============================================================================

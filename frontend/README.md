@@ -5,7 +5,7 @@ Modern Next.js 15 dashboard with role-based access control, file uploads, and ti
 ## ✨ Features
 
 ✅ **Dual Dashboards** - PM and Consultant perspectives
-✅ **Authentication** - Clerk with Google SSO
+✅ **Authentication** - NextAuth with Google OAuth
 ✅ **Role-Based UI** - Adapts based on user email
 ✅ **Responsive Design** - Mobile-first with Tailwind CSS
 ✅ **Modern Stack** - Next.js 15 + React 19 + TypeScript
@@ -23,9 +23,13 @@ npm install
 Create `.env.local`:
 
 ```env
-# Clerk Authentication
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
-CLERK_SECRET_KEY=sk_test_...
+# Google OAuth (from Google Cloud Console)
+GOOGLE_CLIENT_ID=123456789-abc...apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-...
+
+# NextAuth
+NEXTAUTH_SECRET=your-random-secret  # openssl rand -base64 32
+NEXTAUTH_URL=http://localhost:3000
 
 # Backend API
 NEXT_PUBLIC_API_URL=http://localhost:4000
@@ -50,7 +54,7 @@ frontend/
 │   ├── dashboard/           # Main dashboard (role-based)
 │   ├── sign-in/             # Authentication pages
 │   ├── sign-up/
-│   ├── layout.tsx           # Root layout with ClerkProvider
+│   ├── layout.tsx           # Root layout with SessionProvider
 │   ├── page.tsx             # Home (redirects)
 │   └── globals.css          # Tailwind + custom styles
 ├── components/              # Reusable components
@@ -59,7 +63,7 @@ frontend/
 │   └── projects/            # Project components
 ├── lib/
 │   └── api.ts               # API client
-├── middleware.ts            # Clerk auth middleware
+├── middleware.ts            # NextAuth auth middleware
 └── package.json
 ```
 
@@ -79,9 +83,9 @@ frontend/
 
 ## 🔐 Authentication
 
-Uses Clerk with:
+Uses NextAuth with:
 - Google OAuth only
-- Email-based role assignment
+- Email-based role assignment (AllowedEmail table)
 - Protected routes via middleware
 
 **Role Mapping:**
@@ -95,7 +99,7 @@ Uses Clerk with:
 - **React 19** - Latest React features
 - **TypeScript** - Type safety
 - **Tailwind CSS** - Utility-first styling
-- **Clerk** - Authentication
+- **NextAuth** - Authentication (Google OAuth)
 - **Lucide React** - Icons
 - **Axios** - HTTP client
 - **date-fns** - Date formatting
@@ -132,7 +136,7 @@ timeTrackingAPI.getByUser(userId)
 
 ## 🎯 What's Implemented
 
-✅ Authentication flow with Clerk
+✅ Authentication flow with NextAuth
 ✅ Role-based dashboard switching
 ✅ PM dashboard with stats and actions
 ✅ Consultant dashboard with deadlines
@@ -206,8 +210,8 @@ animate-slide-up - Slide up animation
 
 ## 🐛 Troubleshooting
 
-### "Clerk keys not found"
-Add Clerk keys to `.env.local`
+### "NextAuth / OAuth errors"
+Ensure `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `NEXTAUTH_SECRET` are set in `.env.local`
 
 ### "API connection failed"
 Ensure backend is running on port 4000
@@ -218,14 +222,14 @@ Run `npm install` again
 ## 📚 Learn More
 
 - [Next.js Documentation](https://nextjs.org/docs)
-- [Clerk Documentation](https://clerk.com/docs)
+- [NextAuth Documentation](https://authjs.dev)
 - [Tailwind CSS](https://tailwindcss.com/docs)
 
 ## ✅ Checklist
 
 Before running:
 - [ ] Install dependencies (`npm install`)
-- [ ] Create `.env.local` with Clerk keys
+- [ ] Create `.env.local` with Google OAuth and NextAuth keys
 - [ ] Start backend server (port 4000)
 - [ ] Run `npm run dev`
 - [ ] Open localhost:3000

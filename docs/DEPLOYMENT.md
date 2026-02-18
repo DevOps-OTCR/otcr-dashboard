@@ -11,7 +11,7 @@ This guide will help you deploy the OTCR Dashboard to production professionally.
 ### Required Services
 1. **Database**: PostgreSQL 14+ (Neon, AWS RDS, or self-hosted)
 2. **Cache**: Redis 6+ (Redis Cloud, AWS ElastiCache, or self-hosted)
-3. **Authentication**: Clerk account (production keys)
+3. **Authentication**: Google OAuth credentials (production)
 4. **Email**: Resend API key
 5. **File Storage**: Cloudflare R2 (or AWS S3)
 6. **Hosting**: Vercel, AWS, or self-hosted
@@ -23,17 +23,16 @@ This guide will help you deploy the OTCR Dashboard to production professionally.
 ### Frontend (.env.production)
 ```bash
 NEXT_PUBLIC_API_URL=https://api.yourdomain.com
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_xxxxx
+GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-xxxxx
+NEXTAUTH_SECRET=your-production-secret
+NEXTAUTH_URL=https://yourdomain.com
 ```
 
 ### Backend (.env)
 ```bash
 # Database
 DATABASE_URL=postgresql://user:pass@host:5432/otcr_dashboard
-
-# Clerk
-CLERK_SECRET_KEY=sk_live_xxxxx
-CLERK_PUBLISHABLE_KEY=pk_live_xxxxx
 
 # Redis
 REDIS_URL=redis://your-redis-host:6379
@@ -233,7 +232,7 @@ eb deploy
 - [ ] CORS is configured for your domain only
 - [ ] Database has strong password
 - [ ] Redis is password-protected
-- [ ] Clerk production keys are active
+- [ ] Google OAuth and NextAuth production credentials are set
 - [ ] API rate limiting is enabled
 - [ ] SSL/HTTPS is enforced
 - [ ] Security headers are configured
@@ -282,7 +281,7 @@ pg_dump $DATABASE_URL > backup-$(date +%Y%m%d).sql
 
 ### Environment Backups
 - Store production `.env` files securely (1Password, AWS Secrets Manager)
-- Keep encrypted backups of Clerk keys
+- Keep encrypted backups of OAuth and NextAuth secrets
 
 ---
 
@@ -311,7 +310,7 @@ docker-compose up -d
 - **Backend**: Render Free ($0)
 - **Database**: Neon Free ($0)
 - **Redis**: Redis Cloud Free ($0)
-- **Auth**: Clerk Free tier (10,000 MAUs - $0)
+- **Auth**: Google OAuth (free) + NextAuth (free)
 - **Email**: Resend Free (100 emails/day - $0)
 - **Total**: $0/month
 
@@ -320,7 +319,7 @@ docker-compose up -d
 - **Backend**: Render Starter ($7)
 - **Database**: Neon Scale ($19)
 - **Redis**: Redis Cloud ($5)
-- **Auth**: Clerk Pro ($25)
+- **Auth**: Google OAuth (free)
 - **Email**: Resend Pro ($20)
 - **Storage**: Cloudflare R2 ($0.015/GB)
 - **Total**: ~$96-120/month
@@ -347,9 +346,9 @@ npm run build
 - Verify REDIS_URL
 - Check Redis is running: `redis-cli ping`
 
-**Clerk authentication errors:**
-- Verify production keys
-- Check domain whitelist in Clerk dashboard
+**NextAuth / Google OAuth authentication errors:**
+- Verify GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and NEXTAUTH_SECRET
+- Check authorized redirect URIs in Google Cloud Console (e.g. https://yourdomain.com/api/auth/callback/google)
 - Ensure HTTPS is enabled
 
 ---
@@ -370,4 +369,4 @@ npm run build
 
 For deployment support or questions, contact your development team.
 
-**Last Updated**: December 2025
+**Last Updated**: February 2026

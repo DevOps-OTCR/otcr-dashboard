@@ -14,18 +14,29 @@ export class ProjectsService {
       endDate?: string;
       pmId?: string;
       memberIds?: string[];
+      memberEmails?: string[];
     },
     userId: string,
   ) {
-    const { name, description, clientName, startDate, endDate, pmId, memberIds } = data;
+    const { name, description, clientName, startDate, endDate, pmId, memberIds, memberEmails } = data;
 
-    // Verify PM exists and has PM or ADMIN role
+    // Verify PM exists and has a leadership role.
+    // For teams, we treat PM, ADMIN, and LC as valid owners.
     const pm = await this.prisma.user.findUnique({
       where: { id: pmId || userId },
     });
 
-    if (!pm || (pm.role !== 'PM' && pm.role !== 'ADMIN')) {
-      throw new BadRequestException('PM must have PM or ADMIN role');
+    if (!pm || (pm.role !== 'PM' && pm.role !== 'ADMIN' && pm.role !== 'LC')) {
+      throw new BadRequestException('PM must have PM, ADMIN, or LC role');
+    }
+
+    let resolvedMemberIds = memberIds ?? [];
+    if (memberEmails?.length) {
+      const users = await this.prisma.user.findMany({
+        where: { email: { in: memberEmails.map((e) => e.toLowerCase().trim()) } },
+        select: { id: true },
+      });
+      resolvedMemberIds = [...new Set([...resolvedMemberIds, ...users.map((u) => u.id)])];
     }
 
     // Create project with members
@@ -39,9 +50,9 @@ export class ProjectsService {
         pmId: pmId || userId,
         status: 'ACTIVE',
         members: {
-          create: memberIds?.map((userId) => ({
-            userId,
-          })) || [],
+          create: resolvedMemberIds.map((id) => ({
+            userId: id,
+          })),
         },
       },
       include: {
@@ -383,15 +394,16 @@ export class ProjectsService {
     });
   }
 
-  async addMember(projectId: string, userId: string) {
-    // Check if user exists
+  async addMember(projectId: string, userIdOrEmail: string) {
+    const isEmail = userIdOrEmail.includes('@');
     const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+      where: isEmail ? { email: userIdOrEmail } : { id: userIdOrEmail },
     });
 
     if (!user) {
-      throw new BadRequestException('User not found');
+      throw new BadRequestException(isEmail ? 'User not found for this email' : 'User not found');
     }
+    const userId = user.id;
 
     // Check if already a member
     const existingMember = await this.prisma.projectMember.findFirst({

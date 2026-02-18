@@ -33,6 +33,20 @@ export class AuthController {
     };
   }
 
+  @Get('role')
+  async getRole(@Query('email') email: string) {
+    if (!email) {
+      return { success: false, role: null, message: 'Email is required' };
+    }
+    try {
+      const role = await this.authService.getRoleByEmail(email);
+      return { success: true, role: role ?? 'CONSULTANT' };
+    } catch (error) {
+      console.error('Error fetching role:', error);
+      return { success: false, role: null, message: 'Error fetching role' };
+    }
+  }
+
   @Get('check-email')
   async checkEmail(@Query('email') email: string) {
     // This endpoint can be called without auth for sign-in checks

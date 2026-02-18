@@ -4,9 +4,9 @@ A full-stack project management dashboard for tracking consulting projects, deli
 
 ## Tech Stack
 
-**Frontend:** Next.js 16, React 19, TypeScript, Tailwind CSS, Clerk Auth
+**Frontend:** Next.js 16, React 19, TypeScript, Tailwind CSS, NextAuth (Google OAuth)
 **Backend:** NestJS 11, Prisma ORM, PostgreSQL, Redis, BullMQ
-**Integrations:** Clerk (Auth), Resend (Email), Slack (Notifications), Cloudflare R2 (File Storage)
+**Integrations:** NextAuth + Google OAuth (Auth), Resend (Email), Slack (Notifications), Cloudflare R2 (File Storage)
 
 ## Project Structure
 
@@ -31,7 +31,7 @@ You'll need accounts and API keys from these services:
 
 | Service | Purpose | Get it from |
 |---------|---------|-------------|
-| **Clerk** | Authentication | https://clerk.com |
+| **Google Cloud** | OAuth (Authentication) | https://console.cloud.google.com |
 | **PostgreSQL** | Database | Local install or Neon/Supabase |
 | **Redis** | Job queues & caching | Local install or Redis Cloud |
 | **Resend** | Email notifications | https://resend.com |
@@ -62,10 +62,6 @@ npm install
 # Database
 DATABASE_URL=postgresql://username:password@localhost:5432/otcr_dashboard
 
-# Authentication (from Clerk dashboard)
-CLERK_SECRET_KEY=sk_test_xxxxx
-CLERK_PUBLISHABLE_KEY=pk_test_xxxxx
-
 # Redis
 REDIS_HOST=localhost
 REDIS_PORT=6379
@@ -92,8 +88,14 @@ FRONTEND_URL=http://localhost:3000
 
 **Frontend** - Create `frontend/.env.local`:
 ```env
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_xxxxx
-CLERK_SECRET_KEY=sk_test_xxxxx
+# Google OAuth (from Google Cloud Console)
+GOOGLE_CLIENT_ID=123456789-abc...apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-...
+
+# NextAuth
+NEXTAUTH_SECRET=your-random-secret  # openssl rand -base64 32
+NEXTAUTH_URL=http://localhost:3000
+
 NEXT_PUBLIC_API_URL=http://localhost:4000
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```

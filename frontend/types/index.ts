@@ -33,6 +33,24 @@ export interface ActionItem {
   completed: boolean;
 }
 
+export type StoredTaskAssigneeType = 'person' | 'all' | 'all_pms' | 'all_team';
+
+export interface StoredTask {
+  id: string;
+  taskName: string;
+  description?: string;
+  dueDate: Date;
+  projectName: string;
+  workstream: string;
+  status: ActionItem['status'];
+  completed: boolean;
+  createdBy: string;
+  createdAt: Date;
+  assigneeType: StoredTaskAssigneeType;
+  assigneeEmail?: string;
+  teamId?: string;
+}
+
 export interface WorkstreamDeadline {
   id: string;
   workstreamName: string;
@@ -87,4 +105,23 @@ export interface DashboardStats {
   upcomingDeadlines: number;
   activeWorkstreams: number;
   hoursThisWeek: number;
+}
+
+export interface Team {
+  id: string;
+  name: string;
+  memberEmails: string[];
+  createdAt: Date;
+}
+
+export type EngagementTaskAssignType = 'person' | 'all_team';
+
+export interface EngagementTask {
+  id: string;
+  workstreamId: string;
+  title: string;
+  assignType: EngagementTaskAssignType;
+  assigneeEmail?: string;
+  dueDate: Date;
+  createdAt: Date;
 }

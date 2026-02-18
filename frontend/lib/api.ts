@@ -27,16 +27,96 @@ export const authAPI = {
   getAllowedEmails: () => api.get('/auth/allowed-emails'),
 };
 
+export type ProjectsQuery = {
+  status?: 'ACTIVE' | 'COMPLETED' | 'ON_HOLD' | 'CANCELLED';
+  search?: string;
+  pmId?: string;
+  userId?: string;
+  includeMembers?: boolean;
+  includeDeliverables?: boolean;
+  page?: number;
+  limit?: number;
+};
+
 export const projectsAPI = {
-  getAll: (params?: any) => api.get('/projects', { params }),
-  getById: (id: string) => api.get(`/projects/${id}`),
-  create: (data: any) => api.post('/projects', data),
-  update: (id: string, data: any) => api.patch(`/projects/${id}`, data),
+  getAll: (params?: ProjectsQuery) => {
+    const q = new URLSearchParams();
+    if (params?.status) q.set('status', params.status);
+    if (params?.search) q.set('search', params.search);
+    if (params?.pmId) q.set('pmId', params.pmId);
+    if (params?.userId) q.set('userId', params.userId);
+    if (params?.includeMembers) q.set('includeMembers', 'true');
+    if (params?.includeDeliverables) q.set('includeDeliverables', 'true');
+    if (params?.page != null) q.set('page', String(params.page));
+    if (params?.limit != null) q.set('limit', String(params.limit));
+    const query = q.toString();
+    return api.get('/projects' + (query ? `?${query}` : ''));
+  },
+  getById: (id: string, options?: { includeMembers?: boolean; includeDeliverables?: boolean }) => {
+    const q = new URLSearchParams();
+    if (options?.includeMembers) q.set('includeMembers', 'true');
+    if (options?.includeDeliverables) q.set('includeDeliverables', 'true');
+    const query = q.toString();
+    return api.get(`/projects/${id}` + (query ? `?${query}` : ''));
+  },
+  create: (data: {
+    name: string;
+    description?: string;
+    clientName?: string;
+    startDate: string;
+    endDate?: string;
+    pmId?: string;
+    memberIds?: string[];
+    memberEmails?: string[];
+  }) => api.post('/projects', data),
+  update: (id: string, data: {
+    name?: string;
+    description?: string;
+    clientName?: string;
+    startDate?: string;
+    endDate?: string;
+    status?: 'ACTIVE' | 'COMPLETED' | 'ON_HOLD' | 'CANCELLED';
+  }) => api.patch(`/projects/${id}`, data),
   delete: (id: string) => api.delete(`/projects/${id}`),
-  addMember: (projectId: string, userId: string) => 
-    api.post(`/projects/${projectId}/members`, { userId }),
-  removeMember: (projectId: string, userId: string) => 
+  addMember: (projectId: string, body: { userId?: string; email?: string }) =>
+    api.post(`/projects/${projectId}/members`, body),
+  removeMember: (projectId: string, userId: string) =>
     api.delete(`/projects/${projectId}/members/${userId}`),
+};
+
+export type TaskAssigneeType = 'PERSON' | 'ALL' | 'ALL_PMS' | 'ALL_TEAM';
+
+export const tasksAPI = {
+  getAll: (params?: { workstreamId?: string; includeCompleted?: boolean }) => {
+    const q = new URLSearchParams();
+    if (params?.workstreamId) q.set('workstreamId', params.workstreamId);
+    if (params?.includeCompleted === false) q.set('includeCompleted', 'false');
+    const query = q.toString();
+    return api.get('/tasks' + (query ? `?${query}` : ''));
+  },
+  getById: (id: string) => api.get(`/tasks/${id}`),
+  create: (data: {
+    taskName: string;
+    description?: string;
+    dueDate: string;
+    projectName: string;
+    workstream: string;
+    workstreamId?: string;
+    assigneeType: TaskAssigneeType;
+    assigneeEmail?: string;
+    projectId?: string;
+  }) => api.post('/tasks', data),
+  update: (id: string, data: {
+    taskName?: string;
+    description?: string;
+    dueDate?: string;
+    status?: string;
+    completed?: boolean;
+    assigneeType?: TaskAssigneeType;
+    assigneeEmail?: string;
+    projectId?: string;
+  }) => api.patch(`/tasks/${id}`, data),
+  delete: (id: string) => api.delete(`/tasks/${id}`),
 };
 
 export const deliverablesAPI = {

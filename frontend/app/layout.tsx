@@ -1,5 +1,6 @@
 'use client';
 
+import { AuthApiSync } from '@/components/AuthApiSync';
 import "./globals.css";
 import { PublicClientApplication } from "@azure/msal-browser";
 import { MsalProvider } from "@azure/msal-react";

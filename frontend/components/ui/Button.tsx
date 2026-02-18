@@ -21,11 +21,11 @@ export function Button({
   const baseStyles = 'inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed';
 
   const variants = {
-    primary: 'bg-gradient-primary text-white hover:shadow-lg hover:-translate-y-0.5 focus:ring-[var(--primary)]',
+    primary: 'bg-[var(--primary)]/15 text-[var(--primary)] border border-[var(--primary)]/30 hover:bg-[var(--primary)]/25 focus:ring-[var(--primary)]',
     secondary: 'bg-[var(--secondary)] text-[var(--foreground)] hover:bg-[var(--accent)] focus:ring-[var(--ring)]',
     outline: 'border-2 border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--accent)] focus:ring-[var(--ring)]',
     ghost: 'text-[var(--foreground)] hover:bg-[var(--accent)] focus:ring-[var(--ring)]',
-    danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500',
+    danger: 'bg-red-500/15 text-red-700 border border-red-500/30 hover:bg-red-500/25 focus:ring-red-500',
   };
 
   const sizes = {

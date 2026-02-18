@@ -69,19 +69,24 @@ async function main() {
 
   // Create allowed emails
   const allowedEmails: Array<{ email: string; role: Role }> = [
-    { email: 'vrome@illinois.edu', role: Role.CONSULTANT },
+    { email: 'vrome@illinois.edu', role: Role.ADMIN },
     { email: 'darshvs2@illinois.edu', role: Role.CONSULTANT },
     { email: 'yjagtap2@illinois.edu', role: Role.CONSULTANT },
     { email: 'tejavk2@illinois.edu', role: Role.CONSULTANT },
     { email: 'sharngi2@illinois.edu', role: Role.CONSULTANT },
-    { email: 'kona3@illinois.edu', role: Role.CONSULTANT },
-    { email: 'crawat2@illinois.edu', role: Role.CONSULTANT },
+    { email: 'kona3@illinois.edu', role: Role.ADMIN },
+    { email: 'mpate449@illinois.edu', role: Role.ADMIN },
+    { email: 'adeeu2@illinois.edu', role: Role.ADMIN },
+    { email: 'crawat2@illinois.edu', role: Role.PM },
     { email: 'bchar@illinois.edu', role: Role.CONSULTANT },
     { email: 'lsharma2@illinois.edu', role: Role.PM },
     { email: 'admin@otcr.com', role: Role.ADMIN },
-    // Also add test users
+    // Test users
     { email: 'consultant1@illinois.edu', role: Role.CONSULTANT },
     { email: 'consultant2@illinois.edu', role: Role.CONSULTANT },
+    // Example LC and Partner (add real emails as needed)
+    { email: 'lc@illinois.edu', role: Role.LC },
+    { email: 'partner@illinois.edu', role: Role.PARTNER },
   ];
 
   for (const allowedEmail of allowedEmails) {

@@ -1,21 +1,20 @@
 'use client';
 
-import { useAuth } from '@/components/AuthContext';
-import { useState, useEffect, useMemo, useRef, type RefObject } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useRef, useEffect, type RefObject } from 'react';
+import { setLastDashboard } from '@/lib/dashboard-context';
 import {
   Bell,
   FileText,
   Activity,
   Edit3,
   MessageSquare,
-  Download,
   Layers,
   StickyNote,
   Upload,
   MessageCircle,
+  Download,
 } from 'lucide-react';
-import { PMNavbar } from '@/components/PMNavbar';
+import { LCPartnerNavbar } from '@/components/LCPartnerNavbar';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -23,7 +22,7 @@ import { cn } from '@/lib/utils';
 import { mockWorkstreamDeadlines } from '@/data/mockData';
 import type { WorkstreamDeadline } from '@/types';
 
-type NotificationType = 'upload' | 'comment' | 'revision_request' | 'doc_updated';
+type NotificationType = 'upload' | 'comment' | 'doc_updated';
 interface Notification {
   id: string;
   type: NotificationType;
@@ -35,21 +34,20 @@ interface Notification {
 }
 
 const mockNotifications: Notification[] = [
-  { id: '1', type: 'upload', title: 'New upload to task', message: 'Market analysis draft v2 was uploaded to "Complete market analysis section".', context: 'Market Research', at: new Date(Date.now() - 1000 * 60 * 15), read: false },
-  { id: '2', type: 'comment', title: 'New comment', message: 'Alice Johnson commented on "Kickoff deck" in Initial Slides.', context: 'Market Research', at: new Date(Date.now() - 1000 * 60 * 45), read: false },
-  { id: '3', type: 'comment', title: 'New comment', message: 'Bob Smith replied to your comment on "Final client deck".', context: 'Financial Analysis', at: new Date(Date.now() - 1000 * 60 * 120), read: true },
-  { id: '4', type: 'doc_updated', title: 'Workstream doc updated', message: 'Financial Analysis – Draft was edited by Carol Davis.', context: 'Financial Analysis', at: new Date(Date.now() - 1000 * 60 * 180), read: true },
-  { id: '5', type: 'upload', title: 'New upload to task', message: 'Initial slides pack was uploaded to "Update client presentation slides".', context: 'Client Presentation', at: new Date(Date.now() - 1000 * 60 * 240), read: true },
+  { id: '1', type: 'upload', title: 'New upload', message: 'Final deck v3 was uploaded.', context: 'Market Research', at: new Date(Date.now() - 1000 * 60 * 30), read: false },
+  { id: '2', type: 'comment', title: 'New comment', message: 'PM commented on "Final client deck".', context: 'Financial Analysis', at: new Date(Date.now() - 1000 * 60 * 90), read: true },
 ];
 
-// Mock data for PM-aligned features
 const mockWorkstreamDocs = [
   { id: '1', name: 'Market Research – Draft', workstream: 'Market Research', status: 'draft' as const },
   { id: '2', name: 'Financial Analysis – Released', workstream: 'Financial Analysis', status: 'released' as const },
 ];
 const mockInitialSlides = [{ id: '1', title: 'Kickoff deck', workstream: 'Market Research', commentCount: 2 }];
 const mockFinalSlides = [{ id: '1', title: 'Final client deck', workstream: 'Market Research', commentCount: 1 }];
-const mockCallNotes = [{ id: '1', title: 'Q4 planning call', date: new Date(), author: 'LC' }];
+const mockCallNotes = [
+  { id: '1', title: 'Q4 planning call', date: new Date(), author: 'LC' },
+  { id: '2', title: 'Client sync', date: new Date(Date.now() - 86400000), author: 'LC' },
+];
 
 function formatNotificationTime(at: Date, now: number): string {
   const mins = Math.floor((now - at.getTime()) / 60000);
@@ -61,8 +59,7 @@ function formatNotificationTime(at: Date, now: number): string {
   return `${days}d ago`;
 }
 
-export default function PMDashboard() {
-  const session = useAuth();
+export default function PartnerDashboard() {
   const [workstreams] = useState<WorkstreamDeadline[]>(mockWorkstreamDeadlines);
   const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
   const [now, setNow] = useState<number | null>(null);
@@ -74,22 +71,7 @@ export default function PMDashboard() {
   const callNotesRef = useRef<HTMLDivElement>(null);
   const engagementRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    // If loading is done and user is NOT logged in, kick them to sign-in
-    if (!session.loading && !session.isLoggedIn) {
-      router.replace('/sign-in'); // replace prevents back-button loops
-    }
-  }, [session, router]);
-
-  if (session.loading || !session.isLoggedIn) {
-    return <FullScreenLoader />;
-  }
-
   const unreadCount = notifications.filter((n) => !n.read).length;
-
-  const scrollToRef = (ref: RefObject<HTMLElement | null>) => {
-    if (ref.current) ref.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
 
   const navScrollMap: Record<string, RefObject<HTMLDivElement | null>> = {
     overview: dashboardRef,
@@ -109,7 +91,7 @@ export default function PMDashboard() {
   };
 
   useEffect(() => {
-    setLastDashboard('/pm');
+    setLastDashboard('/partner');
   }, []);
 
   useEffect(() => {
@@ -118,8 +100,9 @@ export default function PMDashboard() {
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col">
-      <PMNavbar
-        currentPath="/pm"
+      <LCPartnerNavbar
+        role="PARTNER"
+        currentPath="/partner"
         unreadNotificationCount={unreadCount}
         onNavClick={handleNavClick}
       />
@@ -137,7 +120,7 @@ export default function PMDashboard() {
                         <Bell className="w-5 h-5 text-[var(--primary)]" />
                         Notifications
                       </CardTitle>
-                      <CardDescription>New uploads, comments, and updates</CardDescription>
+                      <CardDescription>New uploads and comments</CardDescription>
                     </div>
                     {unreadCount > 0 && (
                       <Badge variant="info" size="sm">
@@ -154,9 +137,7 @@ export default function PMDashboard() {
                           ? Upload
                           : n.type === 'comment'
                             ? MessageCircle
-                            : n.type === 'doc_updated'
-                              ? Edit3
-                              : MessageSquare;
+                            : Edit3;
                       return (
                         <li
                           key={n.id}
@@ -197,17 +178,10 @@ export default function PMDashboard() {
                       );
                     })}
                   </ul>
-                  {notifications.length === 0 && (
-                    <div className="text-center py-8 text-[var(--foreground)]/60">
-                      <Bell className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                      <p>No notifications yet</p>
-                    </div>
-                  )}
                 </CardContent>
               </Card>
             </div>
 
-            {/* Layout: left Engagement, right Workstream Docs (consultant-style grid) */}
             <div className="grid grid-cols-12 gap-6">
               <div ref={engagementRef} className="col-span-12 lg:col-span-5">
                 <Card className="shadow-lg">
@@ -216,7 +190,7 @@ export default function PMDashboard() {
                       <Activity className="w-5 h-5 text-[var(--primary)]" />
                       Engagement status & timelines
                     </CardTitle>
-                    <CardDescription>Workstream status and deadlines</CardDescription>
+                    <CardDescription>View workstream status and deadlines (R)</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4 max-h-[400px] overflow-y-auto">
                     {workstreams
@@ -240,22 +214,17 @@ export default function PMDashboard() {
                               {ws.status.replace('_', ' ')}
                             </Badge>
                           </div>
-                          <p className="text-sm mb-4 bg-slate-50 p-3 rounded-lg">{request.reason}</p>
-                          <div className="flex items-center gap-2 text-xs mb-4 bg-slate-100 p-2 rounded-lg">
-                            <Calendar className="w-4 h-4" />
-                            <span className="font-medium">{formatDate(request.originalDeadline)}</span>
-                            <span>→</span>
-                            <span className="font-bold text-yellow-600">{formatDate(request.requestedDeadline)}</span>
-                          </div>
-                          <div className="flex gap-2">
-                            <Button size="sm" onClick={() => handleExtensionReview(request.id, 'approved')}
-                              className="flex-1 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600">
-                              <CheckCircle2 className="w-4 h-4 mr-1" />Approve
-                            </Button>
-                            <Button size="sm" variant="outline" onClick={() => handleExtensionReview(request.id, 'denied')}
-                              className="flex-1 border-red-300 text-red-600 hover:bg-red-50">
-                              <XCircle className="w-4 h-4 mr-1" />Deny
-                            </Button>
+                          <div className="mt-3 space-y-1">
+                            <div className="flex justify-between text-xs text-[var(--foreground)]/60">
+                              <span>Progress</span>
+                              <span>{ws.progress ?? 0}%</span>
+                            </div>
+                            <div className="h-2 bg-[var(--accent)] rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-[var(--primary)]"
+                                style={{ width: `${ws.progress ?? 0}%` }}
+                              />
+                            </div>
                           </div>
                           <p className="text-xs text-[var(--foreground)]/60 mt-2">{ws.daysRemaining}d remaining</p>
                         </div>
@@ -271,7 +240,7 @@ export default function PMDashboard() {
                       <FileText className="w-5 h-5 text-[var(--primary)]" />
                       Workstream Documents
                     </CardTitle>
-                    <CardDescription>Draft (RW+C) · Released (RW+C) · Edit workstream live (RW)</CardDescription>
+                    <CardDescription>Draft (R+C) · Released (R+C)</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {mockWorkstreamDocs.map((doc) => (
@@ -287,10 +256,7 @@ export default function PMDashboard() {
                           <Badge variant={doc.status === 'draft' ? 'warning' : 'success'} size="sm">
                             {doc.status}
                           </Badge>
-                          <Button variant="ghost" size="sm">
-                            <Edit3 className="w-4 h-4" />
-                          </Button>
-                          <Button variant="ghost" size="sm">
+                          <Button variant="ghost" size="sm" title="Comment">
                             <MessageSquare className="w-4 h-4" />
                           </Button>
                         </div>
@@ -301,117 +267,111 @@ export default function PMDashboard() {
               </div>
             </div>
 
-            {/* Initial Slides (R, C) | Final Slides (R, C, W, Compile, Download) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div ref={initialSlidesRef}>
                 <Card className="shadow-lg">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Layers className="w-5 h-5 text-[var(--primary)]" />
-                    Initial slides
-                  </CardTitle>
-                  <CardDescription>View (R) · Comment (C)</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {mockInitialSlides.map((s) => (
-                    <div
-                      key={s.id}
-                      className="p-4 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/80 flex items-center justify-between"
-                    >
-                      <div>
-                        <h5 className="font-semibold text-[var(--foreground)]">{s.title}</h5>
-                        <p className="text-xs text-[var(--foreground)]/70">{s.workstream}</p>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Layers className="w-5 h-5 text-[var(--primary)]" />
+                      Initial slides
+                    </CardTitle>
+                    <CardDescription>View (R) · Comment (C)</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {mockInitialSlides.map((s) => (
+                      <div
+                        key={s.id}
+                        className="p-4 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/80 flex items-center justify-between"
+                      >
+                        <div>
+                          <h5 className="font-semibold text-[var(--foreground)]">{s.title}</h5>
+                          <p className="text-xs text-[var(--foreground)]/70">{s.workstream}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="info" size="sm">
+                            {s.commentCount} comments
+                          </Badge>
+                          <Button variant="ghost" size="sm">
+                            View
+                          </Button>
+                          <Button variant="ghost" size="sm">
+                            <MessageSquare className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="info" size="sm">
-                          {s.commentCount} comments
-                        </Badge>
-                        <Button variant="ghost" size="sm">
-                          View
-                        </Button>
-                        <Button variant="ghost" size="sm">
-                          <MessageSquare className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
+                    ))}
+                  </CardContent>
+                </Card>
               </div>
 
               <div ref={finalSlidesRef}>
                 <Card className="shadow-lg">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Layers className="w-5 h-5 text-[var(--primary)]" />
-                    Final slides
-                  </CardTitle>
-                  <CardDescription>View (R) · Comment (C) · Edit (W) · Compile deck (W) · Download (R)</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {mockFinalSlides.map((s) => (
-                    <div
-                      key={s.id}
-                      className="p-4 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/80 flex items-center justify-between flex-wrap gap-2"
-                    >
-                      <div>
-                        <h5 className="font-semibold text-[var(--foreground)]">{s.title}</h5>
-                        <p className="text-xs text-[var(--foreground)]/70">{s.workstream}</p>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Layers className="w-5 h-5 text-[var(--primary)]" />
+                      Final slides
+                    </CardTitle>
+                    <CardDescription>View (R) · Comment (C) · Download (R)</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {mockFinalSlides.map((s) => (
+                      <div
+                        key={s.id}
+                        className="p-4 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/80 flex items-center justify-between flex-wrap gap-2"
+                      >
+                        <div>
+                          <h5 className="font-semibold text-[var(--foreground)]">{s.title}</h5>
+                          <p className="text-xs text-[var(--foreground)]/70">{s.workstream}</p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Button variant="ghost" size="sm">
+                            View
+                          </Button>
+                          <Button variant="ghost" size="sm">
+                            <MessageSquare className="w-4 h-4" />
+                          </Button>
+                          <Button variant="outline" size="sm">
+                            <Download className="w-4 h-4 mr-1" />
+                            Download deck
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Button variant="ghost" size="sm">
-                          View
-                        </Button>
-                        <Button variant="ghost" size="sm">
-                          <MessageSquare className="w-4 h-4" />
-                        </Button>
-                        <Button variant="ghost" size="sm">
-                          <Edit3 className="w-4 h-4" />
-                        </Button>
-                        <Button size="sm">Compile deck</Button>
-                        <Button variant="outline" size="sm">
-                          <Download className="w-4 h-4 mr-1" />
-                          Download
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
+                    ))}
+                  </CardContent>
+                </Card>
               </div>
             </div>
 
-            {/* Client call notes – read (R) */}
             <div ref={callNotesRef}>
-            <Card className="shadow-lg">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <StickyNote className="w-5 h-5 text-[var(--primary)]" />
-                  Client call notes
-                </CardTitle>
-                <CardDescription>Read (R) – written by LC</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {mockCallNotes.map((note) => (
-                    <div
-                      key={note.id}
-                      className="p-4 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/80"
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <h5 className="font-semibold text-[var(--foreground)]">{note.title}</h5>
-                        <span className="text-xs text-[var(--foreground)]/60">
-                          {note.date.toLocaleDateString()} · {note.author}
-                        </span>
+              <Card className="shadow-lg">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <StickyNote className="w-5 h-5 text-[var(--primary)]" />
+                    Client call notes
+                  </CardTitle>
+                  <CardDescription>Read (R) – written by LC</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {mockCallNotes.map((note) => (
+                      <div
+                        key={note.id}
+                        className="p-4 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/80"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <h5 className="font-semibold text-[var(--foreground)]">{note.title}</h5>
+                          <span className="text-xs text-[var(--foreground)]/60">
+                            {note.date.toLocaleDateString()} · {note.author}
+                          </span>
+                        </div>
+                        <p className="text-sm text-[var(--foreground)]/80">
+                          Call notes content (read-only). Key decisions and action items from the client call.
+                        </p>
                       </div>
-                      <p className="text-sm text-[var(--foreground)]/80">
-                        Call notes content (read-only). Key decisions and action items from the client call.
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           </div>
         </main>
