@@ -1,6 +1,7 @@
 import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthService } from './auth.service';
+import { getVerifiedUser } from '@/common/utils/verify';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -15,8 +16,13 @@ export class AuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const token = request.headers.authorization?.replace('Bearer ', '');
     if (!token) return false;
-
-    const user = await this.authService.getUserByEmail(token);
+    let email;
+    try {
+      email = getVerifiedUser(token);
+    } catch (error: any) {
+      return false;
+    }
+    const user = await this.authService.getUserByEmail(email);
     if (!user) return false;
     request.user = user;
     if (!requiredRoles) return true;
