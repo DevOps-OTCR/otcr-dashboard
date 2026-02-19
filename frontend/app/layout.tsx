@@ -27,6 +27,7 @@ export default function MsalWrapper({ children }: { children: ReactNode }) {
       <body>
         <MsalProvider instance={pca}>
           <AuthProvider>
+            <AuthApiSync />
             {children}
           </AuthProvider>
         </MsalProvider>

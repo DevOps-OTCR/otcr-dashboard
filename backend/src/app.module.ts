@@ -9,6 +9,7 @@ import { DeliverablesController } from './deliverables/deliverables.controller';
 import { DeliverablesService } from './deliverables/deliverables.service';
 import { DeliverablesModule } from './deliverables/deliverables.module';
 import { TasksModule } from './tasks/tasks.module';
+import { SlideSubmissionsModule } from './slide-submissions/slide.submissions.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { TasksModule } from './tasks/tasks.module';
     ProjectsModule,
     DeliverablesModule,
     TasksModule,
+    SlideSubmissionsModule,
   ],
   controllers: [DeliverablesController],
   providers: [DeliverablesService],

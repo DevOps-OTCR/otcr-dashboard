@@ -1,10 +1,9 @@
+import { DefaultSession } from 'next-auth';
+
 declare module 'next-auth' {
   interface Session {
-    user: {
+    user: DefaultSession['user'] & {
       id?: string;
-      email?: string | null;
-      name?: string | null;
-      image?: string | null;
       /** Role from database (backend); set at login via GET /auth/role */
       role?: 'CONSULTANT' | 'LC' | 'PM' | 'PARTNER' | 'ADMIN';
     };

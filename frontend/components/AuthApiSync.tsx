@@ -1,6 +1,5 @@
 'use client';
 
-import { useSession } from 'next-auth/react';
 import { useAuth } from './AuthContext';
 import { useEffect } from 'react';
 import { setAuthToken } from '@/lib/api';
@@ -15,14 +14,19 @@ export function AuthApiSync() {
   useEffect(() => {
     const sync = async () => {
       if (session.isLoggedIn) {
-        const token = await session.getToken();
-        setAuthToken(token);
+        try {
+          const token = await session.getToken();
+          // Prefer access token; fall back to email so backend legacy auth still works.
+          setAuthToken(token || session.user?.email || null);
+        } catch {
+          setAuthToken(session.user?.email || null);
+        }
       } else {
         setAuthToken(null);
       }
     };
-    sync();
-  }, [session.isLoggedIn, session?.user?.email]);
+    void sync();
+  }, [session.isLoggedIn, session?.user?.email, session]);
 
   return null;
 }

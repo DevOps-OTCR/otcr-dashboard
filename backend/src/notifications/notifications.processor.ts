@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { Worker, Job } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { SlackService } from '../integrations/slack.service';
-import { EmailService } from '../integrations/email.service';
 import { createRedisConnection } from '../common/redis.config';
 import { NotificationJob } from './notifications.service';
 
@@ -15,7 +14,6 @@ export class NotificationsProcessor implements OnModuleInit {
   constructor(
     private prisma: PrismaService,
     private slackService: SlackService,
-    private emailService: EmailService,
     private configService: ConfigService,
   ) {}
 
@@ -70,28 +68,19 @@ export class NotificationsProcessor implements OnModuleInit {
     const userName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email;
 
     let slackSuccess = true;
-    let emailSuccess = true;
 
     // Send based on channel preference
-    if (channel === 'SLACK' || channel === 'BOTH') {
+    if (channel === 'SLACK' || channel === 'BOTH' || channel === 'EMAIL') {
       slackSuccess = await this.sendSlackNotification(
         type,
-        userName,
-        data,
-      );
-    }
-
-    if (channel === 'EMAIL' || channel === 'BOTH') {
-      emailSuccess = await this.sendEmailNotification(
-        type,
-        user.email,
+        user.id,
         userName,
         data,
       );
     }
 
     // Update notification status in database
-    const status = slackSuccess || emailSuccess ? 'SENT' : 'FAILED';
+    const status = slackSuccess ? 'SENT' : 'FAILED';
 
     await this.prisma.notification.updateMany({
       where: {
@@ -108,6 +97,7 @@ export class NotificationsProcessor implements OnModuleInit {
 
   private async sendSlackNotification(
     type: string,
+    userId: string,
     userName: string,
     data: any,
   ): Promise<boolean> {
@@ -117,6 +107,7 @@ export class NotificationsProcessor implements OnModuleInit {
         case 'DEADLINE_24H':
         case 'DEADLINE_REMINDER':
           return await this.slackService.sendDeadlineReminder(
+            userId,
             data.deliverableTitle,
             data.projectName,
             data.deadline,
@@ -126,6 +117,7 @@ export class NotificationsProcessor implements OnModuleInit {
 
         case 'EXTENSION_REQUEST':
           return await this.slackService.sendExtensionRequest(
+            userId,
             data.deliverableTitle,
             data.projectName,
             userName,
@@ -135,6 +127,7 @@ export class NotificationsProcessor implements OnModuleInit {
 
         case 'EXTENSION_APPROVED':
           return await this.slackService.sendExtensionApproved(
+            userId,
             data.deliverableTitle,
             userName,
             data.newDeadline,
@@ -142,6 +135,7 @@ export class NotificationsProcessor implements OnModuleInit {
 
         case 'EXTENSION_DENIED':
           return await this.slackService.sendExtensionDenied(
+            userId,
             data.deliverableTitle,
             userName,
             data.reason,
@@ -149,6 +143,7 @@ export class NotificationsProcessor implements OnModuleInit {
 
         case 'SUBMISSION_APPROVED':
           return await this.slackService.sendSubmissionApproved(
+            userId,
             data.deliverableTitle,
             userName,
             data.feedback,
@@ -156,10 +151,16 @@ export class NotificationsProcessor implements OnModuleInit {
 
         case 'SUBMISSION_REJECTED':
           return await this.slackService.sendSubmissionRejected(
+            userId,
             data.deliverableTitle,
             userName,
             data.feedback,
           );
+
+        case 'PROJECT_UPDATED':
+          return await this.slackService.sendDirectMessageToUser(userId, {
+            text: this.buildProjectUpdateSlackMessage(data),
+          });
 
         default:
           this.logger.warn(`Unknown notification type: ${type}`);
@@ -171,65 +172,12 @@ export class NotificationsProcessor implements OnModuleInit {
     }
   }
 
-  private async sendEmailNotification(
-    type: string,
-    email: string,
-    userName: string,
-    data: any,
-  ): Promise<boolean> {
-    try {
-      switch (type) {
-        case 'DEADLINE_1H':
-        case 'DEADLINE_24H':
-        case 'DEADLINE_REMINDER':
-          return await this.emailService.sendDeadlineReminder(
-            email,
-            userName,
-            data.deliverableTitle,
-            data.projectName,
-            data.deadline,
-            data.hoursRemaining,
-          );
-
-        case 'EXTENSION_APPROVED':
-          return await this.emailService.sendExtensionApproved(
-            email,
-            userName,
-            data.deliverableTitle,
-            data.newDeadline,
-          );
-
-        case 'EXTENSION_DENIED':
-          return await this.emailService.sendExtensionDenied(
-            email,
-            userName,
-            data.deliverableTitle,
-            data.reason,
-          );
-
-        case 'SUBMISSION_APPROVED':
-          return await this.emailService.sendSubmissionApproved(
-            email,
-            userName,
-            data.deliverableTitle,
-            data.feedback,
-          );
-
-        case 'SUBMISSION_REJECTED':
-          return await this.emailService.sendSubmissionRejected(
-            email,
-            userName,
-            data.deliverableTitle,
-            data.feedback,
-          );
-
-        default:
-          this.logger.warn(`Unknown notification type: ${type}`);
-          return false;
-      }
-    } catch (error) {
-      this.logger.error(`Email notification failed:`, error);
-      return false;
-    }
+  private buildProjectUpdateSlackMessage(data: any): string {
+    const projectName = data?.projectName ? `Project: ${data.projectName}. ` : '';
+    const deliverableTitle = data?.deliverableTitle
+      ? `Assignment: ${data.deliverableTitle}. `
+      : '';
+    const feedback = data?.feedback ? String(data.feedback) : 'A project update is available.';
+    return `${projectName}${deliverableTitle}${feedback}`.trim();
   }
 }

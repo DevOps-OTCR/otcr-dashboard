@@ -1,6 +1,6 @@
 // For NextAuth v5, we use the auth() function directly
 // This file provides a helper for server-side session access
-import { use } from '@/lib/auth-config';
+import { auth } from '@/lib/auth-config';
 
 export async function getSession() {
   return await auth();

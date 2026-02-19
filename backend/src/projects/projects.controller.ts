@@ -78,8 +78,8 @@ export class ProjectsController {
       userId: query.userId,
       includeMembers: query.includeMembers === 'true',
       includeDeliverables: query.includeDeliverables === 'true',
-      page: query.page ? parseInt(query.page) : 1,
-      limit: query.limit ? parseInt(query.limit) : 10,
+      page: this.parsePositiveInt(query.page, 1),
+      limit: this.parsePositiveInt(query.limit, 10),
     };
 
     if (user.role === 'CONSULTANT') {
@@ -221,5 +221,11 @@ export class ProjectsController {
     }
 
     return this.projectsService.removeMember(id, userId);
+  }
+
+  private parsePositiveInt(value: string | undefined, fallback: number): number {
+    if (!value) return fallback;
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
   }
 }

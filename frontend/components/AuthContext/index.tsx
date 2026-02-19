@@ -99,7 +99,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const tokenRequest = {
       account,
       scopes: ["User.Read"],
-      authority: process.env.MSAL_AUTHORITY,
+      authority: process.env.NEXT_PUBLIC_MSAL_AUTHORITY,
       forceRefresh: false,
     };
 

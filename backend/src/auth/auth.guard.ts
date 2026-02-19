@@ -16,12 +16,14 @@ export class AuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const token = request.headers.authorization?.replace('Bearer ', '');
     if (!token) return false;
-    let email;
+    let email: string;
     try {
-      email = getVerifiedUser(token);
+      // Support both legacy "Bearer <email>" and modern "Bearer <access_token>".
+      email = token.includes('@') ? token : await getVerifiedUser(token);
     } catch (error: any) {
       return false;
     }
+    if (!email || typeof email !== 'string') return false;
     const user = await this.authService.getUserByEmail(email);
     if (!user) return false;
     request.user = user;

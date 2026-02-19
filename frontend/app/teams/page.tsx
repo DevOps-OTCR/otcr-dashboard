@@ -13,7 +13,7 @@ import { LCPartnerNavbar } from '@/components/LCPartnerNavbar';
 import { AdminRoleSwitcher } from '@/components/AdminRoleSwitcher';
 import { getLastDashboard } from '@/lib/dashboard-context';
 import { useRouter } from 'next/navigation';
-import { projectsAPI, authAPI } from '@/lib/api';
+import { projectsAPI, authAPI, setAuthToken } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 
@@ -23,11 +23,17 @@ type ProjectFromApi = {
   name: string;
   status?: string;
   createdAt: string;
+  googleCalendarEmbedUrl?: string | null;
   members?: ProjectMember[];
 };
 
 function getMemberEmails(project: ProjectFromApi): string[] {
   return project.members?.map((m) => m.user.email) ?? [];
+}
+
+function parseApiError(err: any, fallback: string): string {
+  const message = err?.response?.data?.message ?? err?.message ?? fallback;
+  return Array.isArray(message) ? message.join(', ') : String(message);
 }
 
 export default function TeamsPage() {
@@ -42,15 +48,25 @@ export default function TeamsPage() {
   const [createTeamModalOpen, setCreateTeamModalOpen] = useState(false);
   const [createTeamForm, setCreateTeamForm] = useState({ name: '', selectedEmails: [] as string[], search: '' });
   const [addMemberSearch, setAddMemberSearch] = useState('');
+  const [calendarLinkDrafts, setCalendarLinkDrafts] = useState<Record<string, string>>({});
   const [actionFeedback, setActionFeedback] = useState<{ message: string; tone: 'success' | 'warning' | 'info' } | null>(null);
 
-  const fetchProjects = useCallback(() => {
-    projectsAPI
-      .getAll({ includeMembers: true, limit: 100 })
-      .then((res) => setProjects(res.data?.projects ?? []))
-      .catch(() => setProjects([]))
-      .finally(() => setLoading(false));
-  }, []);
+  const fetchProjects = useCallback(async () => {
+    try {
+      const token = await session.getToken();
+      if (!token) {
+        setProjects([]);
+        return;
+      }
+      setAuthToken(token);
+      const res = await projectsAPI.getAll({ includeMembers: true, limit: 100 });
+      setProjects(res.data?.projects ?? []);
+    } catch {
+      setProjects([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [session]);
 
   useEffect(() => {
     setHasMounted(true);
@@ -58,22 +74,41 @@ export default function TeamsPage() {
 
   useEffect(() => {
     if (!session.isLoggedIn || !session.user?.email) return;
-    fetchProjects();
-  }, [session.isLoggedIn, session.user?.email, fetchProjects]);
+    if (session.loading) return;
+    void fetchProjects();
+  }, [session.isLoggedIn, session.user?.email, session.loading, fetchProjects]);
 
   useEffect(() => {
-    if (!session.isLoggedIn || !session.user?.email) return;
-    authAPI
-      .getAllowedEmails()
-      .then((res) => {
+    const loadAllowedEmails = async () => {
+      if (!session.isLoggedIn || !session.user?.email) return;
+
+      // Consultants/Partners only need read-only access, not full allowed-email directory.
+      if (role === 'CONSULTANT' || role === 'PARTNER') {
+        setAllowedEmails([]);
+        return;
+      }
+
+      try {
+        const token = await session.getToken();
+        if (!token) {
+          setAllowedEmails([]);
+          return;
+        }
+        setAuthToken(token);
+
+        const res = await authAPI.getAllowedEmails();
         const list = res.data?.emails ?? res.data ?? [];
         const emails = Array.isArray(list)
           ? (list.map((e: { email?: string }) => (typeof e === 'string' ? e : e?.email)).filter(Boolean) as string[])
           : [];
         setAllowedEmails(emails);
-      })
-      .catch(() => setAllowedEmails([]));
-  }, [session.isLoggedIn, session.user?.email]);
+      } catch {
+        setAllowedEmails([]);
+      }
+    };
+
+    void loadAllowedEmails();
+  }, [session.isLoggedIn, session.user?.email, role]);
 
   useEffect(() => {
     const syncRole = async () => {
@@ -102,9 +137,12 @@ export default function TeamsPage() {
   }
 
   const resolvedRole = hasMounted && session.isLoggedIn ? role : role;
-  const canManageTeams = resolvedRole === 'PM' || resolvedRole === 'LC' || resolvedRole === 'ADMIN';
-  const isPartner = resolvedRole === 'PARTNER';
+  const canManageTeams =
+    resolvedRole === 'PM' ||
+    resolvedRole === 'LC' ||
+    resolvedRole === 'ADMIN';
   const isConsultant = resolvedRole === 'CONSULTANT';
+  const isPartner = resolvedRole === 'PARTNER';
   const currentUserEmail = session.user?.email ?? null;
 
   const myTeam =
@@ -159,7 +197,12 @@ export default function TeamsPage() {
         setActionFeedback({ message: 'Team created', tone: 'success' });
         fetchProjects();
       })
-      .catch(() => setActionFeedback({ message: 'Failed to create team', tone: 'warning' }));
+      .catch((err) =>
+        setActionFeedback({
+          message: parseApiError(err, 'Failed to create team'),
+          tone: 'warning',
+        }),
+      );
   };
 
   const handleAddMemberToTeam = (projectId: string, email: string) => {
@@ -169,7 +212,12 @@ export default function TeamsPage() {
         setActionFeedback({ message: 'Member added', tone: 'success' });
         fetchProjects();
       })
-      .catch(() => setActionFeedback({ message: 'Failed to add member', tone: 'warning' }));
+      .catch((err) =>
+        setActionFeedback({
+          message: parseApiError(err, 'Failed to add member'),
+          tone: 'warning',
+        }),
+      );
   };
 
   const handleRemoveMemberFromTeam = (projectId: string, userId: string) => {
@@ -179,7 +227,12 @@ export default function TeamsPage() {
         setActionFeedback({ message: 'Member removed', tone: 'warning' });
         fetchProjects();
       })
-      .catch(() => setActionFeedback({ message: 'Failed to remove member', tone: 'warning' }));
+      .catch((err) =>
+        setActionFeedback({
+          message: parseApiError(err, 'Failed to remove member'),
+          tone: 'warning',
+        }),
+      );
   };
 
   const handleDeleteTeam = (projectId: string) => {
@@ -190,7 +243,30 @@ export default function TeamsPage() {
         setActionFeedback({ message: 'Team deleted', tone: 'warning' });
         fetchProjects();
       })
-      .catch(() => setActionFeedback({ message: 'Failed to delete team', tone: 'warning' }));
+      .catch((err) =>
+        setActionFeedback({
+          message: parseApiError(err, 'Failed to delete team'),
+          tone: 'warning',
+        }),
+      );
+  };
+
+  const handleSaveCalendarLink = (project: ProjectFromApi) => {
+    const draft = (calendarLinkDrafts[project.id] ?? '').trim();
+    projectsAPI
+      .update(project.id, {
+        googleCalendarEmbedUrl: draft || null,
+      })
+      .then(() => {
+        setActionFeedback({ message: draft ? 'Team calendar link saved' : 'Team calendar link cleared', tone: 'success' });
+        fetchProjects();
+      })
+      .catch((err) =>
+        setActionFeedback({
+          message: parseApiError(err, 'Failed to save calendar link'),
+          tone: 'warning',
+        }),
+      );
   };
 
   if (!hasMounted) {
@@ -290,6 +366,31 @@ export default function TeamsPage() {
                           </Button>
                         )}
                       </div>
+                      {canManageTeams && (
+                        <div className="mb-4 p-3 rounded-lg border border-[var(--border)] bg-[var(--card)]">
+                          <p className="text-xs font-medium text-[var(--foreground)]/70 mb-2">Team Google Calendar embed link</p>
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <input
+                              type="url"
+                              value={calendarLinkDrafts[selectedTeam.id] ?? selectedTeam.googleCalendarEmbedUrl ?? ''}
+                              onChange={(e) =>
+                                setCalendarLinkDrafts((prev) => ({
+                                  ...prev,
+                                  [selectedTeam.id]: e.target.value,
+                                }))
+                              }
+                              placeholder="https://calendar.google.com/calendar/embed?src=..."
+                              className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)] placeholder:text-[var(--foreground)]/50 text-sm"
+                            />
+                            <Button
+                              size="sm"
+                              onClick={() => handleSaveCalendarLink(selectedTeam)}
+                            >
+                              Save
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                       <p className="text-xs font-medium text-[var(--foreground)]/70 mb-2">Members and roles</p>
                       <ul className="space-y-2 mb-4">
                         {(selectedTeam.members ?? []).map((m) => (
@@ -400,86 +501,6 @@ export default function TeamsPage() {
             </Card>
           )}
 
-          {isPartner && (
-            <Card className="shadow-lg">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Users className="w-5 h-5 text-[var(--primary)]" />
-                  All teams
-                </CardTitle>
-                <CardDescription>
-                  View all teams and their members. Read-only.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {loading ? (
-                  <div className="p-8 text-center text-sm text-[var(--foreground)]/70">Loading teams...</div>
-                ) : projects.length === 0 ? (
-                  <div className="p-8 rounded-xl border border-dashed border-[var(--border)] text-center text-sm text-[var(--foreground)]/70">
-                    No teams have been created yet.
-                  </div>
-                ) : selectedTeamId && selectedTeam ? (
-                  <div className="space-y-4">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-[var(--foreground)]"
-                      onClick={() => setSelectedTeamId(null)}
-                    >
-                      <ChevronLeft className="w-4 h-4 mr-1" />
-                      Back to teams
-                    </Button>
-                    <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/60">
-                      <h3 className="text-lg font-semibold mb-3">{selectedTeam.name}</h3>
-                      <p className="text-xs font-medium text-[var(--foreground)]/70 mb-2">Members</p>
-                      <ul className="space-y-2">
-                        {(selectedTeam.members ?? []).map((m) => (
-                          <li
-                            key={m.user.id}
-                            className="flex items-center justify-between py-2 px-3 rounded-lg bg-[var(--card)] border border-[var(--border)]"
-                          >
-                            <span className="text-sm">
-                              <span className="font-medium text-[var(--foreground)]">{m.user.email}</span>
-                              <span className="text-[var(--foreground)]/60 ml-2">({getUserRole(m.user.email)})</span>
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="grid gap-3">
-                    {projects.map((project) => {
-                      const count = getMemberEmails(project).length;
-                      return (
-                        <button
-                          key={project.id}
-                          type="button"
-                          onClick={() => setSelectedTeamId(project.id)}
-                          className={cn(
-                            'w-full text-left p-4 rounded-xl border transition-all',
-                            'bg-[var(--secondary)]/60 border-[var(--border)] hover:border-[var(--primary)]/50 hover:bg-[var(--secondary)]'
-                          )}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <Users className="w-4 h-4 text-[var(--primary)]" />
-                              <span className="font-semibold">{project.name}</span>
-                              <span className="text-xs text-[var(--foreground)]/60">
-                                {count} member{count !== 1 ? 's' : ''}
-                              </span>
-                            </div>
-                            <ChevronRight className="w-4 h-4 text-[var(--foreground)]/50" />
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
           {isConsultant && (
             <Card className="shadow-lg">
               <CardHeader>
@@ -513,6 +534,84 @@ export default function TeamsPage() {
                         </li>
                       ))}
                     </ul>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {isPartner && (
+            <Card className="shadow-lg">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="w-5 h-5 text-[var(--primary)]" />
+                  Teams (Read only)
+                </CardTitle>
+                <CardDescription>
+                  View teams and members. Partners cannot create or edit teams.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {loading ? (
+                  <div className="p-8 text-center text-sm text-[var(--foreground)]/70">Loading teams...</div>
+                ) : selectedTeamId && selectedTeam ? (
+                  <div className="space-y-4">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-[var(--foreground)]"
+                      onClick={() => setSelectedTeamId(null)}
+                    >
+                      <ChevronLeft className="w-4 h-4 mr-1" />
+                      Back to teams
+                    </Button>
+                    <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/60">
+                      <h3 className="text-lg font-semibold mb-3">{selectedTeam.name}</h3>
+                      <p className="text-xs font-medium text-[var(--foreground)]/70 mb-2">Members and roles</p>
+                      <ul className="space-y-2">
+                        {(selectedTeam.members ?? []).map((m) => (
+                          <li
+                            key={m.user.id}
+                            className="flex items-center justify-between py-2 px-3 rounded-lg bg-[var(--card)] border border-[var(--border)]"
+                          >
+                            <span className="text-sm">
+                              <span className="font-medium text-[var(--foreground)]">{m.user.email}</span>
+                              <span className="text-[var(--foreground)]/60 ml-2">({getUserRole(m.user.email)})</span>
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                ) : projects.length === 0 ? (
+                  <div className="p-8 rounded-xl border border-dashed border-[var(--border)] text-center">
+                    <p className="text-sm text-[var(--foreground)]/70">No teams available.</p>
+                  </div>
+                ) : (
+                  <div className="grid gap-3">
+                    {projects.map((project) => {
+                      const count = getMemberEmails(project).length;
+                      return (
+                        <button
+                          key={project.id}
+                          type="button"
+                          onClick={() => setSelectedTeamId(project.id)}
+                          className={cn(
+                            'w-full text-left flex items-center justify-between gap-2 p-4 rounded-xl border transition-all',
+                            'bg-[var(--secondary)]/60 border-[var(--border)] hover:border-[var(--primary)]/50 hover:bg-[var(--secondary)]',
+                          )}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Users className="w-4 h-4 text-[var(--primary)] shrink-0" />
+                            <span className="font-semibold">{project.name}</span>
+                            <span className="text-xs text-[var(--foreground)]/60">
+                              {count} member{count !== 1 ? 's' : ''}
+                            </span>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-[var(--foreground)]/50 shrink-0" />
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </CardContent>

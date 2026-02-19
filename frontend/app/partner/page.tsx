@@ -4,23 +4,14 @@ import { useAuth } from '@/components/AuthContext';
 import { useState, useRef, useEffect, type RefObject } from 'react';
 import { setLastDashboard } from '@/lib/dashboard-context';
 import {
-  Bell,
-  FileText,
   Activity,
-  Edit3,
-  MessageSquare,
-  Layers,
-  StickyNote,
-  Upload,
-  MessageCircle,
-  Download,
 } from 'lucide-react';
 import { LCPartnerNavbar } from '@/components/LCPartnerNavbar';
+import { GoogleCalendarPanel } from '@/components/GoogleCalendarPanel';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { cn } from '@/lib/utils';
-import { mockWorkstreamDeadlines } from '@/data/mockData';
+import { tasksAPI, setAuthToken } from '@/lib/api';
+import type { TaskFromApi } from '@/lib/task-utils';
 import type { WorkstreamDeadline } from '@/types';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { useRouter } from 'next/navigation';
@@ -65,26 +56,14 @@ function formatNotificationTime(at: Date, now: number): string {
 export default function PartnerDashboard() {
   const session = useAuth();
   const router = useRouter();
-  const [workstreams] = useState<WorkstreamDeadline[]>(mockWorkstreamDeadlines);
-  const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
-  const [now, setNow] = useState<number | null>(null);
+  const [workstreams, setWorkstreams] = useState<WorkstreamDeadline[]>([]);
   const dashboardRef = useRef<HTMLDivElement>(null);
-  const notificationsRef = useRef<HTMLDivElement>(null);
-  const docsRef = useRef<HTMLDivElement>(null);
-  const initialSlidesRef = useRef<HTMLDivElement>(null);
-  const finalSlidesRef = useRef<HTMLDivElement>(null);
-  const callNotesRef = useRef<HTMLDivElement>(null);
   const engagementRef = useRef<HTMLDivElement>(null);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const unreadCount = 0;
 
   const navScrollMap: Record<string, RefObject<HTMLDivElement | null>> = {
     overview: dashboardRef,
-    notifications: notificationsRef,
-    workstreamdocs: docsRef,
-    initialslides: initialSlidesRef,
-    finalslides: finalSlidesRef,
-    callnotes: callNotesRef,
   };
 
   useEffect(() => {
@@ -103,16 +82,73 @@ export default function PartnerDashboard() {
     if (ref?.current) ref.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const markAsRead = (id: string) => {
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+  const buildWorkstreamDeadlines = (tasks: TaskFromApi[]): WorkstreamDeadline[] => {
+    const byWorkstream = new Map<
+      string,
+      { earliestDue: Date; total: number; completed: number }
+    >();
+
+    tasks.forEach((task) => {
+      const key = task.workstream || 'General';
+      const due = new Date(task.dueDate);
+      const existing = byWorkstream.get(key);
+      if (!existing) {
+        byWorkstream.set(key, {
+          earliestDue: due,
+          total: 1,
+          completed: task.completed ? 1 : 0,
+        });
+      } else {
+        if (due < existing.earliestDue) existing.earliestDue = due;
+        existing.total += 1;
+        if (task.completed) existing.completed += 1;
+      }
+    });
+
+    const now = new Date();
+    return Array.from(byWorkstream.entries()).map(([workstreamName, stats]) => {
+      const daysRemaining = Math.floor(
+        (stats.earliestDue.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+      );
+      const progress =
+        stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+      const status: WorkstreamDeadline['status'] =
+        daysRemaining < 0 && progress < 100
+          ? 'overdue'
+          : daysRemaining <= 3 && progress < 60
+            ? 'at_risk'
+            : 'on_track';
+
+      return {
+        id: workstreamName,
+        workstreamName,
+        deadline: stats.earliestDue,
+        daysRemaining,
+        progress,
+        description: `${stats.total} task${stats.total !== 1 ? 's' : ''} • ${stats.completed} completed`,
+        status,
+      };
+    });
   };
 
   useEffect(() => {
-    setLastDashboard('/partner');
-  }, []);
+    const loadEngagement = async () => {
+      if (!session.isLoggedIn || !session.user?.email) return;
+      try {
+        const token = await session.getToken();
+        setAuthToken(token || session.user?.email || null);
+        const res = await tasksAPI.getAll({ includeCompleted: true });
+        const tasks = Array.isArray(res.data) ? (res.data as TaskFromApi[]) : [];
+        setWorkstreams(buildWorkstreamDeadlines(tasks));
+      } catch {
+        setWorkstreams([]);
+      }
+    };
+    void loadEngagement();
+  }, [session.isLoggedIn, session.user?.email]);
 
   useEffect(() => {
-    setNow(Date.now());
+    setLastDashboard('/partner');
   }, []);
 
   return (
@@ -127,87 +163,15 @@ export default function PartnerDashboard() {
       <div className="flex-1 flex flex-col min-h-screen relative overflow-y-auto">
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-8 overflow-y-auto">
           <div ref={dashboardRef} className="max-w-[1800px] mx-auto space-y-8 pb-8">
-            {/* Notifications */}
-            <div ref={notificationsRef}>
-              <Card className="shadow-lg">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle className="flex items-center gap-2">
-                        <Bell className="w-5 h-5 text-[var(--primary)]" />
-                        Notifications
-                      </CardTitle>
-                      <CardDescription>New uploads and comments</CardDescription>
-                    </div>
-                    {unreadCount > 0 && (
-                      <Badge variant="info" size="sm">
-                        {unreadCount} new
-                      </Badge>
-                    )}
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-3 max-h-[420px] overflow-y-auto">
-                    {notifications.map((n) => {
-                      const Icon =
-                        n.type === 'upload'
-                          ? Upload
-                          : n.type === 'comment'
-                            ? MessageCircle
-                            : Edit3;
-                      return (
-                        <li
-                          key={n.id}
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => markAsRead(n.id)}
-                          onKeyDown={(e) => e.key === 'Enter' && markAsRead(n.id)}
-                          className={cn(
-                            'p-4 rounded-xl border transition-colors text-left cursor-pointer',
-                            n.read
-                              ? 'border-[var(--border)] bg-[var(--secondary)]/60'
-                              : 'border-[var(--primary)]/30 bg-[var(--primary)]/5'
-                          )}
-                        >
-                          <div className="flex items-start gap-3">
-                            <div className="p-2 rounded-lg bg-[var(--accent)] shrink-0">
-                              <Icon className="w-4 h-4 text-[var(--primary)]" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <h4 className="font-semibold text-[var(--foreground)]">{n.title}</h4>
-                                {!n.read && (
-                                  <span className="w-2 h-2 rounded-full bg-[var(--primary)] shrink-0" />
-                                )}
-                                <span className="text-xs text-[var(--foreground)]/60 ml-auto" suppressHydrationWarning>
-                                  {now !== null ? formatNotificationTime(n.at, now) : '—'}
-                                </span>
-                              </div>
-                              <p className="text-sm text-[var(--foreground)]/80 mt-1">{n.message}</p>
-                              {n.context && (
-                                <Badge variant="info" size="sm" className="mt-2">
-                                  {n.context}
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </CardContent>
-              </Card>
-            </div>
-
             <div className="grid grid-cols-12 gap-6">
-              <div ref={engagementRef} className="col-span-12 lg:col-span-5">
+              <div ref={engagementRef} className="col-span-12 lg:col-span-6">
                 <Card className="shadow-lg">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Activity className="w-5 h-5 text-[var(--primary)]" />
                       Engagement status & timelines
                     </CardTitle>
-                    <CardDescription>View workstream status and deadlines (R)</CardDescription>
+                    <CardDescription>View workstream status and deadlines</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4 max-h-[400px] overflow-y-auto">
                     {workstreams
@@ -249,146 +213,10 @@ export default function PartnerDashboard() {
                   </CardContent>
                 </Card>
               </div>
-
-              <div ref={docsRef} className="col-span-12 lg:col-span-7">
-                <Card className="shadow-lg">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <FileText className="w-5 h-5 text-[var(--primary)]" />
-                      Workstream Documents
-                    </CardTitle>
-                    <CardDescription>Draft (R+C) · Released (R+C)</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {mockWorkstreamDocs.map((doc) => (
-                      <div
-                        key={doc.id}
-                        className="p-4 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/80 flex items-center justify-between"
-                      >
-                        <div>
-                          <h5 className="font-semibold text-[var(--foreground)]">{doc.name}</h5>
-                          <p className="text-xs text-[var(--foreground)]/70">{doc.workstream}</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant={doc.status === 'draft' ? 'warning' : 'success'} size="sm">
-                            {doc.status}
-                          </Badge>
-                          <Button variant="ghost" size="sm" title="Comment">
-                            <MessageSquare className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div ref={initialSlidesRef}>
-                <Card className="shadow-lg">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Layers className="w-5 h-5 text-[var(--primary)]" />
-                      Initial slides
-                    </CardTitle>
-                    <CardDescription>View (R) · Comment (C)</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {mockInitialSlides.map((s) => (
-                      <div
-                        key={s.id}
-                        className="p-4 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/80 flex items-center justify-between"
-                      >
-                        <div>
-                          <h5 className="font-semibold text-[var(--foreground)]">{s.title}</h5>
-                          <p className="text-xs text-[var(--foreground)]/70">{s.workstream}</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="info" size="sm">
-                            {s.commentCount} comments
-                          </Badge>
-                          <Button variant="ghost" size="sm">
-                            View
-                          </Button>
-                          <Button variant="ghost" size="sm">
-                            <MessageSquare className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
+              <div className="col-span-12 lg:col-span-6">
+                <GoogleCalendarPanel className="shadow-lg h-full" />
               </div>
 
-              <div ref={finalSlidesRef}>
-                <Card className="shadow-lg">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Layers className="w-5 h-5 text-[var(--primary)]" />
-                      Final slides
-                    </CardTitle>
-                    <CardDescription>View (R) · Comment (C) · Download (R)</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {mockFinalSlides.map((s) => (
-                      <div
-                        key={s.id}
-                        className="p-4 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/80 flex items-center justify-between flex-wrap gap-2"
-                      >
-                        <div>
-                          <h5 className="font-semibold text-[var(--foreground)]">{s.title}</h5>
-                          <p className="text-xs text-[var(--foreground)]/70">{s.workstream}</p>
-                        </div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Button variant="ghost" size="sm">
-                            View
-                          </Button>
-                          <Button variant="ghost" size="sm">
-                            <MessageSquare className="w-4 h-4" />
-                          </Button>
-                          <Button variant="outline" size="sm">
-                            <Download className="w-4 h-4 mr-1" />
-                            Download deck
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-
-            <div ref={callNotesRef}>
-              <Card className="shadow-lg">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <StickyNote className="w-5 h-5 text-[var(--primary)]" />
-                    Client call notes
-                  </CardTitle>
-                  <CardDescription>Read (R) – written by LC</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {mockCallNotes.map((note) => (
-                      <div
-                        key={note.id}
-                        className="p-4 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/80"
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <h5 className="font-semibold text-[var(--foreground)]">{note.title}</h5>
-                          <span className="text-xs text-[var(--foreground)]/60">
-                            {note.date.toLocaleDateString()} · {note.author}
-                          </span>
-                        </div>
-                        <p className="text-sm text-[var(--foreground)]/80">
-                          Call notes content (read-only). Key decisions and action items from the client call.
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
             </div>
           </div>
         </main>

@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { SlackService } from '../integrations/slack.service';
-import { EmailService } from '../integrations/email.service';
 import { createRedisConnection } from '../common/redis.config';
 import {
   NotificationType,
@@ -34,7 +33,6 @@ export class NotificationsService {
   constructor(
     private prisma: PrismaService,
     private slackService: SlackService,
-    private emailService: EmailService,
     private configService: ConfigService,
   ) {
     const connection = createRedisConnection(this.configService);
@@ -89,6 +87,22 @@ export class NotificationsService {
     } else {
       this.logger.log(`Notification saved to database for user ${job.userId} (Redis not available)`);
     }
+  }
+
+  async getNotificationsForUser(userId: string, limit = 30) {
+    return this.prisma.notification.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        type: true,
+        title: true,
+        message: true,
+        createdAt: true,
+        metadata: true,
+      },
+    });
   }
 
   async scheduleDeadlineReminder(
@@ -280,6 +294,14 @@ export class NotificationsService {
         return `Submission Approved: ${data.deliverableTitle}`;
       case 'SUBMISSION_REJECTED':
         return `Revision Requested: ${data.deliverableTitle}`;
+      case 'PROJECT_UPDATED':
+        return data?.deliverableTitle
+          ? `Assignment Update: ${data.deliverableTitle}`
+          : 'Assignment Update';
+      case 'PROJECT_ASSIGNED':
+        return data?.projectName
+          ? `Project Assigned: ${data.projectName}`
+          : 'Project Assigned';
       default:
         return 'Notification';
     }
@@ -304,6 +326,12 @@ export class NotificationsService {
         return `Your submission has been approved`;
       case 'SUBMISSION_REJECTED':
         return `Please revise and resubmit your work`;
+      case 'PROJECT_UPDATED':
+        return data?.feedback || 'Assignment has been updated.';
+      case 'PROJECT_ASSIGNED':
+        return data?.projectName
+          ? `You have been assigned to project ${data.projectName}`
+          : 'You have been assigned to a new project.';
       default:
         return 'You have a new notification';
     }

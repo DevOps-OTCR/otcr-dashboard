@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { TasksService } from './tasks.service';
 import { AuthService } from '@/auth/auth.service';
+import { getVerifiedUser } from '@/common/utils/verify';
 
 @Controller('tasks')
 export class TasksController {
@@ -22,8 +23,11 @@ export class TasksController {
 
   private async getUserFromHeader(authorization: string) {
     if (!authorization) throw new UnauthorizedException('No authorization header');
-    const email = authorization.replace(/^Bearer\s+/i, '').trim();
-    if (!email) throw new UnauthorizedException('No user identifier in authorization');
+    const raw = authorization.replace(/^Bearer\s+/i, '').trim();
+    if (!raw) throw new UnauthorizedException('No user identifier in authorization');
+
+    // Support both legacy "Bearer <email>" and modern "Bearer <access_token>".
+    const email = raw.includes('@') ? raw : await getVerifiedUser(raw);
     const user = await this.authService.getUserByEmail(email);
     if (!user) throw new UnauthorizedException('User not found');
     return user;
@@ -54,6 +58,7 @@ export class TasksController {
       taskName: string;
       description?: string;
       dueDate: string;
+      dueTime?: string;
       projectName: string;
       workstream: string;
       workstreamId?: string;
@@ -75,6 +80,7 @@ export class TasksController {
       taskName?: string;
       description?: string;
       dueDate?: string;
+      dueTime?: string;
       status?: string;
       completed?: boolean;
       assigneeType?: string;

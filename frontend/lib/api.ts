@@ -39,6 +39,20 @@ export type ProjectsQuery = {
   limit?: number;
 };
 
+export type ProjectListItem = {
+  id: string;
+  name: string;
+  pm?: {
+    email?: string | null;
+  } | null;
+  members?: Array<{
+    user: {
+      email?: string | null;
+    };
+  }>;
+  googleCalendarEmbedUrl?: string | null;
+};
+
 export const projectsAPI = {
   getAll: (params?: ProjectsQuery) => {
     const q = new URLSearchParams();
@@ -66,6 +80,7 @@ export const projectsAPI = {
     clientName?: string;
     startDate: string;
     endDate?: string;
+    googleCalendarEmbedUrl?: string | null;
     pmId?: string;
     memberIds?: string[];
     memberEmails?: string[];
@@ -76,6 +91,7 @@ export const projectsAPI = {
     clientName?: string;
     startDate?: string;
     endDate?: string;
+    googleCalendarEmbedUrl?: string | null;
     status?: 'ACTIVE' | 'COMPLETED' | 'ON_HOLD' | 'CANCELLED';
   }) => api.patch(`/projects/${id}`, data),
   delete: (id: string) => api.delete(`/projects/${id}`),
@@ -100,6 +116,7 @@ export const tasksAPI = {
     taskName: string;
     description?: string;
     dueDate: string;
+    dueTime?: string;
     projectName: string;
     workstream: string;
     workstreamId?: string;
@@ -111,6 +128,7 @@ export const tasksAPI = {
     taskName?: string;
     description?: string;
     dueDate?: string;
+    dueTime?: string;
     status?: string;
     completed?: boolean;
     assigneeType?: TaskAssigneeType;
@@ -146,4 +164,32 @@ export const timeTrackingAPI = {
   log: (data: any) => api.post('/time-entries', data),
   getByUser: (userId: string) => api.get(`/users/${userId}/time-entries`),
   getByProject: (projectId: string) => api.get(`/projects/${projectId}/time-entries`),
+};
+
+export type SlackOAuthPurpose = 'INSTALL' | 'CONNECT';
+
+export const slackAPI = {
+  getInstallUrl: (params: {
+    purpose: SlackOAuthPurpose;
+    workspaceId?: string;
+    redirectUri?: string;
+  }) => api.get('/integrations/slack/install-url', { params }),
+  connectByEmail: (teamId?: string) =>
+    api.post('/integrations/slack/connect-by-email', teamId ? { teamId } : {}),
+  getConnections: () => api.get('/integrations/slack/connections'),
+};
+
+export const slideSubmissionsAPI = {
+  submit: (data: {
+    deliverableId: string;
+    presentationLink: string;
+    fileName?: string;
+    mimeType?: string;
+  }) => api.post('/slide-submissions', data),
+  getMine: () => api.get('/slide-submissions/my'),
+  getAll: () => api.get('/slide-submissions/all'),
+  markCommented: (id: string) => api.post(`/slide-submissions/${id}/mark-commented`),
+  approve: (id: string) => api.post(`/slide-submissions/${id}/approve`),
+  requestRevision: (id: string, feedback?: string) =>
+    api.post(`/slide-submissions/${id}/request-revision`, feedback ? { feedback } : {}),
 };

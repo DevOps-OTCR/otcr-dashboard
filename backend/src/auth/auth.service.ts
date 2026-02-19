@@ -6,6 +6,9 @@ export class AuthService {
   constructor(private prisma: PrismaService) {}
 
   async getUserByEmail(email: string) {
+    if (!email || typeof email !== 'string') {
+      throw new UnauthorizedException('Invalid user email');
+    }
     const normalizedEmail = email.toLowerCase().trim();
 
     // Try to find an existing user by normalized email

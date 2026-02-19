@@ -1,4 +1,4 @@
-export type NotificationType = 'task_assigned' | 'upload' | 'comment' | 'doc_updated';
+export type NotificationType = 'task_assigned' | 'upload' | 'comment' | 'doc_updated' | 'project_updated';
 
 export interface StoredNotification {
   id: string;
@@ -60,6 +60,24 @@ export function addNotification(notification: Omit<StoredNotification, 'id' | 'r
     read: false,
   };
   saveNotifications([newOne, ...list]);
+}
+
+export function upsertNotifications(notifications: Array<Omit<StoredNotification, 'read'>>): void {
+  const existing = loadNotifications();
+  const byId = new Map(existing.map((item) => [item.id, item]));
+
+  for (const notification of notifications) {
+    const current = byId.get(notification.id);
+    byId.set(notification.id, {
+      ...notification,
+      read: current?.read ?? false,
+    });
+  }
+
+  const merged = Array.from(byId.values()).sort(
+    (a, b) => b.at.getTime() - a.at.getTime(),
+  );
+  saveNotifications(merged);
 }
 
 /** Add a "new task assigned" notification for one assignee. */
