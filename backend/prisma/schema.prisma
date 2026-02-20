@@ -1,0 +1,448 @@
+// OTCR Dashboard - Complete Database Schema
+// Defines all entities for project management, deliverables, notifications
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================================
+// USERS & AUTHENTICATION
+// ============================================================================
+
+model User {
+  id        String   @id @default(cuid())
+  googleId  String?  @unique
+  email     String   @unique
+  firstName String?
+  lastName  String?
+  role      Role     @default(CONSULTANT)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  accounts           Account[]
+  sessions           Session[]
+  pmProjects         Project[]        @relation("ProjectPM")
+  projectAssignments ProjectMember[]
+  submissions        Submission[]
+  extensionRequests  Extension[]      @relation("ExtensionRequester")
+  extensionReviews   Extension[]      @relation("ExtensionReviewer")
+  submissionReviews  Submission[]     @relation("SubmissionReviewer")
+  timeEntries        TimeEntry[]
+  notifications      Notification[]
+  tasksCreated       Task[]
+  slackOAuthStates   SlackOAuthState[]
+  slackConnections   SlackUserConnection[]
+  installedWorkspaces SlackWorkspace[] @relation("SlackWorkspaceInstaller")
+
+  @@index([googleId])
+  @@index([email])
+  @@index([role])
+}
+
+enum Role {
+  ADMIN
+  PM
+  LC
+  PARTNER
+  CONSULTANT
+}
+
+model AllowedEmail {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  role      Role?    // Optional role assignment for the email
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([active])
+}
+
+// ============================================================================
+// PROJECTS
+// ============================================================================
+
+model Project {
+  id          String        @id @default(cuid())
+  name        String
+  description String?
+  clientName  String?
+  pmId        String
+  startDate   DateTime
+  endDate     DateTime?
+  status      ProjectStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  pm           User            @relation("ProjectPM", fields: [pmId], references: [id])
+  members      ProjectMember[]
+  deliverables Deliverable[]
+
+  @@index([pmId])
+  @@index([status])
+  @@index([startDate])
+}
+
+enum ProjectStatus {
+  ACTIVE
+  COMPLETED
+  ON_HOLD
+  CANCELLED
+}
+
+model ProjectMember {
+  id        String    @id @default(cuid())
+  projectId String
+  userId    String
+  joinedAt  DateTime  @default(now())
+  leftAt    DateTime?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+  @@index([userId])
+}
+
+// ============================================================================
+// TASKS (Action items / Engagement tasks)
+// ============================================================================
+
+model Task {
+  id            String       @id @default(cuid())
+  taskName      String
+  description   String?
+  dueDate       DateTime
+  projectName   String
+  workstream    String
+  workstreamId  String?      // For engagement page grouping
+  status        TaskStatus   @default(PENDING)
+  completed     Boolean      @default(false)
+  createdById   String
+  assigneeType  TaskAssigneeType
+  assigneeEmail String?
+  projectId     String?      // For ALL_TEAM: which project's members
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  createdBy User @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([createdById])
+  @@index([dueDate])
+  @@index([assigneeType])
+  @@index([workstreamId])
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  OVERDUE
+  COMPLETED
+}
+
+enum TaskAssigneeType {
+  PERSON
+  ALL
+  ALL_PMS
+  ALL_TEAM
+}
+
+// ============================================================================
+// DELIVERABLES & SUBMISSIONS
+// ============================================================================
+
+model Deliverable {
+  id          String            @id @default(cuid())
+  projectId   String
+  title       String
+  description String?
+  type        DeliverableType
+  deadline    DateTime
+  status      DeliverableStatus @default(PENDING)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  submissions Submission[]
+  extensions  Extension[]
+
+  @@index([projectId])
+  @@index([deadline])
+  @@index([status])
+}
+
+enum DeliverableType {
+  DOCUMENT
+  PRESENTATION
+  CODE
+  ANALYSIS
+  REPORT
+  OTHER
+}
+
+enum DeliverableStatus {
+  PENDING
+  IN_PROGRESS
+  SUBMITTED
+  APPROVED
+  OVERDUE
+}
+
+model Submission {
+  id            String           @id @default(cuid())
+  deliverableId String
+  userId        String
+
+  // File details (stored in Cloudflare R2/AWS S3)
+  fileUrl  String
+  fileName String
+  fileSize Int // bytes
+  mimeType String?
+
+  // Review
+  status       SubmissionStatus @default(PENDING_REVIEW)
+  reviewedById String?
+  reviewedAt   DateTime?
+  feedback     String?
+
+  // Versioning
+  version    Int          @default(1)
+  replacesId String?
+  replaces   Submission?  @relation("SubmissionVersions", fields: [replacesId], references: [id], onDelete: SetNull)
+  replacedBy Submission[] @relation("SubmissionVersions")
+
+  // Timing
+  submittedAt DateTime @default(now())
+  isLate      Boolean  @default(false)
+
+  deliverable Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+  submitter   User        @relation(fields: [userId], references: [id])
+  reviewer    User?       @relation("SubmissionReviewer", fields: [reviewedById], references: [id])
+
+  @@index([deliverableId])
+  @@index([userId])
+  @@index([status])
+}
+
+enum SubmissionStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  REQUIRES_RESUBMISSION
+}
+
+// ============================================================================
+// EXTENSION REQUESTS
+// ============================================================================
+
+model Extension {
+  id               String          @id @default(cuid())
+  deliverableId    String
+  requestedById    String
+  reason           String
+  originalDueDate  DateTime
+  requestedDueDate DateTime
+  status           ExtensionStatus @default(PENDING)
+  approvedById     String?
+  approverNotes    String?
+  requestedAt      DateTime        @default(now())
+  respondedAt      DateTime?
+
+  deliverable Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+  requester   User        @relation("ExtensionRequester", fields: [requestedById], references: [id])
+  approver    User?       @relation("ExtensionReviewer", fields: [approvedById], references: [id])
+
+  @@index([deliverableId])
+  @@index([requestedById])
+  @@index([status])
+}
+
+enum ExtensionStatus {
+  PENDING
+  APPROVED
+  DENIED
+  WITHDRAWN
+}
+
+// ============================================================================
+// TIME TRACKING (Optional)
+// ============================================================================
+
+model TimeEntry {
+  id          String   @id @default(cuid())
+  userId      String
+  projectId   String?
+  date        DateTime
+  hours       Float
+  description String?
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([date])
+}
+
+// ============================================================================
+// NOTIFICATIONS & BACKGROUND JOBS
+// ============================================================================
+
+model Notification {
+  id        String              @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  channel   NotificationChannel
+  status    NotificationStatus  @default(PENDING)
+  metadata  Json?               // Additional data (deliverable ID, project ID, etc.)
+  sentAt    DateTime?
+  createdAt DateTime            @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([type])
+}
+
+enum NotificationType {
+  DEADLINE_REMINDER
+  DEADLINE_24H
+  DEADLINE_1H
+  EXTENSION_REQUEST
+  EXTENSION_APPROVED
+  EXTENSION_DENIED
+  SUBMISSION_APPROVED
+  SUBMISSION_REJECTED
+  PROJECT_ASSIGNED
+  PROJECT_UPDATED
+  OVERDUE_ALERT
+}
+
+enum NotificationChannel {
+  SLACK
+  EMAIL
+  BOTH
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  RETRYING
+}
+
+// ============================================================================
+// SLACK INTEGRATIONS
+// ============================================================================
+
+enum SlackOAuthPurpose {
+  INSTALL
+  CONNECT
+}
+
+model SlackWorkspace {
+  id                String   @id @default(cuid())
+  teamId            String   @unique
+  teamName          String?
+  enterpriseId      String?
+  botAccessToken    String
+  installedByUserId String?
+  installedAt       DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  installedBy User?                  @relation("SlackWorkspaceInstaller", fields: [installedByUserId], references: [id])
+  oauthStates  SlackOAuthState[]
+  connections  SlackUserConnection[]
+
+  @@index([installedByUserId])
+  @@index([enterpriseId])
+}
+
+model SlackOAuthState {
+  id          String            @id @default(cuid())
+  state       String            @unique
+  userId      String
+  purpose     SlackOAuthPurpose
+  workspaceId String?
+  redirectUri String?
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime          @default(now())
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace SlackWorkspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([expiresAt])
+}
+
+model SlackUserConnection {
+  id          String   @id @default(cuid())
+  userId      String
+  workspaceId String
+  slackUserId String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace SlackWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId])
+  @@index([workspaceId])
+  @@index([slackUserId])
+}
+
+// ============================================================================
+// NEXT-AUTH TABLES
+// ============================================================================
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
