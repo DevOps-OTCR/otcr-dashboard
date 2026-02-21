@@ -1,0 +1,10 @@
+name = "otcr-backend"               # fallback name (ignored in env.qa)
+
+compatibility_date = "2025-02-01"   # or newer date
+compatibility_flags = ["nodejs_compat"]  # usually needed for Node-like APIs
+
+[env.qa]
+name = "otcr-backend-qa"            # actual deployed Worker name (visible in dashboard)
+# Optional: add non-secret env vars here
+# FRONTEND_URL = "https://otcr-cms-qa.pages.dev"
+# NODE_ENV     = "production"
