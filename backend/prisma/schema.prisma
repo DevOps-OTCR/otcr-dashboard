@@ -1,6 +1,3 @@
-// OTCR Dashboard - Complete Database Schema
-// Defines all entities for project management, deliverables, notifications
-
 generator client {
   provider = "prisma-client-js"
   output   = "../node_modules/.prisma/client"
@@ -9,6 +6,88 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+model applications {
+  id                 Int               @id @default(autoincrement())
+  name               String            @db.VarChar(255)
+  email              String            @db.VarChar(255)
+  interest           String?           @db.VarChar(500)
+  resume_filename    String?           @db.VarChar(255)
+  resume_path        String?           @db.VarChar(500)
+  status             String            @default("pending") @db.VarChar(20)
+  created_at         DateTime          @default(now()) @db.Timestamp(6)
+  reviewed_at        DateTime?         @db.Timestamp(6)
+  notes              String?
+  archived_at        DateTime?         @db.Timestamp(6)
+  assessment_link_id Int?
+  assessment_links   assessment_links? @relation(fields: [assessment_link_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([assessment_link_id], map: "ix_applications_assessment_link_id")
+  @@index([email], map: "ix_applications_email")
+}
+
+model assessment_links {
+  id           Int            @id @default(autoincrement())
+  token        String         @unique @db.VarChar(64)
+  email        String?        @db.VarChar(255)
+  label        String?        @db.VarChar(255)
+  created_at   DateTime       @default(now()) @db.Timestamp(6)
+  expires_at   DateTime?      @db.Timestamp(6)
+  applications applications[]
+  attempts     attempts[]
+
+  @@index([email], map: "ix_assessment_links_email")
+  @@index([token], map: "ix_assessment_links_token")
+}
+
+model assessment_progress_snapshots {
+  id                 Int      @id @default(autoincrement())
+  attempt_id         Int
+  snapshot_at        DateTime @db.Timestamp(6)
+  sections_completed Json?    @db.Json
+  current_section    String?  @db.VarChar(50)
+  elapsed_seconds    Int
+  progress_detail    Json?
+  attempts           attempts @relation(fields: [attempt_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([attempt_id], map: "ix_assessment_progress_snapshots_attempt_id")
+  @@index([id], map: "ix_assessment_progress_snapshots_id")
+}
+
+model attempts {
+  id                            Int                             @id @default(autoincrement())
+  link_id                       Int
+  started_at                    DateTime                        @default(now()) @db.Timestamp(6)
+  last_activity_at              DateTime                        @default(now()) @db.Timestamp(6)
+  completed_at                  DateTime?                       @db.Timestamp(6)
+  sections_completed            Json?                           @default("[]")
+  focus_loss_events             Int?                            @default(0)
+  is_flagged                    Boolean?                        @default(false)
+  integrity_notes               String?                         @db.VarChar(500)
+  assessment_progress_snapshots assessment_progress_snapshots[]
+  assessment_links              assessment_links                @relation(fields: [link_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  submissions                   submissions[]
+
+  @@index([link_id], map: "ix_attempts_link_id")
+}
+
+model submissions {
+  id            Int      @id @default(autoincrement())
+  attempt_id    Int
+  section       String   @db.VarChar(50)
+  payload       Json
+  coding_result Json?
+  notes         String?  @db.VarChar(500)
+  submitted_at  DateTime @default(now()) @db.Timestamp(6)
+  attempts      attempts @relation(fields: [attempt_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([attempt_id], map: "ix_submissions_attempt_id")
+}
+
+
+// OTCR Dashboard - Complete Database Schema
+// Defines all entities for project management, deliverables, notifications
+
 
 // ============================================================================
 // USERS & AUTHENTICATION
@@ -446,3 +525,4 @@ model VerificationToken {
 
   @@unique([identifier, token])
 }
+
