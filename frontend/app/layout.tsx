@@ -14,8 +14,8 @@ export default function MsalWrapper({ children }: { children: ReactNode }) {
     auth: {
       clientId: process.env.NEXT_PUBLIC_MSAL_CLIENT_ID || "294bcae4-d5c3-44e2-9e06-06cc230a9bfd",
       authority: process.env.NEXT_PUBLIC_MSAL_AUTHORITY || "https://login.microsoftonline.com/44467e6f-462c-4ea2-823f-7800de5434e3",
-      redirectUri: process.env.NEXT_PUBLIC_MSAL_REDIRECT_URI || "http://localhost:3000/auth/callback",
-      postLogoutRedirectUri: "http://localhost:3000/sign-up",
+      redirectUri: process.env.NEXT_PUBLIC_MSAL_REDIRECT_URI,
+      postLogoutRedirectUri: process.env.NEXT_PUBLIC_MSAL_POST_LOGOUT_REDIRECT_URI,
     },
     cache: {
       cacheLocation: "sessionStorage",
