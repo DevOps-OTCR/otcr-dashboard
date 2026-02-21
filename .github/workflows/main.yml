@@ -49,7 +49,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy frontend/.open-next/cloudflare/static --project-name=cms-otcr-qa
+          command: command: pages deploy frontend/.open-next/cloudflare --project-name=cms-otcr-qa
 
   deploy-backend:
     name: Deploy Backend → Cloudflare Worker (QA)
