@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 import { getEffectiveRole, getUserRole, type AppRole } from '@/lib/permissions';
 import { PMNavbar } from '@/components/PMNavbar';
 import { LCPartnerNavbar } from '@/components/LCPartnerNavbar';
-import { AdminRoleSwitcher } from '@/components/AdminRoleSwitcher';
+import { AppNavbar } from '@/components/AppNavbar';
 import { getLastDashboard } from '@/lib/dashboard-context';
 import { useRouter } from 'next/navigation';
 import { projectsAPI, authAPI, setAuthToken } from '@/lib/api';
@@ -280,27 +280,7 @@ export default function TeamsPage() {
   return (
     <div className="min-h-screen flex flex-col bg-[var(--background)]">
       {isConsultant ? (
-        <header className="border-b border-[var(--border)] bg-[var(--card)] sticky top-0 z-50">
-          <div className="px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between py-4">
-              <div className="flex items-center gap-3">
-                <a href="/consultant" className="flex items-center gap-3">
-                  <img src="/otcr-logo.png" alt="OTCR Consulting" className="h-10 w-auto" />
-                  <span className="text-sm font-semibold text-[var(--primary)] hidden sm:inline">Consultant</span>
-                </a>
-                <AdminRoleSwitcher className="shrink-0" />
-              </div>
-            </div>
-            <nav className="flex items-center gap-1 border-t border-[var(--border)] py-2">
-              <a href="/consultant" className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm text-[var(--foreground)]/75 hover:bg-[var(--accent)] hover:text-[var(--foreground)]">
-                Overview
-              </a>
-              <span className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm text-[var(--foreground)]/75 bg-[var(--accent)]">
-                Teams
-              </span>
-            </nav>
-          </div>
-        </header>
+        <AppNavbar role="CONSULTANT" currentPath="/teams" />
       ) : showLCNavbar ? (
         <LCPartnerNavbar role="LC" currentPath="/teams" />
       ) : showPartnerNavbar ? (
@@ -545,7 +525,7 @@ export default function TeamsPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Users className="w-5 h-5 text-[var(--primary)]" />
-                  Teams (Read only)
+                  Teams
                 </CardTitle>
                 <CardDescription>
                   View teams and members. Partners cannot create or edit teams.

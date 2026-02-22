@@ -120,8 +120,8 @@ export const PERMISSIONS = {
   commentFinalSlides: { consultant: false, lc: 'C', pm: 'C', partner: 'C' },
   compileDeck: { consultant: false, lc: false, pm: 'W', partner: false },
   downloadFinalDeck: { consultant: false, lc: false, pm: 'R', partner: 'R' },
-  clientCallNotesWrite: { consultant: false, lc: 'W', pm: false, partner: false },
-  clientCallNotesRead: { consultant: false, lc: 'R', pm: 'R', partner: 'R' },
+  clientCallNotesWrite: { consultant: false, lc: 'W', pm: 'W', partner: false },
+  clientCallNotesRead: { consultant: 'R', lc: 'R', pm: 'R', partner: 'R' },
   engagementStatusTimelines: { consultant: 'R', lc: 'R', pm: 'R', partner: 'R' },
 } as const;
 
@@ -164,8 +164,8 @@ export function canShowNavItem(navId: string, role: AppRole): boolean {
     finalSlides: () => true,
     compileDeck: (r) => ['PM', 'ADMIN'].includes(r),
     downloadDeck: (r) => ['PM', 'PARTNER', 'ADMIN'].includes(r),
-    clientCallNotes: (r) => ['LC', 'PM', 'PARTNER', 'ADMIN'].includes(r),
-    team: (r) => ['PM', 'ADMIN'].includes(r),
+    clientCallNotes: (r) => ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'ADMIN'].includes(r),
+    team: (r) => ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'ADMIN'].includes(r),
   };
   return map[navId]?.(role) ?? false;
 }

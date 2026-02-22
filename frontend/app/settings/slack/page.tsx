@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Link2, RefreshCw, Slack } from 'lucide-react';
+import { Link2, RefreshCw, Slack } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -11,6 +10,7 @@ import { setAuthToken, slackAPI, type SlackOAuthPurpose } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
 import type { AppRole } from '@/lib/permissions';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
+import { AppNavbar } from '@/components/AppNavbar';
 
 type SlackConnection = {
   id: string;
@@ -137,19 +137,13 @@ export default function SlackSettingsPage() {
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
+      <AppNavbar role={role} currentPath="/settings/slack" />
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-6">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-wide text-[var(--foreground)]/60">Integrations</p>
             <h1 className="text-2xl font-semibold mt-1">Slack Connection</h1>
           </div>
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-[var(--border)] hover:bg-[var(--accent)] transition-colors text-sm"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </Link>
         </div>
 
         <Card>

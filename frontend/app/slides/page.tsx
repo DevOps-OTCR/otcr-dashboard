@@ -1,10 +1,10 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { Layers, Upload } from 'lucide-react';
 import { PMNavbar } from '@/components/PMNavbar';
 import { LCPartnerNavbar } from '@/components/LCPartnerNavbar';
+import { AppNavbar } from '@/components/AppNavbar';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -256,15 +256,7 @@ export default function SlidesPage() {
           currentPath="/slides"
         />
       )}
-      {resolvedRole === 'CONSULTANT' && (
-        <header className="border-b border-[var(--border)] bg-[var(--card)]">
-          <div className="px-4 sm:px-6 lg:px-8 py-4">
-            <Link href="/consultant" className="text-sm text-[var(--primary)] underline">
-              Back to Dashboard
-            </Link>
-          </div>
-        </header>
-      )}
+      {resolvedRole === 'CONSULTANT' && <AppNavbar role="CONSULTANT" currentPath="/slides" />}
 
       <main className="px-4 sm:px-6 lg:px-8 py-8">
         <div className="max-w-[1200px] mx-auto">

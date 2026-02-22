@@ -1,14 +1,14 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { StickyNote, ExternalLink, Plus } from 'lucide-react';
 import { PMNavbar } from '@/components/PMNavbar';
 import { LCPartnerNavbar } from '@/components/LCPartnerNavbar';
+import { AppNavbar } from '@/components/AppNavbar';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { getEffectiveRole } from '@/lib/permissions';
+import { getEffectiveRole, hasAccess } from '@/lib/permissions';
 import { deliverablesAPI, projectsAPI } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
 import type { AppRole } from '@/lib/permissions';
@@ -84,9 +84,12 @@ export default function ClientNotesPage() {
     return <FullScreenLoader />;
   }
 
-  const canWrite = useMemo(() => resolvedRole === 'LC' || resolvedRole === 'ADMIN', [resolvedRole]);
+  const canWrite = useMemo(
+    () => hasAccess('clientCallNotesWrite', resolvedRole, 'write'),
+    [resolvedRole],
+  );
   const canRead = useMemo(
-    () => resolvedRole === 'LC' || resolvedRole === 'PM' || resolvedRole === 'PARTNER' || resolvedRole === 'ADMIN',
+    () => hasAccess('clientCallNotesRead', resolvedRole, 'read'),
     [resolvedRole],
   );
 
@@ -186,15 +189,7 @@ export default function ClientNotesPage() {
           currentPath="/client-notes"
         />
       )}
-      {resolvedRole === 'CONSULTANT' && (
-        <header className="border-b border-[var(--border)] bg-[var(--card)]">
-          <div className="px-4 sm:px-6 lg:px-8 py-4">
-            <Link href="/consultant" className="text-sm text-[var(--primary)] underline">
-              Back to Dashboard
-            </Link>
-          </div>
-        </header>
-      )}
+      {resolvedRole === 'CONSULTANT' && <AppNavbar role="CONSULTANT" currentPath="/client-notes" />}
 
       <main className="px-4 sm:px-6 lg:px-8 py-8">
         <div className="max-w-[1000px] mx-auto space-y-6">
@@ -213,9 +208,6 @@ export default function ClientNotesPage() {
                   <StickyNote className="w-5 h-5 text-[var(--primary)]" />
                   Client Notes
                 </CardTitle>
-                <CardDescription>
-                  {canWrite ? 'Submit title + link. PM and Partner can view all submitted notes.' : 'View submitted client notes.'}
-                </CardDescription>
               </CardHeader>
               {canWrite && (
                 <CardContent className="space-y-3 border-t border-[var(--border)]">

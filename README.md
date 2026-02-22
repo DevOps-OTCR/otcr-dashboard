@@ -132,7 +132,7 @@ npm run dev
 **Option B: Docker (for production)**
 
 ```bash
-cp .env.production.example .env.production
+cp env/production.example .env.production
 # Edit .env.production with your values
 docker-compose -f docker-compose.prod.yml up -d
 ```
@@ -181,7 +181,7 @@ Additional documentation is available in the `docs/` folder:
 | `backend/.env.example` | Backend template | YES |
 | `frontend/.env.local` | Frontend secrets | NO |
 | `frontend/.env.local.example` | Frontend template | YES |
-| `.env.production.example` | Production template | YES |
+| `env/production.example` | Production template | YES |
 
 ## License
 

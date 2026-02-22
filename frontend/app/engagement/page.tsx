@@ -485,10 +485,6 @@ export default function EngagementPage() {
             <h1 className="text-2xl font-semibold text-[var(--foreground)]">
               Engagement — Workstreams & Assignments
             </h1>
-            <p className="text-sm text-[var(--foreground)]/70 mt-1">
-              PMs can create slide assignments and workstream assignments.
-              Consultants and LCs can submit PowerPoint or Word links for slide assignments.
-            </p>
           </div>
 
           {submissionError && (

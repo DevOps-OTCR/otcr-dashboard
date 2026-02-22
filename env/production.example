@@ -1,7 +1,7 @@
 # ============================================================================
 # PRODUCTION ENVIRONMENT CONFIGURATION
 # ============================================================================
-# Copy this file to .env.production and fill in your production values
+# Copy this file to ../.env.production and fill in your production values
 # NEVER commit .env.production to git!
 # ============================================================================
 

@@ -103,22 +103,16 @@ export default function SignInPage() {
             <div className="flex justify-center mb-4">
               <Image src="/otcr-logo-white.webp" alt="OTCR Logo" width={200} height={80} className="object-contain" priority />
             </div>
-            <p className="text-white/60 text-sm">Fast & Easy Project Management</p>
           </div>
 
           <div className="text-center mb-8">
             <h2 className="text-2xl font-semibold text-white mb-2">Welcome Back!</h2>
           </div>
 
-          {/* Sign In Button - Styled with UIUC Orange to match AcmLoginButton intent */}
           <button
             onClick={handleAzureSignIn}
             className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-[#FF5F05] hover:bg-[#e55604] text-white rounded-xl font-medium transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]"
           >
-            {/* Microsoft Icon */}
-            <svg className="w-5 h-5" viewBox="0 0 23 23">
-              <path fill="#f3f3f3" d="M0 0h11v11H0z"/><path fill="#f3f3f3" d="M12 0h11v11H12z"/><path fill="#f3f3f3" d="M0 12h11v11H0z"/><path fill="#f3f3f3" d="M12 12h11v11H12z"/>
-            </svg>
             <span>Sign in with NetID</span>
           </button>
         </div>
