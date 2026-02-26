@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "cf:build": "npx @opennextjs/cloudflare build",
     "start": "next start",
     "lint": "next lint",
     "prisma:generate": "prisma generate --schema=./prisma/schema.prisma",
@@ -42,6 +43,7 @@
     "typescript": "^5.9.3"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.17.1",
     "@tailwindcss/postcss": "^4.1.17",
     "@types/json-schema": "^7.0.15",
     "eslint": "^10.0.1",
