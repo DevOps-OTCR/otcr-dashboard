@@ -267,9 +267,9 @@ export default function WorkstreamDocsPage() {
       {(resolvedRole === 'PM' || resolvedRole === 'ADMIN') && (
         <PMNavbar currentPath="/workstream-docs" />
       )}
-      {(resolvedRole === 'LC' || resolvedRole === 'PARTNER') && (
+      {(resolvedRole === 'LC' || resolvedRole === 'PARTNER' || resolvedRole === 'EXECUTIVE') && (
         <LCPartnerNavbar
-          role={resolvedRole === 'PARTNER' ? 'PARTNER' : 'LC'}
+          role={resolvedRole === 'LC' ? 'LC' : 'PARTNER'}
           currentPath="/workstream-docs"
         />
       )}

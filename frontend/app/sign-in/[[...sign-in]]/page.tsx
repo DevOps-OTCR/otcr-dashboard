@@ -59,14 +59,31 @@ export default function SignInPage() {
   // Loading State (MSAL Startup)
   if (inProgress !== InteractionStatus.None && !accessDeniedError) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0a1628]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white/30 border-t-white mx-auto mb-4"></div>
+      <div className="relative min-h-screen flex items-center justify-center overflow-hidden bg-[#0a1628]">
+        <Image
+          src="/chicago-skyline.jpg"
+          alt="Chicago skyline"
+          fill
+          priority
+          className="object-cover"
+        />
+        <div className="absolute inset-0 bg-[#071120]/55" />
+        <div className="relative z-10 animate-spin rounded-full h-12 w-12 border-b-2 border-white/30 border-t-white mx-auto mb-4"></div>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#0a1628] relative overflow-hidden">
+      <Image
+        src="/chicago-skyline.jpg"
+        alt="Chicago skyline"
+        fill
+        priority
+        className="object-cover"
+      />
+      <div className="absolute inset-0 bg-[#071120]/60"></div>
+
       {/* Decorative background elements */}
       <div className="absolute top-0 left-0 w-96 h-96 bg-[rgb(0,51,96)]/20 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2"></div>
       <div className="absolute bottom-0 right-0 w-96 h-96 bg-[rgb(0,51,96)]/20 rounded-full blur-3xl translate-x-1/2 translate-y-1/2"></div>

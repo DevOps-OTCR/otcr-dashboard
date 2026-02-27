@@ -54,7 +54,7 @@ export function AdminRoleSwitcher({ className }: { className?: string }) {
       </button>
       {open && (
         <div className="absolute left-0 top-full mt-1 z-[100] min-w-[180px] rounded-lg border border-[var(--border)] bg-[var(--card)] shadow-lg py-1">
-          {(['PM', 'LC', 'PARTNER', 'CONSULTANT'] as const).map((role) => (
+          {(['PM', 'LC', 'PARTNER', 'EXECUTIVE', 'CONSULTANT'] as const).map((role) => (
             <button
               key={role}
               type="button"

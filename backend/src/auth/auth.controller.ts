@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Headers, Query, Body, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post,Headers, Query, Body, UnauthorizedException, ForbiddenException, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
 import { GetUser } from '@/common/get-user.decorator';
@@ -81,6 +81,24 @@ export class AuthController {
       success: true,
       emails,
     };
+  }
+
+  @Post('allowed-emails')
+  async addAllowedEmail(
+    @Body() body: { email?: string; role?: 'ADMIN' | 'PM' | 'LC' | 'PARTNER' | 'EXECUTIVE' | 'CONSULTANT' },
+    @GetUser() user: any,
+  ) {
+    if (!['ADMIN', 'EXECUTIVE'].includes(user.role)) {
+      throw new ForbiddenException('Only Admins and Executives can grant dashboard access');
+    }
+
+    const normalizedEmail = body?.email?.toLowerCase().trim();
+    if (!normalizedEmail) {
+      return { success: false, message: 'Email is required' };
+    }
+
+    const entry = await this.authService.addAllowedEmail(normalizedEmail, body.role ?? 'CONSULTANT');
+    return { success: true, email: entry };
   }
 
   @Post('sync-user')

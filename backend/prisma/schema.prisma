@@ -130,6 +130,7 @@ enum Role {
   PM
   LC
   PARTNER
+  EXECUTIVE
   CONSULTANT
 }
 
@@ -525,4 +526,3 @@ model VerificationToken {
 
   @@unique([identifier, token])
 }
-

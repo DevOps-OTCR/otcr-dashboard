@@ -9,6 +9,64 @@ export const api = axios.create({
   },
 });
 
+const PROJECTS_CACHE_PREFIX = 'otcr_projects_cache:';
+const PROJECTS_CACHE_TTL_MS = 2 * 60 * 1000;
+const projectsMemoryCache = new Map<string, { cachedAt: number; data: unknown }>();
+
+function getProjectsCacheKey(query: string): string {
+  return `${PROJECTS_CACHE_PREFIX}${query || '__all__'}`;
+}
+
+function readProjectsCache(key: string): unknown | null {
+  const memoryEntry = projectsMemoryCache.get(key);
+  if (memoryEntry && Date.now() - memoryEntry.cachedAt <= PROJECTS_CACHE_TTL_MS) {
+    return memoryEntry.data;
+  }
+  if (memoryEntry) projectsMemoryCache.delete(key);
+
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { cachedAt?: number; data?: unknown };
+    if (typeof parsed?.cachedAt !== 'number') {
+      localStorage.removeItem(key);
+      return null;
+    }
+    if (Date.now() - parsed.cachedAt > PROJECTS_CACHE_TTL_MS) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    projectsMemoryCache.set(key, { cachedAt: parsed.cachedAt, data: parsed.data });
+    return parsed.data ?? null;
+  } catch {
+    if (typeof window !== 'undefined') localStorage.removeItem(key);
+    return null;
+  }
+}
+
+function writeProjectsCache(key: string, data: unknown): void {
+  const entry = { cachedAt: Date.now(), data };
+  projectsMemoryCache.set(key, entry);
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(key, JSON.stringify(entry));
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+export function clearProjectsCache(): void {
+  projectsMemoryCache.clear();
+  if (typeof window === 'undefined') return;
+  const keysToDelete: string[] = [];
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (key?.startsWith(PROJECTS_CACHE_PREFIX)) keysToDelete.push(key);
+  }
+  keysToDelete.forEach((key) => localStorage.removeItem(key));
+}
+
 // Add auth token to requests
 export const setAuthToken = (token: string | null) => {
   
@@ -26,6 +84,20 @@ export const authAPI = {
   getRole: () => api.get('/auth/roles'),
   checkEmail: (email: string) => api.get(`/auth/check-email?email=${encodeURIComponent(email)}`),
   getAllowedEmails: () => api.get('/auth/allowed-emails'),
+  addAllowedEmail: (data: { email: string; role?: 'ADMIN' | 'PM' | 'LC' | 'PARTNER' | 'EXECUTIVE' | 'CONSULTANT' }) =>
+    api.post('/auth/allowed-emails', data),
+};
+
+export const notificationsAPI = {
+  mirrorBellNotification: (data: {
+    assigneeEmail: string;
+    title: string;
+    message: string;
+    type?: string;
+    taskId?: string;
+    taskTitle?: string;
+  }) => api.post('/notifications/bell-mirror', data),
+  getMy: (limit?: number) => api.get('/notifications/my', { params: limit ? { limit } : undefined }),
 };
 
 export type ProjectsQuery = {
@@ -65,7 +137,21 @@ export const projectsAPI = {
     if (params?.page != null) q.set('page', String(params.page));
     if (params?.limit != null) q.set('limit', String(params.limit));
     const query = q.toString();
-    return api.get('/projects' + (query ? `?${query}` : ''));
+    const cacheKey = getProjectsCacheKey(query);
+    const cachedData = readProjectsCache(cacheKey);
+    if (cachedData !== null) {
+      return Promise.resolve({
+        data: cachedData,
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: {},
+      } as any);
+    }
+    return api.get('/projects' + (query ? `?${query}` : '')).then((response) => {
+      writeProjectsCache(cacheKey, response.data);
+      return response;
+    });
   },
   getById: (id: string, options?: { includeMembers?: boolean; includeDeliverables?: boolean }) => {
     const q = new URLSearchParams();
@@ -84,7 +170,10 @@ export const projectsAPI = {
     pmId?: string;
     memberIds?: string[];
     memberEmails?: string[];
-  }) => api.post('/projects', data),
+  }) => api.post('/projects', data).then((response) => {
+    clearProjectsCache();
+    return response;
+  }),
   update: (id: string, data: {
     name?: string;
     description?: string;
@@ -93,12 +182,24 @@ export const projectsAPI = {
     endDate?: string;
     googleCalendarEmbedUrl?: string | null;
     status?: 'ACTIVE' | 'COMPLETED' | 'ON_HOLD' | 'CANCELLED';
-  }) => api.patch(`/projects/${id}`, data),
-  delete: (id: string) => api.delete(`/projects/${id}`),
+  }) => api.patch(`/projects/${id}`, data).then((response) => {
+    clearProjectsCache();
+    return response;
+  }),
+  delete: (id: string) => api.delete(`/projects/${id}`).then((response) => {
+    clearProjectsCache();
+    return response;
+  }),
   addMember: (projectId: string, body: { userId?: string; email?: string }) =>
-    api.post(`/projects/${projectId}/members`, body),
+    api.post(`/projects/${projectId}/members`, body).then((response) => {
+      clearProjectsCache();
+      return response;
+    }),
   removeMember: (projectId: string, userId: string) =>
-    api.delete(`/projects/${projectId}/members/${userId}`),
+    api.delete(`/projects/${projectId}/members/${userId}`).then((response) => {
+      clearProjectsCache();
+      return response;
+    }),
 };
 
 export type TaskAssigneeType = 'PERSON' | 'ALL' | 'ALL_PMS' | 'ALL_TEAM';

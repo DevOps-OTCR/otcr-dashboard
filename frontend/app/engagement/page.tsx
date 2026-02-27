@@ -465,6 +465,7 @@ export default function EngagementPage() {
     (resolvedRole !== 'PM' && resolvedRole !== 'ADMIN' && lastDashboard === '/lc');
   const showPartnerNavbar =
     resolvedRole === 'PARTNER' ||
+    resolvedRole === 'EXECUTIVE' ||
     (resolvedRole !== 'PM' && resolvedRole !== 'ADMIN' && lastDashboard === '/partner');
   const showPMNavbar =
     resolvedRole === 'PM' ||

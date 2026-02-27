@@ -5,10 +5,17 @@
 
 import { api } from "./api";
 
-export type AppRole = 'CONSULTANT' | 'LC' | 'PM' | 'PARTNER' | 'ADMIN';
+export type AppRole = 'CONSULTANT' | 'LC' | 'PM' | 'PARTNER' | 'EXECUTIVE' | 'ADMIN';
 
-const ROLES: AppRole[] = ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'ADMIN'];
+const ROLES: AppRole[] = ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'EXECUTIVE', 'ADMIN'];
 const DEV_ROLE_OVERRIDE_KEY = 'otcr_dev_role_override';
+const ROLE_CACHE_PREFIX = 'otcr_role_cache:';
+const ROLE_CACHE_TTL_MS = 5 * 60 * 1000;
+
+type RoleCacheEntry = {
+  role: AppRole;
+  cachedAt: number;
+};
 
 export function isValidAppRole(r: string): r is AppRole {
   return ROLES.includes(r as AppRole);
@@ -28,6 +35,59 @@ export function setDevRoleOverride(role: AppRole | null): void {
   } else {
     localStorage.removeItem(DEV_ROLE_OVERRIDE_KEY);
   }
+}
+
+function getRoleCacheKey(email: string): string {
+  return `${ROLE_CACHE_PREFIX}${email.toLowerCase()}`;
+}
+
+function readCachedRole(email: string): AppRole | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(getRoleCacheKey(email));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<RoleCacheEntry>;
+    if (!parsed || typeof parsed.cachedAt !== 'number' || typeof parsed.role !== 'string') {
+      localStorage.removeItem(getRoleCacheKey(email));
+      return null;
+    }
+    if (!isValidAppRole(parsed.role)) {
+      localStorage.removeItem(getRoleCacheKey(email));
+      return null;
+    }
+    if (Date.now() - parsed.cachedAt > ROLE_CACHE_TTL_MS) {
+      localStorage.removeItem(getRoleCacheKey(email));
+      return null;
+    }
+    return parsed.role;
+  } catch {
+    localStorage.removeItem(getRoleCacheKey(email));
+    return null;
+  }
+}
+
+function writeCachedRole(email: string, role: AppRole): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const value: RoleCacheEntry = { role, cachedAt: Date.now() };
+    localStorage.setItem(getRoleCacheKey(email), JSON.stringify(value));
+  } catch {
+    // Ignore localStorage quota/unavailable errors.
+  }
+}
+
+export function clearRoleCache(email?: string | null): void {
+  if (typeof window === 'undefined') return;
+  if (email) {
+    localStorage.removeItem(getRoleCacheKey(email));
+    return;
+  }
+  const keysToDelete: string[] = [];
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (key?.startsWith(ROLE_CACHE_PREFIX)) keysToDelete.push(key);
+  }
+  keysToDelete.forEach((key) => localStorage.removeItem(key));
 }
 
 /** Role from email only (no override). Use to show admin-only UI like role switcher. */
@@ -65,6 +125,9 @@ export async function getEffectiveRole(
   if (!token || !email) {
     throw new Error("Did not pass proper permission to getEffectiveRole");
   }
+  const normalizedEmail = email.toLowerCase();
+  const cachedRole = readCachedRole(normalizedEmail);
+  if (cachedRole) return cachedRole;
 
   try {
     const response = await api.get("/auth/role");
@@ -72,13 +135,16 @@ export async function getEffectiveRole(
     const roleString = response.data.role;
 
     if (typeof roleString === 'string' && isValidAppRole(roleString)) {
+      writeCachedRole(normalizedEmail, roleString);
       return roleString;
     }
   } catch (error) {
     console.error("Failed to fetch role from API, falling back to email check", error);
   }
 
-  return getActualUserRole(email);
+  const fallbackRole = getActualUserRole(normalizedEmail);
+  writeCachedRole(normalizedEmail, fallbackRole);
+  return fallbackRole;
 }
 
 /** Default dashboard path for a role (for redirects and admin switcher). */
@@ -90,6 +156,7 @@ export function getDefaultDashboardPath(role: AppRole): string {
     case 'LC':
       return '/lc';
     case 'PARTNER':
+    case 'EXECUTIVE':
       return '/partner';
     case 'CONSULTANT':
     default:
@@ -103,6 +170,7 @@ export const ROLE_FULL_LABELS: Record<AppRole, string> = {
   LC: 'Lead Consultant',
   PM: 'Project Manager',
   PARTNER: 'Partner',
+  EXECUTIVE: 'Executive',
   ADMIN: 'Administrator',
 };
 
@@ -133,6 +201,7 @@ function getAccess(role: AppRole): RoleKey {
     LC: 'lc',
     PM: 'pm',
     PARTNER: 'partner',
+    EXECUTIVE: 'partner',
     ADMIN: 'pm', // admin gets PM-level access
   };
   return map[role] ?? 'consultant';
@@ -163,9 +232,9 @@ export function canShowNavItem(navId: string, role: AppRole): boolean {
     initialSlides: () => true,
     finalSlides: () => true,
     compileDeck: (r) => ['PM', 'ADMIN'].includes(r),
-    downloadDeck: (r) => ['PM', 'PARTNER', 'ADMIN'].includes(r),
-    clientCallNotes: (r) => ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'ADMIN'].includes(r),
-    team: (r) => ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'ADMIN'].includes(r),
+    downloadDeck: (r) => ['PM', 'PARTNER', 'EXECUTIVE', 'ADMIN'].includes(r),
+    clientCallNotes: (r) => ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'EXECUTIVE', 'ADMIN'].includes(r),
+    team: (r) => ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'EXECUTIVE', 'ADMIN'].includes(r),
   };
   return map[navId]?.(role) ?? false;
 }

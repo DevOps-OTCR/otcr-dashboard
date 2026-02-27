@@ -220,7 +220,7 @@ export class SlideSubmissionsService {
   async markAsCommented(
     submissionId: string,
     userId: string,
-    userRole: 'PM' | 'LC' | 'PARTNER' | 'ADMIN',
+    userRole: 'PM' | 'LC' | 'PARTNER' | 'EXECUTIVE' | 'ADMIN',
   ) {
     const submission = await this.prisma.submission.findUnique({
       where: { id: submissionId },

@@ -105,6 +105,28 @@ export class NotificationsService {
     });
   }
 
+  async queueBellMirrorNotification(input: {
+    userId: string;
+    sourceType?: string;
+    title: string;
+    message: string;
+    taskId?: string;
+    taskTitle?: string;
+  }): Promise<void> {
+    await this.queueNotification({
+      userId: input.userId,
+      type: 'PROJECT_UPDATED',
+      channel: 'BOTH',
+      data: {
+        deliverableTitle: input.taskTitle || input.title,
+        feedback: input.message,
+        reason: input.sourceType,
+        taskId: input.taskId,
+        customTitle: input.title,
+      } as any,
+    });
+  }
+
   async scheduleDeadlineReminder(
     deliverableId: string,
     hoursBeforeDeadline: number,

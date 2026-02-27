@@ -183,9 +183,9 @@ export default function ClientNotesPage() {
       {(resolvedRole === 'PM' || resolvedRole === 'ADMIN') && (
         <PMNavbar currentPath="/client-notes" />
       )}
-      {(resolvedRole === 'LC' || resolvedRole === 'PARTNER') && (
+      {(resolvedRole === 'LC' || resolvedRole === 'PARTNER' || resolvedRole === 'EXECUTIVE') && (
         <LCPartnerNavbar
-          role={resolvedRole === 'PARTNER' ? 'PARTNER' : 'LC'}
+          role={resolvedRole === 'LC' ? 'LC' : 'PARTNER'}
           currentPath="/client-notes"
         />
       )}

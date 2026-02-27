@@ -76,6 +76,7 @@ export default function SlidesPage() {
     resolvedRole === 'PM' ||
     resolvedRole === 'LC' ||
     resolvedRole === 'PARTNER' ||
+    resolvedRole === 'EXECUTIVE' ||
     resolvedRole === 'ADMIN';
   const canModerateSubmissions =
     resolvedRole === 'PM' || resolvedRole === 'LC' || resolvedRole === 'ADMIN';
@@ -83,6 +84,7 @@ export default function SlidesPage() {
     resolvedRole === 'PM' ||
     resolvedRole === 'LC' ||
     resolvedRole === 'PARTNER' ||
+    resolvedRole === 'EXECUTIVE' ||
     resolvedRole === 'ADMIN';
   const canSubmitRevision = resolvedRole === 'CONSULTANT';
 
@@ -250,9 +252,9 @@ export default function SlidesPage() {
       {(resolvedRole === 'PM' || resolvedRole === 'ADMIN') && (
         <PMNavbar currentPath="/slides" />
       )}
-      {(resolvedRole === 'LC' || resolvedRole === 'PARTNER') && (
+      {(resolvedRole === 'LC' || resolvedRole === 'PARTNER' || resolvedRole === 'EXECUTIVE') && (
         <LCPartnerNavbar
-          role={resolvedRole === 'PARTNER' ? 'PARTNER' : 'LC'}
+          role={resolvedRole === 'LC' ? 'LC' : 'PARTNER'}
           currentPath="/slides"
         />
       )}

@@ -142,7 +142,8 @@ export default function TeamsPage() {
     resolvedRole === 'LC' ||
     resolvedRole === 'ADMIN';
   const isConsultant = resolvedRole === 'CONSULTANT';
-  const isPartner = resolvedRole === 'PARTNER';
+  const isExecutive = resolvedRole === 'EXECUTIVE';
+  const isPartnerLike = resolvedRole === 'PARTNER' || isExecutive;
   const currentUserEmail = session.user?.email ?? null;
 
   const myTeam =
@@ -275,7 +276,7 @@ export default function TeamsPage() {
 
   const lastDashboard = getLastDashboard();
   const showLCNavbar = resolvedRole === 'LC' || lastDashboard === '/lc';
-  const showPartnerNavbar = resolvedRole === 'PARTNER' || lastDashboard === '/partner';
+  const showPartnerNavbar = resolvedRole === 'PARTNER' || resolvedRole === 'EXECUTIVE' || lastDashboard === '/partner';
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--background)]">
@@ -520,7 +521,7 @@ export default function TeamsPage() {
             </Card>
           )}
 
-          {isPartner && (
+          {isPartnerLike && (
             <Card className="shadow-lg">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -575,7 +576,7 @@ export default function TeamsPage() {
                         <button
                           key={project.id}
                           type="button"
-                          onClick={() => setSelectedTeamId(project.id)}
+                          onClick={() => router.push(`/partner/team/${project.id}`)}
                           className={cn(
                             'w-full text-left flex items-center justify-between gap-2 p-4 rounded-xl border transition-all',
                             'bg-[var(--secondary)]/60 border-[var(--border)] hover:border-[var(--primary)]/50 hover:bg-[var(--secondary)]',
