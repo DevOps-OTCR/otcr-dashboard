@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ProjectsController } from './projects.controller';
 import { ProjectsService } from './projects.service';
-import { AuthService } from '@/auth/auth.service';
-import { AuthGuard } from '@/auth/auth.guard';
+import { AuthService } from '../auth/auth.service';
+import { AuthGuard } from '../auth/auth.guard';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 
 describe('ProjectsController', () => {

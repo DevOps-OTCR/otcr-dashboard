@@ -10,7 +10,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { SlackOAuthPurpose } from '@prisma/client';
-import { AuthService } from '@/auth/auth.service';
+import { AuthService } from '../auth/auth.service';
 import { SlackService } from './slack.service';
 
 @Controller('integrations/slack')

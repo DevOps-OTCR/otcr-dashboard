@@ -82,11 +82,13 @@ export function AppNavbar({ role, currentPath = '/dashboard', unreadNotification
       canAccess: () => true,
     },
     {
-      id: 'engagement',
-      label: 'Engagement',
-      icon: Activity,
-      href: '/engagement',
-      canAccess: (r) => hasAccess('engagementStatusTimelines', r, 'read'),
+      id: 'clientCallNotes',
+      label: 'Client Call Notes',
+      icon: MessageSquare,
+      href: '/client-notes',
+      canAccess: (r) =>
+        hasAccess('clientCallNotesRead', r, 'read') ||
+        hasAccess('clientCallNotesWrite', r, 'write'),
     },
     {
       id: 'workstreamDocs',
@@ -107,13 +109,11 @@ export function AppNavbar({ role, currentPath = '/dashboard', unreadNotification
         hasAccess('uploadFinalSlide', r, 'write'),
     },
     {
-      id: 'clientCallNotes',
-      label: 'Client Call Notes',
-      icon: MessageSquare,
-      href: '/client-notes',
-      canAccess: (r) =>
-        hasAccess('clientCallNotesRead', r, 'read') ||
-        hasAccess('clientCallNotesWrite', r, 'write'),
+      id: 'engagement',
+      label: 'Engagement',
+      icon: Activity,
+      href: '/engagement',
+      canAccess: (r) => hasAccess('engagementStatusTimelines', r, 'read'),
     },
     {
       id: 'team',

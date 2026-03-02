@@ -1,188 +1,127 @@
 # OTCR Dashboard
 
-A full-stack project management dashboard for tracking consulting projects, deliverables, time tracking, and team coordination. Features role-based views for Project Managers, Consultants, and Admins.
+OTCR Dashboard is a monorepo with a Next.js frontend and a NestJS backend for managing consulting projects, workstreams, slide submissions, client notes, and team coordination.
 
-## Tech Stack
+## Stack
 
-**Frontend:** Next.js 16, React 19, TypeScript, Tailwind CSS, NextAuth (Google OAuth)
-**Backend:** NestJS 11, Prisma ORM, PostgreSQL, Redis, BullMQ
-**Integrations:** NextAuth + Google OAuth (Auth), Resend (Email), Slack (Notifications), Cloudflare R2 (File Storage)
+- Frontend: Next.js 16, React 19, TypeScript, Tailwind CSS
+- Authentication: Microsoft Entra ID (MSAL on the client)
+- Backend: NestJS, Prisma, PostgreSQL, Redis, BullMQ
+- Integrations: Slack, Resend
 
-## Project Structure
+## Repository Layout
 
-```
+```text
 otcr-dashboard/
-├── frontend/          # Next.js web application
-├── backend/           # NestJS API server
-├── docker-compose.prod.yml
-└── nginx.conf
+├── frontend/      # Next.js application
+├── backend/       # NestJS API
+├── env/           # env templates
+├── scripts/       # helper scripts
+└── docker-compose.prod.yml
 ```
 
-## Prerequisites
+## Current Role Routing
 
-- Node.js 18+
-- PostgreSQL 14+
-- Redis 6+
-- npm or yarn
+Authenticated users are redirected to role-specific routes instead of a shared `/dashboard` page.
 
-## Services & API Keys Required
+- `CONSULTANT` -> `/consultant`
+- `LC` -> `/lc`
+- `PM` -> `/pm`
+- `PARTNER` -> `/partner`
+- `EXECUTIVE` -> `/partner`
+- `ADMIN` -> `/pm` (with admin badge, admin switcher, and full access)
 
-You'll need accounts and API keys from these services:
+## Local Development
 
-| Service | Purpose | Get it from |
-|---------|---------|-------------|
-| **Google Cloud** | OAuth (Authentication) | https://console.cloud.google.com |
-| **PostgreSQL** | Database | Local install or Neon/Supabase |
-| **Redis** | Job queues & caching | Local install or Redis Cloud |
-| **Resend** | Email notifications | https://resend.com |
-| **Slack** | Slack notifications | Create a webhook in your Slack workspace |
-| **Cloudflare R2** | File storage (optional) | https://cloudflare.com |
+### Prerequisites
 
-## Setup Instructions
+- Node.js 20+
+- PostgreSQL
+- Redis
 
-### 1. Clone and Install Dependencies
+### Backend setup
 
 ```bash
-git clone <your-repo-url>
-cd otcr-dashboard
-
-# Install backend dependencies
 cd backend
 npm install
-
-# Install frontend dependencies
-cd ../frontend
-npm install
+cp .env.example .env
 ```
 
-### 2. Configure Environment Variables
+Set at least:
 
-**Backend** - Create `backend/.env`:
 ```env
-# Database
-DATABASE_URL=postgresql://username:password@localhost:5432/otcr_dashboard
-
-# Redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
+DATABASE_URL=postgresql://...
 REDIS_URL=redis://localhost:6379
-
-# Email (from Resend dashboard)
-RESEND_API_KEY=re_xxxxx
-EMAIL_FROM=notifications@yourdomain.com
-
-# Slack (create incoming webhook)
-SLACK_WEBHOOK_URL=https://hooks.slack.com/services/xxxxx
-
-# File Storage - Optional (from Cloudflare R2)
-R2_ACCOUNT_ID=xxxxx
-R2_ACCESS_KEY_ID=xxxxx
-R2_SECRET_ACCESS_KEY=xxxxx
-R2_BUCKET_NAME=otcr-deliverables
-
-# Server
 PORT=4000
-NODE_ENV=development
 FRONTEND_URL=http://localhost:3000
 ```
 
-**Frontend** - Create `frontend/.env.local`:
-```env
-# Google OAuth (from Google Cloud Console)
-GOOGLE_CLIENT_ID=123456789-abc...apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=GOCSPX-...
-
-# NextAuth
-NEXTAUTH_SECRET=your-random-secret  # openssl rand -base64 32
-NEXTAUTH_URL=http://localhost:3000
-
-NEXT_PUBLIC_API_URL=http://localhost:4000
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-```
-
-### 3. Setup Database
+Then run:
 
 ```bash
-cd backend
-
-# Generate Prisma client
 npx prisma generate
-
-# Run migrations
 npx prisma migrate dev
-
-# Seed with test data (optional)
-npx prisma db seed
+npm run start:dev
 ```
 
-### 4. Start the Application
-
-**Option A: Run separately (recommended for development)**
+### Frontend setup
 
 ```bash
-# Terminal 1 - Backend
-cd backend
-npm run start:dev
-
-# Terminal 2 - Frontend
 cd frontend
+npm install
 npm run dev
 ```
 
-**Option B: Docker (for production)**
+Create `frontend/.env.local` with at least:
 
-```bash
-cp env/production.example .env.production
-# Edit .env.production with your values
-docker-compose -f docker-compose.prod.yml up -d
+```env
+NEXT_PUBLIC_MSAL_CLIENT_ID=...
+NEXT_PUBLIC_MSAL_AUTHORITY=https://login.microsoftonline.com/<tenant-id>
+NEXT_PUBLIC_MSAL_REDIRECT_URI=http://localhost:3000/auth/callback
+NEXT_PUBLIC_API_URL=http://localhost:4000
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=replace-me
 ```
 
-### 5. Access the Application
+Then run:
 
-- **Frontend:** http://localhost:3000
-- **Backend API:** http://localhost:4000
-- **API Health Check:** http://localhost:4000/auth/health
+```bash
+npm run dev
+```
 
-## Key Features
+## Production Deployment
 
-- **Role-Based Dashboards** - Different views for PM, Consultant, Admin
-- **Task Management** - Create, assign, and track deliverables
-- **Time Tracking** - Log hours per project
-- **Extension Requests** - Request and approve deadline extensions
-- **File Uploads** - Upload and manage deliverables
-- **Notifications** - Email and Slack alerts for deadlines
-- **Dark Mode** - Toggle between light and dark themes
+Deploy frontend and backend as separate services.
 
-## Deployment Options
+### Render backend service
 
-1. **Vercel + Railway** - Frontend on Vercel, Backend on Railway
-2. **Docker** - Self-hosted using docker-compose
-3. **AWS** - Amplify (Frontend) + ECS (Backend) + RDS (Database)
+- Root directory: `backend`
+- Build command: `npm install && npx prisma generate && npm run build`
+- Start command: `npm run start:prod`
 
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for detailed deployment instructions.
+Backend production env vars:
 
-## Documentation
+- `DATABASE_URL`
+- `REDIS_URL`
+- `FRONTEND_URL`
+- `SLACK_WEBHOOK_URL` if used
+- `RESEND_API_KEY` if used
+- `EMAIL_FROM` if used
+- Slack OAuth env vars if Slack install flow is enabled
 
-Additional documentation is available in the `docs/` folder:
+### Render frontend service
 
-| Document | Description |
-|----------|-------------|
-| [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Deployment guide for all platforms |
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture and design |
-| [PRODUCTION_CHECKLIST.md](docs/PRODUCTION_CHECKLIST.md) | Pre-launch checklist |
-| [GETTING_STARTED.md](docs/GETTING_STARTED.md) | Detailed onboarding guide |
-| [ROLE_DASHBOARDS.md](docs/ROLE_DASHBOARDS.md) | Role-based features documentation |
+- Root directory: `frontend`
+- Build command: `npm install && npm run build`
+- Start command: `npm run start`
 
-## Environment Files Reference
+Frontend production env vars:
 
-| File | Purpose | Commit? |
-|------|---------|---------|
-| `backend/.env` | Backend secrets | NO |
-| `backend/.env.example` | Backend template | YES |
-| `frontend/.env.local` | Frontend secrets | NO |
-| `frontend/.env.local.example` | Frontend template | YES |
-| `env/production.example` | Production template | YES |
+- `NEXT_PUBLIC_API_URL=https://<backend-service>.onrender.com`
+- `NEXT_PUBLIC_APP_URL=https://<frontend-service>.onrender.com`
+- `NEXT_PUBLIC_MSAL_REDIRECT_URI=https://<frontend-service>.onrender.com/auth/callback`
+- `NEXTAUTH_URL=https://<frontend-service>.onrender.com`
+- `NEXTAUTH_SECRET=...`
+- MSAL public env vars
 
-## License
-
-Proprietary - All rights reserved

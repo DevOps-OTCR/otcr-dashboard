@@ -1,7 +1,7 @@
 import { Controller, Get, Post,Headers, Query, Body, UnauthorizedException, ForbiddenException, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
-import { GetUser } from '@/common/get-user.decorator';
+import { GetUser } from '../common/get-user.decorator';
 
 @Controller('auth')
 @UseGuards(AuthGuard)

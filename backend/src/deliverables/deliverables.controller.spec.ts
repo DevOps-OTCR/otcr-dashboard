@@ -1,9 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { DeliverablesController } from './deliverables.controller';
 import { DeliverablesService } from './deliverables.service';
-import { ProjectsService } from '@/projects/projects.service';
-import { AuthGuard } from '@/auth/auth.guard';
-import { AuthService } from '@/auth/auth.service';
+import { ProjectsService } from '../projects/projects.service';
+import { AuthGuard } from '../auth/auth.guard';
+import { AuthService } from '../auth/auth.service';
 import {
   ForbiddenException,
   NotFoundException,

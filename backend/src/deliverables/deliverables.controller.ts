@@ -13,10 +13,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { DeliverablesService } from './deliverables.service';
-import { ProjectsService } from '@/projects/projects.service';
-import { AuthGuard } from '@/auth/auth.guard';
-import { Roles } from '@/common/roles.decorator';
-import { GetUser } from '@/common/get-user.decorator';
+import { ProjectsService } from '../projects/projects.service';
+import { AuthGuard } from '../auth/auth.guard';
+import { Roles } from '../common/roles.decorator';
+import { GetUser } from '../common/get-user.decorator';
 
 @Controller('deliverables')
 @UseGuards(AuthGuard)

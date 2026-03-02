@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SlackOAuthPurpose } from '@prisma/client';
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto';
-import { PrismaService } from '@/prisma/prisma.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 interface SlackApiResponse<T = Record<string, any>> {
   ok: boolean;

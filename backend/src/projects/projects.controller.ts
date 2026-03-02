@@ -13,10 +13,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
-import { AuthService } from '@/auth/auth.service';
-import { AuthGuard } from '@/auth/auth.guard';
-import { Roles } from '@/common/roles.decorator';
-import { GetUser } from '@/common/get-user.decorator';
+import { AuthService } from '../auth/auth.service';
+import { AuthGuard } from '../auth/auth.guard';
+import { Roles } from '../common/roles.decorator';
+import { GetUser } from '../common/get-user.decorator';
 //TODO Implement GETUSER IN PARAMS?
 //TODO IMPLEMENT AUTHGUARD IN ALL ROUTES WITH PROPER ROLES AND TEST
 @Controller('projects')

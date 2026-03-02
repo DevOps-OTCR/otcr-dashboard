@@ -11,8 +11,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { TasksService } from './tasks.service';
-import { AuthService } from '@/auth/auth.service';
-import { getVerifiedUser } from '@/common/utils/verify';
+import { AuthService } from '../auth/auth.service';
+import { getVerifiedUser } from '../common/utils/verify';
 
 @Controller('tasks')
 export class TasksController {

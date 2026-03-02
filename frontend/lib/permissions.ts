@@ -164,6 +164,14 @@ export function getDefaultDashboardPath(role: AppRole): string {
   }
 }
 
+export async function getDefaultDashboardPathForUser(
+  token: string | null,
+  email: string | undefined,
+): Promise<string> {
+  const role = await getEffectiveRole(token, email);
+  return getDefaultDashboardPath(role);
+}
+
 /** Full display name for each role (shown near logo). */
 export const ROLE_FULL_LABELS: Record<AppRole, string> = {
   CONSULTANT: 'Consultant',

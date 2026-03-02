@@ -318,8 +318,8 @@ export default function WorkstreamDocsPage() {
                         onChange={(e) => setForm((p) => ({ ...p, status: e.target.value as 'draft' | 'released' }))}
                         className="w-full px-3 py-2 rounded-xl border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)]"
                       >
-                        <option value="draft">Draft (consultants cannot view)</option>
-                        <option value="released">Released (consultants can view)</option>
+                        <option value="draft">Draft</option>
+                        <option value="released">Released</option>
                       </select>
                     </label>
                   </div>

@@ -9,8 +9,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
-import { AuthService } from '@/auth/auth.service';
-import { getVerifiedUser } from '@/common/utils/verify';
+import { AuthService } from '../auth/auth.service';
+import { getVerifiedUser } from '../common/utils/verify';
 
 @Controller('notifications')
 export class NotificationsController {

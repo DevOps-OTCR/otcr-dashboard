@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { AuthModule } from '@/auth/auth.module';
+import { AuthModule } from '../auth/auth.module';
 import { SlackService } from './slack.service';
 import { SlackController } from './slack.controller';
 
