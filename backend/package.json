@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "nest build",
+    "build": "tsc",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
@@ -37,7 +37,10 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
     "ioredis": "^5.8.2",
+<<<<<<< HEAD
     "jest": "^29.x",
+=======
+>>>>>>> origin/main
     "jsonwebtoken": "^9.0.3",
     "jwks-rsa": "^3.2.2",
     "module-alias": "^2.3.4",
@@ -46,7 +49,10 @@
     "reflect-metadata": "^0.2.2",
     "resend": "^6.5.2",
     "rxjs": "^7.8.2",
+<<<<<<< HEAD
     "ts-jest": "^29.x",
+=======
+>>>>>>> origin/main
     "zod": "^4.3.6"
   },
   "devDependencies": {
@@ -56,7 +62,12 @@
     "@types/jest": "^29.x",
     "@types/node": "^24.10.1",
     "dotenv": "^17.2.3",
+<<<<<<< HEAD
+=======
+    "prisma": "^7.4.1",
+>>>>>>> origin/main
     "ts-node": "^10.9.2",
+    "tsc-alias": "^1.8.16",
     "typescript": "^5.9.3"
   }
 }
