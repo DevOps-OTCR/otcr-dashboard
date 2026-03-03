@@ -6,9 +6,10 @@ import { useAuth } from '@/components/AuthContext'; // Using your MSAL-based con
 import { useMsal } from "@azure/msal-react";
 import { InteractionStatus } from "@azure/msal-browser";
 import Image from 'next/image';
+import { getDefaultDashboardPathForUser } from '@/lib/permissions';
 
 export default function SignInPage() {
-  const { login, logout, user, isLoggedIn } = useAuth();
+  const { login, logout, user, isLoggedIn, getToken } = useAuth();
   const { inProgress } = useMsal();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -35,12 +36,18 @@ export default function SignInPage() {
     }
   }, [searchParams]);
 
-  // 2. Redirect to dashboard if MSAL reports authenticated
+  // 2. Redirect to the user's role-specific dashboard if MSAL reports authenticated
   useEffect(() => {
-    if (isLoggedIn && user && !accessDeniedError) {
-      router.push('/dashboard');
-    }
-  }, [isLoggedIn, user, router, accessDeniedError]);
+    if (!isLoggedIn || !user?.email || accessDeniedError) return;
+
+    const redirectToRoleDashboard = async () => {
+      const token = await getToken();
+      const target = await getDefaultDashboardPathForUser(token, user.email);
+      router.replace(target);
+    };
+
+    void redirectToRoleDashboard();
+  }, [accessDeniedError, getToken, isLoggedIn, router, user?.email]);
 
   const handleAzureSignIn = async () => {
     // If MSAL is stuck in a redirect loop or "interaction_in_progress"
@@ -59,14 +66,31 @@ export default function SignInPage() {
   // Loading State (MSAL Startup)
   if (inProgress !== InteractionStatus.None && !accessDeniedError) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0a1628]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white/30 border-t-white mx-auto mb-4"></div>
+      <div className="relative min-h-screen flex items-center justify-center overflow-hidden bg-[#0a1628]">
+        <Image
+          src="/chicago-skyline.jpg"
+          alt="Chicago skyline"
+          fill
+          priority
+          className="object-cover"
+        />
+        <div className="absolute inset-0 bg-[#071120]/55" />
+        <div className="relative z-10 animate-spin rounded-full h-12 w-12 border-b-2 border-white/30 border-t-white mx-auto mb-4"></div>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#0a1628] relative overflow-hidden">
+      <Image
+        src="/chicago-skyline.jpg"
+        alt="Chicago skyline"
+        fill
+        priority
+        className="object-cover"
+      />
+      <div className="absolute inset-0 bg-[#071120]/60"></div>
+
       {/* Decorative background elements */}
       <div className="absolute top-0 left-0 w-96 h-96 bg-[rgb(0,51,96)]/20 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2"></div>
       <div className="absolute bottom-0 right-0 w-96 h-96 bg-[rgb(0,51,96)]/20 rounded-full blur-3xl translate-x-1/2 translate-y-1/2"></div>

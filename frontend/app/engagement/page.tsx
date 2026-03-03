@@ -78,9 +78,13 @@ function isWordOrPowerPointLink(value: string): boolean {
   try {
     const url = new URL(value.trim());
     const normalized = `${url.hostname}${url.pathname}${url.search}`.toLowerCase();
+    const isSharePointOfficeLink =
+      url.hostname.toLowerCase().includes('.sharepoint.com') &&
+      /\/:(w|p):\//i.test(url.pathname);
     return (
       /\.(ppt|pptx|doc|docx)(?:$|[/?#&])/i.test(normalized) ||
       /\b(powerpoint|word)\b/i.test(normalized) ||
+      isSharePointOfficeLink ||
       normalized.includes('powerpoint.office.com') ||
       normalized.includes('word.office.com')
     );
@@ -465,6 +469,7 @@ export default function EngagementPage() {
     (resolvedRole !== 'PM' && resolvedRole !== 'ADMIN' && lastDashboard === '/lc');
   const showPartnerNavbar =
     resolvedRole === 'PARTNER' ||
+    resolvedRole === 'EXECUTIVE' ||
     (resolvedRole !== 'PM' && resolvedRole !== 'ADMIN' && lastDashboard === '/partner');
   const showPMNavbar =
     resolvedRole === 'PM' ||

@@ -1,3 +1,5 @@
+import { notificationsAPI } from '@/lib/api';
+
 export type NotificationType = 'task_assigned' | 'upload' | 'comment' | 'doc_updated' | 'project_updated';
 
 export interface StoredNotification {
@@ -60,6 +62,20 @@ export function addNotification(notification: Omit<StoredNotification, 'id' | 'r
     read: false,
   };
   saveNotifications([newOne, ...list]);
+
+  // Mirror bell notifications to backend so they can flow through Slack if configured.
+  void notificationsAPI
+    .mirrorBellNotification({
+      assigneeEmail: notification.assigneeEmail,
+      title: notification.title,
+      message: notification.message,
+      type: notification.type,
+      taskId: notification.taskId,
+      taskTitle: notification.taskTitle,
+    })
+    .catch(() => {
+      // Keep local bell notifications working even when backend/slack delivery fails.
+    });
 }
 
 export function upsertNotifications(notifications: Array<Omit<StoredNotification, 'read'>>): void {

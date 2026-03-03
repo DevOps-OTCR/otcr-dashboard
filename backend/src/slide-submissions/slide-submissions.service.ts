@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '@/prisma/prisma.service';
-import { NotificationsService } from '@/notifications/notifications.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class SlideSubmissionsService {
@@ -105,11 +105,14 @@ export class SlideSubmissionsService {
     const normalized = `${url.hostname}${url.pathname}${url.search}`.toLowerCase();
     const hasFileExtension = /\.(ppt|pptx|doc|docx)(?:$|[/?#&])/i.test(normalized);
     const hasOfficeKeyword = /\b(powerpoint|word)\b/i.test(normalized);
+    const isSharePointOfficeLink =
+      url.hostname.toLowerCase().includes('.sharepoint.com') &&
+      /\/:(w|p):\//i.test(url.pathname);
     const isOfficeHost =
       normalized.includes('powerpoint.office.com') ||
       normalized.includes('word.office.com');
 
-    return hasFileExtension || hasOfficeKeyword || isOfficeHost;
+    return hasFileExtension || hasOfficeKeyword || isSharePointOfficeLink || isOfficeHost;
   }
 
   private async notifyPMsAndLCs(submission: {
@@ -220,7 +223,7 @@ export class SlideSubmissionsService {
   async markAsCommented(
     submissionId: string,
     userId: string,
-    userRole: 'PM' | 'LC' | 'PARTNER' | 'ADMIN',
+    userRole: 'PM' | 'LC' | 'PARTNER' | 'EXECUTIVE' | 'ADMIN',
   ) {
     const submission = await this.prisma.submission.findUnique({
       where: { id: submissionId },

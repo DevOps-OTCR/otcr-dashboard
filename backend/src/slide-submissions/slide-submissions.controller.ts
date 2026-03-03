@@ -10,8 +10,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { SlideSubmissionsService } from './slide-submissions.service';
-import { AuthService } from '@/auth/auth.service';
-import { getVerifiedUser } from '@/common/utils/verify';
+import { AuthService } from '../auth/auth.service';
+import { getVerifiedUser } from '../common/utils/verify';
 
 @Controller('slide-submissions')
 export class SlideSubmissionsController {
@@ -97,14 +97,10 @@ export class SlideSubmissionsController {
   @Get('all')
   async getAllSubmissions(@Headers('authorization') authorization: string) {
     const user = await this.getUserFromHeader(authorization);
+    const userRole = String(user.role);
 
-    if (
-      user.role !== 'PM' &&
-      user.role !== 'LC' &&
-      user.role !== 'PARTNER' &&
-      user.role !== 'ADMIN'
-    ) {
-      throw new ForbiddenException('Only PM, LC, Partner, or Admin can view all submissions');
+    if (!['PM', 'LC', 'PARTNER', 'EXECUTIVE', 'ADMIN'].includes(userRole)) {
+      throw new ForbiddenException('Only PM, LC, Partner, Executive, or Admin can view all submissions');
     }
 
     return this.slideSubmissionsService.getAllSubmissions();
@@ -116,20 +112,16 @@ export class SlideSubmissionsController {
     @Headers('authorization') authorization: string,
   ) {
     const user = await this.getUserFromHeader(authorization);
+    const userRole = String(user.role);
 
-    if (
-      user.role !== 'PM' &&
-      user.role !== 'LC' &&
-      user.role !== 'PARTNER' &&
-      user.role !== 'ADMIN'
-    ) {
-      throw new ForbiddenException('Only PM, LC, Partner, or Admin can mark slides as commented');
+    if (!['PM', 'LC', 'PARTNER', 'EXECUTIVE', 'ADMIN'].includes(userRole)) {
+      throw new ForbiddenException('Only PM, LC, Partner, Executive, or Admin can mark slides as commented');
     }
 
     return this.slideSubmissionsService.markAsCommented(
       id,
       user.id,
-      user.role as 'PM' | 'LC' | 'PARTNER' | 'ADMIN',
+      userRole as 'PM' | 'LC' | 'PARTNER' | 'EXECUTIVE' | 'ADMIN',
     );
   }
 

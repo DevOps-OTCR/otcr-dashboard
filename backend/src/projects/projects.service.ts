@@ -1,5 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '@/prisma/prisma.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class ProjectsService {
@@ -383,11 +383,22 @@ export class ProjectsService {
     });
   }
 
-  async addMember(projectId: string, userId: string) {
+  async addMember(projectId: string, input: { userId?: string; email?: string }) {
+    const userId = input.userId?.trim();
+    const email = input.email?.trim().toLowerCase();
+
+    if (!userId && !email) {
+      throw new BadRequestException('Provide userId or email');
+    }
+
     // Check if user exists
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-    });
+    const user = userId
+      ? await this.prisma.user.findUnique({
+          where: { id: userId },
+        })
+      : await this.prisma.user.findUnique({
+          where: { email: email! },
+        });
 
     if (!user) {
       throw new BadRequestException('User not found');
@@ -397,7 +408,7 @@ export class ProjectsService {
     const existingMember = await this.prisma.projectMember.findFirst({
       where: {
         projectId,
-        userId,
+        userId: user.id,
         leftAt: null,
       },
     });
@@ -409,7 +420,7 @@ export class ProjectsService {
     return this.prisma.projectMember.create({
       data: {
         projectId,
-        userId,
+        userId: user.id,
       },
       include: {
         user: {

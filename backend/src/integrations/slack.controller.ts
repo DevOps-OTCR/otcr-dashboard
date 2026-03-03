@@ -10,7 +10,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { SlackOAuthPurpose } from '@prisma/client';
-import { AuthService } from '@/auth/auth.service';
+import { AuthService } from '../auth/auth.service';
 import { SlackService } from './slack.service';
 
 @Controller('integrations/slack')
@@ -54,8 +54,8 @@ export class SlackController {
     const purpose: SlackOAuthPurpose =
       purposeRaw === 'CONNECT' ? 'CONNECT' : 'INSTALL';
 
-    if (purpose === 'INSTALL' && !['ADMIN', 'PM', 'PARTNER'].includes(user.role)) {
-      throw new ForbiddenException('Only PM/Admin/Partner can install Slack workspaces');
+    if (purpose === 'INSTALL' && !['ADMIN', 'PM', 'PARTNER', 'EXECUTIVE'].includes(user.role)) {
+      throw new ForbiddenException('Only PM/Admin/Partner/Executive can install Slack workspaces');
     }
 
     const state = await this.slackService.createOAuthState(

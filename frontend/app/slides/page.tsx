@@ -27,9 +27,13 @@ function isWordOrPowerPointLink(value: string): boolean {
   try {
     const url = new URL(value.trim());
     const normalized = `${url.hostname}${url.pathname}${url.search}`.toLowerCase();
+    const isSharePointOfficeLink =
+      url.hostname.toLowerCase().includes('.sharepoint.com') &&
+      /\/:(w|p):\//i.test(url.pathname);
     return (
       /\.(ppt|pptx|doc|docx)(?:$|[/?#&])/i.test(normalized) ||
       /\b(powerpoint|word)\b/i.test(normalized) ||
+      isSharePointOfficeLink ||
       normalized.includes('powerpoint.office.com') ||
       normalized.includes('word.office.com')
     );
@@ -76,6 +80,7 @@ export default function SlidesPage() {
     resolvedRole === 'PM' ||
     resolvedRole === 'LC' ||
     resolvedRole === 'PARTNER' ||
+    resolvedRole === 'EXECUTIVE' ||
     resolvedRole === 'ADMIN';
   const canModerateSubmissions =
     resolvedRole === 'PM' || resolvedRole === 'LC' || resolvedRole === 'ADMIN';
@@ -83,6 +88,7 @@ export default function SlidesPage() {
     resolvedRole === 'PM' ||
     resolvedRole === 'LC' ||
     resolvedRole === 'PARTNER' ||
+    resolvedRole === 'EXECUTIVE' ||
     resolvedRole === 'ADMIN';
   const canSubmitRevision = resolvedRole === 'CONSULTANT';
 
@@ -250,9 +256,9 @@ export default function SlidesPage() {
       {(resolvedRole === 'PM' || resolvedRole === 'ADMIN') && (
         <PMNavbar currentPath="/slides" />
       )}
-      {(resolvedRole === 'LC' || resolvedRole === 'PARTNER') && (
+      {(resolvedRole === 'LC' || resolvedRole === 'PARTNER' || resolvedRole === 'EXECUTIVE') && (
         <LCPartnerNavbar
-          role={resolvedRole === 'PARTNER' ? 'PARTNER' : 'LC'}
+          role={resolvedRole === 'LC' ? 'LC' : 'PARTNER'}
           currentPath="/slides"
         />
       )}

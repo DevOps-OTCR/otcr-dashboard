@@ -13,10 +13,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
-import { AuthService } from '@/auth/auth.service';
-import { AuthGuard } from '@/auth/auth.guard';
-import { Roles } from '@/common/roles.decorator';
-import { GetUser } from '@/common/get-user.decorator';
+import { AuthService } from '../auth/auth.service';
+import { AuthGuard } from '../auth/auth.guard';
+import { Roles } from '../common/roles.decorator';
+import { GetUser } from '../common/get-user.decorator';
 //TODO Implement GETUSER IN PARAMS?
 //TODO IMPLEMENT AUTHGUARD IN ALL ROUTES WITH PROPER ROLES AND TEST
 @Controller('projects')
@@ -54,7 +54,7 @@ export class ProjectsController {
 
   // Get all projects with param based filtering
   @Get()
-  @Roles('ADMIN', 'PM', 'CONSULTANT')
+  @Roles('ADMIN', 'PM', 'LC', 'CONSULTANT', 'PARTNER', 'EXECUTIVE')
   async findAll(
     @Query()
     query: {
@@ -82,7 +82,7 @@ export class ProjectsController {
       limit: this.parsePositiveInt(query.limit, 10),
     };
 
-    if (user.role === 'CONSULTANT') {
+    if (user.role === 'CONSULTANT' || user.role === 'PARTNER') {
       return this.projectsService.findByMember(user.id, parsedQuery);
     }
 
@@ -95,7 +95,7 @@ export class ProjectsController {
 
   // Get single project
   @Get(':id')
-  @Roles('ADMIN', 'PM', 'CONSULTANT')
+  @Roles('ADMIN', 'PM', 'LC', 'CONSULTANT', 'PARTNER', 'EXECUTIVE')
   async findOne(
     @Param('id') id: string,
     @Query()
@@ -115,7 +115,7 @@ export class ProjectsController {
       throw new NotFoundException('Project not found');
     }
 
-    if (user.role === 'ADMIN') {
+    if (user.role === 'ADMIN' || user.role === 'LC' || user.role === 'EXECUTIVE') {
       return project;
     }
 
@@ -184,7 +184,7 @@ export class ProjectsController {
   @Roles("ADMIN", "PM")
   async addMember(
     @Param('id') id: string,
-    @Body() body: { userId: string },
+    @Body() body: { userId?: string; email?: string },
     @Headers('authorization') authorization: string,
     @GetUser() user: any
   ) {
@@ -198,7 +198,7 @@ export class ProjectsController {
       throw new ForbiddenException('Only the PM or Admin can add members');
     }
 
-    return this.projectsService.addMember(id, body.userId);
+    return this.projectsService.addMember(id, body);
   }
 
   // Remove member from project

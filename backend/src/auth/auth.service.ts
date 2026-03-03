@@ -27,7 +27,7 @@ export class AuthService {
       user = await this.prisma.user.create({
         data: {
           email: normalizedEmail,
-          role: resolvedRole,
+          role: resolvedRole as any,
         },
       });
     } else if (user.role !== resolvedRole && resolvedRole !== 'CONSULTANT') {
@@ -35,7 +35,7 @@ export class AuthService {
       // checks that rely on user.role stay accurate.
       user = await this.prisma.user.update({
         where: { id: user.id },
-        data: { role: resolvedRole },
+        data: { role: resolvedRole as any },
       });
     }
 
@@ -84,7 +84,7 @@ export class AuthService {
             email,
             firstName,
             lastName,
-            role,
+            role: role as any,
           },
         });
       }
@@ -127,17 +127,37 @@ export class AuthService {
     });
   }
 
-  async addAllowedEmail(email: string, role?: 'ADMIN' | 'PM' | 'LC' | 'PARTNER' | 'CONSULTANT') {
-    return this.prisma.allowedEmail.create({
-      data: {
-        email,
-        role,
+  async addAllowedEmail(
+    email: string,
+    role: 'ADMIN' | 'PM' | 'LC' | 'PARTNER' | 'EXECUTIVE' | 'CONSULTANT' = 'CONSULTANT',
+  ) {
+    const normalized = email.toLowerCase().trim();
+    const allowedEmail = await this.prisma.allowedEmail.upsert({
+      where: { email: normalized },
+      update: {
+        role: role as any,
+        active: true,
+      },
+      create: {
+        email: normalized,
+        role: role as any,
+        active: true,
       },
     });
+
+    // Keep existing synced users aligned with updated allowed-email role.
+    await this.prisma.user.updateMany({
+      where: { email: normalized },
+      data: { role: role as any },
+    });
+
+    return allowedEmail;
   }
 
   /** Get role for an email from DB (User table, or AllowedEmail if user not synced yet). */
-  async getRoleByEmail(email: string): Promise<'ADMIN' | 'PM' | 'LC' | 'PARTNER' | 'CONSULTANT' | null> {
+  async getRoleByEmail(
+    email: string,
+  ): Promise<'ADMIN' | 'PM' | 'LC' | 'PARTNER' | 'EXECUTIVE' | 'CONSULTANT' | null> {
     const normalized = email?.toLowerCase().trim();
     if (!normalized) return null;
     const user = await this.prisma.user.findUnique({
@@ -157,7 +177,9 @@ export class AuthService {
     });
   }
 
-  private async determineRole(email: string): Promise<'ADMIN' | 'PM' | 'LC' | 'PARTNER' | 'CONSULTANT'> {
+  private async determineRole(
+    email: string,
+  ): Promise<'ADMIN' | 'PM' | 'LC' | 'PARTNER' | 'EXECUTIVE' | 'CONSULTANT'> {
     const allowed = await this.prisma.allowedEmail.findFirst({
       where: { email: { equals: email.toLowerCase().trim(), mode: 'insensitive' }, active: true },
     });

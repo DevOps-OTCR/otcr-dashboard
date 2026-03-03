@@ -15,6 +15,8 @@ import {
 } from "react";
 import FullScreenLoader from "./LoadingScreen";
 import { ThemeProvider } from "../ThemeProvider";
+import { clearRoleCache } from "@/lib/permissions";
+import { clearProjectsCache } from "@/lib/api";
 
 type AuthUser = {
   email?: string;
@@ -77,6 +79,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [instance]);
 
   const logout = useCallback(async () => {
+    clearRoleCache(user?.email ?? null);
+    clearProjectsCache();
+
     // 1. Clear your local React state
     setUser(null);
     setIsLoggedIn(false);
@@ -90,7 +95,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     await instance.logoutRedirect({
         postLogoutRedirectUri: "/sign-in", // Must match your Azure Portal Redirect URIs
     });
-    }, [instance]);
+    }, [instance, user?.email]);
 
   const getToken = useCallback(async () => {
     const account = instance.getActiveAccount();

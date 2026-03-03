@@ -5,17 +5,17 @@ declare module 'next-auth' {
     user: DefaultSession['user'] & {
       id?: string;
       /** Role from database (backend); set at login via GET /auth/role */
-      role?: 'CONSULTANT' | 'LC' | 'PM' | 'PARTNER' | 'ADMIN';
+      role?: 'CONSULTANT' | 'LC' | 'PM' | 'PARTNER' | 'EXECUTIVE' | 'ADMIN';
     };
   }
 
   interface User {
-    role?: 'CONSULTANT' | 'LC' | 'PM' | 'PARTNER' | 'ADMIN';
+    role?: 'CONSULTANT' | 'LC' | 'PM' | 'PARTNER' | 'EXECUTIVE' | 'ADMIN';
   }
 }
 
 declare module 'next-auth/jwt' {
   interface JWT {
-    role?: 'CONSULTANT' | 'LC' | 'PM' | 'PARTNER' | 'ADMIN';
+    role?: 'CONSULTANT' | 'LC' | 'PM' | 'PARTNER' | 'EXECUTIVE' | 'ADMIN';
   }
 }
