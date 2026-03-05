@@ -88,6 +88,19 @@ export const authAPI = {
     api.post('/auth/allowed-emails', data),
 };
 
+export const onboardingAPI = {
+  createRequest: (data: {
+    name: string;
+    email: string;
+    requestedRole: 'ADMIN' | 'PM' | 'LC' | 'PARTNER' | 'EXECUTIVE' | 'CONSULTANT';
+  }) => api.post('/onboarding/requests', data),
+  listRequests: () => api.get('/onboarding/requests'),
+  approveRequest: (id: string, notes?: string) =>
+    api.patch(`/onboarding/requests/${id}/approve`, notes ? { notes } : {}),
+  rejectRequest: (id: string, notes?: string) =>
+    api.patch(`/onboarding/requests/${id}/reject`, notes ? { notes } : {}),
+};
+
 export const notificationsAPI = {
   mirrorBellNotification: (data: {
     assigneeEmail: string;
@@ -200,6 +213,26 @@ export const projectsAPI = {
       clearProjectsCache();
       return response;
     }),
+  getSprintConfig: (projectId: string) => api.get(`/projects/${projectId}/sprint-config`),
+  updateSprintConfig: (
+    projectId: string,
+    data: {
+      sprintStartDay?: string;
+      initialSlideDueDay?: string;
+      finalSlideDueDay?: string;
+      defaultDueTime?: string;
+      sprintTimezone?: string;
+      autoGenerateSprints?: boolean;
+    },
+  ) => api.patch(`/projects/${projectId}/sprint-config`, data),
+  getSprints: (projectId: string) => api.get(`/projects/${projectId}/sprints`),
+  getSprintById: (projectId: string, sprintId: string) =>
+    api.get(`/projects/${projectId}/sprints/${sprintId}`),
+  generateNextSprint: (projectId: string) => api.post(`/projects/${projectId}/sprints/generate-next`),
+  updateSprintStatus: (projectId: string, sprintId: string, status: 'DRAFT' | 'RELEASED') =>
+    api.patch(`/projects/${projectId}/sprints/${sprintId}/status`, { status }),
+  deleteSprint: (projectId: string, sprintId: string) =>
+    api.delete(`/projects/${projectId}/sprints/${sprintId}`),
 };
 
 export type TaskAssigneeType = 'PERSON' | 'ALL' | 'ALL_PMS' | 'ALL_TEAM';
@@ -246,6 +279,13 @@ export const deliverablesAPI = {
   }),
   create: (data: any) => api.post('/deliverables', data),
   update: (id: string, data: any) => api.patch(`/deliverables/${id}`, data),
+  updateDeadline: (id: string, deadline: string) => api.patch(`/deliverables/${id}/deadline`, { deadline }),
+  updateAssignment: (id: string, assigned: boolean, assigneeId?: string) =>
+    api.patch(`/deliverables/${id}/assignment`, { assigned, assigneeId }),
+  updateCompletion: (id: string, completed: boolean) =>
+    api.patch(`/deliverables/${id}/completion`, { completed }),
+  submitLink: (id: string, link: string) =>
+    api.post(`/deliverables/${id}/submissions`, { link }),
   delete: (id: string) => api.delete(`/deliverables/${id}`),
 };
 

@@ -2,8 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { StickyNote, ExternalLink, Plus } from 'lucide-react';
-import { PMNavbar } from '@/components/PMNavbar';
-import { LCPartnerNavbar } from '@/components/LCPartnerNavbar';
 import { AppNavbar } from '@/components/AppNavbar';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -180,16 +178,7 @@ export default function ClientNotesPage() {
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
-      {(resolvedRole === 'PM' || resolvedRole === 'ADMIN') && (
-        <PMNavbar currentPath="/client-notes" />
-      )}
-      {(resolvedRole === 'LC' || resolvedRole === 'PARTNER' || resolvedRole === 'EXECUTIVE') && (
-        <LCPartnerNavbar
-          role={resolvedRole === 'LC' ? 'LC' : 'PARTNER'}
-          currentPath="/client-notes"
-        />
-      )}
-      {resolvedRole === 'CONSULTANT' && <AppNavbar role="CONSULTANT" currentPath="/client-notes" />}
+      <AppNavbar role={resolvedRole} currentPath="/client-notes" />
 
       <main className="px-4 sm:px-6 lg:px-8 py-8">
         <div className="max-w-[1000px] mx-auto space-y-6">

@@ -18,6 +18,7 @@ export type TaskFromApi = {
   projectId?: string | null;
   createdAt: string;
   updatedAt: string;
+  consultantTaskStatus?: string | null;
 };
 
 export type TeamForTasks = { id: string; name: string; memberEmails: string[] };

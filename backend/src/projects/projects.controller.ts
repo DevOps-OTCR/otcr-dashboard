@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Post,
   Get,
@@ -91,6 +92,165 @@ export class ProjectsController {
     }
 
     return this.projectsService.findAll(parsedQuery);
+  }
+
+  @Get(':id/sprint-config')
+  @Roles('ADMIN', 'PM', 'LC', 'CONSULTANT', 'PARTNER', 'EXECUTIVE')
+  async getSprintConfig(@Param('id') id: string, @GetUser() user: any) {
+    const project = await this.projectsService.findOne(id);
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    await this.ensureProjectAccess(project, user);
+    return this.projectsService.getSprintConfig(id);
+  }
+
+  @Patch(':id/sprint-config')
+  @Roles('ADMIN', 'PM')
+  async updateSprintConfig(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      sprintStartDay?: string;
+      initialSlideDueDay?: string;
+      finalSlideDueDay?: string;
+      defaultDueTime?: string;
+      sprintTimezone?: string;
+      autoGenerateSprints?: boolean;
+    },
+    @GetUser() user: any
+  ) {
+    const project = await this.projectsService.findOne(id);
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    if (user.role !== 'ADMIN' && project.pmId !== user.id) {
+      throw new ForbiddenException('Only the PM or Admin can update sprint settings');
+    }
+
+    return this.projectsService.updateSprintConfig(id, body);
+  }
+
+  @Get(':id/sprints')
+  @Roles('ADMIN', 'PM', 'LC', 'CONSULTANT', 'PARTNER', 'EXECUTIVE')
+  async listSprints(@Param('id') id: string, @GetUser() user: any) {
+    const project = await this.projectsService.findOne(id);
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    await this.ensureProjectAccess(project, user);
+    return this.projectsService.listSprints(id);
+  }
+
+  @Post(':id/sprints/generate-next')
+  @Roles('ADMIN', 'PM')
+  async generateNextSprint(@Param('id') id: string, @GetUser() user: any) {
+    const project = await this.projectsService.findOne(id);
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    if (user.role !== 'ADMIN' && project.pmId !== user.id) {
+      throw new ForbiddenException('Only the PM or Admin can generate sprints');
+    }
+
+    try {
+      return await this.projectsService.generateNextSprint(id);
+    } catch (error: any) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      const message =
+        error?.response?.message ??
+        error?.message ??
+        'Unable to generate a sprint right now.';
+      throw new BadRequestException(Array.isArray(message) ? message.join(', ') : String(message));
+    }
+  }
+
+  @Get(':id/sprints/:sprintId')
+  @Roles('ADMIN', 'PM', 'LC', 'CONSULTANT', 'PARTNER', 'EXECUTIVE')
+  async getSprint(
+    @Param('id') id: string,
+    @Param('sprintId') sprintId: string,
+    @GetUser() user: any
+  ) {
+    const project = await this.projectsService.findOne(id);
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    await this.ensureProjectAccess(project, user);
+    const sprint = await this.projectsService.getSprint(id, sprintId);
+
+    if (!sprint) {
+      throw new NotFoundException('Sprint not found');
+    }
+
+    if (
+      sprint.status !== 'RELEASED' &&
+      user.role !== 'PM' &&
+      user.role !== 'LC' &&
+      user.role !== 'ADMIN'
+    ) {
+      throw new ForbiddenException('You do not have access to this sprint');
+    }
+
+    return sprint;
+  }
+
+  @Patch(':id/sprints/:sprintId/status')
+  @Roles('ADMIN', 'PM', 'LC')
+  async updateSprintStatus(
+    @Param('id') id: string,
+    @Param('sprintId') sprintId: string,
+    @Body() body: { status: 'DRAFT' | 'RELEASED' },
+    @GetUser() user: any
+  ) {
+    const project = await this.projectsService.findOne(id);
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    if (user.role !== 'ADMIN' && user.role !== 'LC' && project.pmId !== user.id) {
+      throw new ForbiddenException('Only PM, LC, or Admin can change sprint visibility');
+    }
+
+    if (body?.status !== 'DRAFT' && body?.status !== 'RELEASED') {
+      throw new BadRequestException('Sprint status must be DRAFT or RELEASED');
+    }
+
+    return this.projectsService.updateSprintStatus(id, sprintId, body.status);
+  }
+
+  @Delete(':id/sprints/:sprintId')
+  @Roles('ADMIN', 'PM', 'LC')
+  async deleteSprint(
+    @Param('id') id: string,
+    @Param('sprintId') sprintId: string,
+    @GetUser() user: any
+  ) {
+    const project = await this.projectsService.findOne(id);
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    if (user.role !== 'ADMIN' && user.role !== 'LC' && project.pmId !== user.id) {
+      throw new ForbiddenException('Only PM, LC, or Admin can delete sprints');
+    }
+
+    return this.projectsService.deleteSprint(id, sprintId);
   }
 
   // Get single project
@@ -227,5 +387,20 @@ export class ProjectsController {
     if (!value) return fallback;
     const parsed = Number.parseInt(value, 10);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  }
+
+  private async ensureProjectAccess(project: any, user: any) {
+    if (user.role === 'ADMIN' || user.role === 'LC' || user.role === 'EXECUTIVE') {
+      return;
+    }
+
+    if (user.role === 'PM' && project.pmId === user.id) {
+      return;
+    }
+
+    const isMember = await this.projectsService.isMember(project.id, user.id);
+    if (!isMember) {
+      throw new ForbiddenException('You do not have access to this project');
+    }
   }
 }

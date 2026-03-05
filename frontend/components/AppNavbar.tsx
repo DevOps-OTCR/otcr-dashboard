@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/utils';
 import { AdminRoleSwitcher } from '@/components/AdminRoleSwitcher';
 import { useAuth } from '@/components/AuthContext';
-import { getDefaultDashboardPath, hasAccess, canShowNavItem, type AppRole } from '@/lib/permissions';
+import { getDefaultDashboardPath, hasAccess, canShowNavItem, ROLE_FULL_LABELS, type AppRole } from '@/lib/permissions';
 import { getNotificationsForUser, markNotificationRead } from '@/lib/notifications-storage';
 
 export type NavItem = {
@@ -30,9 +30,23 @@ export type NavItem = {
   canAccess: (role: AppRole) => boolean;
 };
 
-interface AppNavbarProps {
+export type AppNavPath =
+  | '/dashboard'
+  | '/consultant'
+  | '/pm'
+  | '/lc'
+  | '/partner'
+  | '/deliverables'
+  | '/workstream'
+  | '/workstream-docs'
+  | '/teams'
+  | '/slides'
+  | '/client-notes'
+  | '/settings/slack';
+
+export interface AppNavbarProps {
   role: AppRole;
-  currentPath?: string;
+  currentPath?: AppNavPath;
   unreadNotificationCount?: number;
 }
 
@@ -92,10 +106,19 @@ export function AppNavbar({ role, currentPath = '/dashboard', unreadNotification
     },
     {
       id: 'workstreamDocs',
-      label: 'Workstream Docs',
+      label: 'Workstream',
       icon: FileText,
-      href: '/workstream-docs',
-      canAccess: (r) => hasAccess('workstreamDocReleased', r, 'read'),
+      href: '/workstream',
+      canAccess: (r) =>
+        hasAccess('workstreamDocReleased', r, 'read') ||
+        hasAccess('engagementStatusTimelines', r, 'read'),
+    },
+    {
+      id: 'engagement',
+      label: 'Deliverables',
+      icon: Activity,
+      href: '/deliverables',
+      canAccess: (r) => hasAccess('engagementStatusTimelines', r, 'read'),
     },
     {
       id: 'slides',
@@ -107,13 +130,6 @@ export function AppNavbar({ role, currentPath = '/dashboard', unreadNotification
         hasAccess('viewFinalSlides', r, 'read') ||
         hasAccess('uploadInitialSlide', r, 'write') ||
         hasAccess('uploadFinalSlide', r, 'write'),
-    },
-    {
-      id: 'engagement',
-      label: 'Engagement',
-      icon: Activity,
-      href: '/engagement',
-      canAccess: (r) => hasAccess('engagementStatusTimelines', r, 'read'),
     },
     {
       id: 'team',
@@ -139,8 +155,8 @@ export function AppNavbar({ role, currentPath = '/dashboard', unreadNotification
                 priority
               />
             </Link>
-            <Badge variant="info" size="sm" className="uppercase hidden sm:inline-flex">
-              {role}
+            <Badge variant="info" size="sm" className="hidden sm:inline-flex">
+              {ROLE_FULL_LABELS[role] ?? role}
             </Badge>
             <AdminRoleSwitcher className="shrink-0" />
           </div>
