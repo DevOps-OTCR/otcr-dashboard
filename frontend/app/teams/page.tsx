@@ -2,20 +2,31 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Users, UserPlus, UserMinus, Trash2, CheckCircle, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
+import {
+  Users,
+  UserPlus,
+  UserMinus,
+  Trash2,
+  CheckCircle,
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  CalendarDays,
+  RefreshCw,
+  FileText,
+} from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import { cn } from '@/lib/utils';
 import { getEffectiveRole, getUserRole, type AppRole } from '@/lib/permissions';
-import { PMNavbar } from '@/components/PMNavbar';
-import { LCPartnerNavbar } from '@/components/LCPartnerNavbar';
 import { AppNavbar } from '@/components/AppNavbar';
 import { getLastDashboard } from '@/lib/dashboard-context';
 import { useRouter } from 'next/navigation';
-import { projectsAPI, authAPI, setAuthToken } from '@/lib/api';
+import { projectsAPI, authAPI, deliverablesAPI, setAuthToken } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
+import { parseDashPrefixedDeliverables } from '@/lib/deliverables-parser';
 
 type ProjectMember = { user: { id: string; email: string; firstName?: string; lastName?: string; role?: string } };
 type ProjectFromApi = {
@@ -27,6 +38,62 @@ type ProjectFromApi = {
   members?: ProjectMember[];
 };
 
+type SprintConfig = {
+  id: string;
+  sprintStartDay: string;
+  initialSlideDueDay: string;
+  finalSlideDueDay: string;
+  defaultDueTime: string;
+  sprintTimezone: string;
+  autoGenerateSprints: boolean;
+  updatedAt?: string;
+};
+
+type SprintDeliverable = {
+  id: string;
+  title: string;
+  deadline: string;
+  templateKind?: string;
+  dueDateSource?: string;
+  status?: string;
+  completed?: boolean;
+  assignee?: {
+    id: string;
+    email?: string;
+    firstName?: string;
+    lastName?: string;
+  } | null;
+};
+
+type SprintRecord = {
+  id: string;
+  label: string;
+  sequenceNumber: number;
+  weekStartDate: string;
+  weekEndDate: string;
+  status: string;
+  deliverables?: SprintDeliverable[];
+};
+
+const WEEKDAY_OPTIONS = [
+  'MONDAY',
+  'TUESDAY',
+  'WEDNESDAY',
+  'THURSDAY',
+  'FRIDAY',
+  'SATURDAY',
+  'SUNDAY',
+];
+
+const DEFAULT_SPRINT_CONFIG: Omit<SprintConfig, 'id'> = {
+  sprintStartDay: 'MONDAY',
+  initialSlideDueDay: 'TUESDAY',
+  finalSlideDueDay: 'THURSDAY',
+  defaultDueTime: '23:59',
+  sprintTimezone: 'America/Chicago',
+  autoGenerateSprints: true,
+};
+
 function getMemberEmails(project: ProjectFromApi): string[] {
   return project.members?.map((m) => m.user.email) ?? [];
 }
@@ -34,6 +101,71 @@ function getMemberEmails(project: ProjectFromApi): string[] {
 function parseApiError(err: any, fallback: string): string {
   const message = err?.response?.data?.message ?? err?.message ?? fallback;
   return Array.isArray(message) ? message.join(', ') : String(message);
+}
+
+function buildCustomDeliverableDeadline(sprint: SprintRecord, dueTime: string): string {
+  const target = new Date(sprint.weekEndDate);
+  const [hours, minutes] = dueTime.split(':').map((part) => Number.parseInt(part, 10));
+  target.setHours(hours || 23, minutes || 59, 0, 0);
+  return target.toISOString();
+}
+
+function formatAssigneeLabel(
+  assignee?: { email?: string; firstName?: string; lastName?: string } | null,
+): string {
+  if (!assignee) return 'Unassigned';
+  const name = [assignee.firstName, assignee.lastName].filter(Boolean).join(' ').trim();
+  return name || assignee.email || 'Assigned';
+}
+
+function TeamDeliverableCard({
+  deliverable,
+  sprintStatus,
+  currentUserEmail,
+  onToggleAssign,
+}: {
+  deliverable: SprintDeliverable;
+  sprintStatus: string;
+  currentUserEmail?: string | null;
+  onToggleAssign: (deliverable: SprintDeliverable) => void;
+}) {
+  const assignedToCurrentUser = Boolean(
+    deliverable.assignee?.email &&
+      currentUserEmail &&
+      deliverable.assignee.email.toLowerCase() === currentUserEmail.toLowerCase(),
+  );
+  const isReleased = sprintStatus === 'RELEASED';
+
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--secondary)]/70 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-[var(--foreground)]">{deliverable.title}</p>
+          <p className="text-xs text-[var(--foreground)]/55 mt-1">
+            {new Date(deliverable.deadline).toLocaleString()}
+          </p>
+        </div>
+        <span
+          className={cn(
+            'text-[11px] uppercase tracking-wide rounded-full px-2 py-1',
+            isReleased
+              ? 'bg-emerald-500/10 text-emerald-700'
+              : 'bg-amber-500/10 text-amber-700',
+          )}
+        >
+          {isReleased ? 'final' : 'draft'}
+        </span>
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <p className="text-xs text-[var(--foreground)]/65">
+          {formatAssigneeLabel(deliverable.assignee)}
+        </p>
+        <Button size="sm" variant={assignedToCurrentUser ? 'outline' : 'primary'} onClick={() => onToggleAssign(deliverable)}>
+          {assignedToCurrentUser ? 'Unassign' : 'Assign'}
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 export default function TeamsPage() {
@@ -49,6 +181,14 @@ export default function TeamsPage() {
   const [createTeamForm, setCreateTeamForm] = useState({ name: '', selectedEmails: [] as string[], search: '' });
   const [addMemberSearch, setAddMemberSearch] = useState('');
   const [calendarLinkDrafts, setCalendarLinkDrafts] = useState<Record<string, string>>({});
+  const [sprintConfigDraft, setSprintConfigDraft] = useState(DEFAULT_SPRINT_CONFIG);
+  const [sprintDataLoading, setSprintDataLoading] = useState(false);
+  const [sprintConfigSaving, setSprintConfigSaving] = useState(false);
+  const [sprintGenerationLoading, setSprintGenerationLoading] = useState(false);
+  const [teamSprints, setTeamSprints] = useState<SprintRecord[]>([]);
+  const [selectedSprintId, setSelectedSprintId] = useState<string>('');
+  const [draftDeliverablesInput, setDraftDeliverablesInput] = useState('');
+  const [draftDeliverablesSaving, setDraftDeliverablesSaving] = useState(false);
   const [actionFeedback, setActionFeedback] = useState<{ message: string; tone: 'success' | 'warning' | 'info' } | null>(null);
 
   const fetchProjects = useCallback(async () => {
@@ -159,6 +299,61 @@ export default function TeamsPage() {
     return () => clearTimeout(timer);
   }, [actionFeedback]);
 
+  const loadSelectedTeamSprintData = useCallback(async (projectId: string) => {
+    setSprintDataLoading(true);
+    try {
+      const token = await session.getToken();
+      if (token) {
+        setAuthToken(token);
+      }
+
+      const [configRes, sprintsRes] = await Promise.all([
+        projectsAPI.getSprintConfig(projectId),
+        projectsAPI.getSprints(projectId),
+      ]);
+
+      const incomingConfig = configRes.data as SprintConfig;
+      setSprintConfigDraft({
+        sprintStartDay: incomingConfig?.sprintStartDay ?? DEFAULT_SPRINT_CONFIG.sprintStartDay,
+        initialSlideDueDay:
+          incomingConfig?.initialSlideDueDay ?? DEFAULT_SPRINT_CONFIG.initialSlideDueDay,
+        finalSlideDueDay: incomingConfig?.finalSlideDueDay ?? DEFAULT_SPRINT_CONFIG.finalSlideDueDay,
+        defaultDueTime: incomingConfig?.defaultDueTime ?? DEFAULT_SPRINT_CONFIG.defaultDueTime,
+        sprintTimezone: incomingConfig?.sprintTimezone ?? DEFAULT_SPRINT_CONFIG.sprintTimezone,
+        autoGenerateSprints:
+          incomingConfig?.autoGenerateSprints ?? DEFAULT_SPRINT_CONFIG.autoGenerateSprints,
+      });
+      const nextSprints = (sprintsRes.data ?? []) as SprintRecord[];
+      setTeamSprints(nextSprints);
+      setSelectedSprintId((current) =>
+        current && nextSprints.some((item) => item.id === current)
+          ? current
+          : nextSprints[0]?.id ?? '',
+      );
+    } catch (err) {
+      setSprintConfigDraft(DEFAULT_SPRINT_CONFIG);
+      setTeamSprints([]);
+      setSelectedSprintId('');
+      setActionFeedback({
+        message: parseApiError(err, 'Failed to load sprint settings'),
+        tone: 'warning',
+      });
+    } finally {
+      setSprintDataLoading(false);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    if (!selectedTeamId || !canManageTeams) {
+      setSprintConfigDraft(DEFAULT_SPRINT_CONFIG);
+      setTeamSprints([]);
+      setSelectedSprintId('');
+      return;
+    }
+
+    void loadSelectedTeamSprintData(selectedTeamId);
+  }, [selectedTeamId, canManageTeams, loadSelectedTeamSprintData]);
+
   const filterEmailsBySearch = (emails: string[], query: string) => {
     if (!query.trim()) return emails;
     const q = query.trim().toLowerCase();
@@ -172,6 +367,8 @@ export default function TeamsPage() {
         addMemberSearch
       )
     : [];
+  const selectedSprint = teamSprints.find((sprint) => sprint.id === selectedSprintId) ?? null;
+  const parsedDraftDeliverables = parseDashPrefixedDeliverables(draftDeliverablesInput);
 
   const toggleTeamMember = (email: string) => {
     setCreateTeamForm((prev) => ({
@@ -270,25 +467,143 @@ export default function TeamsPage() {
       );
   };
 
+  const handleSaveSprintConfig = async () => {
+    if (!selectedTeam) return;
+
+    setSprintConfigSaving(true);
+    try {
+      const res = await projectsAPI.updateSprintConfig(selectedTeam.id, sprintConfigDraft);
+      setSprintConfigDraft({
+        sprintStartDay: res.data?.sprintStartDay ?? sprintConfigDraft.sprintStartDay,
+        initialSlideDueDay: res.data?.initialSlideDueDay ?? sprintConfigDraft.initialSlideDueDay,
+        finalSlideDueDay: res.data?.finalSlideDueDay ?? sprintConfigDraft.finalSlideDueDay,
+        defaultDueTime: res.data?.defaultDueTime ?? sprintConfigDraft.defaultDueTime,
+        sprintTimezone: res.data?.sprintTimezone ?? sprintConfigDraft.sprintTimezone,
+        autoGenerateSprints: res.data?.autoGenerateSprints ?? sprintConfigDraft.autoGenerateSprints,
+      });
+      setActionFeedback({ message: 'Sprint schedule saved', tone: 'success' });
+    } catch (err) {
+      setActionFeedback({
+        message: parseApiError(err, 'Failed to save sprint settings'),
+        tone: 'warning',
+      });
+    } finally {
+      setSprintConfigSaving(false);
+    }
+  };
+
+  const handleGenerateSprint = async () => {
+    if (!selectedTeam) return;
+
+    setSprintGenerationLoading(true);
+    try {
+      await projectsAPI.generateNextSprint(selectedTeam.id);
+      setSelectedSprintId('');
+      await loadSelectedTeamSprintData(selectedTeam.id);
+      setActionFeedback({ message: 'Next sprint generated', tone: 'success' });
+    } catch (err) {
+      setActionFeedback({
+        message: parseApiError(err, 'Failed to generate next sprint'),
+        tone: 'warning',
+      });
+    } finally {
+      setSprintGenerationLoading(false);
+    }
+  };
+
+  const handleSaveDraftDeliverables = async () => {
+    if (!selectedTeam || !selectedSprint || parsedDraftDeliverables.length === 0) return;
+
+    setDraftDeliverablesSaving(true);
+    try {
+      await Promise.all(
+        parsedDraftDeliverables.map((item) =>
+          deliverablesAPI.create({
+            projectId: selectedTeam.id,
+            sprintId: selectedSprint.id,
+            title: item.title,
+            description: 'Draft deliverable created from teams page.',
+            type: 'OTHER',
+            deadline: buildCustomDeliverableDeadline(selectedSprint, sprintConfigDraft.defaultDueTime),
+          }),
+        ),
+      );
+      setDraftDeliverablesInput('');
+      await loadSelectedTeamSprintData(selectedTeam.id);
+      setActionFeedback({ message: 'Draft deliverables saved', tone: 'success' });
+    } catch (err) {
+      setActionFeedback({
+        message: parseApiError(err, 'Failed to save draft deliverables'),
+        tone: 'warning',
+      });
+    } finally {
+      setDraftDeliverablesSaving(false);
+    }
+  };
+
+  const handleUpdateSprintVisibility = async (status: 'DRAFT' | 'RELEASED') => {
+    if (!selectedTeam || !selectedSprint) return;
+
+    try {
+      await projectsAPI.updateSprintStatus(selectedTeam.id, selectedSprint.id, status);
+      await loadSelectedTeamSprintData(selectedTeam.id);
+      setActionFeedback({
+        message: status === 'RELEASED' ? 'Sprint released to the team' : 'Sprint moved back to draft',
+        tone: 'success',
+      });
+    } catch (err) {
+      setActionFeedback({
+        message: parseApiError(err, 'Failed to update sprint visibility'),
+        tone: 'warning',
+      });
+    }
+  };
+
+  const handleToggleDeliverableAssignment = async (deliverable: SprintDeliverable) => {
+    if (!selectedTeam) return;
+
+    try {
+      const currentEmail = session.user?.email ?? '';
+      const isAssignedToCurrentUser =
+        Boolean(deliverable.assignee?.email) &&
+        deliverable.assignee?.email?.toLowerCase() === currentEmail.toLowerCase();
+      await deliverablesAPI.updateAssignment(deliverable.id, !isAssignedToCurrentUser);
+      await loadSelectedTeamSprintData(selectedTeam.id);
+      setActionFeedback({
+        message: isAssignedToCurrentUser ? 'Deliverable unassigned' : 'Deliverable assigned',
+        tone: 'success',
+      });
+    } catch (err) {
+      setActionFeedback({
+        message: parseApiError(err, 'Failed to update assignment'),
+        tone: 'warning',
+      });
+    }
+  };
+
   if (!hasMounted) {
     return <FullScreenLoader />;
   }
 
-  const lastDashboard = getLastDashboard();
-  const showLCNavbar = resolvedRole === 'LC' || lastDashboard === '/lc';
-  const showPartnerNavbar = resolvedRole === 'PARTNER' || resolvedRole === 'EXECUTIVE' || lastDashboard === '/partner';
+  const formatDateRange = (start?: string, end?: string) => {
+    if (!start || !end) return 'Dates unavailable';
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      return 'Dates unavailable';
+    }
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+    });
+    return `${formatter.format(startDate)} - ${formatter.format(endDate)}`;
+  };
+  const labelForWeekday = (value: string) =>
+    value.charAt(0) + value.slice(1).toLowerCase();
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--background)]">
-      {isConsultant ? (
-        <AppNavbar role="CONSULTANT" currentPath="/teams" />
-      ) : showLCNavbar ? (
-        <LCPartnerNavbar role="LC" currentPath="/teams" />
-      ) : showPartnerNavbar ? (
-        <LCPartnerNavbar role="PARTNER" currentPath="/teams" />
-      ) : (
-        <PMNavbar currentPath="/teams" />
-      )}
+      <AppNavbar role={resolvedRole} currentPath="/teams" />
 
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -370,6 +685,157 @@ export default function TeamsPage() {
                               Save
                             </Button>
                           </div>
+                        </div>
+                      )}
+                      {canManageTeams && (
+                        <div className="mb-4 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] space-y-4">
+                          <div className="flex items-start justify-between gap-4">
+                            <div>
+                              <p className="text-sm font-semibold flex items-center gap-2">
+                                <CalendarDays className="w-4 h-4 text-[var(--primary)]" />
+                                Sprint deliverables schedule
+                              </p>
+                              <p className="text-xs text-[var(--foreground)]/60 mt-1">
+                                Configure weekly due days here for this team. New sprints auto-fill Initial and Final Slides from these settings.
+                              </p>
+                            </div>
+                            <p className="max-w-[280px] text-right text-xs text-[var(--foreground)]/60">
+                              Generate sprints, manage draft deliverables, and release weeks from the Deliverables page.
+                            </p>
+                          </div>
+
+                          {sprintDataLoading ? (
+                            <div className="text-sm text-[var(--foreground)]/60">Loading sprint settings...</div>
+                          ) : (
+                            <>
+                              <div className="grid gap-3 md:grid-cols-2">
+                                <label className="space-y-1 text-sm">
+                                  <span className="font-medium text-[var(--foreground)]">Sprint starts on</span>
+                                  <select
+                                    value={sprintConfigDraft.sprintStartDay}
+                                    onChange={(e) =>
+                                      setSprintConfigDraft((prev) => ({
+                                        ...prev,
+                                        sprintStartDay: e.target.value,
+                                      }))
+                                    }
+                                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
+                                  >
+                                    {WEEKDAY_OPTIONS.map((day) => (
+                                      <option key={day} value={day}>
+                                        {labelForWeekday(day)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+
+                                <label className="space-y-1 text-sm">
+                                  <span className="font-medium text-[var(--foreground)]">Default due time</span>
+                                  <input
+                                    type="time"
+                                    value={sprintConfigDraft.defaultDueTime}
+                                    onChange={(e) =>
+                                      setSprintConfigDraft((prev) => ({
+                                        ...prev,
+                                        defaultDueTime: e.target.value,
+                                      }))
+                                    }
+                                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
+                                  />
+                                </label>
+
+                                <label className="space-y-1 text-sm">
+                                  <span className="font-medium text-[var(--foreground)]">Initial Slides due day</span>
+                                  <select
+                                    value={sprintConfigDraft.initialSlideDueDay}
+                                    onChange={(e) =>
+                                      setSprintConfigDraft((prev) => ({
+                                        ...prev,
+                                        initialSlideDueDay: e.target.value,
+                                      }))
+                                    }
+                                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
+                                  >
+                                    {WEEKDAY_OPTIONS.map((day) => (
+                                      <option key={day} value={day}>
+                                        {labelForWeekday(day)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+
+                                <label className="space-y-1 text-sm">
+                                  <span className="font-medium text-[var(--foreground)]">Final Slides due day</span>
+                                  <select
+                                    value={sprintConfigDraft.finalSlideDueDay}
+                                    onChange={(e) =>
+                                      setSprintConfigDraft((prev) => ({
+                                        ...prev,
+                                        finalSlideDueDay: e.target.value,
+                                      }))
+                                    }
+                                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
+                                  >
+                                    {WEEKDAY_OPTIONS.map((day) => (
+                                      <option key={day} value={day}>
+                                        {labelForWeekday(day)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+
+                                <label className="space-y-1 text-sm md:col-span-2">
+                                  <span className="font-medium text-[var(--foreground)]">Timezone</span>
+                                  <input
+                                    type="text"
+                                    value={sprintConfigDraft.sprintTimezone}
+                                    onChange={(e) =>
+                                      setSprintConfigDraft((prev) => ({
+                                        ...prev,
+                                        sprintTimezone: e.target.value,
+                                      }))
+                                    }
+                                    placeholder="America/Chicago"
+                                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
+                                  />
+                                </label>
+                              </div>
+
+                              <label className="flex items-center gap-2 text-sm text-[var(--foreground)]">
+                                <input
+                                  type="checkbox"
+                                  checked={sprintConfigDraft.autoGenerateSprints}
+                                  onChange={(e) =>
+                                    setSprintConfigDraft((prev) => ({
+                                      ...prev,
+                                      autoGenerateSprints: e.target.checked,
+                                    }))
+                                  }
+                                  className="rounded border-[var(--border)]"
+                                />
+                                Auto-generate weekly sprint templates for this team
+                              </label>
+
+                              <div className="flex flex-wrap items-center gap-3">
+                                <Button
+                                  size="sm"
+                                  onClick={handleSaveSprintConfig}
+                                  disabled={sprintConfigSaving}
+                                >
+                                  {sprintConfigSaving ? 'Saving...' : 'Save sprint schedule'}
+                                </Button>
+                                <p className="text-xs text-[var(--foreground)]/60">
+                                  Current pattern: Initial Slides every {labelForWeekday(sprintConfigDraft.initialSlideDueDay)} at {sprintConfigDraft.defaultDueTime}, Final Slides every {labelForWeekday(sprintConfigDraft.finalSlideDueDay)} at {sprintConfigDraft.defaultDueTime}.
+                                </p>
+                              </div>
+
+                              <div className="rounded-lg border border-dashed border-[var(--border)] p-3 text-sm text-[var(--foreground)]/60">
+                                {teamSprints.length === 0
+                                  ? 'No sprints generated yet. Use the Deliverables page when you are ready to create the first sprint.'
+                                  : `${teamSprints.length} sprint${teamSprints.length === 1 ? '' : 's'} already exist for this team. Use the Deliverables page to manage them.`}
+                              </div>
+                            </>
+                          )}
                         </div>
                       )}
                       <p className="text-xs font-medium text-[var(--foreground)]/70 mb-2">Members and roles</p>
@@ -529,7 +995,7 @@ export default function TeamsPage() {
                   Teams
                 </CardTitle>
                 <CardDescription>
-                  View teams and members. Partners cannot create or edit teams.
+                  View teams and members.
                 </CardDescription>
               </CardHeader>
               <CardContent>

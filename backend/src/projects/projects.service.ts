@@ -1,5 +1,15 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+
+type SprintConfigInput = {
+  sprintStartDay?: string;
+  initialSlideDueDay?: string;
+  finalSlideDueDay?: string;
+  defaultDueTime?: string;
+  sprintTimezone?: string;
+  autoGenerateSprints?: boolean;
+};
 
 @Injectable()
 export class ProjectsService {
@@ -490,6 +500,402 @@ export class ProjectsService {
     return !!member;
   }
 
+  async getSprintConfig(projectId: string) {
+    return this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: {
+        id: true,
+        sprintStartDay: true,
+        initialSlideDueDay: true,
+        finalSlideDueDay: true,
+        defaultDueTime: true,
+        sprintTimezone: true,
+        autoGenerateSprints: true,
+        updatedAt: true,
+      },
+    });
+  }
+
+  async updateSprintConfig(projectId: string, input: SprintConfigInput) {
+    const data: Record<string, unknown> = {};
+
+    if (input.sprintStartDay) {
+      data.sprintStartDay = this.assertWeekday(input.sprintStartDay, 'sprintStartDay');
+    }
+    if (input.initialSlideDueDay) {
+      data.initialSlideDueDay = this.assertWeekday(input.initialSlideDueDay, 'initialSlideDueDay');
+    }
+    if (input.finalSlideDueDay) {
+      data.finalSlideDueDay = this.assertWeekday(input.finalSlideDueDay, 'finalSlideDueDay');
+    }
+    if (input.defaultDueTime !== undefined) {
+      data.defaultDueTime = this.assertDueTime(input.defaultDueTime);
+    }
+    if (input.sprintTimezone !== undefined) {
+      data.sprintTimezone = input.sprintTimezone.trim() || 'America/Chicago';
+    }
+    if (typeof input.autoGenerateSprints === 'boolean') {
+      data.autoGenerateSprints = input.autoGenerateSprints;
+    }
+
+    return this.prisma.project.update({
+      where: { id: projectId },
+      data,
+      select: {
+        id: true,
+        sprintStartDay: true,
+        initialSlideDueDay: true,
+        finalSlideDueDay: true,
+        defaultDueTime: true,
+        sprintTimezone: true,
+        autoGenerateSprints: true,
+        updatedAt: true,
+      },
+    });
+  }
+
+  async listSprints(projectId: string) {
+    try {
+      const sprints = await this.prisma.$queryRaw<any[]>(Prisma.sql`
+        SELECT
+          s."id",
+          s."projectId",
+          s."sequenceNumber",
+          s."label",
+          s."weekStartDate",
+          s."weekEndDate",
+          s."status"::text AS "status",
+          s."configSnapshot",
+          s."createdAt",
+          s."updatedAt"
+        FROM "Sprint" s
+        WHERE s."projectId" = ${projectId}
+        ORDER BY s."sequenceNumber" DESC
+      `);
+
+      if (sprints.length === 0) return [];
+
+      const sprintIds = sprints.map((sprint) => sprint.id);
+      const deliverables = await this.prisma.$queryRaw<any[]>(Prisma.sql`
+        SELECT
+          d."id",
+          d."sprintId",
+          d."title",
+          d."deadline",
+          d."templateKind"::text AS "templateKind",
+          d."status"::text AS "status",
+          d."completed"
+        FROM "Deliverable" d
+        WHERE d."sprintId" IN (${Prisma.join(sprintIds)})
+        ORDER BY d."deadline" ASC
+      `);
+
+      const deliverableIds = deliverables.map((deliverable) => deliverable.id);
+      const assignments = deliverableIds.length
+        ? await this.prisma.$queryRaw<any[]>(Prisma.sql`
+            SELECT
+              da."deliverableId",
+              da."userId",
+              da."assignedAt",
+              u."email",
+              u."firstName",
+              u."lastName"
+            FROM "DeliverableAssignment" da
+            JOIN "User" u ON u."id" = da."userId"
+            WHERE da."deliverableId" IN (${Prisma.join(deliverableIds)})
+            ORDER BY da."assignedAt" ASC
+          `)
+        : [];
+
+      const bySprint = new Map<string, any[]>();
+      const assignmentsByDeliverable = new Map<string, any[]>();
+
+      assignments.forEach((assignment) => {
+        const existing = assignmentsByDeliverable.get(assignment.deliverableId) ?? [];
+        existing.push({
+          id: assignment.userId,
+          email: assignment.email,
+          firstName: assignment.firstName,
+          lastName: assignment.lastName,
+          assignedAt: assignment.assignedAt,
+        });
+        assignmentsByDeliverable.set(assignment.deliverableId, existing);
+      });
+
+      deliverables.forEach((deliverable) => {
+        const existing = bySprint.get(deliverable.sprintId) ?? [];
+        existing.push({
+          id: deliverable.id,
+          title: deliverable.title,
+          deadline: deliverable.deadline,
+          templateKind: deliverable.templateKind,
+          status: deliverable.status,
+          completed: deliverable.completed,
+          assignees: assignmentsByDeliverable.get(deliverable.id) ?? [],
+        });
+        bySprint.set(deliverable.sprintId, existing);
+      });
+
+      return sprints.map((sprint) => ({
+        ...sprint,
+        deliverables: bySprint.get(sprint.id) ?? [],
+      }));
+    } catch (error) {
+      console.warn('Failed to load sprints.', error);
+      throw new BadRequestException(
+        'Unable to load sprints right now. Confirm the sprint schema SQL has been applied, then try again.',
+      );
+    }
+  }
+
+  async getSprint(projectId: string, sprintId: string) {
+    const sprints = await this.listSprints(projectId);
+    return sprints.find((sprint: any) => sprint.id === sprintId) ?? null;
+  }
+
+  async updateSprintStatus(projectId: string, sprintId: string, status: 'DRAFT' | 'RELEASED') {
+    try {
+      const result = await this.prisma.sprint.updateMany({
+        where: {
+          id: sprintId,
+          projectId,
+        },
+        data: {
+          status: status as any,
+        },
+      });
+
+      if (result.count === 0) {
+        throw new BadRequestException('Sprint not found');
+      }
+
+      const sprint = await this.getSprint(projectId, sprintId);
+
+      if (!sprint) {
+        throw new BadRequestException('Sprint not found');
+      }
+
+      return sprint;
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      console.warn('Failed to update sprint status.', error);
+      throw new BadRequestException('Unable to update this week right now. Please try again.');
+    }
+  }
+
+  async deleteSprint(projectId: string, sprintId: string) {
+    try {
+      const deletedSprintId = await this.prisma.$transaction(async (tx) => {
+        const sprint = await tx.sprint.findFirst({
+          where: {
+            id: sprintId,
+            projectId,
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        if (!sprint) {
+          throw new BadRequestException('Sprint not found');
+        }
+
+        const result = await tx.sprint.deleteMany({
+          where: {
+            id: sprint.id,
+          },
+        });
+
+        if (result.count === 0) {
+          throw new BadRequestException('Sprint not found');
+        }
+
+        const remainingSprints = await tx.sprint.findMany({
+          where: {
+            projectId,
+          },
+          orderBy: [
+            { weekStartDate: 'asc' },
+            { createdAt: 'asc' },
+          ],
+          select: {
+            id: true,
+          },
+        });
+
+        for (const [index, remainingSprint] of remainingSprints.entries()) {
+          const nextSequence = index + 1;
+          await tx.sprint.update({
+            where: {
+              id: remainingSprint.id,
+            },
+            data: {
+              sequenceNumber: nextSequence,
+              label: `Week ${nextSequence}`,
+            },
+          });
+        }
+
+        return sprint.id;
+      });
+
+      return {
+        id: deletedSprintId,
+        deleted: true,
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      console.warn('Failed to delete sprint.', error);
+      throw new BadRequestException('Unable to delete this week right now. Please try again.');
+    }
+  }
+
+  async generateNextSprint(projectId: string) {
+    try {
+      const createdSprintId = await this.prisma.$transaction(async (tx) => {
+        const project = await tx.project.findUnique({
+          where: { id: projectId },
+          select: {
+            id: true,
+            name: true,
+            sprintStartDay: true,
+            initialSlideDueDay: true,
+            finalSlideDueDay: true,
+            defaultDueTime: true,
+            sprintTimezone: true,
+            autoGenerateSprints: true,
+            startDate: true,
+            members: {
+              where: {
+                leftAt: null,
+              },
+              select: {
+                userId: true,
+              },
+            },
+            sprints: {
+              orderBy: { sequenceNumber: 'desc' },
+              take: 1,
+              select: {
+                sequenceNumber: true,
+                weekStartDate: true,
+              },
+            },
+          },
+        });
+
+        if (!project) {
+          throw new BadRequestException('Project not found');
+        }
+
+        const latestSprint = project.sprints[0];
+        const sequenceNumber = latestSprint ? latestSprint.sequenceNumber + 1 : 1;
+        const baseDate = latestSprint
+          ? this.addDaysUtc(latestSprint.weekStartDate, 7)
+          : project.startDate;
+        const weekStartDate = this.alignToWeekday(baseDate, project.sprintStartDay);
+        const weekEndDate = this.addDaysUtc(weekStartDate, 6);
+        const configSnapshot = {
+          sprintStartDay: project.sprintStartDay,
+          initialSlideDueDay: project.initialSlideDueDay,
+          finalSlideDueDay: project.finalSlideDueDay,
+          defaultDueTime: project.defaultDueTime,
+          sprintTimezone: project.sprintTimezone,
+          autoGenerateSprints: project.autoGenerateSprints,
+        };
+
+        const createdSprint = await tx.sprint.create({
+          data: {
+            projectId: project.id,
+            sequenceNumber,
+            label: `Week ${sequenceNumber}`,
+            weekStartDate,
+            weekEndDate,
+            status: 'DRAFT' as any,
+            configSnapshot,
+            deliverables: {
+              create: [
+                {
+                  projectId: project.id,
+                  title: `Initial Slides - Week ${sequenceNumber}`,
+                  description: `Auto-generated initial slide deliverable for Week ${sequenceNumber}.`,
+                  type: 'PRESENTATION',
+                  templateKind: 'INITIAL_SLIDES',
+                  dueDateSource: 'AUTO',
+                  deadline: this.buildDeadlineForWeek(
+                    weekStartDate,
+                    project.initialSlideDueDay,
+                    project.defaultDueTime,
+                  ),
+                  status: 'PENDING',
+                },
+                {
+                  projectId: project.id,
+                  title: `Final Slides - Week ${sequenceNumber}`,
+                  description: `Auto-generated final slide deliverable for Week ${sequenceNumber}.`,
+                  type: 'PRESENTATION',
+                  templateKind: 'FINAL_SLIDES',
+                  dueDateSource: 'AUTO',
+                  deadline: this.buildDeadlineForWeek(
+                    weekStartDate,
+                    project.finalSlideDueDay,
+                    project.defaultDueTime,
+                  ),
+                  status: 'PENDING',
+                },
+              ],
+            },
+          },
+          select: {
+            id: true,
+            deliverables: {
+              select: {
+                id: true,
+              },
+            },
+          },
+        });
+
+        const autoAssignedUserIds = Array.from(
+          new Set(project.members.map((member) => member.userId)),
+        );
+
+        if (autoAssignedUserIds.length > 0 && createdSprint.deliverables.length > 0) {
+          await tx.deliverableAssignment.createMany({
+            data: createdSprint.deliverables.flatMap((deliverable) =>
+              autoAssignedUserIds.map((userId) => ({
+                deliverableId: deliverable.id,
+                userId,
+              })),
+            ),
+            skipDuplicates: true,
+          });
+        }
+
+        return createdSprint.id;
+      });
+
+      const sprint = await this.getSprint(projectId, createdSprintId);
+
+      if (!sprint) {
+        throw new BadRequestException('Unable to load the new week after creation.');
+      }
+
+      return sprint;
+    } catch (error) {
+      console.warn('Failed to generate sprint.', error);
+      throw new BadRequestException(
+        'Unable to generate a sprint right now.',
+      );
+    }
+  }
+
   async getDashboardProjects(user: any) {
     const { role, id: userId } = user;
 
@@ -601,5 +1007,79 @@ export class ProjectsService {
     });
 
     return { projects };
+  }
+
+  private assertWeekday(value: string, fieldName: string) {
+    const normalized = value.trim().toUpperCase();
+    const allowed = new Set([
+      'MONDAY',
+      'TUESDAY',
+      'WEDNESDAY',
+      'THURSDAY',
+      'FRIDAY',
+      'SATURDAY',
+      'SUNDAY',
+    ]);
+
+    if (!allowed.has(normalized)) {
+      throw new BadRequestException(`${fieldName} must be a valid weekday`);
+    }
+
+    return normalized;
+  }
+
+  private assertDueTime(value: string) {
+    const normalized = value.trim();
+    if (!/^\d{2}:\d{2}$/.test(normalized)) {
+      throw new BadRequestException('defaultDueTime must use HH:MM (24-hour) format');
+    }
+
+    const [hours, minutes] = normalized.split(':').map((part) => Number.parseInt(part, 10));
+    if (hours > 23 || minutes > 59) {
+      throw new BadRequestException('defaultDueTime must be a valid 24-hour time');
+    }
+
+    return normalized;
+  }
+
+  private alignToWeekday(date: Date, weekday: string) {
+    const current = new Date(
+      Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0),
+    );
+    const currentDay = this.toIsoWeekday(current.getUTCDay());
+    const targetDay = this.weekdayToIsoNumber(weekday);
+    const offset = (targetDay - currentDay + 7) % 7;
+    return this.addDaysUtc(current, offset);
+  }
+
+  private buildDeadlineForWeek(weekStartDate: Date, weekday: string, dueTime: string) {
+    const targetDate = this.alignToWeekday(weekStartDate, weekday);
+    const [hours, minutes] = dueTime.split(':').map((part) => Number.parseInt(part, 10));
+    targetDate.setUTCHours(hours, minutes, 0, 0);
+    return targetDate;
+  }
+
+  private addDaysUtc(date: Date, days: number) {
+    const next = new Date(date);
+    next.setUTCDate(next.getUTCDate() + days);
+    return next;
+  }
+
+  private weekdayToIsoNumber(weekday: string) {
+    const mapping: Record<string, number> = {
+      MONDAY: 1,
+      TUESDAY: 2,
+      WEDNESDAY: 3,
+      THURSDAY: 4,
+      FRIDAY: 5,
+      SATURDAY: 6,
+      SUNDAY: 7,
+    };
+
+    return mapping[weekday] ?? 1;
+  }
+
+  private toIsoWeekday(jsDay: number) {
+    return jsDay === 0 ? 7 : jsDay;
   }
 }

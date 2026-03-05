@@ -1,13 +1,19 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class DeliverablesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+  ) {}
 
   async create(
     projectId: string,
     data: {
+      sprintId?: string;
       title: string;
       description?: string;
       type: string;
@@ -17,6 +23,7 @@ export class DeliverablesService {
     return this.prisma.deliverable.create({
       data: {
         projectId,
+        ...(data.sprintId ? { sprintId: data.sprintId } : {}),
         title: data.title,
         description: data.description,
         type: data.type as any,
@@ -38,6 +45,15 @@ export class DeliverablesService {
             },
           },
         },
+        sprint: true,
+        assignee: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
         _count: {
           select: {
             submissions: true,
@@ -45,15 +61,17 @@ export class DeliverablesService {
           },
         },
       },
-    });
+    } as any);
   }
 
   async findAll(
     user: any,
     query: {
       projectId?: string;
+      sprintId?: string;
       status?: string;
       type?: string;
+      releasedOnly?: boolean;
       overdue?: boolean;
       upcoming?: number;
       userId?: string;
@@ -68,6 +86,10 @@ export class DeliverablesService {
       where.projectId = query.projectId;
     }
 
+    if (query.sprintId) {
+      where.sprintId = query.sprintId;
+    }
+
     // Status filter
     if (query.status) {
       where.status = query.status;
@@ -76,6 +98,13 @@ export class DeliverablesService {
     // Type filter
     if (query.type) {
       where.type = query.type;
+    }
+
+    if (query.releasedOnly) {
+      where.sprint = {
+        ...(where.sprint ?? {}),
+        status: 'RELEASED',
+      };
     }
 
     // Overdue filter
@@ -127,6 +156,23 @@ export class DeliverablesService {
               clientName: true,
             },
           },
+          sprint: {
+            select: {
+              id: true,
+              label: true,
+              sequenceNumber: true,
+              weekStartDate: true,
+              weekEndDate: true,
+            },
+          },
+          assignee: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
           _count: {
             select: {
               submissions: true,
@@ -134,7 +180,7 @@ export class DeliverablesService {
             },
           },
         },
-      }),
+      } as any),
       this.prisma.deliverable.count({ where }),
     ]);
 
@@ -168,6 +214,15 @@ export class DeliverablesService {
             },
           },
         },
+        sprint: true,
+        assignee: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
         submissions: {
           orderBy: { submittedAt: 'desc' },
           include: {
@@ -194,7 +249,7 @@ export class DeliverablesService {
           },
         },
       },
-    });
+    } as any);
   }
 
   async update(
@@ -225,6 +280,59 @@ export class DeliverablesService {
             name: true,
           },
         },
+        sprint: {
+          select: {
+            id: true,
+            label: true,
+            sequenceNumber: true,
+          },
+        },
+        assignee: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+        _count: {
+          select: {
+            submissions: true,
+            extensions: true,
+          },
+        },
+      },
+    } as any);
+  }
+
+  async remove(id: string) {
+    return this.prisma.deliverable.delete({
+      where: { id },
+    });
+  }
+
+  async updateDeadline(id: string, deadline: string) {
+    return this.prisma.deliverable.update({
+      where: { id },
+      data: {
+        deadline: new Date(deadline),
+        dueDateSource: 'MANUAL',
+        manualDeadlineUpdatedAt: new Date(),
+      },
+      include: {
+        project: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        sprint: {
+          select: {
+            id: true,
+            label: true,
+            sequenceNumber: true,
+          },
+        },
         _count: {
           select: {
             submissions: true,
@@ -235,9 +343,206 @@ export class DeliverablesService {
     });
   }
 
-  async remove(id: string) {
-    return this.prisma.deliverable.delete({
+  async updateAssignment(id: string, userId: string, assigned: boolean) {
+    if (assigned) {
+      await this.prisma.$executeRaw(
+        Prisma.sql`
+          INSERT INTO "DeliverableAssignment" ("id", "deliverableId", "userId", "assignedAt")
+          VALUES (${this.createId()}, ${id}, ${userId}, NOW())
+          ON CONFLICT ("deliverableId", "userId") DO NOTHING
+        `,
+      );
+    } else {
+      await this.prisma.$executeRaw(
+        Prisma.sql`
+          DELETE FROM "DeliverableAssignment"
+          WHERE "deliverableId" = ${id} AND "userId" = ${userId}
+        `,
+      );
+    }
+
+    return this.getAssignmentUsers(id);
+  }
+
+  async updateCompletion(id: string, completed: boolean) {
+    return this.prisma.deliverable.update({
       where: { id },
+      data: {
+        completed,
+      },
+      include: {
+        project: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        sprint: {
+          select: {
+            id: true,
+            label: true,
+            status: true,
+          },
+        },
+        assignee: {
+          select: {
+            id: true,
+            email: true,
+          },
+        },
+      },
+    } as any);
+  }
+
+  async submitLink(id: string, userId: string, link: string) {
+    const trimmedLink = link.trim();
+
+    try {
+      new URL(trimmedLink);
+    } catch {
+      throw new BadRequestException('Submission link must be a valid URL');
+    }
+
+    const latest = await this.prisma.submission.findFirst({
+      where: { deliverableId: id, userId },
+      orderBy: { version: 'desc' },
+      select: {
+        id: true,
+        version: true,
+      },
     });
+
+    const nextVersion = (latest?.version ?? 0) + 1;
+
+    const submission = await this.prisma.submission.create({
+      data: {
+        deliverableId: id,
+        userId,
+        fileUrl: trimmedLink,
+        fileName: `submission-v${nextVersion}.url`,
+        fileSize: 0,
+        mimeType: 'text/uri-list',
+        version: nextVersion,
+        replacesId: latest?.id,
+        status: 'PENDING_REVIEW',
+      },
+      include: {
+        submitter: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+
+    await this.prisma.deliverable.update({
+      where: { id },
+      data: {
+        status: 'SUBMITTED',
+      },
+    });
+
+    await this.notifyProjectReviewersOnSubmission(id, userId, trimmedLink);
+
+    return submission;
+  }
+
+  private async notifyProjectReviewersOnSubmission(
+    deliverableId: string,
+    submitterId: string,
+    link: string,
+  ): Promise<void> {
+    const deliverable = await this.prisma.deliverable.findUnique({
+      where: { id: deliverableId },
+      select: {
+        id: true,
+        title: true,
+        projectId: true,
+        project: {
+          select: {
+            id: true,
+            name: true,
+            pmId: true,
+            members: {
+              where: { leftAt: null, user: { role: 'LC', active: true } },
+              select: { userId: true },
+            },
+          },
+        },
+      },
+    });
+    if (!deliverable) return;
+
+    const submitter = await this.prisma.user.findUnique({
+      where: { id: submitterId },
+      select: {
+        firstName: true,
+        lastName: true,
+        email: true,
+      },
+    });
+
+    const submitterName =
+      `${submitter?.firstName || ''} ${submitter?.lastName || ''}`.trim() ||
+      submitter?.email ||
+      'A consultant';
+
+    const reviewerIds = new Set<string>();
+    if (deliverable.project.pmId) reviewerIds.add(deliverable.project.pmId);
+    deliverable.project.members.forEach((member) => reviewerIds.add(member.userId));
+    reviewerIds.delete(submitterId);
+
+    for (const reviewerId of reviewerIds) {
+      await this.notificationsService.queueNotification({
+        userId: reviewerId,
+        type: 'PROJECT_UPDATED',
+        channel: 'BOTH',
+        data: {
+          projectName: deliverable.project.name,
+          deliverableTitle: deliverable.title,
+          feedback: `${submitterName} submitted a deliverable link: ${link}`,
+        },
+      });
+    }
+  }
+
+  async getAssignmentUserIds(deliverableId: string): Promise<string[]> {
+    const rows = await this.prisma.$queryRaw<Array<{ userId: string }>>(
+      Prisma.sql`
+        SELECT "userId"
+        FROM "DeliverableAssignment"
+        WHERE "deliverableId" = ${deliverableId}
+      `,
+    );
+
+    return rows.map((row) => row.userId);
+  }
+
+  async getAssignmentUsers(deliverableId: string) {
+    return this.prisma.$queryRaw<Array<{
+      id: string;
+      email: string | null;
+      firstName: string | null;
+      lastName: string | null;
+    }>>(
+      Prisma.sql`
+        SELECT
+          u."id",
+          u."email",
+          u."firstName",
+          u."lastName"
+        FROM "DeliverableAssignment" da
+        JOIN "User" u ON u."id" = da."userId"
+        WHERE da."deliverableId" = ${deliverableId}
+        ORDER BY da."assignedAt" ASC
+      `,
+    );
+  }
+
+  private createId() {
+    return `da_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
   }
 }

@@ -1,15 +1,17 @@
-// CommonJS is required because Prisma loads this file via `require`.
-const path = require('path');
-const { config } = require('dotenv');
-const { defineConfig, env } = require('@prisma/config');
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { config } from 'dotenv';
+import { defineConfig, env } from '@prisma/config';
 
-// Load .env from backend root so DATABASE_URL is available for schema and CLI
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 config({ path: path.resolve(__dirname, '.env') });
 
-module.exports = defineConfig({
+export default defineConfig({
   schema: 'prisma/schema.prisma',
   datasource: {
-    url: env('DATABASE_URL'),
+    url: process.env.DIRECT_URL || env('DATABASE_URL'),
   },
   migrations: {
     seed: 'npx ts-node prisma/seed.ts',

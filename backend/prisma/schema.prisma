@@ -116,13 +116,35 @@ model User {
   timeEntries        TimeEntry[]
   notifications      Notification[]
   tasksCreated       Task[]
+  assignedDeliverables Deliverable[] @relation("DeliverableAssignee")
+  deliverableAssignments DeliverableAssignment[]
   slackOAuthStates   SlackOAuthState[]
   slackConnections   SlackUserConnection[]
   installedWorkspaces SlackWorkspace[] @relation("SlackWorkspaceInstaller")
+  reviewedOnboardingRequests OnboardingRequest[] @relation("OnboardingReviewer")
 
   @@index([googleId])
   @@index([email])
   @@index([role])
+}
+
+model OnboardingRequest {
+  id             String                  @id @default(cuid())
+  name           String
+  email          String                  @unique
+  requestedRole  Role
+  status         OnboardingRequestStatus @default(PENDING)
+  reviewedById   String?
+  reviewedAt     DateTime?
+  reviewerNotes  String?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  reviewer User? @relation("OnboardingReviewer", fields: [reviewedById], references: [id])
+
+  @@index([status])
+  @@index([email])
+  @@index([createdAt])
 }
 
 enum Role {
@@ -132,6 +154,12 @@ enum Role {
   PARTNER
   EXECUTIVE
   CONSULTANT
+}
+
+enum OnboardingRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 model AllowedEmail {
@@ -159,12 +187,19 @@ model Project {
   startDate   DateTime
   endDate     DateTime?
   status      ProjectStatus @default(ACTIVE)
+  sprintStartDay     Weekday @default(MONDAY)
+  initialSlideDueDay Weekday @default(TUESDAY)
+  finalSlideDueDay   Weekday @default(THURSDAY)
+  defaultDueTime     String  @default("23:59")
+  sprintTimezone     String  @default("America/Chicago")
+  autoGenerateSprints Boolean @default(true)
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
   pm           User            @relation("ProjectPM", fields: [pmId], references: [id])
   members      ProjectMember[]
   deliverables Deliverable[]
+  sprints      Sprint[]
 
   @@index([pmId])
   @@index([status])
@@ -176,6 +211,16 @@ enum ProjectStatus {
   COMPLETED
   ON_HOLD
   CANCELLED
+}
+
+enum Weekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
 }
 
 model ProjectMember {
@@ -243,21 +288,72 @@ enum TaskAssigneeType {
 model Deliverable {
   id          String            @id @default(cuid())
   projectId   String
+  sprintId    String?
+  assigneeId  String?
   title       String
   description String?
   type        DeliverableType
+  templateKind DeliverableTemplateKind @default(CUSTOM)
   deadline    DateTime
+  dueDateSource DueDateSource @default(AUTO)
+  manualDeadlineUpdatedAt DateTime?
+  assignedAt  DateTime?
+  completed   Boolean @default(false)
   status      DeliverableStatus @default(PENDING)
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
 
   project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sprint      Sprint?      @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+  assignee    User?        @relation("DeliverableAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  assignments DeliverableAssignment[]
   submissions Submission[]
   extensions  Extension[]
 
   @@index([projectId])
+  @@index([sprintId])
+  @@index([assigneeId])
   @@index([deadline])
   @@index([status])
+}
+
+model DeliverableAssignment {
+  id            String      @id @default(cuid())
+  deliverableId String
+  userId        String
+  assignedAt    DateTime    @default(now())
+
+  deliverable   Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([deliverableId, userId])
+  @@index([deliverableId])
+  @@index([userId])
+}
+
+model Sprint {
+  id            String       @id @default(cuid())
+  projectId      String
+  sequenceNumber Int
+  label          String
+  weekStartDate  DateTime
+  weekEndDate    DateTime
+  status         SprintStatus @default(DRAFT)
+  configSnapshot Json?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  deliverables  Deliverable[]
+
+  @@index([projectId])
+  @@index([weekStartDate])
+  @@unique([projectId, sequenceNumber])
+}
+
+enum SprintStatus {
+  DRAFT
+  RELEASED
 }
 
 enum DeliverableType {
@@ -267,6 +363,17 @@ enum DeliverableType {
   ANALYSIS
   REPORT
   OTHER
+}
+
+enum DeliverableTemplateKind {
+  INITIAL_SLIDES
+  FINAL_SLIDES
+  CUSTOM
+}
+
+enum DueDateSource {
+  AUTO
+  MANUAL
 }
 
 enum DeliverableStatus {

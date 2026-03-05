@@ -2,16 +2,16 @@
 
 import { useState, useRef, useEffect, type RefObject } from 'react';
 import { setLastDashboard } from '@/lib/dashboard-context';
-import {
-  Activity,
-} from 'lucide-react';
-import { LCPartnerNavbar } from '@/components/LCPartnerNavbar';
+import { AppNavbar } from '@/components/AppNavbar';
 import { GoogleCalendarPanel } from '@/components/GoogleCalendarPanel';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
-import { tasksAPI, setAuthToken } from '@/lib/api';
-import type { TaskFromApi } from '@/lib/task-utils';
-import type { WorkstreamDeadline } from '@/types';
+import { WeeklyDeliverablesCard } from '@/components/WeeklyDeliverablesCard';
+import { projectsAPI, setAuthToken } from '@/lib/api';
+import {
+  getDashboardDeliverables,
+  type ProjectSprintSummary,
+  type SprintSummary,
+  type DashboardDeliverable,
+} from '@/lib/dashboard-deliverables';
 import { useAuth } from '@/components/AuthContext';
 import { useRouter } from 'next/navigation';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
@@ -57,7 +57,7 @@ function formatNotificationTime(at: Date, now: number): string {
 export default function LCDashboard() {
   const router = useRouter();
   const session = useAuth();
-  const [workstreams, setWorkstreams] = useState<WorkstreamDeadline[]>([]);
+  const [dashboardDeliverables, setDashboardDeliverables] = useState<DashboardDeliverable[]>([]);
   const dashboardRef = useRef<HTMLDivElement>(null);
   const engagementRef = useRef<HTMLDivElement>(null);
 
@@ -82,66 +82,29 @@ export default function LCDashboard() {
     if (ref?.current) ref.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const buildWorkstreamDeadlines = (tasks: TaskFromApi[]): WorkstreamDeadline[] => {
-    const byWorkstream = new Map<
-      string,
-      { earliestDue: Date; total: number; completed: number }
-    >();
-
-    tasks.forEach((task) => {
-      const key = task.workstream || 'General';
-      const due = new Date(task.dueDate);
-      const existing = byWorkstream.get(key);
-      if (!existing) {
-        byWorkstream.set(key, {
-          earliestDue: due,
-          total: 1,
-          completed: task.completed ? 1 : 0,
-        });
-      } else {
-        if (due < existing.earliestDue) existing.earliestDue = due;
-        existing.total += 1;
-        if (task.completed) existing.completed += 1;
-      }
-    });
-
-    const now = new Date();
-    return Array.from(byWorkstream.entries()).map(([workstreamName, stats]) => {
-      const daysRemaining = Math.floor(
-        (stats.earliestDue.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
-      );
-      const progress =
-        stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
-      const status: WorkstreamDeadline['status'] =
-        daysRemaining < 0 && progress < 100
-          ? 'overdue'
-          : daysRemaining <= 3 && progress < 60
-            ? 'at_risk'
-            : 'on_track';
-
-      return {
-        id: workstreamName,
-        workstreamName,
-        deadline: stats.earliestDue,
-        daysRemaining,
-        progress,
-        description: `${stats.total} task${stats.total !== 1 ? 's' : ''} • ${stats.completed} completed`,
-        status,
-      };
-    });
-  };
-
   useEffect(() => {
     const loadEngagement = async () => {
       if (!session.isLoggedIn || !session.user?.email) return;
       try {
         const token = await session.getToken();
         setAuthToken(token || session.user?.email || null);
-        const res = await tasksAPI.getAll({ includeCompleted: true });
-        const tasks = Array.isArray(res.data) ? (res.data as TaskFromApi[]) : [];
-        setWorkstreams(buildWorkstreamDeadlines(tasks));
+        const projectsRes = await projectsAPI.getAll({ limit: 100 });
+        const projects = ((projectsRes.data?.projects ?? []) as Array<{ id: string; name: string }>).map(
+          (project) => ({ id: project.id, name: project.name }),
+        );
+        const sprintResponses = await Promise.all(
+          projects.map(async (project) => {
+            const sprintsRes = await projectsAPI.getSprints(project.id);
+            return {
+              id: project.id,
+              name: project.name,
+              sprints: (Array.isArray(sprintsRes.data) ? sprintsRes.data : []) as SprintSummary[],
+            } satisfies ProjectSprintSummary;
+          }),
+        );
+        setDashboardDeliverables(getDashboardDeliverables(sprintResponses));
       } catch {
-        setWorkstreams([]);
+        setDashboardDeliverables([]);
       }
     };
     void loadEngagement();
@@ -153,65 +116,18 @@ export default function LCDashboard() {
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col">
-      <LCPartnerNavbar
-        role="LC"
-        currentPath="/lc"
-        unreadNotificationCount={unreadCount}
-        onNavClick={handleNavClick}
-      />
+      <AppNavbar role="LC" currentPath="/lc" unreadNotificationCount={unreadCount} />
 
       <div className="flex-1 flex flex-col min-h-screen relative overflow-y-auto">
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-8 overflow-y-auto">
           <div ref={dashboardRef} className="max-w-[1800px] mx-auto space-y-8 pb-8">
             <div className="grid grid-cols-12 gap-6">
               <div ref={engagementRef} className="col-span-12 lg:col-span-6">
-                <Card className="shadow-lg">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Activity className="w-5 h-5 text-[var(--primary)]" />
-                      Engagement status & timelines
-                    </CardTitle>
-                    <CardDescription>View workstream status and deadlines</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4 max-h-[400px] overflow-y-auto">
-                    {workstreams
-                      .sort((a, b) => a.daysRemaining - b.daysRemaining)
-                      .map((ws) => (
-                        <div
-                          key={ws.id}
-                          className="p-3 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/80"
-                        >
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <h5 className="font-semibold text-[var(--foreground)]">{ws.workstreamName}</h5>
-                              <p className="text-xs text-[var(--foreground)]/70">{ws.description}</p>
-                            </div>
-                            <Badge
-                              variant={
-                                ws.status === 'on_track' ? 'success' : ws.status === 'at_risk' ? 'warning' : 'danger'
-                              }
-                              size="sm"
-                            >
-                              {ws.status.replace('_', ' ')}
-                            </Badge>
-                          </div>
-                          <div className="mt-3 space-y-1">
-                            <div className="flex justify-between text-xs text-[var(--foreground)]/60">
-                              <span>Progress</span>
-                              <span>{ws.progress ?? 0}%</span>
-                            </div>
-                            <div className="h-2 bg-[var(--accent)] rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-[var(--primary)]"
-                                style={{ width: `${ws.progress ?? 0}%` }}
-                              />
-                            </div>
-                          </div>
-                          <p className="text-xs text-[var(--foreground)]/60 mt-2">{ws.daysRemaining}d remaining</p>
-                        </div>
-                      ))}
-                  </CardContent>
-                </Card>
+                <WeeklyDeliverablesCard
+                  description="Current week deliverables and due dates across projects"
+                  items={dashboardDeliverables}
+                  emptyMessage="No deliverables found for the current week."
+                />
               </div>
               <div className="col-span-12 lg:col-span-6">
                 <GoogleCalendarPanel className="shadow-lg h-full" />

@@ -117,29 +117,42 @@ export class SlideSubmissionsService {
 
   private async notifyPMsAndLCs(submission: {
     submitter: { firstName: string | null; lastName: string | null; email: string };
-    deliverable: { title: string; project: { pmId: string; name: string } | null };
+    deliverable: { title: string; project: { id: string; pmId: string; name: string } | null };
     fileUrl: string;
     submittedAt: Date;
     id: string;
   }) {
-    const pmsAndLcs = await this.prisma.user.findMany({
+    const projectId = submission.deliverable.project?.id;
+    const projectPmId = submission.deliverable.project?.pmId;
+    const projectName = submission.deliverable.project?.name;
+
+    if (!projectId || !projectPmId) return;
+
+    const projectLcs = await this.prisma.projectMember.findMany({
       where: {
-        OR: [{ role: 'PM' }, { role: 'LC' }],
+        projectId,
+        leftAt: null,
+        user: {
+          role: 'LC',
+          active: true,
+        },
       },
-      select: { id: true },
+      select: { userId: true },
     });
 
     const submitterName =
       `${submission.submitter.firstName || ''} ${submission.submitter.lastName || ''}`.trim() ||
       submission.submitter.email;
 
-    for (const reviewer of pmsAndLcs) {
+    const reviewerIds = new Set<string>([projectPmId, ...projectLcs.map((member) => member.userId)]);
+
+    for (const reviewerId of reviewerIds) {
       await this.notificationsService.queueNotification({
-        userId: reviewer.id,
+        userId: reviewerId,
         type: 'PROJECT_UPDATED',
         channel: 'BOTH',
         data: {
-          projectName: submission.deliverable.project?.name,
+          projectName,
           deliverableTitle: submission.deliverable.title,
           feedback: `${submitterName} submitted a file link: ${submission.fileUrl}`,
         },
@@ -292,6 +305,12 @@ export class SlideSubmissionsService {
       deliverableTitle: submission.deliverable.title,
       feedback: `${commenterName} added comments to ${submission.deliverable.title}.`,
     });
+    await this.notifySubmitterOfReviewAction({
+      submitterId: submission.submitter.id,
+      type: 'PROJECT_UPDATED',
+      deliverableTitle: submission.deliverable.title,
+      feedback: `${commenterName} added comments to your submission for ${submission.deliverable.title}.`,
+    });
 
     return updated;
   }
@@ -360,6 +379,12 @@ export class SlideSubmissionsService {
     await this.notifyAssignmentAssignees(updated.deliverable.id, {
       deliverableTitle: updated.deliverable.title,
       feedback: `${reviewerName} approved ${updated.deliverable.title}.`,
+    });
+    await this.notifySubmitterOfReviewAction({
+      submitterId: updated.submitter.id,
+      type: 'SUBMISSION_APPROVED',
+      deliverableTitle: updated.deliverable.title,
+      feedback: `${reviewerName} approved your submission.`,
     });
 
     return updated;
@@ -436,8 +461,33 @@ export class SlideSubmissionsService {
       deliverableTitle: submission.deliverable.title,
       feedback: `${reviewerName} requested a revision on ${submission.deliverable.title}.${feedbackSuffix}`,
     });
+    await this.notifySubmitterOfReviewAction({
+      submitterId: updated.submitter.id,
+      type: 'SUBMISSION_REJECTED',
+      deliverableTitle: updated.deliverable.title,
+      feedback: normalizedFeedback
+        ? `${reviewerName} requested revisions: ${normalizedFeedback}`
+        : `${reviewerName} requested revisions on your submission.`,
+    });
 
     return updated;
+  }
+
+  private async notifySubmitterOfReviewAction(payload: {
+    submitterId: string;
+    type: 'PROJECT_UPDATED' | 'SUBMISSION_APPROVED' | 'SUBMISSION_REJECTED';
+    deliverableTitle: string;
+    feedback?: string | null;
+  }): Promise<void> {
+    await this.notificationsService.queueNotification({
+      userId: payload.submitterId,
+      type: payload.type,
+      channel: 'BOTH',
+      data: {
+        deliverableTitle: payload.deliverableTitle,
+        feedback: payload.feedback || undefined,
+      },
+    });
   }
 
   async getSubmissionsByTask(taskId: string) {

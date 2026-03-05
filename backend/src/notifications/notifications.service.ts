@@ -134,6 +134,11 @@ export class NotificationsService {
     const deliverable = await this.prisma.deliverable.findUnique({
       where: { id: deliverableId },
       include: {
+        assignments: {
+          include: {
+            user: true,
+          },
+        },
         project: {
           include: {
             members: {
@@ -161,14 +166,25 @@ export class NotificationsService {
       return;
     }
 
+    const reminderRecipients =
+      deliverable.assignments.length > 0
+        ? deliverable.assignments.map((assignment) => ({
+            userId: assignment.userId,
+            user: assignment.user,
+          }))
+        : deliverable.project.members.map((member) => ({
+            userId: member.userId,
+            user: member.user,
+          }));
+
     // Schedule reminder for each consultant on the project
     if (this.notificationQueue) {
-      for (const member of deliverable.project.members) {
+      for (const recipient of reminderRecipients) {
         try {
           await this.notificationQueue.add(
             'send-notification',
             {
-              userId: member.user.id,
+              userId: recipient.user.id,
               type: hoursBeforeDeadline === 1 ? 'DEADLINE_1H' : 'DEADLINE_24H',
               channel: 'BOTH',
               data: {
@@ -180,7 +196,7 @@ export class NotificationsService {
             } as NotificationJob,
             {
               delay,
-              jobId: `reminder-${deliverableId}-${member.userId}-${hoursBeforeDeadline}h`,
+              jobId: `reminder-${deliverableId}-${recipient.userId}-${hoursBeforeDeadline}h`,
             },
           );
         } catch (error) {

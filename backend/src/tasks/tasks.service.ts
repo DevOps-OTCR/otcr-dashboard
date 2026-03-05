@@ -62,12 +62,109 @@ export class TasksService {
       if (applies) filtered.push(task);
     }
 
+    const withSubmissionState = await this.attachConsultantSubmissionState(filtered, user.id);
+
     if (query.includeCompleted === false) {
       const today = new Date();
       today.setUTCHours(0, 0, 0, 0);
-      return filtered.filter((t) => !t.completed || new Date(t.dueDate) >= today);
+      return withSubmissionState.filter(
+        (t) => !t.completed || new Date(t.dueDate) >= today,
+      );
     }
-    return filtered;
+    return withSubmissionState;
+  }
+
+  private async attachConsultantSubmissionState<
+    T extends {
+      id: string;
+      description?: string | null;
+      completed: boolean;
+      dueDate: Date;
+    }
+  >(tasks: T[], userId: string): Promise<Array<T & { consultantTaskStatus: string | null }>> {
+    const deliverableByTaskId = new Map<string, string>();
+    const deliverableIds = new Set<string>();
+
+    for (const task of tasks) {
+      const deliverableId = this.extractSlideDeliverableId(task.description ?? null);
+      if (!deliverableId) continue;
+      deliverableByTaskId.set(task.id, deliverableId);
+      deliverableIds.add(deliverableId);
+    }
+
+    if (deliverableIds.size === 0) {
+      return tasks.map((task) => ({
+        ...task,
+        consultantTaskStatus: null as string | null,
+      }));
+    }
+
+    const submissions = await this.prisma.submission.findMany({
+      where: {
+        userId,
+        deliverableId: { in: Array.from(deliverableIds) },
+      },
+      select: {
+        deliverableId: true,
+        status: true,
+        reviewedAt: true,
+        submittedAt: true,
+      },
+      orderBy: [{ submittedAt: 'desc' }],
+    });
+
+    const latestByDeliverable = new Map<
+      string,
+      {
+        status: string;
+        reviewedAt: Date | null;
+      }
+    >();
+
+    for (const submission of submissions) {
+      if (!latestByDeliverable.has(submission.deliverableId)) {
+        latestByDeliverable.set(submission.deliverableId, {
+          status: submission.status,
+          reviewedAt: submission.reviewedAt,
+        });
+      }
+    }
+
+    return tasks.map((task) => {
+      const deliverableId = deliverableByTaskId.get(task.id);
+      if (!deliverableId) {
+        return {
+          ...task,
+          consultantTaskStatus: null as string | null,
+        };
+      }
+
+      const latest = latestByDeliverable.get(deliverableId);
+      return {
+        ...task,
+        consultantTaskStatus: this.mapConsultantTaskStatus(latest),
+      };
+    });
+  }
+
+  private extractSlideDeliverableId(description?: string | null): string | null {
+    if (!description) return null;
+    const match = description.match(/\[\[SLIDE_DELIVERABLE_ID:([^\]]+)\]\]/);
+    return match?.[1] ?? null;
+  }
+
+  private mapConsultantTaskStatus(
+    submission?: { status: string; reviewedAt: Date | null } | null,
+  ): string | null {
+    if (!submission) return null;
+    if (submission.status === 'APPROVED') return 'APPROVED';
+    if (submission.status === 'REQUIRES_RESUBMISSION' || submission.status === 'REJECTED') {
+      return 'REVISION_REQUESTED';
+    }
+    if (submission.status === 'PENDING_REVIEW') {
+      return submission.reviewedAt ? 'COMMENTS_ADDED' : 'SUBMITTED';
+    }
+    return submission.status;
   }
 
   async create(

@@ -5,7 +5,7 @@ import { Slack, UserPlus } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { getEffectiveRole } from '@/lib/permissions';
-import { authAPI, setAuthToken, slackAPI } from '@/lib/api';
+import { authAPI, onboardingAPI, setAuthToken, slackAPI } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
 import type { AppRole } from '@/lib/permissions';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
@@ -22,9 +22,13 @@ export default function SlackSettingsPage() {
   const [isConnectingSlack, setIsConnectingSlack] = useState(false);
   const [isGrantingAccess, setIsGrantingAccess] = useState(false);
   const [dashboardAccessEmail, setDashboardAccessEmail] = useState('');
+  const [onboardingRequests, setOnboardingRequests] = useState<any[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+  const [reviewingRequestId, setReviewingRequestId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const isExecutive = role === 'EXECUTIVE';
+  const canReviewOnboarding = role === 'ADMIN' || role === 'PARTNER' || role === 'EXECUTIVE';
 
   useEffect(() => {
     const syncRole = async () => {
@@ -41,6 +45,27 @@ export default function SlackSettingsPage() {
     };
     void syncRole();
   }, [session]);
+
+  useEffect(() => {
+    const loadRequests = async () => {
+      if (!session.isLoggedIn || !canReviewOnboarding) {
+        setOnboardingRequests([]);
+        return;
+      }
+
+      setLoadingRequests(true);
+      try {
+        const res = await onboardingAPI.listRequests();
+        setOnboardingRequests(Array.isArray(res.data?.requests) ? res.data.requests : []);
+      } catch (e: any) {
+        setError(parseApiError(e, 'Failed to load onboarding requests'));
+      } finally {
+        setLoadingRequests(false);
+      }
+    };
+
+    void loadRequests();
+  }, [session.isLoggedIn, canReviewOnboarding]);
 
   const handleConnectSlack = async () => {
     setIsConnectingSlack(true);
@@ -85,6 +110,27 @@ export default function SlackSettingsPage() {
       setError(parseApiError(e, 'Failed to grant dashboard access'));
     } finally {
       setIsGrantingAccess(false);
+    }
+  };
+
+  const handleReviewRequest = async (requestId: string, action: 'approve' | 'reject') => {
+    setReviewingRequestId(requestId);
+    setError(null);
+    setMessage(null);
+    try {
+      if (action === 'approve') {
+        await onboardingAPI.approveRequest(requestId);
+      } else {
+        await onboardingAPI.rejectRequest(requestId);
+      }
+
+      const res = await onboardingAPI.listRequests();
+      setOnboardingRequests(Array.isArray(res.data?.requests) ? res.data.requests : []);
+      setMessage(action === 'approve' ? 'Access request approved.' : 'Access request rejected.');
+    } catch (e: any) {
+      setError(parseApiError(e, `Failed to ${action} access request`));
+    } finally {
+      setReviewingRequestId(null);
     }
   };
 
@@ -142,6 +188,66 @@ export default function SlackSettingsPage() {
                   Grant Access
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {canReviewOnboarding && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Role Onboarding Requests</CardTitle>
+              <CardDescription>Approve or reject submitted access requests.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {loadingRequests ? (
+                <p className="text-sm text-[var(--foreground)]/60">Loading requests...</p>
+              ) : onboardingRequests.length === 0 ? (
+                <p className="text-sm text-[var(--foreground)]/60">No onboarding requests yet.</p>
+              ) : (
+                onboardingRequests.map((request) => (
+                  <div
+                    key={request.id}
+                    className="rounded-xl border border-[var(--border)] bg-[var(--secondary)]/50 p-4 flex flex-col gap-3"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium">{request.name}</p>
+                        <p className="text-sm text-[var(--foreground)]/70">{request.email}</p>
+                        <p className="text-xs text-[var(--foreground)]/60 mt-1">
+                          Requested role: {String(request.requestedRole).replace(/_/g, ' ')}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-[var(--card)] px-3 py-1 text-xs font-semibold">
+                        {request.status}
+                      </span>
+                    </div>
+
+                    {request.status === 'PENDING' ? (
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => void handleReviewRequest(request.id, 'approve')}
+                          loading={reviewingRequestId === request.id}
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void handleReviewRequest(request.id, 'reject')}
+                          disabled={reviewingRequestId === request.id}
+                        >
+                          Reject
+                        </Button>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-[var(--foreground)]/60">
+                        Reviewed {request.reviewedAt ? new Date(request.reviewedAt).toLocaleString() : 'previously'}
+                      </p>
+                    )}
+                  </div>
+                ))
+              )}
             </CardContent>
           </Card>
         )}

@@ -154,6 +154,93 @@ export class AuthService {
     return allowedEmail;
   }
 
+  async submitOnboardingRequest(
+    name: string,
+    email: string,
+    requestedRole: 'ADMIN' | 'PM' | 'LC' | 'PARTNER' | 'EXECUTIVE' | 'CONSULTANT',
+  ) {
+    const normalizedEmail = email.toLowerCase().trim();
+
+    return (this.prisma as any).onboardingRequest.upsert({
+      where: { email: normalizedEmail },
+      update: {
+        name: name.trim(),
+        requestedRole: requestedRole as any,
+        status: 'PENDING' as any,
+        reviewedById: null,
+        reviewedAt: null,
+        reviewerNotes: null,
+      },
+      create: {
+        name: name.trim(),
+        email: normalizedEmail,
+        requestedRole: requestedRole as any,
+        status: 'PENDING' as any,
+      },
+    });
+  }
+
+  async listOnboardingRequests() {
+    return (this.prisma as any).onboardingRequest.findMany({
+      orderBy: [
+        { status: 'asc' },
+        { createdAt: 'desc' },
+      ],
+      include: {
+        reviewer: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+  }
+
+  async approveOnboardingRequest(
+    requestId: string,
+    reviewerId: string,
+    notes?: string,
+  ) {
+    const request = await (this.prisma as any).onboardingRequest.findUnique({
+      where: { id: requestId },
+    });
+
+    if (!request) {
+      throw new UnauthorizedException('Onboarding request not found');
+    }
+
+    await this.addAllowedEmail(request.email, request.requestedRole as any);
+
+    return (this.prisma as any).onboardingRequest.update({
+      where: { id: requestId },
+      data: {
+        status: 'APPROVED' as any,
+        reviewedById: reviewerId,
+        reviewedAt: new Date(),
+        reviewerNotes: notes?.trim() || null,
+      },
+    });
+  }
+
+  async rejectOnboardingRequest(
+    requestId: string,
+    reviewerId: string,
+    notes?: string,
+  ) {
+    return (this.prisma as any).onboardingRequest.update({
+      where: { id: requestId },
+      data: {
+        status: 'REJECTED' as any,
+        reviewedById: reviewerId,
+        reviewedAt: new Date(),
+        reviewerNotes: notes?.trim() || null,
+      },
+    });
+  }
+
   /** Get role for an email from DB (User table, or AllowedEmail if user not synced yet). */
   async getRoleByEmail(
     email: string,

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { useAuth } from '@/components/AuthContext'; // Using your MSAL-based context
 import { useMsal } from "@azure/msal-react";
 import { InteractionStatus } from "@azure/msal-browser";
@@ -139,6 +140,13 @@ export default function SignInPage() {
           >
             <span>Sign in with NetID</span>
           </button>
+
+          <p className="mt-5 text-center text-sm text-white/75">
+            Need access?{' '}
+            <Link href="/sign-up" className="text-white underline underline-offset-4 hover:text-white/85">
+              Request onboarding
+            </Link>
+          </p>
         </div>
       </div>
     </div>
