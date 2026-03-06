@@ -6,30 +6,33 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  const normalizeOrigin = (value: string) =>
+    value.trim().replace(/\/+$/, '');
+
   const explicitOrigins = (process.env.CORS_ORIGINS || '')
     .split(',')
-    .map((value) => value.trim())
+    .map((value) => normalizeOrigin(value))
     .filter(Boolean);
-  const defaultFrontend = process.env.FRONTEND_URL || '';
-  const allowedOrigins = [
-    ...new Set(
-      [
-        defaultFrontend,
-        ...explicitOrigins,
-        'http://localhost:3000',
-        'http://127.0.0.1:3000',
-      ].filter(Boolean),
-    ),
-  ];
+  const defaultFrontend = normalizeOrigin(process.env.FRONTEND_URL || '');
+  const allowAllOrigins = explicitOrigins.includes('*') || defaultFrontend === '*';
+  const allowedOrigins = new Set(
+    [
+      defaultFrontend,
+      ...explicitOrigins,
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+    ].filter(Boolean),
+  );
 
   // Enable CORS for frontend
   app.enableCors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
+      const normalizedOrigin = origin ? normalizeOrigin(origin) : origin;
+      if (!normalizedOrigin || allowAllOrigins || allowedOrigins.has(normalizedOrigin)) {
         callback(null, true);
         return;
       }
-      callback(new Error(`CORS blocked for origin: ${origin}`), false);
+      callback(null, false);
     },
     credentials: true,
   });
