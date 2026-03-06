@@ -24,10 +24,11 @@ export class ProjectsService {
       endDate?: string;
       pmId?: string;
       memberIds?: string[];
+      memberEmails?: string[];
     },
     userId: string,
   ) {
-    const { name, description, clientName, startDate, endDate, pmId, memberIds } = data;
+    const { name, description, clientName, startDate, endDate, pmId, memberIds, memberEmails } = data;
 
     // Verify PM exists and has PM or ADMIN role
     const pm = await this.prisma.user.findUnique({
@@ -36,6 +37,35 @@ export class ProjectsService {
 
     if (!pm || (pm.role !== 'PM' && pm.role !== 'ADMIN')) {
       throw new BadRequestException('PM must have PM or ADMIN role');
+    }
+
+    const normalizedMemberIds = Array.from(
+      new Set((memberIds ?? []).map((id) => id.trim()).filter(Boolean)),
+    );
+    const normalizedMemberEmails = Array.from(
+      new Set((memberEmails ?? []).map((email) => email.trim().toLowerCase()).filter(Boolean)),
+    );
+
+    let resolvedMemberIds = normalizedMemberIds;
+
+    if (normalizedMemberEmails.length > 0) {
+      const usersByEmail = await this.prisma.user.findMany({
+        where: {
+          email: { in: normalizedMemberEmails },
+        },
+        select: { id: true, email: true },
+      });
+
+      const foundEmailSet = new Set(usersByEmail.map((user) => user.email.toLowerCase()));
+      const missingEmails = normalizedMemberEmails.filter((email) => !foundEmailSet.has(email));
+
+      if (missingEmails.length > 0) {
+        throw new BadRequestException(
+          `Users not found for emails: ${missingEmails.join(', ')}`,
+        );
+      }
+
+      resolvedMemberIds = Array.from(new Set([...normalizedMemberIds, ...usersByEmail.map((u) => u.id)]));
     }
 
     // Create project with members
@@ -49,7 +79,7 @@ export class ProjectsService {
         pmId: pmId || userId,
         status: 'ACTIVE',
         members: {
-          create: memberIds?.map((userId) => ({
+          create: resolvedMemberIds.map((userId) => ({
             userId,
           })) || [],
         },

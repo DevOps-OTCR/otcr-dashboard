@@ -184,7 +184,7 @@ describe('ProjectsController', () => {
       
       await controller.addMember('project-1', { userId: 'u2' }, 'Bearer token', mockPMUser);
       
-      expect(projectsService.addMember).toHaveBeenCalledWith('project-1', 'u2');
+      expect(projectsService.addMember).toHaveBeenCalledWith('project-1', { userId: 'u2' });
     });
 
     it('should allow PM owner to remove members', async () => {

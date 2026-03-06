@@ -41,6 +41,7 @@ export class ProjectsController {
       endDate?: string;
       pmId?: string;
       memberIds?: string[];
+      memberEmails?: string[];
     },
     @Headers('authorization') authorization: string,
     @GetUser() user: any

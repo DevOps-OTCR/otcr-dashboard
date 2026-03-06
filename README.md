@@ -60,7 +60,7 @@ Then run:
 
 ```bash
 npx prisma generate
-npx prisma migrate dev
+npx prisma db push
 npm run start:dev
 ```
 
@@ -98,7 +98,7 @@ Deploy frontend and backend as separate services.
 
 - Root directory: `backend`
 - Build command: `npm install && npx prisma generate && npm run build`
-- Start command: `npm run start:prod`
+- Start command: `npm run start:prod` (this now runs `prisma db push` before starting)
 
 Backend production env vars:
 
@@ -124,4 +124,3 @@ Frontend production env vars:
 - `NEXTAUTH_URL=https://<frontend-service>.onrender.com`
 - `NEXTAUTH_SECRET=...`
 - MSAL public env vars
-
