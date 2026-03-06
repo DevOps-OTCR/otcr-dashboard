@@ -1,7 +1,14 @@
 import type { NextConfig } from "next";
 
+const isGitHubPagesBuild = process.env.GITHUB_PAGES === 'true';
+const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || '').replace(/\/+$/, '');
+
 const nextConfig: NextConfig = {
+  basePath: isGitHubPagesBuild ? basePath : undefined,
+  assetPrefix: isGitHubPagesBuild && basePath ? `${basePath}/` : undefined,
+  trailingSlash: isGitHubPagesBuild,
   images: {
+    unoptimized: isGitHubPagesBuild,
     remotePatterns: [
       {
         protocol: 'https',
@@ -14,7 +21,11 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
 
   // Standalone output for Docker
-  output: process.env.DOCKER_BUILD ? 'standalone' : undefined,
+  output: isGitHubPagesBuild
+    ? 'export'
+    : process.env.DOCKER_BUILD
+      ? 'standalone'
+      : undefined,
 
   // Performance optimizations
   experimental: {
@@ -23,6 +34,10 @@ const nextConfig: NextConfig = {
 
   // Security headers
   async headers() {
+    if (isGitHubPagesBuild) {
+      return [];
+    }
+
     return [
       {
         source: '/:path*',
