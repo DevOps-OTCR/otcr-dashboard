@@ -6,9 +6,31 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  const explicitOrigins = (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const defaultFrontend = process.env.FRONTEND_URL || '';
+  const allowedOrigins = [
+    ...new Set(
+      [
+        defaultFrontend,
+        ...explicitOrigins,
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+      ].filter(Boolean),
+    ),
+  ];
+
   // Enable CORS for frontend
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error(`CORS blocked for origin: ${origin}`), false);
+    },
     credentials: true,
   });
 
