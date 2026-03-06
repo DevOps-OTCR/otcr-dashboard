@@ -599,7 +599,7 @@ export default function DeliverablesPage() {
                                   Assign yourself first to submit this deliverable.
                                 </p>
                               )}
-                              {canManage && deliverable.latestSubmission && (
+                              {deliverable.latestSubmission && (
                                 <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--secondary)]/60 p-3">
                                   <p className="text-xs font-medium text-[var(--foreground)]/70">
                                     Latest submission by {formatSubmitter(deliverable.latestSubmission.submitter)}
