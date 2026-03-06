@@ -49,20 +49,51 @@ export class ProjectsService {
     let resolvedMemberIds = normalizedMemberIds;
 
     if (normalizedMemberEmails.length > 0) {
-      const usersByEmail = await this.prisma.user.findMany({
+      let usersByEmail = await this.prisma.user.findMany({
         where: {
           email: { in: normalizedMemberEmails },
         },
         select: { id: true, email: true },
       });
 
-      const foundEmailSet = new Set(usersByEmail.map((user) => user.email.toLowerCase()));
+      let foundEmailSet = new Set(usersByEmail.map((user) => user.email.toLowerCase()));
       const missingEmails = normalizedMemberEmails.filter((email) => !foundEmailSet.has(email));
 
       if (missingEmails.length > 0) {
-        throw new BadRequestException(
-          `Users not found for emails: ${missingEmails.join(', ')}`,
+        const allowedEntries = await this.prisma.allowedEmail.findMany({
+          where: {
+            email: { in: missingEmails },
+            active: true,
+          },
+          select: { email: true, role: true },
+        });
+
+        const allowedByEmail = new Map(
+          allowedEntries.map((entry) => [entry.email.toLowerCase(), entry]),
         );
+        const disallowedEmails = missingEmails.filter((email) => !allowedByEmail.has(email));
+
+        if (disallowedEmails.length > 0) {
+          throw new BadRequestException(
+            `Users not found for emails: ${disallowedEmails.join(', ')}`,
+          );
+        }
+
+        await this.prisma.user.createMany({
+          data: missingEmails.map((email) => ({
+            email,
+            role: (allowedByEmail.get(email)?.role ?? 'CONSULTANT') as any,
+          })),
+          skipDuplicates: true,
+        });
+
+        usersByEmail = await this.prisma.user.findMany({
+          where: {
+            email: { in: normalizedMemberEmails },
+          },
+          select: { id: true, email: true },
+        });
+        foundEmailSet = new Set(usersByEmail.map((user) => user.email.toLowerCase()));
       }
 
       resolvedMemberIds = Array.from(new Set([...normalizedMemberIds, ...usersByEmail.map((u) => u.id)]));
