@@ -37,6 +37,25 @@ type DeliverableItem = {
     firstName?: string;
     lastName?: string;
   }>;
+  latestSubmission?: {
+    id: string;
+    fileUrl: string;
+    submittedAt: string;
+    status?: string;
+    submitter?: {
+      id: string;
+      email?: string;
+      firstName?: string;
+      lastName?: string;
+    };
+  } | null;
+};
+
+type DeliverableSubmitter = {
+  id: string;
+  email?: string;
+  firstName?: string;
+  lastName?: string;
 };
 
 type SprintItem = {
@@ -72,6 +91,14 @@ function formatAssignees(assignees?: DeliverableItem['assignees']) {
 function formatPerson(person: TeamMemberOption) {
   const fullName = [person.firstName, person.lastName].filter(Boolean).join(' ').trim();
   return fullName || person.email || 'Team member';
+}
+
+function formatSubmitter(
+  submitter?: DeliverableSubmitter,
+) {
+  if (!submitter) return 'Unknown submitter';
+  const fullName = [submitter.firstName, submitter.lastName].filter(Boolean).join(' ').trim();
+  return fullName || submitter.email || 'Unknown submitter';
 }
 
 export default function DeliverablesPage() {
@@ -385,11 +412,6 @@ export default function DeliverablesPage() {
                     </option>
                   ))}
                 </select>
-                <span className="text-sm text-[var(--foreground)]/60">
-                  {canManage
-                    ? 'Slide work has moved to the Slides page. Use this page to assign non-slide work.'
-                    : 'Slide work has moved to the Slides page. This page only shows non-slide deliverables.'}
-                </span>
               </div>
 
               {loadError && (
@@ -576,6 +598,24 @@ export default function DeliverablesPage() {
                                 <p className="mt-2 text-xs text-[var(--foreground)]/60">
                                   Assign yourself first to submit this deliverable.
                                 </p>
+                              )}
+                              {canManage && deliverable.latestSubmission && (
+                                <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--secondary)]/60 p-3">
+                                  <p className="text-xs font-medium text-[var(--foreground)]/70">
+                                    Latest submission by {formatSubmitter(deliverable.latestSubmission.submitter)}
+                                  </p>
+                                  <a
+                                    href={deliverable.latestSubmission.fileUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="mt-1 block text-sm font-medium text-[var(--primary)] hover:underline"
+                                  >
+                                    View submission
+                                  </a>
+                                  <p className="mt-1 text-xs text-[var(--foreground)]/60">
+                                    {new Date(deliverable.latestSubmission.submittedAt).toLocaleString()}
+                                  </p>
+                                </div>
                               )}
                             </div>
                           </div>

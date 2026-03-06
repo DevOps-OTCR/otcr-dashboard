@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -449,9 +454,60 @@ export class ProjectsService {
   }
 
   async remove(id: string) {
-    return this.prisma.project.delete({
-      where: { id },
-    });
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const deliverables = await tx.deliverable.findMany({
+          where: { projectId: id },
+          select: { id: true },
+        });
+        const deliverableIds = deliverables.map((row) => row.id);
+
+        if (deliverableIds.length > 0) {
+          await tx.extension.deleteMany({
+            where: { deliverableId: { in: deliverableIds } },
+          });
+          await tx.submission.deleteMany({
+            where: { deliverableId: { in: deliverableIds } },
+          });
+          await tx.deliverableAssignment.deleteMany({
+            where: { deliverableId: { in: deliverableIds } },
+          });
+        }
+
+        await tx.deliverable.deleteMany({
+          where: { projectId: id },
+        });
+        await tx.sprint.deleteMany({
+          where: { projectId: id },
+        });
+        await tx.projectMember.deleteMany({
+          where: { projectId: id },
+        });
+
+        // Tasks can target a project without an FK relation; clear links first.
+        await tx.task.updateMany({
+          where: { projectId: id },
+          data: { projectId: null },
+        });
+
+        return tx.project.delete({
+          where: { id },
+        });
+      });
+    } catch (error: any) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2025') {
+          throw new NotFoundException('Project not found');
+        }
+        if (error.code === 'P2003') {
+          throw new BadRequestException(
+            'Cannot delete project because related records still reference it',
+          );
+        }
+      }
+
+      throw new InternalServerErrorException('Failed to delete project');
+    }
   }
 
   async addMember(projectId: string, input: { userId?: string; email?: string }) {
@@ -667,9 +723,28 @@ export class ProjectsService {
             ORDER BY da."assignedAt" ASC
           `)
         : [];
+      const latestSubmissions = deliverableIds.length
+        ? await this.prisma.$queryRaw<any[]>(Prisma.sql`
+            SELECT DISTINCT ON (s."deliverableId")
+              s."id",
+              s."deliverableId",
+              s."fileUrl",
+              s."submittedAt",
+              s."status"::text AS "status",
+              u."id" AS "submitterId",
+              u."email" AS "submitterEmail",
+              u."firstName" AS "submitterFirstName",
+              u."lastName" AS "submitterLastName"
+            FROM "Submission" s
+            JOIN "User" u ON u."id" = s."userId"
+            WHERE s."deliverableId" IN (${Prisma.join(deliverableIds)})
+            ORDER BY s."deliverableId", s."submittedAt" DESC
+          `)
+        : [];
 
       const bySprint = new Map<string, any[]>();
       const assignmentsByDeliverable = new Map<string, any[]>();
+      const latestSubmissionByDeliverable = new Map<string, any>();
 
       assignments.forEach((assignment) => {
         const existing = assignmentsByDeliverable.get(assignment.deliverableId) ?? [];
@@ -682,6 +757,20 @@ export class ProjectsService {
         });
         assignmentsByDeliverable.set(assignment.deliverableId, existing);
       });
+      latestSubmissions.forEach((submission) => {
+        latestSubmissionByDeliverable.set(submission.deliverableId, {
+          id: submission.id,
+          fileUrl: submission.fileUrl,
+          submittedAt: submission.submittedAt,
+          status: submission.status,
+          submitter: {
+            id: submission.submitterId,
+            email: submission.submitterEmail,
+            firstName: submission.submitterFirstName,
+            lastName: submission.submitterLastName,
+          },
+        });
+      });
 
       deliverables.forEach((deliverable) => {
         const existing = bySprint.get(deliverable.sprintId) ?? [];
@@ -693,6 +782,7 @@ export class ProjectsService {
           status: deliverable.status,
           completed: deliverable.completed,
           assignees: assignmentsByDeliverable.get(deliverable.id) ?? [],
+          latestSubmission: latestSubmissionByDeliverable.get(deliverable.id) ?? null,
         });
         bySprint.set(deliverable.sprintId, existing);
       });

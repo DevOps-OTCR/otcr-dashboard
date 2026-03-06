@@ -180,7 +180,6 @@ export default function TeamsPage() {
   const [createTeamModalOpen, setCreateTeamModalOpen] = useState(false);
   const [createTeamForm, setCreateTeamForm] = useState({ name: '', selectedEmails: [] as string[], search: '' });
   const [addMemberSearch, setAddMemberSearch] = useState('');
-  const [calendarLinkDrafts, setCalendarLinkDrafts] = useState<Record<string, string>>({});
   const [sprintConfigDraft, setSprintConfigDraft] = useState(DEFAULT_SPRINT_CONFIG);
   const [sprintDataLoading, setSprintDataLoading] = useState(false);
   const [sprintConfigSaving, setSprintConfigSaving] = useState(false);
@@ -449,24 +448,6 @@ export default function TeamsPage() {
       );
   };
 
-  const handleSaveCalendarLink = (project: ProjectFromApi) => {
-    const draft = (calendarLinkDrafts[project.id] ?? '').trim();
-    projectsAPI
-      .update(project.id, {
-        googleCalendarEmbedUrl: draft || null,
-      })
-      .then(() => {
-        setActionFeedback({ message: draft ? 'Team calendar link saved' : 'Team calendar link cleared', tone: 'success' });
-        fetchProjects();
-      })
-      .catch((err) =>
-        setActionFeedback({
-          message: parseApiError(err, 'Failed to save calendar link'),
-          tone: 'warning',
-        }),
-      );
-  };
-
   const handleSaveSprintConfig = async () => {
     if (!selectedTeam) return;
 
@@ -662,31 +643,6 @@ export default function TeamsPage() {
                           </Button>
                         )}
                       </div>
-                      {canManageTeams && (
-                        <div className="mb-4 p-3 rounded-lg border border-[var(--border)] bg-[var(--card)]">
-                          <p className="text-xs font-medium text-[var(--foreground)]/70 mb-2">Team Google Calendar embed link</p>
-                          <div className="flex flex-col sm:flex-row gap-2">
-                            <input
-                              type="url"
-                              value={calendarLinkDrafts[selectedTeam.id] ?? selectedTeam.googleCalendarEmbedUrl ?? ''}
-                              onChange={(e) =>
-                                setCalendarLinkDrafts((prev) => ({
-                                  ...prev,
-                                  [selectedTeam.id]: e.target.value,
-                                }))
-                              }
-                              placeholder="https://calendar.google.com/calendar/embed?src=..."
-                              className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)] placeholder:text-[var(--foreground)]/50 text-sm"
-                            />
-                            <Button
-                              size="sm"
-                              onClick={() => handleSaveCalendarLink(selectedTeam)}
-                            >
-                              Save
-                            </Button>
-                          </div>
-                        </div>
-                      )}
                       {canManageTeams && (
                         <div className="mb-4 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] space-y-4">
                           <div className="flex items-start justify-between gap-4">
