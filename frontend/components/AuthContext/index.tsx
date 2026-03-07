@@ -37,6 +37,7 @@ export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const { instance, accounts, inProgress } = useMsal();
+  const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/\/+$/, "");
   
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -93,9 +94,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     // 3. Trigger MSAL logout to clear the Microsoft server session
     await instance.logoutRedirect({
-        postLogoutRedirectUri: "/sign-in", // Must match your Azure Portal Redirect URIs
+        postLogoutRedirectUri: `${window.location.origin}${basePath}/sign-in`,
     });
-    }, [instance, user?.email]);
+    }, [basePath, instance, user?.email]);
 
   const getToken = useCallback(async () => {
     const account = instance.getActiveAccount();
