@@ -62,6 +62,8 @@ function formatNotificationTime(at: Date): string {
 export function AppNavbar({ role, currentPath = '/dashboard', unreadNotificationCount = 0 }: AppNavbarProps) {
   const { logout, user } = useAuth();
   const overviewPath = getDefaultDashboardPath(role);
+  const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || '').replace(/\/+$/, '');
+  const withBasePath = (path: string) => `${basePath}${path}`;
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const notificationsPanelRef = useRef<HTMLDivElement>(null);
   const [notifications, setNotifications] = useState<ReturnType<typeof getNotificationsForUser>>([]);
@@ -147,7 +149,7 @@ export function AppNavbar({ role, currentPath = '/dashboard', unreadNotification
           <div className="flex items-center gap-3">
             <Link href={overviewPath} className="flex items-center gap-2">
               <Image
-                src="/otcr-logo.png"
+                src={withBasePath('/otcr-logo.png')}
                 alt="OTCR"
                 width={100}
                 height={36}

@@ -16,6 +16,8 @@ export default function SignInPage() {
   const searchParams = useSearchParams();
 
   const [accessDeniedError, setAccessDeniedError] = useState<string | null>(null);
+  const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || '').replace(/\/+$/, '');
+  const withBasePath = (path: string) => `${basePath}${path}`;
 
   // Helper to clear cookies if MSAL gets stuck
   const clearAllDomainCookies = () => {
@@ -69,7 +71,7 @@ export default function SignInPage() {
     return (
       <div className="relative min-h-screen flex items-center justify-center overflow-hidden bg-[#0a1628]">
         <Image
-          src="/chicago-skyline.jpg"
+          src={withBasePath('/chicago-skyline.jpg')}
           alt="Chicago skyline"
           fill
           priority
@@ -84,7 +86,7 @@ export default function SignInPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#0a1628] relative overflow-hidden">
       <Image
-        src="/chicago-skyline.jpg"
+        src={withBasePath('/chicago-skyline.jpg')}
         alt="Chicago skyline"
         fill
         priority
@@ -126,7 +128,7 @@ export default function SignInPage() {
         <div className="bg-white/5 backdrop-blur-xl rounded-3xl p-8 border border-white/10 shadow-2xl">
           <div className="text-center mb-8">
             <div className="flex justify-center mb-4">
-              <Image src="/otcr-logo-white.webp" alt="OTCR Logo" width={200} height={80} className="object-contain" priority />
+              <Image src={withBasePath('/otcr-logo-white.webp')} alt="OTCR Logo" width={200} height={80} className="object-contain" priority />
             </div>
           </div>
 

@@ -130,7 +130,9 @@ export async function getEffectiveRole(
   if (cachedRole) return cachedRole;
 
   try {
-    const response = await api.get("/auth/role");
+    const response = await api.get("/auth/role", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
     const roleString = response.data.role;
 
