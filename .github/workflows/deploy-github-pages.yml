@@ -24,10 +24,10 @@ jobs:
     env:
       GITHUB_PAGES: "true"
       NEXT_PUBLIC_BASE_PATH: "/${{ github.event.repository.name }}"
-      NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
-      NEXT_PUBLIC_MSAL_CLIENT_ID: ${{ vars.NEXT_PUBLIC_MSAL_CLIENT_ID }}
-      NEXT_PUBLIC_MSAL_AUTHORITY: ${{ vars.NEXT_PUBLIC_MSAL_AUTHORITY }}
-      NEXT_PUBLIC_MSAL_REDIRECT_URI: ${{ vars.NEXT_PUBLIC_MSAL_REDIRECT_URI }}
+      NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+      NEXT_PUBLIC_MSAL_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_MSAL_CLIENT_ID }}
+      NEXT_PUBLIC_MSAL_AUTHORITY: ${{ secrets.NEXT_PUBLIC_MSAL_AUTHORITY }}
+      NEXT_PUBLIC_MSAL_REDIRECT_URI: ${{ secrets.NEXT_PUBLIC_MSAL_REDIRECT_URI }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

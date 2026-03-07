@@ -36,7 +36,8 @@ export class SlackService {
   private readonly clientId: string;
   private readonly clientSecret: string;
   private readonly redirectUri: string;
-  private readonly scopes: string;
+  private readonly botScopes: string;
+  private readonly userScopes: string;
   private readonly tokenEncryptionKey: string;
 
   constructor(
@@ -46,9 +47,12 @@ export class SlackService {
     this.clientId = this.configService.get<string>('SLACK_CLIENT_ID') || '';
     this.clientSecret = this.configService.get<string>('SLACK_CLIENT_SECRET') || '';
     this.redirectUri = this.configService.get<string>('SLACK_REDIRECT_URI') || '';
-    this.scopes =
+    const configuredScopes =
       this.configService.get<string>('SLACK_SCOPES') ||
-      'chat:write,im:write,users:read.email';
+      'chat:write,conversations:write,users:read.email';
+    const { botScopes, userScopes } = this.normalizeScopes(configuredScopes);
+    this.botScopes = botScopes;
+    this.userScopes = userScopes;
     this.tokenEncryptionKey =
       this.configService.get<string>('SLACK_BOT_TOKEN_ENCRYPTION_KEY') || '';
   }
@@ -114,12 +118,58 @@ export class SlackService {
 
     const params = new URLSearchParams({
       client_id: this.clientId,
-      scope: this.scopes,
+      scope: this.botScopes,
       redirect_uri: this.redirectUri,
       state,
     });
+    if (this.userScopes) {
+      params.set('user_scope', this.userScopes);
+    }
 
     return `https://slack.com/oauth/v2/authorize?${params.toString()}`;
+  }
+
+  private normalizeScopes(scopesRaw: string): { botScopes: string; userScopes: string } {
+    const userScopeSet = new Set([
+      'channels:read',
+      'groups:read',
+      'im:write',
+      'mpim:write',
+      'users.profile:read',
+      'users:read',
+      'users:read.email',
+    ]);
+    const legacyBotScopeMap: Record<string, string> = {
+      'im:write': 'conversations:write',
+    };
+
+    const requestedScopes = scopesRaw
+      .split(',')
+      .map((scope) => scope.trim())
+      .filter(Boolean);
+
+    const botScopes: string[] = [];
+    const userScopes: string[] = [];
+
+    for (const scope of requestedScopes) {
+      if (userScopeSet.has(scope)) {
+        userScopes.push(scope);
+        continue;
+      }
+
+      const mappedScope = legacyBotScopeMap[scope] ?? scope;
+      botScopes.push(mappedScope);
+    }
+
+    // Keep bot installs functional even if env var only contains user scopes.
+    if (!botScopes.length) {
+      botScopes.push('chat:write', 'conversations:write');
+    }
+
+    return {
+      botScopes: Array.from(new Set(botScopes)).join(','),
+      userScopes: Array.from(new Set(userScopes)).join(','),
+    };
   }
 
   async exchangeOAuthCode(code: string): Promise<SlackOAuthAccessResponse> {
