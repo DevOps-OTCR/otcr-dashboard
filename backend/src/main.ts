@@ -6,8 +6,16 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  const normalizeOrigin = (value: string) =>
-    value.trim().replace(/\/+$/, '');
+  const normalizeOrigin = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    if (trimmed === '*') return '*';
+    try {
+      return new URL(trimmed).origin;
+    } catch {
+      return trimmed.replace(/\/+$/, '');
+    }
+  };
 
   const explicitOrigins = (process.env.CORS_ORIGINS || '')
     .split(',')
