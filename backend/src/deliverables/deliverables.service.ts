@@ -19,8 +19,9 @@ export class DeliverablesService {
       type: string;
       deadline: string;
     },
+    actorUserId?: string,
   ) {
-    return this.prisma.deliverable.create({
+    const created = await this.prisma.deliverable.create({
       data: {
         projectId,
         ...(data.sprintId ? { sprintId: data.sprintId } : {}),
@@ -62,6 +63,12 @@ export class DeliverablesService {
         },
       },
     } as any);
+
+    if (data.type === 'REPORT' && actorUserId) {
+      await this.notifyClientNoteCreated(created.id, actorUserId);
+    }
+
+    return created;
   }
 
   async findAll(
@@ -503,7 +510,7 @@ export class DeliverablesService {
         data: {
           projectName: deliverable.project.name,
           deliverableTitle: deliverable.title,
-          feedback: `${submitterName} submitted a deliverable link: ${link}`,
+          feedback: `${submitterName} made a new submission to ${deliverable.title}. Link: ${link}`,
         },
       });
     }
@@ -544,5 +551,60 @@ export class DeliverablesService {
 
   private createId() {
     return `da_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  private async notifyClientNoteCreated(deliverableId: string, actorUserId: string): Promise<void> {
+    const deliverable = await this.prisma.deliverable.findUnique({
+      where: { id: deliverableId },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        project: {
+          select: {
+            id: true,
+            name: true,
+            pmId: true,
+            members: {
+              where: { leftAt: null },
+              select: { userId: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!deliverable?.project) return;
+
+    const actor = await this.prisma.user.findUnique({
+      where: { id: actorUserId },
+      select: { firstName: true, lastName: true, email: true },
+    });
+    const actorName =
+      `${actor?.firstName || ''} ${actor?.lastName || ''}`.trim() ||
+      actor?.email ||
+      'A team member';
+
+    const linkMatch = deliverable.description?.match(/\[\[CLIENT_NOTE_LINK:([^\]]+)\]\]/i);
+    const noteLink = linkMatch?.[1]?.trim();
+    const recipientIds = new Set<string>([
+      deliverable.project.pmId,
+      ...deliverable.project.members.map((member) => member.userId),
+    ]);
+
+    for (const userId of recipientIds) {
+      await this.notificationsService.queueNotification({
+        userId,
+        type: 'PROJECT_UPDATED',
+        channel: 'BOTH',
+        data: {
+          projectName: deliverable.project.name,
+          deliverableTitle: deliverable.title,
+          feedback: noteLink
+            ? `${actorName} added client notes: ${deliverable.title}. Link: ${noteLink}`
+            : `${actorName} added client notes: ${deliverable.title}.`,
+        },
+      });
+    }
   }
 }

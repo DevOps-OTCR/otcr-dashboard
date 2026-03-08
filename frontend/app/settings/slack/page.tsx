@@ -16,6 +16,10 @@ function parseApiError(err: any, fallback: string): string {
   return Array.isArray(message) ? message.join(', ') : String(message);
 }
 
+function resolveAuthHeaderValue(token: string | null, email?: string): string | null {
+  return token || email || null;
+}
+
 export default function SlackSettingsPage() {
   const session = useAuth();
   const [role, setRole] = useState<AppRole>('CONSULTANT');
@@ -34,14 +38,19 @@ export default function SlackSettingsPage() {
     const syncRole = async () => {
       if (!session.isLoggedIn) {
         setAuthToken(null);
+        setRole('CONSULTANT');
         return;
       }
 
-      const token = await session.getToken();
-      const email = session.user?.email || '';
-      setAuthToken(token);
-      const resolvedRole = await getEffectiveRole(token, email);
-      setRole(resolvedRole);
+      try {
+        const token = await session.getToken();
+        const email = session.user?.email || '';
+        setAuthToken(resolveAuthHeaderValue(token, email));
+        const resolvedRole = await getEffectiveRole(token, email);
+        setRole(resolvedRole);
+      } catch {
+        setRole('CONSULTANT');
+      }
     };
     void syncRole();
   }, [session]);
@@ -55,6 +64,8 @@ export default function SlackSettingsPage() {
 
       setLoadingRequests(true);
       try {
+        const token = await session.getToken();
+        setAuthToken(resolveAuthHeaderValue(token, session.user?.email));
         const res = await onboardingAPI.listRequests();
         setOnboardingRequests(Array.isArray(res.data?.requests) ? res.data.requests : []);
       } catch (e: any) {
@@ -118,6 +129,9 @@ export default function SlackSettingsPage() {
     setError(null);
     setMessage(null);
     try {
+      const token = await session.getToken();
+      setAuthToken(resolveAuthHeaderValue(token, session.user?.email));
+
       if (action === 'approve') {
         await onboardingAPI.approveRequest(requestId);
       } else {

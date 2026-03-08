@@ -113,6 +113,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const res = await instance.acquireTokenSilent(tokenRequest);
       return res.accessToken;
     } catch (err) {
+      if (err instanceof BrowserAuthError && err.errorCode === "timed_out") {
+        try {
+          const forceRefreshRes = await instance.acquireTokenSilent({
+            ...tokenRequest,
+            forceRefresh: true,
+          });
+          return forceRefreshRes.accessToken;
+        } catch (refreshError) {
+          console.error("MSAL force-refresh token acquisition failed:", refreshError);
+          return null;
+        }
+      }
+
       if (err instanceof InteractionRequiredAuthError) {
         try {
           const res = await instance.acquireTokenPopup(tokenRequest);
@@ -120,10 +133,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         } catch (popupError) {
           if (
             popupError instanceof BrowserAuthError &&
-            popupError.errorCode === "popup_window_error"
+            (popupError.errorCode === "popup_window_error" ||
+              popupError.errorCode === "timed_out")
           ) {
             alert(
-              "Your browser is blocking popups. Please allow popups for this site and try again."
+              "Token refresh requires a popup, but it was blocked or timed out. Allow popups for this site and try again."
             );
           }
           console.error("MSAL popup token acquisition failed:", popupError);

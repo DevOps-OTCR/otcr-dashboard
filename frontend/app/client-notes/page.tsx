@@ -11,6 +11,7 @@ import { deliverablesAPI, projectsAPI } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
 import type { AppRole } from '@/lib/permissions';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
+import { dispatchNotificationsRefresh } from '@/lib/notification-events';
 
 type ClientNote = {
   id: string;
@@ -169,6 +170,7 @@ export default function ClientNotesPage() {
       setTitle('');
       setLink('');
       await loadNotes();
+      dispatchNotificationsRefresh();
     } catch (err: any) {
       setError(parseApiError(err, 'Failed to submit client note.'));
     } finally {

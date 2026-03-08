@@ -9,6 +9,28 @@ import { useAuth } from '@/components/AuthContext';
 const DEFAULT_CALENDAR_URL =
   'https://calendar.google.com/calendar/embed?src=en.usa%23holiday%40group.v.calendar.google.com&ctz=America%2FChicago';
 
+function sanitizeCalendarEmbedUrl(candidate: string, fallback: string): string {
+  const trimmed = candidate.trim();
+  if (!trimmed) return fallback;
+
+  try {
+    const parsed = new URL(trimmed);
+    const host = parsed.hostname.toLowerCase();
+    const isGoogleCalendarHost =
+      host === 'calendar.google.com' || host.endsWith('.calendar.google.com');
+    const isEmbedPath = parsed.pathname.startsWith('/calendar/embed');
+
+    // Google Calendar root/regular pages send frame-ancestors: 'self' and cannot be embedded.
+    if (isGoogleCalendarHost && !isEmbedPath) {
+      return fallback;
+    }
+
+    return parsed.toString();
+  } catch {
+    return fallback;
+  }
+}
+
 type GoogleCalendarPanelProps = {
   title?: string;
   description?: string;
@@ -65,7 +87,7 @@ export function GoogleCalendarPanel({
           firstWithCalendar?.googleCalendarEmbedUrl?.trim() ||
           fallbackCalendarUrl;
 
-        setCalendarUrl(resolved);
+        setCalendarUrl(sanitizeCalendarEmbedUrl(resolved, fallbackCalendarUrl));
       })
       .catch(() => {
         if (!canceled) {

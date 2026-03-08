@@ -49,7 +49,7 @@ export class SlackService {
     this.redirectUri = this.configService.get<string>('SLACK_REDIRECT_URI') || '';
     const configuredScopes =
       this.configService.get<string>('SLACK_SCOPES') ||
-      'chat:write,conversations:write,users:read.email';
+      'chat:write,im:write,users:read,users:read.email';
     const { botScopes, userScopes } = this.normalizeScopes(configuredScopes);
     this.botScopes = botScopes;
     this.userScopes = userScopes;
@@ -133,15 +133,8 @@ export class SlackService {
     const userScopeSet = new Set([
       'channels:read',
       'groups:read',
-      'im:write',
-      'mpim:write',
       'users.profile:read',
-      'users:read',
-      'users:read.email',
     ]);
-    const legacyBotScopeMap: Record<string, string> = {
-      'im:write': 'conversations:write',
-    };
 
     const requestedScopes = scopesRaw
       .split(',')
@@ -157,13 +150,12 @@ export class SlackService {
         continue;
       }
 
-      const mappedScope = legacyBotScopeMap[scope] ?? scope;
-      botScopes.push(mappedScope);
+      botScopes.push(scope);
     }
 
     // Keep bot installs functional even if env var only contains user scopes.
     if (!botScopes.length) {
-      botScopes.push('chat:write', 'conversations:write');
+      botScopes.push('chat:write', 'im:write');
     }
 
     return {

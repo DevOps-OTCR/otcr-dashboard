@@ -154,7 +154,7 @@ export class SlideSubmissionsService {
         data: {
           projectName,
           deliverableTitle: submission.deliverable.title,
-          feedback: `${submitterName} submitted a file link: ${submission.fileUrl}`,
+          feedback: `${submitterName} made a new submission to ${submission.deliverable.title}. Link: ${submission.fileUrl}`,
         },
       });
     }

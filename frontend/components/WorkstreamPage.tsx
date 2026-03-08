@@ -12,6 +12,7 @@ import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { deliverablesAPI, projectsAPI, setAuthToken } from '@/lib/api';
 import { getEffectiveRole, type AppRole } from '@/lib/permissions';
 import { parseDashPrefixedDeliverables } from '@/lib/deliverables-parser';
+import { dispatchNotificationsRefresh } from '@/lib/notification-events';
 
 type ProjectOption = {
   id: string;
@@ -210,6 +211,9 @@ export default function WorkstreamPage() {
       await projectsAPI.updateSprintStatus(selectedProjectId, selectedSprint.id, nextStatus);
       await loadSprints(selectedProjectId);
       setFeedback(nextStatus === 'RELEASED' ? 'Sprint released' : 'Sprint moved back to draft');
+      if (nextStatus === 'RELEASED') {
+        dispatchNotificationsRefresh();
+      }
     } catch (error: any) {
       const message =
         error?.response?.data?.message ??

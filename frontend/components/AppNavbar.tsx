@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
@@ -19,7 +19,8 @@ import { cn } from '@/lib/utils';
 import { AdminRoleSwitcher } from '@/components/AdminRoleSwitcher';
 import { useAuth } from '@/components/AuthContext';
 import { getDefaultDashboardPath, hasAccess, canShowNavItem, ROLE_FULL_LABELS, type AppRole } from '@/lib/permissions';
-import { getNotificationsForUser, markNotificationRead } from '@/lib/notifications-storage';
+import { notificationsAPI, setAuthToken } from '@/lib/api';
+import { getNotificationsRefreshEventName } from '@/lib/notification-events';
 
 export type NavItem = {
   id: string;
@@ -50,6 +51,38 @@ export interface AppNavbarProps {
   unreadNotificationCount?: number;
 }
 
+type NavbarNotification = {
+  id: string;
+  title: string;
+  message: string;
+  at: Date;
+  read: boolean;
+};
+
+const READ_STORAGE_PREFIX = 'otcr_notification_reads:';
+
+function getReadStorageKey(email: string): string {
+  return `${READ_STORAGE_PREFIX}${email.toLowerCase()}`;
+}
+
+function loadReadIds(email: string): Set<string> {
+  if (typeof window === 'undefined') return new Set<string>();
+  try {
+    const raw = localStorage.getItem(getReadStorageKey(email));
+    if (!raw) return new Set<string>();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set<string>();
+    return new Set(parsed.filter((value): value is string => typeof value === 'string'));
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function saveReadIds(email: string, readIds: Set<string>): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(getReadStorageKey(email), JSON.stringify(Array.from(readIds)));
+}
+
 function formatNotificationTime(at: Date): string {
   const mins = Math.floor((Date.now() - at.getTime()) / 60000);
   if (mins < 1) return 'Just now';
@@ -60,17 +93,40 @@ function formatNotificationTime(at: Date): string {
 }
 
 export function AppNavbar({ role, currentPath = '/dashboard', unreadNotificationCount = 0 }: AppNavbarProps) {
-  const { logout, user } = useAuth();
+  const { logout, user, getToken, isLoggedIn } = useAuth();
   const overviewPath = getDefaultDashboardPath(role);
   const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || '').replace(/\/+$/, '');
   const withBasePath = (path: string) => `${basePath}${path}`;
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const notificationsPanelRef = useRef<HTMLDivElement>(null);
-  const [notifications, setNotifications] = useState<ReturnType<typeof getNotificationsForUser>>([]);
+  const [notifications, setNotifications] = useState<NavbarNotification[]>([]);
 
-  useEffect(() => {
-    setNotifications(getNotificationsForUser(user?.email ?? null));
-  }, [user?.email]);
+  const refreshNotifications = useCallback(async () => {
+    if (!isLoggedIn || !user?.email) {
+      setNotifications([]);
+      return;
+    }
+
+    try {
+      const token = await getToken();
+      setAuthToken(token || user.email || null);
+      const response = await notificationsAPI.getMy(50);
+      const items = Array.isArray(response.data) ? response.data : [];
+      const readIds = loadReadIds(user.email);
+      const mapped = items
+        .map((item: any) => ({
+          id: String(item.id),
+          title: String(item.title ?? 'Notification'),
+          message: String(item.message ?? ''),
+          at: item.createdAt ? new Date(item.createdAt) : new Date(),
+          read: readIds.has(String(item.id)),
+        }))
+        .sort((a, b) => b.at.getTime() - a.at.getTime());
+      setNotifications(mapped);
+    } catch {
+      setNotifications([]);
+    }
+  }, [getToken, isLoggedIn, user?.email]);
 
   useEffect(() => {
     const onClickOutside = (event: MouseEvent) => {
@@ -82,6 +138,34 @@ export function AppNavbar({ role, currentPath = '/dashboard', unreadNotification
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
+
+  useEffect(() => {
+    void refreshNotifications();
+  }, [refreshNotifications]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !user?.email) return;
+
+    const eventName = getNotificationsRefreshEventName();
+    const onRefresh = () => {
+      void refreshNotifications();
+    };
+    const onFocus = () => {
+      void refreshNotifications();
+    };
+
+    window.addEventListener(eventName, onRefresh as EventListener);
+    window.addEventListener('focus', onFocus);
+    const intervalId = window.setInterval(() => {
+      void refreshNotifications();
+    }, 15000);
+
+    return () => {
+      window.removeEventListener(eventName, onRefresh as EventListener);
+      window.removeEventListener('focus', onFocus);
+      window.clearInterval(intervalId);
+    };
+  }, [isLoggedIn, refreshNotifications, user?.email]);
 
   const localUnreadCount = useMemo(
     () => notifications.filter((n) => !n.read).length,
@@ -195,8 +279,15 @@ export function AppNavbar({ role, currentPath = '/dashboard', unreadNotification
                           key={n.id}
                           type="button"
                           onClick={() => {
-                            markNotificationRead(n.id);
-                            setNotifications(getNotificationsForUser(user?.email ?? null));
+                            if (!user?.email) return;
+                            const readIds = loadReadIds(user.email);
+                            readIds.add(n.id);
+                            saveReadIds(user.email, readIds);
+                            setNotifications((current) =>
+                              current.map((entry) =>
+                                entry.id === n.id ? { ...entry, read: true } : entry,
+                              ),
+                            );
                           }}
                           className={cn(
                             'w-full text-left p-3 rounded-xl border transition-colors',

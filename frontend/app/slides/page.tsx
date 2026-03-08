@@ -10,6 +10,7 @@ import { getEffectiveRole, type AppRole } from '@/lib/permissions';
 import { projectsAPI, slideSubmissionsAPI, setAuthToken } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
+import { dispatchNotificationsRefresh } from '@/lib/notification-events';
 
 type ProjectOption = {
   id: string;
@@ -244,6 +245,7 @@ export default function SlidesPage() {
       });
       setSubmitLinks((prev) => ({ ...prev, [deliverable.id]: '' }));
       await loadData();
+      dispatchNotificationsRefresh();
     } catch (err: any) {
       const message =
         err?.response?.data?.message ?? err?.message ?? 'Failed to submit revision.';
@@ -260,6 +262,7 @@ export default function SlidesPage() {
       setAuthToken(token || session.user?.email || null);
       await slideSubmissionsAPI.markCommented(submissionId);
       await loadData();
+      dispatchNotificationsRefresh();
     } finally {
       setActioningId(null);
     }
@@ -272,6 +275,7 @@ export default function SlidesPage() {
       setAuthToken(token || session.user?.email || null);
       await slideSubmissionsAPI.approve(submissionId);
       await loadData();
+      dispatchNotificationsRefresh();
     } finally {
       setActioningId(null);
     }
@@ -284,6 +288,7 @@ export default function SlidesPage() {
       setAuthToken(token || session.user?.email || null);
       await slideSubmissionsAPI.requestRevision(submissionId);
       await loadData();
+      dispatchNotificationsRefresh();
     } finally {
       setActioningId(null);
     }

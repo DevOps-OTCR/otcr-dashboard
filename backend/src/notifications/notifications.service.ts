@@ -62,7 +62,7 @@ export class NotificationsService {
 
   async queueNotification(job: NotificationJob): Promise<void> {
     // Save to database
-    await this.prisma.notification.create({
+    const createdNotification = await this.prisma.notification.create({
       data: {
         userId: job.userId,
         type: job.type,
@@ -85,7 +85,17 @@ export class NotificationsService {
         this.logger.warn(`Failed to queue notification, saved to database only: ${error.message}`);
       }
     } else {
-      this.logger.log(`Notification saved to database for user ${job.userId} (Redis not available)`);
+      const delivered = await this.sendSlackNotificationDirect(job);
+      await this.prisma.notification.update({
+        where: { id: createdNotification.id },
+        data: {
+          status: delivered ? 'SENT' : 'FAILED',
+          sentAt: new Date(),
+        },
+      });
+      this.logger.log(
+        `Notification processed inline for user ${job.userId} (Redis not available), delivered=${delivered}`,
+      );
     }
   }
 
@@ -159,12 +169,7 @@ export class NotificationsService {
     const reminderTime = new Date(deliverable.deadline);
     reminderTime.setHours(reminderTime.getHours() - hoursBeforeDeadline);
 
-    const delay = reminderTime.getTime() - Date.now();
-
-    if (delay <= 0) {
-      this.logger.warn('Reminder time is in the past, skipping');
-      return;
-    }
+    const delay = Math.max(0, reminderTime.getTime() - Date.now());
 
     const reminderRecipients =
       deliverable.assignments.length > 0
@@ -377,5 +382,87 @@ export class NotificationsService {
 
   async getQueue(): Promise<Queue | null> {
     return this.notificationQueue;
+  }
+
+  private async sendSlackNotificationDirect(job: NotificationJob): Promise<boolean> {
+    const { type, userId, data } = job;
+    try {
+      switch (type) {
+        case 'DEADLINE_1H':
+        case 'DEADLINE_24H':
+        case 'DEADLINE_REMINDER':
+          return await this.slackService.sendDeadlineReminder(
+            userId,
+            data.deliverableTitle || 'Deliverable',
+            data.projectName || 'Project',
+            data.deadline ? new Date(data.deadline) : new Date(),
+            'Team member',
+            data.hoursRemaining ?? (type === 'DEADLINE_1H' ? 1 : 24),
+          );
+
+        case 'EXTENSION_REQUEST':
+          return await this.slackService.sendExtensionRequest(
+            userId,
+            data.deliverableTitle || 'Deliverable',
+            data.projectName || 'Project',
+            'Team member',
+            data.reason,
+            data.requestedDate ? new Date(data.requestedDate) : new Date(),
+          );
+
+        case 'EXTENSION_APPROVED':
+          return await this.slackService.sendExtensionApproved(
+            userId,
+            data.deliverableTitle || 'Deliverable',
+            'Team member',
+            data.newDeadline ? new Date(data.newDeadline) : new Date(),
+          );
+
+        case 'EXTENSION_DENIED':
+          return await this.slackService.sendExtensionDenied(
+            userId,
+            data.deliverableTitle || 'Deliverable',
+            'Team member',
+            data.reason,
+          );
+
+        case 'SUBMISSION_APPROVED':
+          return await this.slackService.sendSubmissionApproved(
+            userId,
+            data.deliverableTitle || 'Deliverable',
+            'Team member',
+            data.feedback,
+          );
+
+        case 'SUBMISSION_REJECTED':
+          return await this.slackService.sendSubmissionRejected(
+            userId,
+            data.deliverableTitle || 'Deliverable',
+            'Team member',
+            data.feedback || 'Please revise and resubmit.',
+          );
+
+        case 'PROJECT_UPDATED':
+          return await this.slackService.sendDirectMessageToUser(userId, {
+            text: this.buildProjectUpdateSlackMessage(data),
+          });
+
+        default:
+          this.logger.warn(`Unsupported inline Slack notification type: ${type}`);
+          return false;
+      }
+    } catch (error: any) {
+      this.logger.error(`Inline Slack notification failed: ${error?.message || error}`);
+      return false;
+    }
+  }
+
+  private buildProjectUpdateSlackMessage(data: any): string {
+    const projectName = data?.projectName ? `Project: ${data.projectName}. ` : '';
+    const deliverableTitle = data?.deliverableTitle
+      ? `Assignment: ${data.deliverableTitle}. `
+      : '';
+    const feedback = data?.feedback ? String(data.feedback) : 'A project update is available.';
+    return `${projectName}${deliverableTitle}${feedback}`.trim();
   }
 }

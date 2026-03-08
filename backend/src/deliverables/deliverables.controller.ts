@@ -41,7 +41,7 @@ export class DeliverablesController {
       throw new ForbiddenException('Only PM, LC, or Admin can create deliverables');
     }
 
-    return this.deliverablesService.create(body.projectId, body);
+    return this.deliverablesService.create(body.projectId, body, user.id);
   }
 
   // Get deliverables with param based filtering

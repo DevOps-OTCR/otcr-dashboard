@@ -3,7 +3,10 @@ name: Deploy Frontend to GitHub Pages
 on:
   push:
     branches:
-      - github-pages
+      - main
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/deploy-github-pages.yml'
   workflow_dispatch:
 
 permissions:
@@ -27,6 +30,8 @@ jobs:
       GITHUB_PAGES: "true"
       NEXT_PUBLIC_BASE_PATH: "/${{ github.event.repository.name }}"
       NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+      NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+      NEXT_PUBLIC_GOOGLE_CALENDAR_EMBED_URL: ${{ secrets.NEXT_PUBLIC_GOOGLE_CALENDAR_EMBED_URL }}
       NEXT_PUBLIC_MSAL_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_MSAL_CLIENT_ID }}
       NEXT_PUBLIC_MSAL_AUTHORITY: ${{ secrets.NEXT_PUBLIC_MSAL_AUTHORITY }}
       NEXT_PUBLIC_MSAL_REDIRECT_URI: ${{ secrets.NEXT_PUBLIC_MSAL_REDIRECT_URI }}
@@ -42,7 +47,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Validate required frontend env vars
         run: |

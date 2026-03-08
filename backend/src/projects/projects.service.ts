@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 type SprintConfigInput = {
   sprintStartDay?: string;
@@ -18,7 +19,10 @@ type SprintConfigInput = {
 
 @Injectable()
 export class ProjectsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+  ) {}
 
   async create(
     data: {
@@ -826,6 +830,10 @@ export class ProjectsService {
         throw new BadRequestException('Sprint not found');
       }
 
+      if (status === 'RELEASED') {
+        await this.notifySprintReleased(projectId, sprint);
+      }
+
       return sprint;
     } catch (error) {
       if (error instanceof BadRequestException) {
@@ -834,6 +842,47 @@ export class ProjectsService {
 
       console.warn('Failed to update sprint status.', error);
       throw new BadRequestException('Unable to update this week right now. Please try again.');
+    }
+  }
+
+  private async notifySprintReleased(projectId: string, sprint: {
+    id: string;
+    label: string;
+    deliverables?: Array<{ id: string }>;
+  }): Promise<void> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: {
+        id: true,
+        name: true,
+        pmId: true,
+        members: {
+          where: { leftAt: null },
+          select: { userId: true },
+        },
+      },
+    });
+
+    if (!project) return;
+
+    const recipientIds = new Set<string>([
+      project.pmId,
+      ...project.members.map((member) => member.userId),
+    ]);
+    const deliverableCount = Array.isArray(sprint.deliverables) ? sprint.deliverables.length : 0;
+    const countSuffix = deliverableCount > 0 ? ` (${deliverableCount} deliverable${deliverableCount === 1 ? '' : 's'})` : '';
+
+    for (const userId of recipientIds) {
+      await this.notificationsService.queueNotification({
+        userId,
+        type: 'PROJECT_UPDATED',
+        channel: 'BOTH',
+        data: {
+          projectName: project.name,
+          deliverableTitle: sprint.label,
+          feedback: `${sprint.label} has been released${countSuffix}. Deliverables are now available for review and updates.`,
+        },
+      });
     }
   }
 
