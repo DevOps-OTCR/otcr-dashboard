@@ -184,6 +184,7 @@ export class AuthService {
     return (this.prisma as any).onboardingRequest.findMany({
       orderBy: [
         { status: 'asc' },
+        { updatedAt: 'desc' },
         { createdAt: 'desc' },
       ],
       include: {

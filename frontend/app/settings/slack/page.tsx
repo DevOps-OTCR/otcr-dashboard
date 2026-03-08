@@ -76,7 +76,22 @@ export default function SlackSettingsPage() {
     };
 
     void loadRequests();
-  }, [session.isLoggedIn, canReviewOnboarding]);
+    if (!session.isLoggedIn || !canReviewOnboarding) return;
+
+    const intervalId = window.setInterval(() => {
+      void loadRequests();
+    }, 15000);
+
+    const handleFocus = () => {
+      void loadRequests();
+    };
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [session.isLoggedIn, session.user?.email, canReviewOnboarding]);
 
   const handleConnectSlack = async () => {
     setIsConnectingSlack(true);
