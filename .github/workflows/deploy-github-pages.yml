@@ -28,7 +28,8 @@ jobs:
         working-directory: frontend
     env:
       GITHUB_PAGES: "true"
-      NEXT_PUBLIC_BASE_PATH: "/${{ github.event.repository.name }}"
+      # Custom domain deploy: serve from domain root, not /<repo>.
+      NEXT_PUBLIC_BASE_PATH: ""
       NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
       NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
       NEXT_PUBLIC_GOOGLE_CALENDAR_EMBED_URL: ${{ secrets.NEXT_PUBLIC_GOOGLE_CALENDAR_EMBED_URL }}

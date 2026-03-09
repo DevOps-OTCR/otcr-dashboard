@@ -94,7 +94,14 @@ export const onboardingAPI = {
     email: string;
     requestedRole: 'ADMIN' | 'PM' | 'LC' | 'PARTNER' | 'EXECUTIVE' | 'CONSULTANT';
   }) => api.post('/onboarding/requests', data),
-  listRequests: () => api.get('/onboarding/requests'),
+  listRequests: () =>
+    api.get('/onboarding/requests', {
+      params: { _ts: Date.now() },
+      headers: {
+        'Cache-Control': 'no-cache, no-store, max-age=0',
+        Pragma: 'no-cache',
+      },
+    }),
   approveRequest: (id: string, notes?: string) =>
     api.patch(`/onboarding/requests/${id}/approve`, notes ? { notes } : {}),
   rejectRequest: (id: string, notes?: string) =>

@@ -92,6 +92,16 @@ function formatNotificationTime(at: Date): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function getConnectedApiLabel(): string {
+  const raw = (process.env.NEXT_PUBLIC_API_URL || '').trim();
+  if (!raw) return 'unset';
+  try {
+    return new URL(raw).host;
+  } catch {
+    return raw;
+  }
+}
+
 export function AppNavbar({ role, currentPath = '/dashboard', unreadNotificationCount = 0 }: AppNavbarProps) {
   const { logout, user, getToken, isLoggedIn } = useAuth();
   const overviewPath = getDefaultDashboardPath(role);
@@ -244,6 +254,11 @@ export function AppNavbar({ role, currentPath = '/dashboard', unreadNotification
             <Badge variant="info" size="sm" className="hidden sm:inline-flex">
               {ROLE_FULL_LABELS[role] ?? role}
             </Badge>
+            {role === 'ADMIN' && (
+              <Badge variant="default" size="sm" className="hidden md:inline-flex">
+                API: {getConnectedApiLabel()}
+              </Badge>
+            )}
             <AdminRoleSwitcher className="shrink-0" />
           </div>
           <div className="flex items-center gap-2">
