@@ -13,6 +13,7 @@ import { deliverablesAPI, projectsAPI, setAuthToken } from '@/lib/api';
 import { getEffectiveRole, type AppRole } from '@/lib/permissions';
 import { parseDashPrefixedDeliverables } from '@/lib/deliverables-parser';
 import { dispatchNotificationsRefresh } from '@/lib/notification-events';
+import { buildSprintDeadlineInChicago } from '@/lib/sprint-deadlines';
 
 type ProjectOption = {
   id: string;
@@ -39,6 +40,9 @@ type SprintItem = {
   status: string;
   weekStartDate: string;
   weekEndDate: string;
+  configSnapshot?: {
+    defaultDueTime?: string;
+  } | null;
   deliverables?: DeliverableItem[];
 };
 
@@ -68,6 +72,13 @@ function extractWeekNumber(value: string, fallbackIndex?: number) {
   return match?.[1] ?? String((fallbackIndex ?? 0) + 1);
 }
 
+function buildDraftDeliverableDeadline(sprint: SprintItem) {
+  return buildSprintDeadlineInChicago(
+    sprint.weekEndDate,
+    sprint.configSnapshot?.defaultDueTime ?? '23:59',
+  );
+}
+
 export default function WorkstreamPage() {
   const session = useAuth();
   const router = useRouter();
@@ -83,6 +94,9 @@ export default function WorkstreamPage() {
   const [generating, setGenerating] = useState(false);
   const [draftInput, setDraftInput] = useState('');
   const [addWhitepaperSubmission, setAddWhitepaperSubmission] = useState(false);
+  const [newSprintStartDate, setNewSprintStartDate] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
 
   const canManage = role === 'PM' || role === 'LC' || role === 'ADMIN';
 
@@ -192,6 +206,7 @@ export default function WorkstreamPage() {
     setSelectedProjectId(projectId);
     setSelectedSprintId('');
     setAddWhitepaperSubmission(false);
+    setNewSprintStartDate(new Date().toISOString().slice(0, 10));
     if (!projectId) {
       setSprints([]);
       return;
@@ -206,11 +221,13 @@ export default function WorkstreamPage() {
   };
 
   const handleGenerateSprint = async () => {
-    if (!selectedProjectId) return;
+    if (!selectedProjectId || !newSprintStartDate) return;
     setGenerating(true);
     try {
       setLoadError(null);
-      const response = await projectsAPI.generateNextSprint(selectedProjectId);
+      const response = await projectsAPI.generateNextSprint(selectedProjectId, {
+        startDate: newSprintStartDate,
+      });
       const createdSprint = response.data as SprintItem | undefined;
 
       if (createdSprint?.id) {
@@ -265,7 +282,7 @@ export default function WorkstreamPage() {
           title: item.title,
           description: 'Draft deliverable created from the Workstream page.',
           type: 'OTHER',
-          deadline: selectedSprint.weekEndDate,
+          deadline: buildDraftDeliverableDeadline(selectedSprint),
         }),
       );
 
@@ -409,6 +426,20 @@ export default function WorkstreamPage() {
                     ? 'Create draft sprints, add deliverables, and release a week when it is ready.'
                     : 'Draft weeks are visible here, but work stays locked until released.'}
                 </span>
+                {canManage && (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--foreground)]/55">
+                      Due Date Week
+                    </span>
+                    <input
+                      type="date"
+                      value={newSprintStartDate}
+                      onChange={(e) => setNewSprintStartDate(e.target.value)}
+                      className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
+                      aria-label="New workstream due date week"
+                    />
+                  </div>
+                )}
                 {canManage && sprints.length > 0 && (
                   <select
                     value={selectedSprintId}
@@ -423,7 +454,11 @@ export default function WorkstreamPage() {
                   </select>
                 )}
                 {canManage && (
-                  <Button size="sm" onClick={() => void handleGenerateSprint()} disabled={!selectedProjectId || generating}>
+                  <Button
+                    size="sm"
+                    onClick={() => void handleGenerateSprint()}
+                    disabled={!selectedProjectId || !newSprintStartDate || generating}
+                  >
                     <RefreshCw className={cn('w-4 h-4 mr-2', generating && 'animate-spin')} />
                     Create new Workstream
                   </Button>
@@ -440,8 +475,24 @@ export default function WorkstreamPage() {
                   <div className="rounded-xl border border-dashed border-[var(--border)] px-4 py-4 text-sm text-[var(--foreground)]/60">
                     <p>{canManage ? 'No sprints yet.' : 'No weeks yet.'}</p>
                     {canManage && (
-                      <div className="mt-3">
-                        <Button size="sm" onClick={() => void handleGenerateSprint()} disabled={!selectedProjectId || generating}>
+                      <div className="mt-3 flex flex-wrap items-end gap-3">
+                        <label className="flex flex-col gap-1">
+                          <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--foreground)]/55">
+                            Due Date Week
+                          </span>
+                          <input
+                            type="date"
+                            value={newSprintStartDate}
+                            onChange={(e) => setNewSprintStartDate(e.target.value)}
+                            className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
+                            aria-label="First workstream due date week"
+                          />
+                        </label>
+                        <Button
+                          size="sm"
+                          onClick={() => void handleGenerateSprint()}
+                          disabled={!selectedProjectId || !newSprintStartDate || generating}
+                        >
                           Create First Workstream
                         </Button>
                       </div>

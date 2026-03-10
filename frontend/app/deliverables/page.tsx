@@ -219,7 +219,9 @@ export default function DeliverablesPage() {
           deliverables: (sprint.deliverables ?? []).filter(
             (deliverable) =>
               deliverable.templateKind !== 'INITIAL_SLIDES' &&
-              deliverable.templateKind !== 'FINAL_SLIDES',
+              deliverable.templateKind !== 'FINAL_SLIDES' &&
+              deliverable.templateKind !== 'INITIAL_WHITEPAPER' &&
+              deliverable.templateKind !== 'FINAL_WHITEPAPER',
           ),
         }))
         .filter((sprint) => (sprint.deliverables ?? []).length > 0),

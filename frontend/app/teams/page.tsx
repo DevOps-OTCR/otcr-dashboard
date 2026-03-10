@@ -27,6 +27,7 @@ import { projectsAPI, authAPI, deliverablesAPI, setAuthToken } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { parseDashPrefixedDeliverables } from '@/lib/deliverables-parser';
+import { buildSprintDeadlineInChicago } from '@/lib/sprint-deadlines';
 
 type ProjectMember = { user: { id: string; email: string; firstName?: string; lastName?: string; role?: string } };
 type ProjectFromApi = {
@@ -104,10 +105,7 @@ function parseApiError(err: any, fallback: string): string {
 }
 
 function buildCustomDeliverableDeadline(sprint: SprintRecord, dueTime: string): string {
-  const target = new Date(sprint.weekEndDate);
-  const [hours, minutes] = dueTime.split(':').map((part) => Number.parseInt(part, 10));
-  target.setHours(hours || 23, minutes || 59, 0, 0);
-  return target.toISOString();
+  return buildSprintDeadlineInChicago(sprint.weekEndDate, dueTime);
 }
 
 function formatAssigneeLabel(
@@ -385,11 +383,10 @@ export default function TeamsPage() {
 
   const handleCreateTeam = () => {
     if (!createTeamForm.name.trim()) return;
-    const startDate = new Date().toISOString().slice(0, 10);
     projectsAPI
       .create({
         name: createTeamForm.name.trim(),
-        startDate,
+        startDate: new Date().toISOString().slice(0, 10),
         memberEmails: createTeamForm.selectedEmails,
       })
       .then(() => {

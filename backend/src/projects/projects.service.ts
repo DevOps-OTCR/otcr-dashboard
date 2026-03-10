@@ -8,6 +8,8 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 
+const CHICAGO_TIMEZONE = 'America/Chicago';
+
 type SprintConfigInput = {
   sprintStartDay?: string;
   initialSlideDueDay?: string;
@@ -48,6 +50,11 @@ export class ProjectsService {
     userId: string,
   ) {
     const { name, description, clientName, startDate, endDate, pmId, memberIds, memberEmails } = data;
+    const parsedStartDate = new Date(startDate);
+
+    if (Number.isNaN(parsedStartDate.getTime())) {
+      throw new BadRequestException('startDate must be a valid date');
+    }
 
     // Verify PM exists and has PM or ADMIN role
     const pm = await this.prisma.user.findUnique({
@@ -136,10 +143,11 @@ export class ProjectsService {
         name,
         description,
         clientName,
-        startDate: new Date(startDate),
+        startDate: parsedStartDate,
         endDate: endDate ? new Date(endDate) : null,
         pmId: pmId || userId,
         status: 'ACTIVE',
+        sprintStartDay: this.weekdayFromDate(parsedStartDate) as any,
         members: {
           create: resolvedMemberIds.map((userId) => ({
             userId,
@@ -776,6 +784,7 @@ export class ProjectsService {
           d."title",
           d."deadline",
           d."templateKind"::text AS "templateKind",
+          d."dueDateSource"::text AS "dueDateSource",
           d."status"::text AS "status",
           d."completed"
         FROM "Deliverable" d
@@ -849,11 +858,12 @@ export class ProjectsService {
       });
 
       deliverables.forEach((deliverable) => {
+        const sprint = sprints.find((item) => item.id === deliverable.sprintId);
         const existing = bySprint.get(deliverable.sprintId) ?? [];
         existing.push({
           id: deliverable.id,
           title: deliverable.title,
-          deadline: deliverable.deadline,
+          deadline: this.normalizeSprintDeliverableDeadline(deliverable, sprint),
           templateKind: deliverable.templateKind,
           status: deliverable.status,
           completed: deliverable.completed,
@@ -1028,7 +1038,7 @@ export class ProjectsService {
     }
   }
 
-  async generateNextSprint(projectId: string) {
+  async generateNextSprint(projectId: string, startDate?: string) {
     try {
       const createdSprintId = await this.prisma.$transaction(async (tx) => {
         const project = await tx.project.findUnique({
@@ -1068,10 +1078,29 @@ export class ProjectsService {
 
         const latestSprint = project.sprints[0];
         const sequenceNumber = latestSprint ? latestSprint.sequenceNumber + 1 : 1;
-        const baseDate = latestSprint
-          ? this.addDaysUtc(latestSprint.weekStartDate, 7)
-          : project.startDate;
-        const weekStartDate = this.alignToWeekday(baseDate, project.sprintStartDay);
+        const customStartDate = startDate ? new Date(startDate) : null;
+        if (customStartDate && Number.isNaN(customStartDate.getTime())) {
+          throw new BadRequestException('startDate must be a valid date');
+        }
+
+        const baseDate = customStartDate
+          ? new Date(
+              Date.UTC(
+                customStartDate.getUTCFullYear(),
+                customStartDate.getUTCMonth(),
+                customStartDate.getUTCDate(),
+                0,
+                0,
+                0,
+                0,
+              ),
+            )
+          : latestSprint
+            ? this.addDaysUtc(latestSprint.weekStartDate, 7)
+            : project.startDate;
+        const weekStartDate = customStartDate
+          ? this.alignToWeekdayOnOrBefore(baseDate, project.sprintStartDay)
+          : this.alignToWeekday(baseDate, project.sprintStartDay);
         const weekEndDate = this.addDaysUtc(weekStartDate, 6);
         const configSnapshot = {
           sprintStartDay: project.sprintStartDay,
@@ -1324,11 +1353,26 @@ export class ProjectsService {
     return this.addDaysUtc(current, offset);
   }
 
+  private alignToWeekdayOnOrBefore(date: Date, weekday: string) {
+    const current = new Date(
+      Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0),
+    );
+    const currentDay = this.toIsoWeekday(current.getUTCDay());
+    const targetDay = this.weekdayToIsoNumber(weekday);
+    const offset = (currentDay - targetDay + 7) % 7;
+    return this.addDaysUtc(current, -offset);
+  }
+
   private buildDeadlineForWeek(weekStartDate: Date, weekday: string, dueTime: string) {
     const targetDate = this.alignToWeekday(weekStartDate, weekday);
     const [hours, minutes] = dueTime.split(':').map((part) => Number.parseInt(part, 10));
-    targetDate.setUTCHours(hours, minutes, 0, 0);
-    return targetDate;
+    return this.chicagoDateTimeToUtc(
+      targetDate.getUTCFullYear(),
+      targetDate.getUTCMonth() + 1,
+      targetDate.getUTCDate(),
+      hours,
+      minutes,
+    );
   }
 
   private addDaysUtc(date: Date, days: number) {
@@ -1353,5 +1397,106 @@ export class ProjectsService {
 
   private toIsoWeekday(jsDay: number) {
     return jsDay === 0 ? 7 : jsDay;
+  }
+
+  private weekdayFromDate(date: Date) {
+    const mapping: Record<number, string> = {
+      0: 'SUNDAY',
+      1: 'MONDAY',
+      2: 'TUESDAY',
+      3: 'WEDNESDAY',
+      4: 'THURSDAY',
+      5: 'FRIDAY',
+      6: 'SATURDAY',
+    };
+
+    return mapping[date.getUTCDay()] ?? 'MONDAY';
+  }
+
+  private normalizeSprintDeliverableDeadline(deliverable: any, sprint?: any) {
+    if (!sprint || deliverable?.dueDateSource !== 'AUTO') {
+      return deliverable.deadline;
+    }
+
+    const config = sprint.configSnapshot ?? {};
+    const dueTime = config.defaultDueTime || '23:59';
+
+    if (deliverable.templateKind === 'INITIAL_SLIDES' || deliverable.templateKind === 'INITIAL_WHITEPAPER') {
+      return this.buildDeadlineForWeek(
+        sprint.weekStartDate,
+        config.initialSlideDueDay || 'TUESDAY',
+        dueTime,
+      );
+    }
+
+    if (deliverable.templateKind === 'FINAL_SLIDES' || deliverable.templateKind === 'FINAL_WHITEPAPER') {
+      return this.buildDeadlineForWeek(
+        sprint.weekStartDate,
+        config.finalSlideDueDay || 'THURSDAY',
+        dueTime,
+      );
+    }
+
+    return this.chicagoDateTimeToUtc(
+      sprint.weekEndDate.getUTCFullYear(),
+      sprint.weekEndDate.getUTCMonth() + 1,
+      sprint.weekEndDate.getUTCDate(),
+      Number.parseInt(dueTime.split(':')[0] ?? '23', 10),
+      Number.parseInt(dueTime.split(':')[1] ?? '59', 10),
+    );
+  }
+
+  private getChicagoDateParts(date: Date) {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: CHICAGO_TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(date);
+    const read = (type: Intl.DateTimeFormatPartTypes) =>
+      Number.parseInt(parts.find((part) => part.type === type)?.value ?? '0', 10);
+
+    return {
+      year: read('year'),
+      month: read('month'),
+      day: read('day'),
+      hour: read('hour'),
+      minute: read('minute'),
+      second: read('second'),
+    };
+  }
+
+  private chicagoDateTimeToUtc(
+    year: number,
+    month: number,
+    day: number,
+    hour: number,
+    minute: number,
+  ) {
+    let guess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0, 0));
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const chicago = this.getChicagoDateParts(guess);
+      const desiredMs = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
+      const actualMs = Date.UTC(
+        chicago.year,
+        chicago.month - 1,
+        chicago.day,
+        chicago.hour,
+        chicago.minute,
+        chicago.second,
+        0,
+      );
+      const diffMs = desiredMs - actualMs;
+      if (diffMs === 0) break;
+      guess = new Date(guess.getTime() + diffMs);
+    }
+
+    return guess;
   }
 }

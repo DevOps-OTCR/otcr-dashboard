@@ -250,7 +250,8 @@ export const projectsAPI = {
   getSprints: (projectId: string) => api.get(`/projects/${projectId}/sprints`),
   getSprintById: (projectId: string, sprintId: string) =>
     api.get(`/projects/${projectId}/sprints/${sprintId}`),
-  generateNextSprint: (projectId: string) => api.post(`/projects/${projectId}/sprints/generate-next`),
+  generateNextSprint: (projectId: string, data?: { startDate?: string }) =>
+    api.post(`/projects/${projectId}/sprints/generate-next`, data ?? {}),
   updateSprintStatus: (projectId: string, sprintId: string, status: 'DRAFT' | 'RELEASED') =>
     api.patch(`/projects/${projectId}/sprints/${sprintId}/status`, { status }),
   deleteSprint: (projectId: string, sprintId: string) =>

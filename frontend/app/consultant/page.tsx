@@ -143,7 +143,9 @@ export default function ConsultantDashboard() {
 
                 const isSlideDeliverable =
                   deliverable.templateKind === 'INITIAL_SLIDES' ||
-                  deliverable.templateKind === 'FINAL_SLIDES';
+                  deliverable.templateKind === 'FINAL_SLIDES' ||
+                  deliverable.templateKind === 'INITIAL_WHITEPAPER' ||
+                  deliverable.templateKind === 'FINAL_WHITEPAPER';
 
                 if (!isAssignedToCurrentUser && !isSlideDeliverable) return;
 
