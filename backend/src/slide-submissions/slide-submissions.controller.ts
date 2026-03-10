@@ -59,7 +59,7 @@ export class SlideSubmissionsController {
       user.role !== 'PM' &&
       user.role !== 'ADMIN'
     ) {
-      throw new ForbiddenException('Only consultants, LCs, PMs, or admins can submit slides');
+      throw new ForbiddenException('Only consultants, LCs, PMs, or admins can submit slides or whitepapers');
     }
 
     const deliverableId = body.deliverableId || body.taskId;

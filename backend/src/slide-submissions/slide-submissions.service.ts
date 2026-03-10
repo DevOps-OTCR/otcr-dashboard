@@ -11,6 +11,11 @@ export class SlideSubmissionsService {
     private notificationsService: NotificationsService,
   ) {}
 
+  private getDisplayName(firstName?: string | null, lastName?: string | null, email?: string | null): string {
+    const fullName = `${firstName || ''} ${lastName || ''}`.trim();
+    return fullName || 'Team member';
+  }
+
   async submitSlide(
     userId: string,
     deliverableId: string,
@@ -140,9 +145,11 @@ export class SlideSubmissionsService {
       select: { userId: true },
     });
 
-    const submitterName =
-      `${submission.submitter.firstName || ''} ${submission.submitter.lastName || ''}`.trim() ||
-      submission.submitter.email;
+    const submitterName = this.getDisplayName(
+      submission.submitter.firstName,
+      submission.submitter.lastName,
+      submission.submitter.email,
+    );
 
     const reviewerIds = new Set<string>([projectPmId, ...projectLcs.map((member) => member.userId)]);
 
@@ -154,7 +161,8 @@ export class SlideSubmissionsService {
         data: {
           projectName,
           deliverableTitle: submission.deliverable.title,
-          feedback: `${submitterName} made a new submission to ${submission.deliverable.title}. Link: ${submission.fileUrl}`,
+          feedback: `${submitterName} made a new submission to ${submission.deliverable.title}.`,
+          targetPath: '/slides',
         },
       });
     }
@@ -298,8 +306,11 @@ export class SlideSubmissionsService {
       },
     });
 
-    const commenterName =
-      `${commenter.firstName || ''} ${commenter.lastName || ''}`.trim() || commenter.email;
+    const commenterName = this.getDisplayName(
+      commenter.firstName,
+      commenter.lastName,
+      commenter.email,
+    );
 
     await this.notifyAssignmentAssignees(submission.deliverable.id, {
       deliverableTitle: submission.deliverable.title,
@@ -371,10 +382,11 @@ export class SlideSubmissionsService {
 
     await this.markLinkedSlideTaskApproved(updated.deliverable.id);
 
-    const reviewerName =
-      `${reviewer.firstName || ''} ${reviewer.lastName || ''}`.trim() ||
-      reviewer.email ||
-      reviewerRole;
+    const reviewerName = this.getDisplayName(
+      reviewer.firstName,
+      reviewer.lastName,
+      reviewer.email,
+    );
 
     await this.notifyAssignmentAssignees(updated.deliverable.id, {
       deliverableTitle: updated.deliverable.title,
@@ -451,10 +463,11 @@ export class SlideSubmissionsService {
 
     await this.markLinkedSlideTaskRevisionRequested(submission.deliverable.id);
 
-    const reviewerName =
-      `${reviewer.firstName || ''} ${reviewer.lastName || ''}`.trim() ||
-      reviewer.email ||
-      reviewerRole;
+    const reviewerName = this.getDisplayName(
+      reviewer.firstName,
+      reviewer.lastName,
+      reviewer.email,
+    );
     const feedbackSuffix = normalizedFeedback ? ` ${normalizedFeedback}` : '';
 
     await this.notifyAssignmentAssignees(submission.deliverable.id, {
@@ -486,6 +499,7 @@ export class SlideSubmissionsService {
       data: {
         deliverableTitle: payload.deliverableTitle,
         feedback: payload.feedback || undefined,
+        targetPath: '/slides',
       },
     });
   }
@@ -578,6 +592,7 @@ export class SlideSubmissionsService {
         data: {
           deliverableTitle: payload.deliverableTitle,
           feedback: payload.feedback,
+          targetPath: '/slides',
         },
       });
     }

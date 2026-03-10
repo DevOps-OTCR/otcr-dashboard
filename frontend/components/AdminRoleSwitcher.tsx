@@ -2,10 +2,11 @@
 
 import { useAuth } from './AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
-import { getActualUserRole, getDevRoleOverride, setDevRoleOverride, getDefaultDashboardPath, ROLE_FULL_LABELS, isValidAppRole, type AppRole } from '@/lib/permissions';
+import { getDevRoleOverride, setDevRoleOverride, getDefaultDashboardPath, ROLE_FULL_LABELS, isValidAppRole, type AppRole } from '@/lib/permissions';
 import { ChevronDown } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { cn } from '@/lib/utils';
+import { api } from '@/lib/api';
 
 /** Inline dropdown for admin to switch "View as" role. Renders nothing if user is not admin. Place next to role name in blue. */
 export function AdminRoleSwitcher({ className }: { className?: string }) {
@@ -13,6 +14,7 @@ export function AdminRoleSwitcher({ className }: { className?: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [actualRole, setActualRole] = useState<AppRole | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -23,13 +25,33 @@ export function AdminRoleSwitcher({ className }: { className?: string }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  if (!session.isLoggedIn) return null;
-  const sessionUser = session.user as { email?: string | null; role?: string };
-  // Prefer admin based on email whitelist for showing the switcher; otherwise fall back to DB role
-  const emailRole = getActualUserRole(sessionUser.email);
-  const actualRole: AppRole =
-    (sessionUser.role && isValidAppRole(sessionUser.role)) ? sessionUser.role : emailRole;
-  const isAdmin = emailRole === 'ADMIN' || actualRole === 'ADMIN';
+  useEffect(() => {
+    const syncRole = async () => {
+      if (!session.isLoggedIn || !session.user?.email) {
+        setActualRole(null);
+        return;
+      }
+      try {
+        const token = await session.getToken();
+        const authValue = token || session.user.email;
+        const response = await api.get('/auth/role', {
+          headers: { Authorization: `Bearer ${authValue}` },
+        });
+        const roleString = response?.data?.role;
+        if (typeof roleString === 'string' && isValidAppRole(roleString)) {
+          setActualRole(roleString);
+          return;
+        }
+        setActualRole('CONSULTANT');
+      } catch {
+        setActualRole('CONSULTANT');
+      }
+    };
+    void syncRole();
+  }, [session.isLoggedIn, session.user?.email, session.getToken]);
+
+  if (!session.isLoggedIn || !actualRole) return null;
+  const isAdmin = actualRole === 'ADMIN';
   if (!isAdmin) return null;
 
   const effectiveRole: AppRole = getDevRoleOverride() ?? actualRole;
@@ -54,7 +76,7 @@ export function AdminRoleSwitcher({ className }: { className?: string }) {
       </button>
       {open && (
         <div className="absolute left-0 top-full mt-1 z-[100] min-w-[180px] rounded-lg border border-[var(--border)] bg-[var(--card)] shadow-lg py-1">
-          {(['PM', 'LC', 'PARTNER', 'EXECUTIVE', 'CONSULTANT'] as const).map((role) => (
+          {(['ADMIN', 'PM', 'LC', 'PARTNER', 'EXECUTIVE', 'CONSULTANT'] as const).map((role) => (
             <button
               key={role}
               type="button"

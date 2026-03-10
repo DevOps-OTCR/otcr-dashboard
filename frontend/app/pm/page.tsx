@@ -16,44 +16,6 @@ import { useAuth } from '@/components/AuthContext';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { useRouter } from 'next/navigation';
 
-type NotificationType = 'upload' | 'comment' | 'revision_request' | 'doc_updated';
-interface Notification {
-  id: string;
-  type: NotificationType;
-  title: string;
-  message: string;
-  context?: string;
-  at: Date;
-  read: boolean;
-}
-
-const mockNotifications: Notification[] = [
-  { id: '1', type: 'upload', title: 'New upload to task', message: 'Market analysis draft v2 was uploaded to "Complete market analysis section".', context: 'Market Research', at: new Date(Date.now() - 1000 * 60 * 15), read: false },
-  { id: '2', type: 'comment', title: 'New comment', message: 'Alice Johnson commented on "Kickoff deck" in Initial Slides.', context: 'Market Research', at: new Date(Date.now() - 1000 * 60 * 45), read: false },
-  { id: '3', type: 'comment', title: 'New comment', message: 'Bob Smith replied to your comment on "Final client deck".', context: 'Financial Analysis', at: new Date(Date.now() - 1000 * 60 * 120), read: true },
-  { id: '4', type: 'doc_updated', title: 'Workstream doc updated', message: 'Financial Analysis – Draft was edited by Carol Davis.', context: 'Financial Analysis', at: new Date(Date.now() - 1000 * 60 * 180), read: true },
-  { id: '5', type: 'upload', title: 'New upload to task', message: 'Initial slides pack was uploaded to "Update client presentation slides".', context: 'Client Presentation', at: new Date(Date.now() - 1000 * 60 * 240), read: true },
-];
-
-// Mock data for PM-aligned features
-const mockWorkstreamDocs = [
-  { id: '1', name: 'Market Research – Draft', workstream: 'Market Research', status: 'draft' as const },
-  { id: '2', name: 'Financial Analysis – Released', workstream: 'Financial Analysis', status: 'released' as const },
-];
-const mockInitialSlides = [{ id: '1', title: 'Kickoff deck', workstream: 'Market Research', commentCount: 2 }];
-const mockFinalSlides = [{ id: '1', title: 'Final client deck', workstream: 'Market Research', commentCount: 1 }];
-const mockCallNotes = [{ id: '1', title: 'Q4 planning call', date: new Date(), author: 'LC' }];
-
-function formatNotificationTime(at: Date, now: number): string {
-  const mins = Math.floor((now - at.getTime()) / 60000);
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
 export default function PMDashboard() {
   const session = useAuth();
   const router = useRouter();

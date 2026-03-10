@@ -83,14 +83,14 @@ function formatAssignees(assignees?: DeliverableItem['assignees']) {
   return assignees
     .map((assignee) => {
       const fullName = [assignee.firstName, assignee.lastName].filter(Boolean).join(' ').trim();
-      return fullName || assignee.email || 'Assigned';
+      return fullName || 'Assigned';
     })
     .join(', ');
 }
 
 function formatPerson(person: TeamMemberOption) {
   const fullName = [person.firstName, person.lastName].filter(Boolean).join(' ').trim();
-  return fullName || person.email || 'Team member';
+  return fullName || 'Team member';
 }
 
 function formatSubmitter(
@@ -98,7 +98,7 @@ function formatSubmitter(
 ) {
   if (!submitter) return 'Unknown submitter';
   const fullName = [submitter.firstName, submitter.lastName].filter(Boolean).join(' ').trim();
-  return fullName || submitter.email || 'Unknown submitter';
+  return fullName || 'Unknown submitter';
 }
 
 export default function DeliverablesPage() {

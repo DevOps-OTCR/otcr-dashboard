@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
   Activity,
   FileText,
   Presentation,
   MessageSquare,
+  MessageSquareWarning,
   Users,
   Bell,
   CheckCircle2,
@@ -43,6 +45,7 @@ export type AppNavPath =
   | '/teams'
   | '/slides'
   | '/client-notes'
+  | '/feedback'
   | '/settings/slack';
 
 export interface AppNavbarProps {
@@ -53,8 +56,10 @@ export interface AppNavbarProps {
 
 type NavbarNotification = {
   id: string;
+  type: string;
   title: string;
   message: string;
+  metadata?: Record<string, unknown> | null;
   at: Date;
   read: boolean;
 };
@@ -92,18 +97,9 @@ function formatNotificationTime(at: Date): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-function getConnectedApiLabel(): string {
-  const raw = (process.env.NEXT_PUBLIC_API_URL || '').trim();
-  if (!raw) return 'unset';
-  try {
-    return new URL(raw).host;
-  } catch {
-    return raw;
-  }
-}
-
 export function AppNavbar({ role, currentPath = '/dashboard', unreadNotificationCount = 0 }: AppNavbarProps) {
   const { logout, user, getToken, isLoggedIn } = useAuth();
+  const router = useRouter();
   const overviewPath = getDefaultDashboardPath(role);
   const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || '').replace(/\/+$/, '');
   const withBasePath = (path: string) => `${basePath}${path}`;
@@ -126,8 +122,10 @@ export function AppNavbar({ role, currentPath = '/dashboard', unreadNotification
       const mapped = items
         .map((item: any) => ({
           id: String(item.id),
+          type: String(item.type ?? ''),
           title: String(item.title ?? 'Notification'),
           message: String(item.message ?? ''),
+          metadata: item?.metadata && typeof item.metadata === 'object' ? item.metadata : null,
           at: item.createdAt ? new Date(item.createdAt) : new Date(),
           read: readIds.has(String(item.id)),
         }))
@@ -183,6 +181,25 @@ export function AppNavbar({ role, currentPath = '/dashboard', unreadNotification
   );
   const effectiveUnreadCount = Math.max(unreadNotificationCount, localUnreadCount);
 
+  const resolveNotificationTarget = useCallback((notification: NavbarNotification): string => {
+    const metadataPath = notification.metadata?.targetPath;
+    if (typeof metadataPath === 'string' && metadataPath.startsWith('/')) {
+      return metadataPath;
+    }
+
+    const haystack = `${notification.title} ${notification.message}`.toLowerCase();
+    if (notification.type.includes('SUBMISSION') || haystack.includes('submission') || haystack.includes('slide')) {
+      return '/slides';
+    }
+    if (notification.type.startsWith('EXTENSION') || haystack.includes('extension')) {
+      return '/deliverables';
+    }
+    if (haystack.includes('client note') || haystack.includes('call note')) {
+      return '/client-notes';
+    }
+    return overviewPath;
+  }, [overviewPath]);
+
   const navItems: NavItem[] = [
     {
       id: 'overview',
@@ -234,6 +251,13 @@ export function AppNavbar({ role, currentPath = '/dashboard', unreadNotification
       href: '/teams',
       canAccess: (r) => canShowNavItem('team', r),
     },
+    {
+      id: 'feedback',
+      label: 'Feedback Form',
+      icon: MessageSquareWarning,
+      href: '/feedback',
+      canAccess: (r) => r === 'PM' || r === 'ADMIN',
+    },
   ];
 
   return (
@@ -254,11 +278,6 @@ export function AppNavbar({ role, currentPath = '/dashboard', unreadNotification
             <Badge variant="info" size="sm" className="hidden sm:inline-flex">
               {ROLE_FULL_LABELS[role] ?? role}
             </Badge>
-            {role === 'ADMIN' && (
-              <Badge variant="default" size="sm" className="hidden md:inline-flex">
-                API: {getConnectedApiLabel()}
-              </Badge>
-            )}
             <AdminRoleSwitcher className="shrink-0" />
           </div>
           <div className="flex items-center gap-2">
@@ -303,6 +322,8 @@ export function AppNavbar({ role, currentPath = '/dashboard', unreadNotification
                                 entry.id === n.id ? { ...entry, read: true } : entry,
                               ),
                             );
+                            setNotificationsOpen(false);
+                            router.push(resolveNotificationTarget(n));
                           }}
                           className={cn(
                             'w-full text-left p-3 rounded-xl border transition-colors',

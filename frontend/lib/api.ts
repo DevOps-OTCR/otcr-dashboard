@@ -86,6 +86,8 @@ export const authAPI = {
   getAllowedEmails: () => api.get('/auth/allowed-emails'),
   addAllowedEmail: (data: { email: string; role?: 'ADMIN' | 'PM' | 'LC' | 'PARTNER' | 'EXECUTIVE' | 'CONSULTANT' }) =>
     api.post('/auth/allowed-emails', data),
+  syncUser: (data: { googleId: string; email: string; name?: string }) =>
+    api.post('/auth/sync-user', data),
 };
 
 export const onboardingAPI = {
@@ -106,6 +108,19 @@ export const onboardingAPI = {
     api.patch(`/onboarding/requests/${id}/approve`, notes ? { notes } : {}),
   rejectRequest: (id: string, notes?: string) =>
     api.patch(`/onboarding/requests/${id}/reject`, notes ? { notes } : {}),
+};
+
+export const feedbackAPI = {
+  createSubmission: (data: { problem: string; description: string }) =>
+    api.post('/feedback/submissions', data),
+  listSubmissions: () =>
+    api.get('/feedback/submissions', {
+      params: { _ts: Date.now() },
+      headers: {
+        'Cache-Control': 'no-cache, no-store, max-age=0',
+        Pragma: 'no-cache',
+      },
+    }),
 };
 
 export const notificationsAPI = {

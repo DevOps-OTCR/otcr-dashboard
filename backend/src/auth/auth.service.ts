@@ -4,12 +4,51 @@ import { PrismaService } from '../prisma/prisma.service';
 @Injectable()
 export class AuthService {
   constructor(private prisma: PrismaService) {}
+  private didBackfillOnboardingNames = false;
+
+  private splitNameParts(name?: string | null): { firstName: string | null; lastName: string | null } {
+    const normalized = (name || '').trim().replace(/\s+/g, ' ');
+    if (!normalized) return { firstName: null, lastName: null };
+    const parts = normalized.split(' ');
+    return {
+      firstName: parts[0] || null,
+      lastName: parts.length > 1 ? parts.slice(1).join(' ') : null,
+    };
+  }
+
+  private async ensureOnboardingNamesBackfilled(): Promise<void> {
+    if (this.didBackfillOnboardingNames) return;
+
+    const approvedRequests = await (this.prisma as any).onboardingRequest.findMany({
+      where: { status: 'APPROVED' as any },
+      select: { email: true, name: true },
+    });
+
+    for (const request of approvedRequests) {
+      const parsed = this.splitNameParts(request?.name);
+      if (!parsed.firstName && !parsed.lastName) continue;
+
+      await this.prisma.user.updateMany({
+        where: {
+          email: request.email,
+          OR: [{ firstName: null }, { lastName: null }],
+        },
+        data: {
+          firstName: parsed.firstName,
+          lastName: parsed.lastName,
+        },
+      });
+    }
+
+    this.didBackfillOnboardingNames = true;
+  }
 
   async getUserByEmail(email: string) {
     if (!email || typeof email !== 'string') {
       throw new UnauthorizedException('Invalid user email');
     }
     const normalizedEmail = email.toLowerCase().trim();
+    await this.ensureOnboardingNamesBackfilled();
 
     // Try to find an existing user by normalized email
     let user = await this.prisma.user.findUnique({
@@ -24,9 +63,16 @@ export class AuthService {
     // user record so role-based permissions (PM/LC/Admin) work for API calls
     // like team/project creation.
     if (!user) {
+      const onboarding = await (this.prisma as any).onboardingRequest.findUnique({
+        where: { email: normalizedEmail },
+        select: { name: true },
+      });
+      const parsed = this.splitNameParts(onboarding?.name ?? null);
       user = await this.prisma.user.create({
         data: {
           email: normalizedEmail,
+          firstName: parsed.firstName,
+          lastName: parsed.lastName,
           role: resolvedRole as any,
         },
       });
@@ -37,6 +83,23 @@ export class AuthService {
         where: { id: user.id },
         data: { role: resolvedRole as any },
       });
+    }
+
+    if (!user.firstName && !user.lastName) {
+      const onboarding = await (this.prisma as any).onboardingRequest.findUnique({
+        where: { email: normalizedEmail },
+        select: { name: true },
+      });
+      const parsed = this.splitNameParts(onboarding?.name ?? null);
+      if (parsed.firstName || parsed.lastName) {
+        user = await this.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            firstName: parsed.firstName,
+            lastName: parsed.lastName,
+          },
+        });
+      }
     }
 
     return user;
@@ -159,12 +222,13 @@ export class AuthService {
     email: string,
     requestedRole: 'ADMIN' | 'PM' | 'LC' | 'PARTNER' | 'EXECUTIVE' | 'CONSULTANT',
   ) {
+    const normalizedName = name.trim().replace(/\s+/g, ' ');
     const normalizedEmail = email.toLowerCase().trim();
 
     return (this.prisma as any).onboardingRequest.upsert({
       where: { email: normalizedEmail },
       update: {
-        name: name.trim(),
+        name: normalizedName,
         requestedRole: requestedRole as any,
         status: 'PENDING' as any,
         reviewedById: null,
@@ -172,7 +236,7 @@ export class AuthService {
         reviewerNotes: null,
       },
       create: {
-        name: name.trim(),
+        name: normalizedName,
         email: normalizedEmail,
         requestedRole: requestedRole as any,
         status: 'PENDING' as any,
@@ -214,6 +278,16 @@ export class AuthService {
     }
 
     await this.addAllowedEmail(request.email, request.requestedRole as any);
+    const parsed = this.splitNameParts(request.name);
+    if (parsed.firstName || parsed.lastName) {
+      await this.prisma.user.updateMany({
+        where: { email: request.email },
+        data: {
+          firstName: parsed.firstName,
+          lastName: parsed.lastName,
+        },
+      });
+    }
 
     return (this.prisma as any).onboardingRequest.update({
       where: { id: requestId },

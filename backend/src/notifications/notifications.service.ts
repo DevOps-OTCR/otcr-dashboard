@@ -19,6 +19,9 @@ export interface NotificationJob {
     deadline?: Date;
     hoursRemaining?: number;
     reason?: string;
+    taskId?: string;
+    customTitle?: string;
+    targetPath?: string;
     requestedDate?: Date;
     feedback?: string;
     newDeadline?: Date;

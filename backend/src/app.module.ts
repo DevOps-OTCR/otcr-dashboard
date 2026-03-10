@@ -10,6 +10,7 @@ import { DeliverablesService } from './deliverables/deliverables.service';
 import { DeliverablesModule } from './deliverables/deliverables.module';
 import { TasksModule } from './tasks/tasks.module';
 import { SlideSubmissionsModule } from './slide-submissions/slide.submissions.module';
+import { FeedbackModule } from './feedback/feedback.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { SlideSubmissionsModule } from './slide-submissions/slide.submissions.mo
     DeliverablesModule,
     TasksModule,
     SlideSubmissionsModule,
+    FeedbackModule,
   ],
   controllers: [DeliverablesController],
   providers: [DeliverablesService],

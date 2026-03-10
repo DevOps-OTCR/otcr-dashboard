@@ -24,6 +24,16 @@ export class ProjectsService {
     private notificationsService: NotificationsService,
   ) {}
 
+  private splitNameParts(name?: string | null): { firstName: string | null; lastName: string | null } {
+    const normalized = (name || '').trim().replace(/\s+/g, ' ');
+    if (!normalized) return { firstName: null, lastName: null };
+    const parts = normalized.split(' ');
+    return {
+      firstName: parts[0] || null,
+      lastName: parts.length > 1 ? parts.slice(1).join(' ') : null,
+    };
+  }
+
   async create(
     data: {
       name: string;
@@ -88,9 +98,21 @@ export class ProjectsService {
           );
         }
 
+        const onboardingEntries = await (this.prisma as any).onboardingRequest.findMany({
+          where: { email: { in: missingEmails } },
+          select: { email: true, name: true },
+        });
+        const onboardingNameByEmail = new Map<string, string>(
+          onboardingEntries.map((entry: { email: string; name?: string | null }) => [
+            String(entry.email).toLowerCase(),
+            entry.name || '',
+          ]),
+        );
+
         await this.prisma.user.createMany({
           data: missingEmails.map((email) => ({
             email,
+            ...this.splitNameParts(onboardingNameByEmail.get(email) || null),
             role: (allowedByEmail.get(email)?.role ?? 'CONSULTANT') as any,
           })),
           skipDuplicates: true,
@@ -535,8 +557,27 @@ export class ProjectsService {
       throw new BadRequestException('User not found');
     }
 
-    // Check if already a member
-    const existingMember = await this.prisma.projectMember.findFirst({
+    if (!user.firstName && !user.lastName && user.email) {
+      const onboarding = await (this.prisma as any).onboardingRequest.findUnique({
+        where: { email: user.email.toLowerCase() },
+        select: { name: true },
+      });
+      const parsed = this.splitNameParts(onboarding?.name ?? null);
+      if (parsed.firstName || parsed.lastName) {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            firstName: parsed.firstName,
+            lastName: parsed.lastName,
+          },
+        });
+        user.firstName = parsed.firstName;
+        user.lastName = parsed.lastName;
+      }
+    }
+
+    // Check if already an active member
+    const existingActiveMember = await this.prisma.projectMember.findFirst({
       where: {
         projectId,
         userId: user.id,
@@ -544,8 +585,39 @@ export class ProjectsService {
       },
     });
 
-    if (existingMember) {
+    if (existingActiveMember) {
       throw new BadRequestException('User is already a member');
+    }
+
+    // If the user was previously removed, reactivate the same membership row
+    // to avoid unique(projectId, userId) violations.
+    const existingAnyMember = await this.prisma.projectMember.findFirst({
+      where: {
+        projectId,
+        userId: user.id,
+      },
+      orderBy: { joinedAt: 'desc' },
+    });
+
+    if (existingAnyMember) {
+      return this.prisma.projectMember.update({
+        where: { id: existingAnyMember.id },
+        data: {
+          leftAt: null,
+          joinedAt: new Date(),
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              role: true,
+            },
+          },
+        },
+      });
     }
 
     return this.prisma.projectMember.create({

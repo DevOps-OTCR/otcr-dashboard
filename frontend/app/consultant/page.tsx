@@ -243,7 +243,7 @@ export default function ConsultantDashboard() {
                 <div>
                   <CardTitle>Assignments</CardTitle>
                   <CardDescription>
-                    Tasks assigned to you, including Initial and Final Slides for the selected week.
+                    Tasks assigned to you, including slide and whitepaper submissions for the selected week.
                   </CardDescription>
                 </div>
                 <Badge variant="info" size="sm">
