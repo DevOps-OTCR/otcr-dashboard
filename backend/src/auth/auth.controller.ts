@@ -88,8 +88,8 @@ export class AuthController {
     @Body() body: { email?: string; role?: 'ADMIN' | 'PM' | 'LC' | 'PARTNER' | 'EXECUTIVE' | 'CONSULTANT' },
     @GetUser() user: any,
   ) {
-    if (!['ADMIN', 'EXECUTIVE'].includes(user.role)) {
-      throw new ForbiddenException('Only Admins and Executives can grant dashboard access');
+    if (!['ADMIN', 'EXECUTIVE', 'PM'].includes(user.role)) {
+      throw new ForbiddenException('Only Admins, Executives, and PMs can grant dashboard access');
     }
 
     const normalizedEmail = body?.email?.toLowerCase().trim();

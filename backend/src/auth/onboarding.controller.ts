@@ -52,8 +52,8 @@ export class OnboardingController {
   @Get('requests')
   @UseGuards(AuthGuard)
   async listRequests(@GetUser() user: any) {
-    if (!['ADMIN', 'PARTNER', 'EXECUTIVE'].includes(user.role)) {
-      throw new ForbiddenException('Only Partner, Executive, or Admin can review onboarding requests');
+    if (!['ADMIN', 'PARTNER', 'EXECUTIVE', 'PM'].includes(user.role)) {
+      throw new ForbiddenException('Only Partner, Executive, PM, or Admin can review onboarding requests');
     }
 
     const requests = await this.authService.listOnboardingRequests();
@@ -67,8 +67,8 @@ export class OnboardingController {
     @Body() body: { notes?: string },
     @GetUser() user: any,
   ) {
-    if (!['ADMIN', 'PARTNER', 'EXECUTIVE'].includes(user.role)) {
-      throw new ForbiddenException('Only Partner, Executive, or Admin can approve onboarding requests');
+    if (!['ADMIN', 'PARTNER', 'EXECUTIVE', 'PM'].includes(user.role)) {
+      throw new ForbiddenException('Only Partner, Executive, PM, or Admin can approve onboarding requests');
     }
 
     const request = await this.authService.approveOnboardingRequest(id, user.id, body?.notes);
@@ -82,8 +82,8 @@ export class OnboardingController {
     @Body() body: { notes?: string },
     @GetUser() user: any,
   ) {
-    if (!['ADMIN', 'PARTNER', 'EXECUTIVE'].includes(user.role)) {
-      throw new ForbiddenException('Only Partner, Executive, or Admin can reject onboarding requests');
+    if (!['ADMIN', 'PARTNER', 'EXECUTIVE', 'PM'].includes(user.role)) {
+      throw new ForbiddenException('Only Partner, Executive, PM, or Admin can reject onboarding requests');
     }
 
     const request = await this.authService.rejectOnboardingRequest(id, user.id, body?.notes);

@@ -151,7 +151,11 @@ export class ProjectsController {
 
   @Post(':id/sprints/generate-next')
   @Roles('ADMIN', 'PM')
-  async generateNextSprint(@Param('id') id: string, @GetUser() user: any) {
+  async generateNextSprint(
+    @Param('id') id: string,
+    @Body() body: { startDate?: string },
+    @GetUser() user: any,
+  ) {
     const project = await this.projectsService.findOne(id);
 
     if (!project) {
@@ -163,7 +167,7 @@ export class ProjectsController {
     }
 
     try {
-      return await this.projectsService.generateNextSprint(id);
+      return await this.projectsService.generateNextSprint(id, body?.startDate);
     } catch (error: any) {
       if (error instanceof BadRequestException) {
         throw error;

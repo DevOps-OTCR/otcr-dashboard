@@ -17,6 +17,11 @@ export class NotificationsProcessor implements OnModuleInit {
     private configService: ConfigService,
   ) {}
 
+  private getDisplayName(firstName?: string | null, lastName?: string | null, email?: string | null): string {
+    const fullName = `${firstName || ''} ${lastName || ''}`.trim();
+    return fullName || 'Team member';
+  }
+
   onModuleInit() {
     const connection = createRedisConnection(this.configService);
 
@@ -65,7 +70,7 @@ export class NotificationsProcessor implements OnModuleInit {
       throw new Error(`User ${userId} not found`);
     }
 
-    const userName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email;
+    const userName = this.getDisplayName(user.firstName, user.lastName, user.email);
 
     let slackSuccess = true;
 

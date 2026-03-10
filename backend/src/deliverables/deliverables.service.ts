@@ -10,6 +10,11 @@ export class DeliverablesService {
     private notificationsService: NotificationsService,
   ) {}
 
+  private getDisplayName(firstName?: string | null, lastName?: string | null, email?: string | null): string {
+    const fullName = `${firstName || ''} ${lastName || ''}`.trim();
+    return fullName || 'Team member';
+  }
+
   async create(
     projectId: string,
     data: {
@@ -18,51 +23,81 @@ export class DeliverablesService {
       description?: string;
       type: string;
       deadline: string;
+      templateKind?: string;
+      assignProjectMembers?: boolean;
     },
     actorUserId?: string,
   ) {
-    const created = await this.prisma.deliverable.create({
-      data: {
-        projectId,
-        ...(data.sprintId ? { sprintId: data.sprintId } : {}),
-        title: data.title,
-        description: data.description,
-        type: data.type as any,
-        deadline: new Date(data.deadline),
-        status: 'PENDING',
-      },
-      include: {
-        project: {
-          select: {
-            id: true,
-            name: true,
-            pm: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
+    const created = await this.prisma.$transaction(async (tx) => {
+      const deliverable = await tx.deliverable.create({
+        data: {
+          projectId,
+          ...(data.sprintId ? { sprintId: data.sprintId } : {}),
+          title: data.title,
+          description: data.description,
+          type: data.type as any,
+          templateKind: (data.templateKind as any) || 'CUSTOM',
+          deadline: new Date(data.deadline),
+          status: 'PENDING',
+        },
+        include: {
+          project: {
+            select: {
+              id: true,
+              name: true,
+              pm: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                },
               },
             },
           },
-        },
-        sprint: true,
-        assignee: {
-          select: {
-            id: true,
-            email: true,
-            firstName: true,
-            lastName: true,
+          sprint: true,
+          assignee: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+          _count: {
+            select: {
+              submissions: true,
+              extensions: true,
+            },
           },
         },
-        _count: {
-          select: {
-            submissions: true,
-            extensions: true,
+      } as any);
+
+      if (data.assignProjectMembers) {
+        const projectMembers = await tx.projectMember.findMany({
+          where: {
+            projectId,
+            leftAt: null,
           },
-        },
-      },
-    } as any);
+          select: {
+            userId: true,
+          },
+        });
+        const memberUserIds = [...new Set(projectMembers.map((member) => member.userId))];
+
+        if (memberUserIds.length > 0) {
+          await tx.deliverableAssignment.createMany({
+            data: memberUserIds.map((userId) => ({
+              deliverableId: deliverable.id,
+              userId,
+            })),
+            skipDuplicates: true,
+          });
+        }
+      }
+
+      return deliverable;
+    });
 
     if (data.type === 'REPORT' && actorUserId) {
       await this.notifyClientNoteCreated(created.id, actorUserId);
@@ -452,7 +487,7 @@ export class DeliverablesService {
       },
     });
 
-    await this.notifyProjectReviewersOnSubmission(id, userId, trimmedLink);
+    await this.notifyProjectReviewersOnSubmission(id, userId);
 
     return submission;
   }
@@ -460,7 +495,6 @@ export class DeliverablesService {
   private async notifyProjectReviewersOnSubmission(
     deliverableId: string,
     submitterId: string,
-    link: string,
   ): Promise<void> {
     const deliverable = await this.prisma.deliverable.findUnique({
       where: { id: deliverableId },
@@ -492,10 +526,11 @@ export class DeliverablesService {
       },
     });
 
-    const submitterName =
-      `${submitter?.firstName || ''} ${submitter?.lastName || ''}`.trim() ||
-      submitter?.email ||
-      'A consultant';
+    const submitterName = this.getDisplayName(
+      submitter?.firstName,
+      submitter?.lastName,
+      submitter?.email,
+    );
 
     const reviewerIds = new Set<string>();
     if (deliverable.project.pmId) reviewerIds.add(deliverable.project.pmId);
@@ -510,7 +545,8 @@ export class DeliverablesService {
         data: {
           projectName: deliverable.project.name,
           deliverableTitle: deliverable.title,
-          feedback: `${submitterName} made a new submission to ${deliverable.title}. Link: ${link}`,
+          feedback: `${submitterName} made a new submission to ${deliverable.title}.`,
+          targetPath: '/deliverables',
         },
       });
     }
@@ -580,10 +616,11 @@ export class DeliverablesService {
       where: { id: actorUserId },
       select: { firstName: true, lastName: true, email: true },
     });
-    const actorName =
-      `${actor?.firstName || ''} ${actor?.lastName || ''}`.trim() ||
-      actor?.email ||
-      'A team member';
+    const actorName = this.getDisplayName(
+      actor?.firstName,
+      actor?.lastName,
+      actor?.email,
+    );
 
     const linkMatch = deliverable.description?.match(/\[\[CLIENT_NOTE_LINK:([^\]]+)\]\]/i);
     const noteLink = linkMatch?.[1]?.trim();

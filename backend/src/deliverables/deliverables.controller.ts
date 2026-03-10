@@ -31,7 +31,17 @@ export class DeliverablesController {
   @Post()
   @Roles('ADMIN', 'PM', 'LC')
   async create(
-    @Body() body: { projectId: string; sprintId?: string; title: string; description?: string; type: string; deadline: string; },
+    @Body()
+    body: {
+      projectId: string;
+      sprintId?: string;
+      title: string;
+      description?: string;
+      type: string;
+      deadline: string;
+      templateKind?: string;
+      assignProjectMembers?: boolean;
+    },
     @GetUser() user: any,
   ) {
     const project = await this.projectsService.findOne(body.projectId);

@@ -13,6 +13,7 @@ import { deliverablesAPI, projectsAPI, setAuthToken } from '@/lib/api';
 import { getEffectiveRole, type AppRole } from '@/lib/permissions';
 import { parseDashPrefixedDeliverables } from '@/lib/deliverables-parser';
 import { dispatchNotificationsRefresh } from '@/lib/notification-events';
+import { buildSprintDeadlineInChicago } from '@/lib/sprint-deadlines';
 
 type ProjectOption = {
   id: string;
@@ -23,6 +24,7 @@ type DeliverableItem = {
   id: string;
   title: string;
   deadline: string;
+  templateKind?: string;
   completed?: boolean;
   assignees?: Array<{
     id: string;
@@ -38,6 +40,9 @@ type SprintItem = {
   status: string;
   weekStartDate: string;
   weekEndDate: string;
+  configSnapshot?: {
+    defaultDueTime?: string;
+  } | null;
   deliverables?: DeliverableItem[];
 };
 
@@ -46,7 +51,7 @@ function formatAssignees(assignees?: DeliverableItem['assignees']) {
   return assignees
     .map((assignee) => {
       const fullName = [assignee.firstName, assignee.lastName].filter(Boolean).join(' ').trim();
-      return fullName || assignee.email || 'Assigned';
+      return fullName || 'Assigned';
     })
     .join(', ');
 }
@@ -60,6 +65,18 @@ function formatWeekLabel(value: string, fallbackIndex?: number) {
   if (normalized) return normalized;
   if (fallbackIndex != null) return `Week ${fallbackIndex + 1}`;
   return 'Week';
+}
+
+function extractWeekNumber(value: string, fallbackIndex?: number) {
+  const match = formatWeekLabel(value, fallbackIndex).match(/\bWeek\s+(\d+)\b/i);
+  return match?.[1] ?? String((fallbackIndex ?? 0) + 1);
+}
+
+function buildDraftDeliverableDeadline(sprint: SprintItem) {
+  return buildSprintDeadlineInChicago(
+    sprint.weekEndDate,
+    sprint.configSnapshot?.defaultDueTime ?? '23:59',
+  );
 }
 
 export default function WorkstreamPage() {
@@ -76,6 +93,10 @@ export default function WorkstreamPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [draftInput, setDraftInput] = useState('');
+  const [addWhitepaperSubmission, setAddWhitepaperSubmission] = useState(false);
+  const [newSprintStartDate, setNewSprintStartDate] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
 
   const canManage = role === 'PM' || role === 'LC' || role === 'ADMIN';
 
@@ -158,10 +179,34 @@ export default function WorkstreamPage() {
     [sprints, selectedSprintId],
   );
   const parsedDrafts = useMemo(() => parseDashPrefixedDeliverables(draftInput), [draftInput]);
+  const sprintIndex = useMemo(
+    () => sprints.findIndex((item) => item.id === selectedSprintId),
+    [selectedSprintId, sprints],
+  );
+  const whitepaperPreviewItems = useMemo(() => {
+    if (!selectedSprint || !addWhitepaperSubmission) return [];
+
+    const weekNumber = extractWeekNumber(selectedSprint.label, sprintIndex);
+    const existingTemplateKinds = new Set(
+      (selectedSprint.deliverables ?? []).map((deliverable) => deliverable.templateKind),
+    );
+    const items: string[] = [];
+
+    if (!existingTemplateKinds.has('INITIAL_WHITEPAPER')) {
+      items.push(`Initial Whitepaper Submission - Week ${weekNumber}`);
+    }
+    if (!existingTemplateKinds.has('FINAL_WHITEPAPER')) {
+      items.push(`Final Whitepaper Submission - Week ${weekNumber}`);
+    }
+
+    return items;
+  }, [addWhitepaperSubmission, selectedSprint, sprintIndex]);
 
   const handleProjectChange = async (projectId: string) => {
     setSelectedProjectId(projectId);
     setSelectedSprintId('');
+    setAddWhitepaperSubmission(false);
+    setNewSprintStartDate(new Date().toISOString().slice(0, 10));
     if (!projectId) {
       setSprints([]);
       return;
@@ -176,11 +221,13 @@ export default function WorkstreamPage() {
   };
 
   const handleGenerateSprint = async () => {
-    if (!selectedProjectId) return;
+    if (!selectedProjectId || !newSprintStartDate) return;
     setGenerating(true);
     try {
       setLoadError(null);
-      const response = await projectsAPI.generateNextSprint(selectedProjectId);
+      const response = await projectsAPI.generateNextSprint(selectedProjectId, {
+        startDate: newSprintStartDate,
+      });
       const createdSprint = response.data as SprintItem | undefined;
 
       if (createdSprint?.id) {
@@ -224,21 +271,67 @@ export default function WorkstreamPage() {
   };
 
   const handleSaveDrafts = async () => {
-    if (!selectedProjectId || !selectedSprint || parsedDrafts.length === 0) return;
+    if (!selectedProjectId || !selectedSprint) return;
+    if (parsedDrafts.length === 0 && !addWhitepaperSubmission) return;
+
     try {
-      await Promise.all(
-        parsedDrafts.map((item) =>
-          deliverablesAPI.create({
-            projectId: selectedProjectId,
-            sprintId: selectedSprint.id,
-            title: item.title,
-            description: 'Draft deliverable created from the Workstream page.',
-            type: 'OTHER',
-            deadline: selectedSprint.weekEndDate,
-          }),
-        ),
+      const requests = parsedDrafts.map((item) =>
+        deliverablesAPI.create({
+          projectId: selectedProjectId,
+          sprintId: selectedSprint.id,
+          title: item.title,
+          description: 'Draft deliverable created from the Workstream page.',
+          type: 'OTHER',
+          deadline: buildDraftDeliverableDeadline(selectedSprint),
+        }),
       );
+
+      if (addWhitepaperSubmission) {
+        const weekNumber = extractWeekNumber(selectedSprint.label, sprintIndex);
+        const existingTemplateKinds = new Set(
+          (selectedSprint.deliverables ?? []).map((deliverable) => deliverable.templateKind),
+        );
+        const initialSlides = (selectedSprint.deliverables ?? []).find(
+          (deliverable) => deliverable.templateKind === 'INITIAL_SLIDES',
+        );
+        const finalSlides = (selectedSprint.deliverables ?? []).find(
+          (deliverable) => deliverable.templateKind === 'FINAL_SLIDES',
+        );
+
+        if (!existingTemplateKinds.has('INITIAL_WHITEPAPER')) {
+          requests.push(
+            deliverablesAPI.create({
+              projectId: selectedProjectId,
+              sprintId: selectedSprint.id,
+              title: `Initial Whitepaper Submission - Week ${weekNumber}`,
+              description: `Auto-assigned initial whitepaper submission for Week ${weekNumber}.`,
+              type: 'DOCUMENT',
+              templateKind: 'INITIAL_WHITEPAPER',
+              assignProjectMembers: true,
+              deadline: initialSlides?.deadline ?? selectedSprint.weekEndDate,
+            }),
+          );
+        }
+
+        if (!existingTemplateKinds.has('FINAL_WHITEPAPER')) {
+          requests.push(
+            deliverablesAPI.create({
+              projectId: selectedProjectId,
+              sprintId: selectedSprint.id,
+              title: `Final Whitepaper Submission - Week ${weekNumber}`,
+              description: `Auto-assigned final whitepaper submission for Week ${weekNumber}.`,
+              type: 'DOCUMENT',
+              templateKind: 'FINAL_WHITEPAPER',
+              assignProjectMembers: true,
+              deadline: finalSlides?.deadline ?? selectedSprint.weekEndDate,
+            }),
+          );
+        }
+      }
+
+      await Promise.all(requests);
       setDraftInput('');
+      setAddWhitepaperSubmission(false);
       await loadSprints(selectedProjectId);
       setFeedback('Draft deliverables saved');
     } catch (error: any) {
@@ -333,6 +426,20 @@ export default function WorkstreamPage() {
                     ? 'Create draft sprints, add deliverables, and release a week when it is ready.'
                     : 'Draft weeks are visible here, but work stays locked until released.'}
                 </span>
+                {canManage && (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--foreground)]/55">
+                      Due Date Week
+                    </span>
+                    <input
+                      type="date"
+                      value={newSprintStartDate}
+                      onChange={(e) => setNewSprintStartDate(e.target.value)}
+                      className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
+                      aria-label="New workstream due date week"
+                    />
+                  </div>
+                )}
                 {canManage && sprints.length > 0 && (
                   <select
                     value={selectedSprintId}
@@ -347,7 +454,11 @@ export default function WorkstreamPage() {
                   </select>
                 )}
                 {canManage && (
-                  <Button size="sm" onClick={() => void handleGenerateSprint()} disabled={!selectedProjectId || generating}>
+                  <Button
+                    size="sm"
+                    onClick={() => void handleGenerateSprint()}
+                    disabled={!selectedProjectId || !newSprintStartDate || generating}
+                  >
                     <RefreshCw className={cn('w-4 h-4 mr-2', generating && 'animate-spin')} />
                     Create new Workstream
                   </Button>
@@ -364,8 +475,24 @@ export default function WorkstreamPage() {
                   <div className="rounded-xl border border-dashed border-[var(--border)] px-4 py-4 text-sm text-[var(--foreground)]/60">
                     <p>{canManage ? 'No sprints yet.' : 'No weeks yet.'}</p>
                     {canManage && (
-                      <div className="mt-3">
-                        <Button size="sm" onClick={() => void handleGenerateSprint()} disabled={!selectedProjectId || generating}>
+                      <div className="mt-3 flex flex-wrap items-end gap-3">
+                        <label className="flex flex-col gap-1">
+                          <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--foreground)]/55">
+                            Due Date Week
+                          </span>
+                          <input
+                            type="date"
+                            value={newSprintStartDate}
+                            onChange={(e) => setNewSprintStartDate(e.target.value)}
+                            className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
+                            aria-label="First workstream due date week"
+                          />
+                        </label>
+                        <Button
+                          size="sm"
+                          onClick={() => void handleGenerateSprint()}
+                          disabled={!selectedProjectId || !newSprintStartDate || generating}
+                        >
                           Create First Workstream
                         </Button>
                       </div>
@@ -426,6 +553,15 @@ export default function WorkstreamPage() {
                           placeholder={'- Add week function\n- Get it hosted\n- Redesign deliverables'}
                           className="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
                         />
+                        <label className="mt-3 flex items-center gap-2 text-sm text-[var(--foreground)]">
+                          <input
+                            type="checkbox"
+                            checked={addWhitepaperSubmission}
+                            onChange={(e) => setAddWhitepaperSubmission(e.target.checked)}
+                            className="h-4 w-4 rounded border border-[var(--border)]"
+                          />
+                          Add whitepaper submission
+                        </label>
                         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                           <span className="text-xs text-[var(--foreground)]/60">{parsedDrafts.length} parsed</span>
                           <div className="flex gap-2">
@@ -435,7 +571,11 @@ export default function WorkstreamPage() {
                             <Button size="sm" variant="outline" onClick={() => void handleSprintStatusToggle()}>
                               {selectedSprint.status === 'RELEASED' ? 'Move To Draft' : 'Release Sprint'}
                             </Button>
-                            <Button size="sm" onClick={() => void handleSaveDrafts()} disabled={parsedDrafts.length === 0}>
+                            <Button
+                              size="sm"
+                              onClick={() => void handleSaveDrafts()}
+                              disabled={parsedDrafts.length === 0 && !addWhitepaperSubmission}
+                            >
                               Save Deliverables
                             </Button>
                           </div>
@@ -448,22 +588,35 @@ export default function WorkstreamPage() {
                           This is the UI preview of what will be saved into the selected week.
                         </p>
                         <div className="mt-3 space-y-2">
-                          {parsedDrafts.length === 0 ? (
+                          {parsedDrafts.length === 0 && whitepaperPreviewItems.length === 0 ? (
                             <div className="rounded-xl border border-dashed border-[var(--border)] p-3 text-sm text-[var(--foreground)]/60">
                               Paste lines starting with `-` to preview deliverables.
                             </div>
                           ) : (
-                            parsedDrafts.map((item, index) => (
-                              <div
-                                key={`${item.title}-${index}`}
-                                className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2"
-                              >
-                                <p className="text-sm font-medium text-[var(--foreground)]">{item.title}</p>
-                                <p className="mt-1 text-[11px] uppercase tracking-wide text-amber-700">
-                                  Draft
-                                </p>
-                              </div>
-                            ))
+                            <>
+                              {parsedDrafts.map((item, index) => (
+                                <div
+                                  key={`${item.title}-${index}`}
+                                  className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2"
+                                >
+                                  <p className="text-sm font-medium text-[var(--foreground)]">{item.title}</p>
+                                  <p className="mt-1 text-[11px] uppercase tracking-wide text-amber-700">
+                                    Draft
+                                  </p>
+                                </div>
+                              ))}
+                              {whitepaperPreviewItems.map((title) => (
+                                <div
+                                  key={title}
+                                  className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2"
+                                >
+                                  <p className="text-sm font-medium text-[var(--foreground)]">{title}</p>
+                                  <p className="mt-1 text-[11px] uppercase tracking-wide text-sky-700">
+                                    Auto-assigned
+                                  </p>
+                                </div>
+                              ))}
+                            </>
                           )}
                         </div>
                       </div>

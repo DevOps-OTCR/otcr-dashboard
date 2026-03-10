@@ -58,7 +58,7 @@ function formatAssignees(assignees?: DeliverableItem['assignees']) {
   return assignees
     .map((assignee) => {
       const fullName = [assignee.firstName, assignee.lastName].filter(Boolean).join(' ').trim();
-      return fullName || assignee.email || 'Assigned';
+      return fullName || 'Assigned';
     })
     .join(', ');
 }
@@ -68,7 +68,7 @@ function formatSubmitter(
 ) {
   if (!submitter) return 'Unknown submitter';
   const fullName = [submitter.firstName, submitter.lastName].filter(Boolean).join(' ').trim();
-  return fullName || submitter.email || 'Unknown submitter';
+  return fullName || 'Unknown submitter';
 }
 
 function formatWeekLabel(value: string, fallbackIndex?: number) {
@@ -189,7 +189,9 @@ export default function SlidesPage() {
           deliverables: (sprint.deliverables ?? []).filter((deliverable) => {
             const isSlide =
               deliverable.templateKind === 'INITIAL_SLIDES' ||
-              deliverable.templateKind === 'FINAL_SLIDES';
+              deliverable.templateKind === 'FINAL_SLIDES' ||
+              deliverable.templateKind === 'INITIAL_WHITEPAPER' ||
+              deliverable.templateKind === 'FINAL_WHITEPAPER';
             if (!isSlide) return false;
             if (canModerateSubmissions || canSeeAllSubmissions) return true;
             return Boolean(
@@ -308,10 +310,10 @@ export default function SlidesPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Layers className="w-5 h-5 text-[var(--primary)]" />
-                Slides
+                Slides & Whitepapers
               </CardTitle>
               <CardDescription>
-                Each week now separates Initial Slides from Final Slides.
+                Each week separates slide and whitepaper submissions by draft stage.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -334,13 +336,13 @@ export default function SlidesPage() {
                   ))}
                 </select>
                 <span className="text-sm text-[var(--foreground)]/60">
-                  Slide deliverables are grouped by week below.
+                  Submission deliverables are grouped by week below.
                 </span>
               </div>
 
               {visibleSprints.length === 0 ? (
                 <div className="p-4 rounded-xl border border-dashed border-[var(--border)] text-center text-[var(--foreground)]/60 text-sm">
-                  No slide deliverables yet.
+                  No slide or whitepaper deliverables yet.
                 </div>
               ) : (
                 visibleSprints.map((sprint, index) => {
@@ -349,6 +351,12 @@ export default function SlidesPage() {
                   );
                   const finalSlides = (sprint.deliverables ?? []).filter(
                     (deliverable) => deliverable.templateKind === 'FINAL_SLIDES',
+                  );
+                  const initialWhitepapers = (sprint.deliverables ?? []).filter(
+                    (deliverable) => deliverable.templateKind === 'INITIAL_WHITEPAPER',
+                  );
+                  const finalWhitepapers = (sprint.deliverables ?? []).filter(
+                    (deliverable) => deliverable.templateKind === 'FINAL_WHITEPAPER',
                   );
 
                   const renderSlideColumn = (
@@ -416,7 +424,7 @@ export default function SlidesPage() {
                                         [deliverable.id]: e.target.value,
                                       }))
                                     }
-                                    placeholder="https://powerpoint.office.com/..."
+                                    placeholder="https://powerpoint.office.com/... or https://word.office.com/..."
                                     className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
                                   />
                                   <Button
@@ -503,9 +511,11 @@ export default function SlidesPage() {
                         </p>
                       </div>
 
-                      <div className="grid gap-4 lg:grid-cols-2">
+                      <div className="grid gap-4 xl:grid-cols-2">
                         {renderSlideColumn('Initial Slides', initialSlides)}
                         {renderSlideColumn('Final Slides', finalSlides)}
+                        {renderSlideColumn('Initial Whitepaper Submission', initialWhitepapers)}
+                        {renderSlideColumn('Final Whitepaper Submission', finalWhitepapers)}
                       </div>
                     </div>
                   );

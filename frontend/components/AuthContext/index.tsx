@@ -54,9 +54,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
         if (account) {
           instance.setActiveAccount(account);
+          const claims = account.idTokenClaims as
+            | { name?: string; given_name?: string; family_name?: string }
+            | undefined;
+          const claimName = [claims?.given_name, claims?.family_name]
+            .filter(Boolean)
+            .join(' ')
+            .trim();
           setUser({
             email: account.username,
-            name: account.name ?? undefined,
+            name: claimName || claims?.name || account.name || undefined,
           });
           setIsLoggedIn(true);
         } else {

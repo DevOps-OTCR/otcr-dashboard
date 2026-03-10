@@ -122,6 +122,7 @@ model User {
   slackConnections   SlackUserConnection[]
   installedWorkspaces SlackWorkspace[] @relation("SlackWorkspaceInstaller")
   reviewedOnboardingRequests OnboardingRequest[] @relation("OnboardingReviewer")
+  feedbackSubmissions FeedbackSubmission[]
 
   @@index([googleId])
   @@index([email])
@@ -144,6 +145,22 @@ model OnboardingRequest {
 
   @@index([status])
   @@index([email])
+  @@index([createdAt])
+}
+
+model FeedbackSubmission {
+  id             String   @id @default(cuid())
+  problem        String
+  description    String
+  submitterId    String?
+  submitterEmail String
+  submitterName  String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  submitter User? @relation(fields: [submitterId], references: [id], onDelete: SetNull)
+
+  @@index([submitterId])
   @@index([createdAt])
 }
 
@@ -368,6 +385,8 @@ enum DeliverableType {
 enum DeliverableTemplateKind {
   INITIAL_SLIDES
   FINAL_SLIDES
+  INITIAL_WHITEPAPER
+  FINAL_WHITEPAPER
   CUSTOM
 }
 

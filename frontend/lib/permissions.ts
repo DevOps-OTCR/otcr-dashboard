@@ -90,19 +90,11 @@ export function clearRoleCache(email?: string | null): void {
   keysToDelete.forEach((key) => localStorage.removeItem(key));
 }
 
-/** Role from email only (no override). Use to show admin-only UI like role switcher. */
+/** Best-effort role from client cache only (never hardcoded by email). */
 export function getActualUserRole(email: string | null | undefined): AppRole {
   if (!email) return 'CONSULTANT';
-  const normalized = email.toLowerCase();
-  const pmEmails = ['lsharma2@illinois.edu', 'crawat2@illinois.edu'];
-  const adminEmails = ['admin@otcr.com', 'kona3@illinois.edu'];
-  const partnerEmails: string[] = [];
-  const lcEmails: string[] = [];
-  if (adminEmails.includes(normalized)) return 'ADMIN';
-  if (pmEmails.includes(normalized)) return 'PM';
-  if (partnerEmails.includes(normalized)) return 'PARTNER';
-  if (lcEmails.includes(normalized)) return 'LC';
-  return 'CONSULTANT';
+  const cached = readCachedRole(email.toLowerCase());
+  return cached ?? 'CONSULTANT';
 }
 
 /** Resolve user role from email (used when session has no role from API). Uses dev override if set. */
@@ -113,8 +105,7 @@ export function getUserRole(email: string | null | undefined): AppRole {
 }
 
 /**
- * Prefer role from session (from backend DB when set at login). Uses dev override first, then
- * session.user.role from API, then falls back to getActualUserRole(email).
+ * Resolve role from backend API (cached client-side). Uses dev override first.
  */
 export async function getEffectiveRole(
   token: string | null,
@@ -144,7 +135,7 @@ export async function getEffectiveRole(
     console.error("Failed to fetch role from API, falling back to email check", error);
   }
 
-  const fallbackRole = getActualUserRole(normalizedEmail);
+  const fallbackRole = 'CONSULTANT';
   writeCachedRole(normalizedEmail, fallbackRole);
   return fallbackRole;
 }

@@ -31,8 +31,8 @@ export default function SlackSettingsPage() {
   const [reviewingRequestId, setReviewingRequestId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const isExecutive = role === 'EXECUTIVE';
-  const canReviewOnboarding = role === 'ADMIN' || role === 'PARTNER' || role === 'EXECUTIVE';
+  const canGrantDashboardAccess = role === 'ADMIN' || role === 'EXECUTIVE' || role === 'PM';
+  const canReviewOnboarding = role === 'ADMIN' || role === 'PARTNER' || role === 'EXECUTIVE' || role === 'PM';
 
   useEffect(() => {
     const syncRole = async () => {
@@ -131,7 +131,7 @@ export default function SlackSettingsPage() {
     try {
       await authAPI.addAllowedEmail({ email: normalizedEmail, role: 'CONSULTANT' });
       setDashboardAccessEmail('');
-      setMessage(`Dashboard access granted to ${normalizedEmail}.`);
+      setMessage('Dashboard access granted.');
     } catch (e: any) {
       setError(parseApiError(e, 'Failed to grant dashboard access'));
     } finally {
@@ -191,7 +191,7 @@ export default function SlackSettingsPage() {
           </CardContent>
         </Card>
 
-        {isExecutive && (
+        {canGrantDashboardAccess && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -241,7 +241,6 @@ export default function SlackSettingsPage() {
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <p className="font-medium">{request.name}</p>
-                        <p className="text-sm text-[var(--foreground)]/70">{request.email}</p>
                         <p className="text-xs text-[var(--foreground)]/60 mt-1">
                           Requested role: {String(request.requestedRole).replace(/_/g, ' ')}
                         </p>

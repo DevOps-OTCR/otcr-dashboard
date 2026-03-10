@@ -86,6 +86,8 @@ export const authAPI = {
   getAllowedEmails: () => api.get('/auth/allowed-emails'),
   addAllowedEmail: (data: { email: string; role?: 'ADMIN' | 'PM' | 'LC' | 'PARTNER' | 'EXECUTIVE' | 'CONSULTANT' }) =>
     api.post('/auth/allowed-emails', data),
+  syncUser: (data: { googleId: string; email: string; name?: string }) =>
+    api.post('/auth/sync-user', data),
 };
 
 export const onboardingAPI = {
@@ -106,6 +108,19 @@ export const onboardingAPI = {
     api.patch(`/onboarding/requests/${id}/approve`, notes ? { notes } : {}),
   rejectRequest: (id: string, notes?: string) =>
     api.patch(`/onboarding/requests/${id}/reject`, notes ? { notes } : {}),
+};
+
+export const feedbackAPI = {
+  createSubmission: (data: { problem: string; description: string }) =>
+    api.post('/feedback/submissions', data),
+  listSubmissions: () =>
+    api.get('/feedback/submissions', {
+      params: { _ts: Date.now() },
+      headers: {
+        'Cache-Control': 'no-cache, no-store, max-age=0',
+        Pragma: 'no-cache',
+      },
+    }),
 };
 
 export const notificationsAPI = {
@@ -235,7 +250,8 @@ export const projectsAPI = {
   getSprints: (projectId: string) => api.get(`/projects/${projectId}/sprints`),
   getSprintById: (projectId: string, sprintId: string) =>
     api.get(`/projects/${projectId}/sprints/${sprintId}`),
-  generateNextSprint: (projectId: string) => api.post(`/projects/${projectId}/sprints/generate-next`),
+  generateNextSprint: (projectId: string, data?: { startDate?: string }) =>
+    api.post(`/projects/${projectId}/sprints/generate-next`, data ?? {}),
   updateSprintStatus: (projectId: string, sprintId: string, status: 'DRAFT' | 'RELEASED') =>
     api.patch(`/projects/${projectId}/sprints/${sprintId}/status`, { status }),
   deleteSprint: (projectId: string, sprintId: string) =>
