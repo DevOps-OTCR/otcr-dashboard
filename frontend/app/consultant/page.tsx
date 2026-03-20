@@ -49,6 +49,7 @@ type SubmissionItem = {
 
 type AssignmentItem = {
   id: string;
+  projectId: string;
   title: string;
   projectName: string;
   weekLabel: string;
@@ -167,6 +168,7 @@ export default function ConsultantDashboard() {
 
                 nextAssignments.push({
                   id: deliverable.id,
+                  projectId: project.id,
                   title: deliverable.title,
                   projectName: project.name,
                   weekLabel: normalizeWeekLabel(sprint.label),
@@ -297,8 +299,13 @@ export default function ConsultantDashboard() {
                     <motion.div
                       key={item.id}
                       whileHover={{ y: -2 }}
+                      onClick={() =>
+                        router.push(
+                          `/slides?projectId=${encodeURIComponent(item.projectId)}&deliverableId=${encodeURIComponent(item.id)}`,
+                        )
+                      }
                       className={cn(
-                        'p-4 rounded-2xl border flex items-start gap-3',
+                        'p-4 rounded-2xl border flex items-start gap-3 cursor-pointer transition hover:border-[var(--primary)]/60',
                         isOverdue
                           ? 'border-red-400/70 bg-red-50'
                           : 'border-[var(--border)] bg-[var(--secondary)]/80',

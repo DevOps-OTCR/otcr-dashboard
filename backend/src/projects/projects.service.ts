@@ -927,6 +927,60 @@ export class ProjectsService {
     }
   }
 
+  async updateSprintNotes(
+    projectId: string,
+    sprintId: string,
+    input: { generalNotes?: string },
+  ) {
+    const sprint = await this.prisma.sprint.findFirst({
+      where: {
+        id: sprintId,
+        projectId,
+      },
+      select: {
+        id: true,
+        configSnapshot: true,
+      },
+    });
+
+    if (!sprint) {
+      throw new BadRequestException('Sprint not found');
+    }
+
+    const existingSnapshot =
+      sprint.configSnapshot &&
+      typeof sprint.configSnapshot === 'object' &&
+      !Array.isArray(sprint.configSnapshot)
+        ? (sprint.configSnapshot as Record<string, unknown>)
+        : {};
+
+    const trimmedNotes = (input.generalNotes ?? '').trim();
+    const nextSnapshot: Record<string, unknown> = {
+      ...existingSnapshot,
+      generalNotes: trimmedNotes || null,
+    };
+
+    const result = await this.prisma.sprint.updateMany({
+      where: {
+        id: sprintId,
+        projectId,
+      },
+      data: {
+        configSnapshot: nextSnapshot as Prisma.InputJsonValue,
+      },
+    });
+
+    if (result.count === 0) {
+      throw new BadRequestException('Sprint not found');
+    }
+
+    const updated = await this.getSprint(projectId, sprintId);
+    if (!updated) {
+      throw new BadRequestException('Sprint not found');
+    }
+    return updated;
+  }
+
   private async notifySprintReleased(projectId: string, sprint: {
     id: string;
     label: string;

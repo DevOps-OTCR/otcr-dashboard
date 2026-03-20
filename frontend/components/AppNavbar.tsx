@@ -256,7 +256,7 @@ export function AppNavbar({ role, currentPath = '/dashboard', unreadNotification
       label: 'Feedback Form',
       icon: MessageSquareWarning,
       href: '/feedback',
-      canAccess: (r) => r === 'PM' || r === 'ADMIN',
+      canAccess: () => true,
     },
   ];
 

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Layers, Upload } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 import { AppNavbar } from '@/components/AppNavbar';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -98,6 +99,9 @@ function getSubmissionStatusMeta(status: string): {
 
 export default function SlidesPage() {
   const session = useAuth();
+  const searchParams = useSearchParams();
+  const queryProjectId = searchParams.get('projectId') ?? '';
+  const targetDeliverableId = searchParams.get('deliverableId') ?? '';
   const [resolvedRole, setResolvedRole] = useState<AppRole>('CONSULTANT');
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState('');
@@ -141,7 +145,7 @@ export default function SlidesPage() {
     );
     setProjects(nextProjects);
 
-    const nextProjectId = selectedProjectId || nextProjects[0]?.id || '';
+    const nextProjectId = queryProjectId || selectedProjectId || nextProjects[0]?.id || '';
     setSelectedProjectId(nextProjectId);
     if (nextProjectId) {
       await loadSprints(nextProjectId);
@@ -150,7 +154,7 @@ export default function SlidesPage() {
     }
 
     setSubmissions(Array.isArray(submissionsRes.data) ? submissionsRes.data : []);
-  }, [canSeeAllSubmissions, loadSprints, selectedProjectId, session]);
+  }, [canSeeAllSubmissions, loadSprints, queryProjectId, selectedProjectId, session]);
 
   useEffect(() => {
     const syncRole = async () => {
@@ -179,6 +183,19 @@ export default function SlidesPage() {
 
     void init();
   }, [session.isLoggedIn, session.user?.email, loadData]);
+
+  useEffect(() => {
+    if (!queryProjectId || queryProjectId === selectedProjectId) return;
+    if (!projects.some((project) => project.id === queryProjectId)) return;
+    void handleProjectChange(queryProjectId);
+  }, [projects, queryProjectId, selectedProjectId]);
+
+  useEffect(() => {
+    if (!targetDeliverableId) return;
+    const element = document.getElementById(`deliverable-${targetDeliverableId}`);
+    if (!element) return;
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [targetDeliverableId, visibleSprints]);
 
   const visibleSprints = useMemo(
     () =>
@@ -390,7 +407,12 @@ export default function SlidesPage() {
                           return (
                             <div
                               key={deliverable.id}
-                              className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 space-y-3"
+                              id={`deliverable-${deliverable.id}`}
+                              className={`rounded-xl border bg-[var(--card)] p-4 space-y-3 ${
+                                targetDeliverableId === deliverable.id
+                                  ? 'border-[var(--primary)] ring-2 ring-[var(--primary)]/30'
+                                  : 'border-[var(--border)]'
+                              }`}
                             >
                               <div className="flex items-center justify-between gap-2 flex-wrap">
                                 <div>

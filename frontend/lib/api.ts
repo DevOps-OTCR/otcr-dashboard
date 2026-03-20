@@ -248,6 +248,8 @@ export const projectsAPI = {
     },
   ) => api.patch(`/projects/${projectId}/sprint-config`, data),
   getSprints: (projectId: string) => api.get(`/projects/${projectId}/sprints`),
+  updateSprintNotes: (projectId: string, sprintId: string, data: { generalNotes?: string }) =>
+    api.patch(`/projects/${projectId}/sprints/${sprintId}/notes`, data),
   getSprintById: (projectId: string, sprintId: string) =>
     api.get(`/projects/${projectId}/sprints/${sprintId}`),
   generateNextSprint: (projectId: string, data?: { startDate?: string }) =>

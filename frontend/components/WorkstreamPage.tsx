@@ -22,6 +22,7 @@ type ProjectOption = {
 
 type DeliverableItem = {
   id: string;
+  sprintId?: string;
   title: string;
   deadline: string;
   templateKind?: string;
@@ -42,6 +43,7 @@ type SprintItem = {
   weekEndDate: string;
   configSnapshot?: {
     defaultDueTime?: string;
+    generalNotes?: string | null;
   } | null;
   deliverables?: DeliverableItem[];
 };
@@ -72,6 +74,19 @@ function extractWeekNumber(value: string, fallbackIndex?: number) {
   return match?.[1] ?? String((fallbackIndex ?? 0) + 1);
 }
 
+function isDeliverableInSelectedWeek(
+  deliverable: DeliverableItem,
+  selected: SprintItem,
+  selectedIndex: number,
+) {
+  if (deliverable.sprintId) {
+    return deliverable.sprintId === selected.id;
+  }
+  const selectedWeek = extractWeekNumber(selected.label, selectedIndex);
+  const deliverableWeek = extractWeekNumber(deliverable.title, selectedIndex);
+  return selectedWeek === deliverableWeek;
+}
+
 function buildDraftDeliverableDeadline(sprint: SprintItem) {
   return buildSprintDeadlineInChicago(
     sprint.weekEndDate,
@@ -97,6 +112,7 @@ export default function WorkstreamPage() {
   const [newSprintStartDate, setNewSprintStartDate] = useState(
     new Date().toISOString().slice(0, 10),
   );
+  const [generalNotesInput, setGeneralNotesInput] = useState('');
 
   const canManage = role === 'PM' || role === 'LC' || role === 'ADMIN';
 
@@ -174,6 +190,10 @@ export default function WorkstreamPage() {
     return () => window.clearTimeout(timer);
   }, [feedback]);
 
+  useEffect(() => {
+    setGeneralNotesInput(selectedSprint?.configSnapshot?.generalNotes ?? '');
+  }, [selectedSprintId, selectedSprint?.configSnapshot?.generalNotes]);
+
   const selectedSprint = useMemo(
     () => sprints.find((sprint) => sprint.id === selectedSprintId) ?? null,
     [sprints, selectedSprintId],
@@ -201,6 +221,12 @@ export default function WorkstreamPage() {
 
     return items;
   }, [addWhitepaperSubmission, selectedSprint, sprintIndex]);
+  const selectedSprintDeliverables = useMemo(() => {
+    if (!selectedSprint) return [];
+    return (selectedSprint.deliverables ?? []).filter((deliverable) =>
+      isDeliverableInSelectedWeek(deliverable, selectedSprint, sprintIndex),
+    );
+  }, [selectedSprint, sprintIndex]);
 
   const handleProjectChange = async (projectId: string) => {
     setSelectedProjectId(projectId);
@@ -289,12 +315,12 @@ export default function WorkstreamPage() {
       if (addWhitepaperSubmission) {
         const weekNumber = extractWeekNumber(selectedSprint.label, sprintIndex);
         const existingTemplateKinds = new Set(
-          (selectedSprint.deliverables ?? []).map((deliverable) => deliverable.templateKind),
+          selectedSprintDeliverables.map((deliverable) => deliverable.templateKind),
         );
-        const initialSlides = (selectedSprint.deliverables ?? []).find(
+        const initialSlides = selectedSprintDeliverables.find(
           (deliverable) => deliverable.templateKind === 'INITIAL_SLIDES',
         );
-        const finalSlides = (selectedSprint.deliverables ?? []).find(
+        const finalSlides = selectedSprintDeliverables.find(
           (deliverable) => deliverable.templateKind === 'FINAL_SLIDES',
         );
 
@@ -383,6 +409,24 @@ export default function WorkstreamPage() {
       setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
     } finally {
       setBusyDeliverableId(null);
+    }
+  };
+
+  const handleSaveGeneralNotes = async () => {
+    if (!selectedProjectId || !selectedSprint || !canManage) return;
+    try {
+      setLoadError(null);
+      await projectsAPI.updateSprintNotes(selectedProjectId, selectedSprint.id, {
+        generalNotes: generalNotesInput,
+      });
+      await loadSprints(selectedProjectId);
+      setFeedback('Week notes saved');
+    } catch (error: any) {
+      const message =
+        error?.response?.data?.message ??
+        error?.message ??
+        'Failed to save week notes.';
+      setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
     }
   };
 
@@ -536,6 +580,37 @@ export default function WorkstreamPage() {
                     </span>
                   </div>
 
+                  <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/60 p-4">
+                    <p className="text-sm font-semibold text-[var(--foreground)]">
+                      General Notes / Links
+                    </p>
+                    <p className="mt-1 text-xs text-[var(--foreground)]/60">
+                      Week-level context for this workstream (updates, links, reminders).
+                    </p>
+                    {canManage ? (
+                      <>
+                        <textarea
+                          value={generalNotesInput}
+                          onChange={(e) => setGeneralNotesInput(e.target.value)}
+                          rows={4}
+                          placeholder={'Weekly context...\n- Link: https://...\n- Notes: ...'}
+                          className="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                        />
+                        <div className="mt-3 flex justify-end">
+                          <Button size="sm" onClick={() => void handleSaveGeneralNotes()}>
+                            Save Notes
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="mt-3 rounded-xl border border-dashed border-[var(--border)] bg-[var(--card)] p-3 text-sm text-[var(--foreground)]/75 whitespace-pre-wrap">
+                        {selectedSprint.configSnapshot?.generalNotes?.trim()
+                          ? selectedSprint.configSnapshot.generalNotes
+                          : 'No general notes added for this week yet.'}
+                      </div>
+                    )}
+                  </div>
+
                   {canManage && (
                     <div className="mt-4 grid gap-4 lg:grid-cols-2">
                       <div className="rounded-xl border border-[var(--border)] bg-[var(--secondary)]/60 p-4">
@@ -624,7 +699,7 @@ export default function WorkstreamPage() {
                   )}
 
                   <div className={cn('mt-5 grid gap-3', canManage ? 'md:grid-cols-2' : 'md:grid-cols-1')}>
-                    {(selectedSprint.deliverables ?? []).map((deliverable) => (
+                    {selectedSprintDeliverables.map((deliverable) => (
                       <div
                         key={deliverable.id}
                         className="rounded-xl border border-[var(--border)] bg-[var(--secondary)]/70 p-4"
@@ -668,7 +743,7 @@ export default function WorkstreamPage() {
                       </div>
                     ))}
 
-                    {(selectedSprint.deliverables ?? []).length === 0 && (
+                    {selectedSprintDeliverables.length === 0 && (
                       <div className="rounded-xl border border-dashed border-[var(--border)] p-4 text-sm text-[var(--foreground)]/60">
                         {canManage ? 'No deliverables in this week yet.' : 'No deliverables in this week.'}
                       </div>

@@ -50,7 +50,7 @@ export default function FeedbackPage() {
     return <FullScreenLoader />;
   }
 
-  const canSubmit = role === 'PM' || role === 'ADMIN';
+  const canSubmit = true;
   const canReview = role === 'ADMIN';
 
   useEffect(() => {
@@ -107,14 +107,6 @@ export default function FeedbackPage() {
       <AppNavbar role={role} currentPath="/feedback" />
 
       <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-6">
-        {!canSubmit && !canReview ? (
-          <Card>
-            <CardContent className="py-10 text-sm text-[var(--foreground)]/70 text-center">
-              Only PMs can submit feedback and only admins can view submissions.
-            </CardContent>
-          </Card>
-        ) : null}
-
         {canSubmit && (
           <Card>
             <CardHeader>
