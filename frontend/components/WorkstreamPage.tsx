@@ -190,14 +190,16 @@ export default function WorkstreamPage() {
     return () => window.clearTimeout(timer);
   }, [feedback]);
 
-  useEffect(() => {
-    setGeneralNotesInput(selectedSprint?.configSnapshot?.generalNotes ?? '');
-  }, [selectedSprintId, selectedSprint?.configSnapshot?.generalNotes]);
-
   const selectedSprint = useMemo(
     () => sprints.find((sprint) => sprint.id === selectedSprintId) ?? null,
     [sprints, selectedSprintId],
   );
+  
+  useEffect(() => {
+    setGeneralNotesInput(selectedSprint?.configSnapshot?.generalNotes ?? '');
+  }, [selectedSprintId, selectedSprint?.configSnapshot?.generalNotes]);
+
+  
   const parsedDrafts = useMemo(() => parseDashPrefixedDeliverables(draftInput), [draftInput]);
   const sprintIndex = useMemo(
     () => sprints.findIndex((item) => item.id === selectedSprintId),
