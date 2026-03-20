@@ -190,13 +190,6 @@ export default function SlidesPage() {
     void handleProjectChange(queryProjectId);
   }, [projects, queryProjectId, selectedProjectId]);
 
-  useEffect(() => {
-    if (!targetDeliverableId) return;
-    const element = document.getElementById(`deliverable-${targetDeliverableId}`);
-    if (!element) return;
-    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [targetDeliverableId, visibleSprints]);
-
   const visibleSprints = useMemo(
     () =>
       sprints
@@ -221,6 +214,14 @@ export default function SlidesPage() {
         .filter((sprint) => (sprint.deliverables ?? []).length > 0),
     [canModerateSubmissions, canSeeAllSubmissions, currentEmail, sprints],
   );
+
+
+  useEffect(() => {
+    if (!targetDeliverableId) return;
+    const element = document.getElementById(`deliverable-${targetDeliverableId}`);
+    if (!element) return;
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [targetDeliverableId, visibleSprints]);
 
   const getSubmissionsForDeliverable = (deliverableId: string) =>
     submissions
