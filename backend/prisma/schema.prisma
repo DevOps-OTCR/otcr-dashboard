@@ -123,6 +123,8 @@ model User {
   installedWorkspaces SlackWorkspace[] @relation("SlackWorkspaceInstaller")
   reviewedOnboardingRequests OnboardingRequest[] @relation("OnboardingReviewer")
   feedbackSubmissions FeedbackSubmission[]
+  attendanceEventsCreated AttendanceEvent[] @relation("AttendanceEventCreator")
+  attendanceCheckIns AttendanceCheckIn[]
 
   @@index([googleId])
   @@index([email])
@@ -217,6 +219,7 @@ model Project {
   members      ProjectMember[]
   deliverables Deliverable[]
   sprints      Sprint[]
+  attendanceEvents AttendanceEvent[]
 
   @@index([pmId])
   @@index([status])
@@ -253,6 +256,68 @@ model ProjectMember {
   @@unique([projectId, userId])
   @@index([projectId])
   @@index([userId])
+}
+
+model AttendanceEvent {
+  id                   String                  @id @default(cuid())
+  title                String
+  eventDate            DateTime
+  locationType         AttendanceLocationType
+  locationLabel        String?
+  latitude             Float?
+  longitude            Float?
+  geofenceRadiusMeters Int                     @default(150)
+  audienceScope        AttendanceAudienceScope @default(TEAM)
+  projectId            String?
+  createdById          String
+  verificationCode     String?
+  codeWindowOpensAt    DateTime?
+  codeWindowClosesAt   DateTime?
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+
+  project     Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  createdBy   User                 @relation("AttendanceEventCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  attendances AttendanceCheckIn[]
+
+  @@index([eventDate])
+  @@index([projectId])
+  @@index([createdById])
+  @@index([audienceScope])
+}
+
+model AttendanceCheckIn {
+  id                 String                       @id @default(cuid())
+  eventId            String
+  userId             String
+  present            Boolean                      @default(true)
+  verificationMethod AttendanceVerificationMethod
+  codeVerified       Boolean                      @default(false)
+  checkedInAt        DateTime                     @default(now())
+  createdAt          DateTime                     @default(now())
+  updatedAt          DateTime                     @updatedAt
+
+  event AttendanceEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([eventId])
+  @@index([userId])
+}
+
+enum AttendanceLocationType {
+  IN_PERSON
+  ONLINE
+}
+
+enum AttendanceAudienceScope {
+  TEAM
+  GLOBAL
+}
+
+enum AttendanceVerificationMethod {
+  GEOFENCE
+  CODE
 }
 
 // ============================================================================

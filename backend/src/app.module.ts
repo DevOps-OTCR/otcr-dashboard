@@ -11,6 +11,7 @@ import { DeliverablesModule } from './deliverables/deliverables.module';
 import { TasksModule } from './tasks/tasks.module';
 import { SlideSubmissionsModule } from './slide-submissions/slide.submissions.module';
 import { FeedbackModule } from './feedback/feedback.module';
+import { AttendanceModule } from './attendance/attendance.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { FeedbackModule } from './feedback/feedback.module';
     TasksModule,
     SlideSubmissionsModule,
     FeedbackModule,
+    AttendanceModule,
   ],
   controllers: [DeliverablesController],
   providers: [DeliverablesService],

@@ -15,6 +15,7 @@ import {
   Bell,
   CheckCircle2,
   Settings,
+  MapPinned,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/utils';
@@ -46,6 +47,7 @@ export type AppNavPath =
   | '/slides'
   | '/client-notes'
   | '/feedback'
+  | '/attendance'
   | '/settings/slack';
 
 export interface AppNavbarProps {
@@ -243,6 +245,13 @@ export function AppNavbar({ role, currentPath = '/dashboard', unreadNotification
         hasAccess('viewFinalSlides', r, 'read') ||
         hasAccess('uploadInitialSlide', r, 'write') ||
         hasAccess('uploadFinalSlide', r, 'write'),
+    },
+    {
+      id: 'attendance',
+      label: 'Attendance',
+      icon: MapPinned,
+      href: '/attendance',
+      canAccess: (r) => canShowNavItem('attendance', r),
     },
     {
       id: 'team',
