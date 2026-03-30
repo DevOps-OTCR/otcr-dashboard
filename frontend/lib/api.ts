@@ -252,6 +252,8 @@ export const projectsAPI = {
     api.patch(`/projects/${projectId}/sprints/${sprintId}/notes`, data),
   getSprintById: (projectId: string, sprintId: string) =>
     api.get(`/projects/${projectId}/sprints/${sprintId}`),
+  updateSprint: (projectId: string, sprintId: string, data: { weekStartDate?: string }) =>
+    api.patch(`/projects/${projectId}/sprints/${sprintId}`, data),
   generateNextSprint: (projectId: string, data?: { startDate?: string }) =>
     api.post(`/projects/${projectId}/sprints/generate-next`, data ?? {}),
   updateSprintStatus: (projectId: string, sprintId: string, status: 'DRAFT' | 'RELEASED') =>
@@ -309,6 +311,21 @@ export const deliverablesAPI = {
     api.patch(`/deliverables/${id}/assignment`, { assigned, assigneeId }),
   updateCompletion: (id: string, completed: boolean) =>
     api.patch(`/deliverables/${id}/completion`, { completed }),
+  createSubtask: (
+    id: string,
+    data: { title: string; notes?: string; dueDate?: string; assigneeId?: string },
+  ) => api.post(`/deliverables/${id}/subtasks`, data),
+  updateSubtask: (
+    id: string,
+    data: {
+      title?: string;
+      notes?: string;
+      dueDate?: string | null;
+      completed?: boolean;
+      assigneeId?: string | null;
+    },
+  ) => api.patch(`/deliverables/subtasks/${id}`, data),
+  deleteSubtask: (id: string) => api.delete(`/deliverables/subtasks/${id}`),
   submitLink: (id: string, link: string) =>
     api.post(`/deliverables/${id}/submissions`, { link }),
   delete: (id: string) => api.delete(`/deliverables/${id}`),

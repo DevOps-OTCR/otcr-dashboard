@@ -49,6 +49,15 @@ type DeliverableItem = {
       lastName?: string;
     };
   } | null;
+  subtasks?: Array<{
+    id: string;
+    title: string;
+    notes?: string | null;
+    dueDate?: string | null;
+    completed: boolean;
+    assigneeId?: string | null;
+    assignee?: TeamMemberOption | null;
+  }>;
 };
 
 type DeliverableSubmitter = {
@@ -88,9 +97,10 @@ function formatAssignees(assignees?: DeliverableItem['assignees']) {
     .join(', ');
 }
 
-function formatPerson(person: TeamMemberOption) {
+function formatPerson(person?: TeamMemberOption | null) {
+  if (!person) return 'Unassigned';
   const fullName = [person.firstName, person.lastName].filter(Boolean).join(' ').trim();
-  return fullName || 'Team member';
+  return fullName || person.email || 'Team member';
 }
 
 function formatSubmitter(
@@ -99,6 +109,16 @@ function formatSubmitter(
   if (!submitter) return 'Unknown submitter';
   const fullName = [submitter.firstName, submitter.lastName].filter(Boolean).join(' ').trim();
   return fullName || 'Unknown submitter';
+}
+
+function toDateTimeLocalValue(value: string) {
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
 export default function DeliverablesPage() {
@@ -116,6 +136,15 @@ export default function DeliverablesPage() {
   const [busyDeliverableId, setBusyDeliverableId] = useState<string | null>(null);
   const [submitLinks, setSubmitLinks] = useState<Record<string, string>>({});
   const [assignmentTargets, setAssignmentTargets] = useState<Record<string, string>>({});
+  const [deadlineInputs, setDeadlineInputs] = useState<Record<string, string>>({});
+  const [subtaskEdits, setSubtaskEdits] = useState<
+    Record<string, { title: string; dueDate: string; assigneeId: string; completed: boolean }>
+  >({});
+  const [newSubtasks, setNewSubtasks] = useState<
+    Record<string, { title: string; dueDate: string; assigneeId: string }>
+  >({});
+  const [busySubtaskId, setBusySubtaskId] = useState<string | null>(null);
+  const [creatingSubtaskFor, setCreatingSubtaskFor] = useState<string | null>(null);
 
   const canManage = role === 'PM' || role === 'LC' || role === 'ADMIN';
   const currentEmail = (session.user?.email ?? '').toLowerCase();
@@ -232,6 +261,41 @@ export default function DeliverablesPage() {
     () => visibleSprints.find((sprint) => sprint.id === selectedSprintId) ?? visibleSprints[0] ?? null,
     [visibleSprints, selectedSprintId],
   );
+
+  useEffect(() => {
+    setDeadlineInputs(
+      Object.fromEntries(
+        ((selectedSprint?.deliverables ?? []) as DeliverableItem[]).map((deliverable) => [
+          deliverable.id,
+          toDateTimeLocalValue(deliverable.deadline),
+        ]),
+      ),
+    );
+    setSubtaskEdits(
+      Object.fromEntries(
+        ((selectedSprint?.deliverables ?? []) as DeliverableItem[])
+          .flatMap((deliverable) =>
+            (deliverable.subtasks ?? []).map((subtask) => [
+              subtask.id,
+              {
+                title: subtask.title,
+                dueDate: subtask.dueDate ? toDateTimeLocalValue(subtask.dueDate) : '',
+                assigneeId: subtask.assigneeId ?? '',
+                completed: subtask.completed,
+              },
+            ]),
+          ),
+      ),
+    );
+    setNewSubtasks(
+      Object.fromEntries(
+        ((selectedSprint?.deliverables ?? []) as DeliverableItem[]).map((deliverable) => [
+          deliverable.id,
+          { title: '', dueDate: '', assigneeId: '' },
+        ]),
+      ),
+    );
+  }, [selectedSprint]);
 
   const handleProjectChange = async (projectId: string) => {
     setSelectedProjectId(projectId);
@@ -379,6 +443,125 @@ export default function DeliverablesPage() {
     }
   };
 
+  const handleUpdateDeadline = async (deliverable: DeliverableItem) => {
+    if (!selectedProjectId || !canManage) return;
+    const nextDeadline = deadlineInputs[deliverable.id];
+    if (!nextDeadline) return;
+
+    setBusyDeliverableId(deliverable.id);
+    try {
+      await deliverablesAPI.updateDeadline(
+        deliverable.id,
+        new Date(nextDeadline).toISOString(),
+      );
+      await loadSprints(selectedProjectId);
+      setFeedback('Due date updated');
+    } catch (error: any) {
+      const message =
+        error?.response?.data?.message ??
+        error?.message ??
+        'Failed to update due date.';
+      setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
+    } finally {
+      setBusyDeliverableId(null);
+    }
+  };
+
+  const handleCreateSubtask = async (deliverable: DeliverableItem) => {
+    if (!selectedProjectId || !canManage) return;
+    const draft = newSubtasks[deliverable.id];
+    if (!draft?.title.trim()) return;
+
+    setCreatingSubtaskFor(deliverable.id);
+    try {
+      await deliverablesAPI.createSubtask(deliverable.id, {
+        title: draft.title.trim(),
+        dueDate: draft.dueDate ? new Date(draft.dueDate).toISOString() : undefined,
+        assigneeId: draft.assigneeId || undefined,
+      });
+      await loadSprints(selectedProjectId);
+      setFeedback('Subtask added');
+    } catch (error: any) {
+      const message =
+        error?.response?.data?.message ??
+        error?.message ??
+        'Failed to create subtask.';
+      setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
+    } finally {
+      setCreatingSubtaskFor(null);
+    }
+  };
+
+  const handleUpdateSubtask = async (
+    subtask: NonNullable<DeliverableItem['subtasks']>[number],
+  ) => {
+    if (!selectedProjectId) return;
+    const edit = subtaskEdits[subtask.id];
+    if (!edit?.title.trim()) return;
+
+    setBusySubtaskId(subtask.id);
+    try {
+      await deliverablesAPI.updateSubtask(subtask.id, {
+        title: edit.title.trim(),
+        dueDate: edit.dueDate ? new Date(edit.dueDate).toISOString() : null,
+        assigneeId: canManage ? edit.assigneeId || null : undefined,
+        completed: edit.completed,
+      });
+      await loadSprints(selectedProjectId);
+      setFeedback('Subtask updated');
+    } catch (error: any) {
+      const message =
+        error?.response?.data?.message ??
+        error?.message ??
+        'Failed to update subtask.';
+      setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
+    } finally {
+      setBusySubtaskId(null);
+    }
+  };
+
+  const handleDeleteSubtask = async (subtaskId: string) => {
+    if (!selectedProjectId || !canManage) return;
+
+    setBusySubtaskId(subtaskId);
+    try {
+      await deliverablesAPI.deleteSubtask(subtaskId);
+      await loadSprints(selectedProjectId);
+      setFeedback('Subtask deleted');
+    } catch (error: any) {
+      const message =
+        error?.response?.data?.message ??
+        error?.message ??
+        'Failed to delete subtask.';
+      setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
+    } finally {
+      setBusySubtaskId(null);
+    }
+  };
+
+  const handleToggleSubtaskCompletion = async (
+    subtask: NonNullable<DeliverableItem['subtasks']>[number],
+  ) => {
+    if (!selectedProjectId) return;
+
+    setBusySubtaskId(subtask.id);
+    try {
+      await deliverablesAPI.updateSubtask(subtask.id, {
+        completed: !subtask.completed,
+      });
+      await loadSprints(selectedProjectId);
+      setFeedback(subtask.completed ? 'Subtask reopened' : 'Subtask completed');
+    } catch (error: any) {
+      const message =
+        error?.response?.data?.message ??
+        error?.message ??
+        'Failed to update subtask.';
+      setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
+    } finally {
+      setBusySubtaskId(null);
+    }
+  };
+
   if (session.loading || !session.isLoggedIn || loading) {
     return <FullScreenLoader />;
   }
@@ -501,6 +684,33 @@ export default function DeliverablesPage() {
                             </div>
 
                             <div className="flex flex-wrap items-center gap-2">
+                              {canManage && (
+                                <>
+                                  <input
+                                    type="datetime-local"
+                                    value={deadlineInputs[deliverable.id] ?? ''}
+                                    onChange={(e) =>
+                                      setDeadlineInputs((current) => ({
+                                        ...current,
+                                        [deliverable.id]: e.target.value,
+                                      }))
+                                    }
+                                    className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
+                                  />
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={
+                                      busyDeliverableId === deliverable.id ||
+                                      !(deadlineInputs[deliverable.id] ?? '') ||
+                                      deadlineInputs[deliverable.id] === toDateTimeLocalValue(deliverable.deadline)
+                                    }
+                                    onClick={() => void handleUpdateDeadline(deliverable)}
+                                  >
+                                    Save Due Date
+                                  </Button>
+                                </>
+                              )}
                               {canManage && teamMembers.length > 0 && (
                                 <>
                                   <select
@@ -619,6 +829,213 @@ export default function DeliverablesPage() {
                                   </p>
                                 </div>
                               )}
+                            </div>
+
+                            <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-medium text-[var(--foreground)]">Subtasks</p>
+                                  <p className="text-xs text-[var(--foreground)]/60">
+                                    Split the deliverable into smaller assigned steps.
+                                  </p>
+                                </div>
+                                <span className="text-xs text-[var(--foreground)]/55">
+                                  {(deliverable.subtasks ?? []).filter((subtask) => subtask.completed).length}/
+                                  {(deliverable.subtasks ?? []).length} done
+                                </span>
+                              </div>
+
+                              <div className="mt-3 space-y-3">
+                                {(deliverable.subtasks ?? []).length === 0 && (
+                                  <div className="rounded-lg border border-dashed border-[var(--border)] p-3 text-xs text-[var(--foreground)]/60">
+                                    No subtasks yet.
+                                  </div>
+                                )}
+
+                                {(deliverable.subtasks ?? []).map((subtask) => {
+                                  const edit = subtaskEdits[subtask.id] ?? {
+                                    title: subtask.title,
+                                    dueDate: subtask.dueDate ? toDateTimeLocalValue(subtask.dueDate) : '',
+                                    assigneeId: subtask.assigneeId ?? '',
+                                    completed: subtask.completed,
+                                  };
+                                  const assignedToCurrentUserSubtask = Boolean(
+                                    subtask.assignee?.email?.toLowerCase() === currentEmail,
+                                  );
+
+                                  return (
+                                    <div
+                                      key={subtask.id}
+                                      className="rounded-lg border border-[var(--border)] bg-[var(--secondary)]/60 p-3"
+                                    >
+                                      {canManage ? (
+                                        <div className="grid gap-2 md:grid-cols-[minmax(0,2fr)_180px_180px_auto_auto]">
+                                          <input
+                                            value={edit.title}
+                                            onChange={(e) =>
+                                              setSubtaskEdits((current) => ({
+                                                ...current,
+                                                [subtask.id]: { ...edit, title: e.target.value },
+                                              }))
+                                            }
+                                            className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                                          />
+                                          <select
+                                            value={edit.assigneeId}
+                                            onChange={(e) =>
+                                              setSubtaskEdits((current) => ({
+                                                ...current,
+                                                [subtask.id]: { ...edit, assigneeId: e.target.value },
+                                              }))
+                                            }
+                                            className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                                          >
+                                            <option value="">Unassigned</option>
+                                            {teamMembers.map((member) => (
+                                              <option key={member.id} value={member.id}>
+                                                {formatPerson(member)}
+                                              </option>
+                                            ))}
+                                          </select>
+                                          <input
+                                            type="datetime-local"
+                                            value={edit.dueDate}
+                                            onChange={(e) =>
+                                              setSubtaskEdits((current) => ({
+                                                ...current,
+                                                [subtask.id]: { ...edit, dueDate: e.target.value },
+                                              }))
+                                            }
+                                            className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                                          />
+                                          <label className="flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm">
+                                            <input
+                                              type="checkbox"
+                                              checked={edit.completed}
+                                              onChange={(e) =>
+                                                setSubtaskEdits((current) => ({
+                                                  ...current,
+                                                  [subtask.id]: { ...edit, completed: e.target.checked },
+                                                }))
+                                              }
+                                            />
+                                            Done
+                                          </label>
+                                          <div className="flex gap-2">
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              disabled={busySubtaskId === subtask.id || !edit.title.trim()}
+                                              onClick={() => void handleUpdateSubtask(subtask)}
+                                            >
+                                              Save
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              disabled={busySubtaskId === subtask.id}
+                                              onClick={() => void handleDeleteSubtask(subtask.id)}
+                                            >
+                                              Delete
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="flex flex-wrap items-center justify-between gap-3">
+                                          <div>
+                                            <p className={cn('text-sm font-medium text-[var(--foreground)]', subtask.completed && 'line-through opacity-60')}>
+                                              {subtask.title}
+                                            </p>
+                                            <p className="mt-1 text-xs text-[var(--foreground)]/60">
+                                              {formatPerson(subtask.assignee)}
+                                              {subtask.dueDate ? ` • Due ${new Date(subtask.dueDate).toLocaleString()}` : ''}
+                                            </p>
+                                          </div>
+                                          {assignedToCurrentUserSubtask ? (
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              disabled={busySubtaskId === subtask.id}
+                                              onClick={() => void handleToggleSubtaskCompletion(subtask)}
+                                            >
+                                              {subtask.completed ? 'Mark Open' : 'Mark Done'}
+                                            </Button>
+                                          ) : (
+                                            <span className="text-xs text-[var(--foreground)]/55">
+                                              {subtask.completed ? 'Done' : 'Open'}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+
+                                {canManage && (
+                                  <div className="rounded-lg border border-dashed border-[var(--border)] p-3">
+                                    <div className="grid gap-2 md:grid-cols-[minmax(0,2fr)_180px_180px_auto]">
+                                      <input
+                                        value={newSubtasks[deliverable.id]?.title ?? ''}
+                                        onChange={(e) =>
+                                          setNewSubtasks((current) => ({
+                                            ...current,
+                                            [deliverable.id]: {
+                                              ...(current[deliverable.id] ?? { title: '', dueDate: '', assigneeId: '' }),
+                                              title: e.target.value,
+                                            },
+                                          }))
+                                        }
+                                        placeholder="Add a subtask"
+                                        className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                                      />
+                                      <select
+                                        value={newSubtasks[deliverable.id]?.assigneeId ?? ''}
+                                        onChange={(e) =>
+                                          setNewSubtasks((current) => ({
+                                            ...current,
+                                            [deliverable.id]: {
+                                              ...(current[deliverable.id] ?? { title: '', dueDate: '', assigneeId: '' }),
+                                              assigneeId: e.target.value,
+                                            },
+                                          }))
+                                        }
+                                        className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                                      >
+                                        <option value="">Assign later</option>
+                                        {teamMembers.map((member) => (
+                                          <option key={member.id} value={member.id}>
+                                            {formatPerson(member)}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <input
+                                        type="datetime-local"
+                                        value={newSubtasks[deliverable.id]?.dueDate ?? ''}
+                                        onChange={(e) =>
+                                          setNewSubtasks((current) => ({
+                                            ...current,
+                                            [deliverable.id]: {
+                                              ...(current[deliverable.id] ?? { title: '', dueDate: '', assigneeId: '' }),
+                                              dueDate: e.target.value,
+                                            },
+                                          }))
+                                        }
+                                        className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                                      />
+                                      <Button
+                                        size="sm"
+                                        disabled={
+                                          creatingSubtaskFor === deliverable.id ||
+                                          !(newSubtasks[deliverable.id]?.title ?? '').trim()
+                                        }
+                                        onClick={() => void handleCreateSubtask(deliverable)}
+                                      >
+                                        Add Subtask
+                                      </Button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>

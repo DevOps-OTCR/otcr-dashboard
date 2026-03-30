@@ -808,6 +808,27 @@ export class ProjectsService {
             ORDER BY da."assignedAt" ASC
           `)
         : [];
+      const subtasks = deliverableIds.length
+        ? await this.prisma.$queryRaw<any[]>(Prisma.sql`
+            SELECT
+              ds."id",
+              ds."deliverableId",
+              ds."title",
+              ds."notes",
+              ds."dueDate",
+              ds."completed",
+              ds."assigneeId",
+              ds."createdAt",
+              ds."updatedAt",
+              u."email" AS "assigneeEmail",
+              u."firstName" AS "assigneeFirstName",
+              u."lastName" AS "assigneeLastName"
+            FROM "DeliverableSubtask" ds
+            LEFT JOIN "User" u ON u."id" = ds."assigneeId"
+            WHERE ds."deliverableId" IN (${Prisma.join(deliverableIds)})
+            ORDER BY ds."completed" ASC, ds."dueDate" ASC NULLS LAST, ds."createdAt" ASC
+          `)
+        : [];
       const latestSubmissions = deliverableIds.length
         ? await this.prisma.$queryRaw<any[]>(Prisma.sql`
             SELECT DISTINCT ON (s."deliverableId")
@@ -829,6 +850,7 @@ export class ProjectsService {
 
       const bySprint = new Map<string, any[]>();
       const assignmentsByDeliverable = new Map<string, any[]>();
+      const subtasksByDeliverable = new Map<string, any[]>();
       const latestSubmissionByDeliverable = new Map<string, any>();
 
       assignments.forEach((assignment) => {
@@ -841,6 +863,26 @@ export class ProjectsService {
           assignedAt: assignment.assignedAt,
         });
         assignmentsByDeliverable.set(assignment.deliverableId, existing);
+      });
+      subtasks.forEach((subtask) => {
+        const existing = subtasksByDeliverable.get(subtask.deliverableId) ?? [];
+        existing.push({
+          id: subtask.id,
+          title: subtask.title,
+          notes: subtask.notes,
+          dueDate: subtask.dueDate,
+          completed: subtask.completed,
+          assigneeId: subtask.assigneeId,
+          assignee: subtask.assigneeId
+            ? {
+                id: subtask.assigneeId,
+                email: subtask.assigneeEmail,
+                firstName: subtask.assigneeFirstName,
+                lastName: subtask.assigneeLastName,
+              }
+            : null,
+        });
+        subtasksByDeliverable.set(subtask.deliverableId, existing);
       });
       latestSubmissions.forEach((submission) => {
         latestSubmissionByDeliverable.set(submission.deliverableId, {
@@ -868,6 +910,7 @@ export class ProjectsService {
           status: deliverable.status,
           completed: deliverable.completed,
           assignees: assignmentsByDeliverable.get(deliverable.id) ?? [],
+          subtasks: subtasksByDeliverable.get(deliverable.id) ?? [],
           latestSubmission: latestSubmissionByDeliverable.get(deliverable.id) ?? null,
         });
         bySprint.set(deliverable.sprintId, existing);
@@ -978,6 +1021,114 @@ export class ProjectsService {
     if (!updated) {
       throw new BadRequestException('Sprint not found');
     }
+    return updated;
+  }
+
+  async updateSprint(
+    projectId: string,
+    sprintId: string,
+    input: { weekStartDate?: string },
+  ) {
+    const normalizedWeekStartDate = this.parseUtcDateOnly(
+      input.weekStartDate,
+      'weekStartDate',
+    );
+    const weekEndDate = this.addDaysUtc(normalizedWeekStartDate, 6);
+
+    const sprint = await this.prisma.sprint.findFirst({
+      where: {
+        id: sprintId,
+        projectId,
+      },
+      select: {
+        id: true,
+        configSnapshot: true,
+        deliverables: {
+          select: {
+            id: true,
+            templateKind: true,
+            dueDateSource: true,
+          },
+        },
+      },
+    });
+
+    if (!sprint) {
+      throw new BadRequestException('Sprint not found');
+    }
+
+    const config =
+      sprint.configSnapshot &&
+      typeof sprint.configSnapshot === 'object' &&
+      !Array.isArray(sprint.configSnapshot)
+        ? (sprint.configSnapshot as Record<string, unknown>)
+        : {};
+    const defaultDueTime =
+      typeof config.defaultDueTime === 'string' && config.defaultDueTime.trim()
+        ? config.defaultDueTime
+        : '23:59';
+    const initialSlideDueDay =
+      typeof config.initialSlideDueDay === 'string' && config.initialSlideDueDay.trim()
+        ? config.initialSlideDueDay
+        : 'TUESDAY';
+    const finalSlideDueDay =
+      typeof config.finalSlideDueDay === 'string' && config.finalSlideDueDay.trim()
+        ? config.finalSlideDueDay
+        : 'THURSDAY';
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.sprint.update({
+        where: { id: sprintId },
+        data: {
+          weekStartDate: normalizedWeekStartDate,
+          weekEndDate,
+        },
+      });
+
+      for (const deliverable of sprint.deliverables) {
+        if (deliverable.dueDateSource !== 'AUTO') continue;
+
+        let deadline: Date;
+        if (
+          deliverable.templateKind === 'INITIAL_SLIDES' ||
+          deliverable.templateKind === 'INITIAL_WHITEPAPER'
+        ) {
+          deadline = this.buildDeadlineForWeek(
+            normalizedWeekStartDate,
+            initialSlideDueDay,
+            defaultDueTime,
+          );
+        } else if (
+          deliverable.templateKind === 'FINAL_SLIDES' ||
+          deliverable.templateKind === 'FINAL_WHITEPAPER'
+        ) {
+          deadline = this.buildDeadlineForWeek(
+            normalizedWeekStartDate,
+            finalSlideDueDay,
+            defaultDueTime,
+          );
+        } else {
+          deadline = this.chicagoDateTimeToUtc(
+            weekEndDate.getUTCFullYear(),
+            weekEndDate.getUTCMonth() + 1,
+            weekEndDate.getUTCDate(),
+            Number.parseInt(defaultDueTime.split(':')[0] ?? '23', 10),
+            Number.parseInt(defaultDueTime.split(':')[1] ?? '59', 10),
+          );
+        }
+
+        await tx.deliverable.update({
+          where: { id: deliverable.id },
+          data: { deadline },
+        });
+      }
+    });
+
+    const updated = await this.getSprint(projectId, sprintId);
+    if (!updated) {
+      throw new BadRequestException('Sprint not found');
+    }
+
     return updated;
   }
 
@@ -1395,6 +1546,37 @@ export class ProjectsService {
     }
 
     return normalized;
+  }
+
+  private parseUtcDateOnly(value: string | undefined, fieldName: string) {
+    const normalized = value?.trim();
+    if (!normalized) {
+      throw new BadRequestException(`${fieldName} is required`);
+    }
+
+    const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) {
+      throw new BadRequestException(`${fieldName} must use YYYY-MM-DD format`);
+    }
+
+    const [, yearRaw, monthRaw, dayRaw] = match;
+    const year = Number.parseInt(yearRaw, 10);
+    const month = Number.parseInt(monthRaw, 10);
+    const day = Number.parseInt(dayRaw, 10);
+    const date = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+
+    if (
+      !Number.isFinite(year) ||
+      !Number.isFinite(month) ||
+      !Number.isFinite(day) ||
+      date.getUTCFullYear() !== year ||
+      date.getUTCMonth() !== month - 1 ||
+      date.getUTCDate() !== day
+    ) {
+      throw new BadRequestException(`${fieldName} must be a valid date`);
+    }
+
+    return date;
   }
 
   private alignToWeekday(date: Date, weekday: string) {

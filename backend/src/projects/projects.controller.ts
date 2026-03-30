@@ -259,6 +259,27 @@ export class ProjectsController {
     return this.projectsService.updateSprintNotes(id, sprintId, body);
   }
 
+  @Patch(':id/sprints/:sprintId')
+  @Roles('ADMIN', 'PM', 'LC')
+  async updateSprint(
+    @Param('id') id: string,
+    @Param('sprintId') sprintId: string,
+    @Body() body: { weekStartDate?: string },
+    @GetUser() user: any,
+  ) {
+    const project = await this.projectsService.findOne(id);
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    if (user.role !== 'ADMIN' && user.role !== 'LC' && project.pmId !== user.id) {
+      throw new ForbiddenException('Only PM, LC, or Admin can update weeks');
+    }
+
+    return this.projectsService.updateSprint(id, sprintId, body);
+  }
+
   @Delete(':id/sprints/:sprintId')
   @Roles('ADMIN', 'PM', 'LC')
   async deleteSprint(

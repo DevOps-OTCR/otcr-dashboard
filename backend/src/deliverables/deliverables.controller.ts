@@ -253,6 +253,114 @@ export class DeliverablesController {
     return this.deliverablesService.submitLink(id, user.id, body.link);
   }
 
+  @Post(':id/subtasks')
+  @Roles('ADMIN', 'PM', 'LC')
+  async createSubtask(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      title: string;
+      notes?: string;
+      dueDate?: string;
+      assigneeId?: string;
+    },
+    @GetUser() user: any,
+  ) {
+    const deliverable = (await this.deliverablesService.findOne(id)) as any;
+    if (!deliverable) throw new NotFoundException('Deliverable not found');
+
+    const project = await this.projectsService.findOne(deliverable.projectId);
+    if (user.role !== 'ADMIN' && user.role !== 'LC' && project?.pmId !== user.id) {
+      throw new ForbiddenException('Only PM, LC, or Admin can create subtasks');
+    }
+
+    if (body.assigneeId) {
+      const targetIsProjectPm = project?.pmId === body.assigneeId;
+      const targetIsProjectMember = await this.projectsService.isMember(
+        deliverable.projectId,
+        body.assigneeId,
+      );
+
+      if (!targetIsProjectPm && !targetIsProjectMember) {
+        throw new BadRequestException('Assignee must belong to this project');
+      }
+    }
+
+    return this.deliverablesService.createSubtask(id, body);
+  }
+
+  @Patch('subtasks/:subtaskId')
+  @Roles('ADMIN', 'PM', 'LC', 'CONSULTANT', 'PARTNER', 'EXECUTIVE')
+  async updateSubtask(
+    @Param('subtaskId') subtaskId: string,
+    @Body()
+    body: {
+      title?: string;
+      notes?: string;
+      dueDate?: string | null;
+      completed?: boolean;
+      assigneeId?: string | null;
+    },
+    @GetUser() user: any,
+  ) {
+    const subtask = (await this.deliverablesService.findSubtask(subtaskId)) as any;
+    if (!subtask) throw new NotFoundException('Subtask not found');
+
+    const deliverable = subtask.deliverable;
+    const isMember = await this.projectsService.isMember(deliverable.projectId, user.id);
+    const project = await this.projectsService.findOne(deliverable.projectId);
+    const canManage = ['ADMIN', 'LC'].includes(user.role) || project?.pmId === user.id;
+
+    if (!canManage && !isMember) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    if (deliverable.sprint?.status !== 'RELEASED' && !canManage) {
+      throw new ForbiddenException('Draft subtasks cannot be updated yet');
+    }
+
+    const updatingOnlyCompletion =
+      body.completed !== undefined &&
+      body.title === undefined &&
+      body.notes === undefined &&
+      body.dueDate === undefined &&
+      body.assigneeId === undefined;
+
+    if (!canManage) {
+      if (!subtask.assigneeId || subtask.assigneeId !== user.id || !updatingOnlyCompletion) {
+        throw new ForbiddenException('Only managers can edit subtask details');
+      }
+    }
+
+    if (body.assigneeId !== undefined && canManage && body.assigneeId) {
+      const targetIsProjectPm = project?.pmId === body.assigneeId;
+      const targetIsProjectMember = await this.projectsService.isMember(
+        deliverable.projectId,
+        body.assigneeId,
+      );
+
+      if (!targetIsProjectPm && !targetIsProjectMember) {
+        throw new BadRequestException('Assignee must belong to this project');
+      }
+    }
+
+    return this.deliverablesService.updateSubtask(subtaskId, body);
+  }
+
+  @Delete('subtasks/:subtaskId')
+  @Roles('ADMIN', 'PM', 'LC')
+  async removeSubtask(@Param('subtaskId') subtaskId: string, @GetUser() user: any) {
+    const subtask = (await this.deliverablesService.findSubtask(subtaskId)) as any;
+    if (!subtask) throw new NotFoundException('Subtask not found');
+
+    const project = await this.projectsService.findOne(subtask.deliverable.projectId);
+    if (user.role !== 'ADMIN' && user.role !== 'LC' && project?.pmId !== user.id) {
+      throw new ForbiddenException('Only PM, LC, or Admin can delete subtasks');
+    }
+
+    return this.deliverablesService.removeSubtask(subtaskId);
+  }
+
   @Delete(':id')
   @Roles('ADMIN', 'PM', 'LC')
   async remove(@Param('id') id: string, @GetUser() user: any) {
