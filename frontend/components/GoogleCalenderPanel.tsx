@@ -31,6 +31,65 @@ function sanitizeCalendarEmbedUrl(candidate: string, fallback: string): string {
   }
 }
 
+function extractGoogleCalendarSources(candidate?: string | null): string[] {
+  if (!candidate) return [];
+
+  try {
+    const parsed = new URL(candidate);
+    const host = parsed.hostname.toLowerCase();
+    const isGoogleCalendarHost =
+      host === 'calendar.google.com' || host.endsWith('.calendar.google.com');
+    if (!isGoogleCalendarHost || !parsed.pathname.startsWith('/calendar/embed')) {
+      return [];
+    }
+
+    return parsed.searchParams
+      .getAll('src')
+      .map((value) => value.trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function buildCombinedCalendarEmbedUrl(primary: string, secondary?: string | null): string {
+  const primarySources = extractGoogleCalendarSources(primary);
+  const secondarySources = extractGoogleCalendarSources(secondary);
+  const allSources = Array.from(new Set([...primarySources, ...secondarySources]));
+
+  if (allSources.length === 0) {
+    return primary;
+  }
+
+  const base = new URL(primary);
+  const ctz = base.searchParams.get('ctz') || 'America/Chicago';
+  const mode = base.searchParams.get('mode') || 'WEEK';
+  const showTitle = base.searchParams.get('showTitle') || '0';
+  const showPrint = base.searchParams.get('showPrint') || '0';
+  const showNav = base.searchParams.get('showNav') || '1';
+  const showTabs = base.searchParams.get('showTabs') || '0';
+  const showCalendars = base.searchParams.get('showCalendars') || '0';
+  const wkst = base.searchParams.get('wkst') || '1';
+  const height = base.searchParams.get('height');
+  const bgcolor = base.searchParams.get('bgcolor');
+
+  const combined = new URL('https://calendar.google.com/calendar/embed');
+  combined.searchParams.set('ctz', ctz);
+  combined.searchParams.set('mode', mode);
+  combined.searchParams.set('showTitle', showTitle);
+  combined.searchParams.set('showPrint', showPrint);
+  combined.searchParams.set('showNav', showNav);
+  combined.searchParams.set('showTabs', showTabs);
+  combined.searchParams.set('showCalendars', showCalendars);
+  combined.searchParams.set('wkst', wkst);
+  if (height) combined.searchParams.set('height', height);
+  if (bgcolor) combined.searchParams.set('bgcolor', bgcolor);
+
+  allSources.forEach((src) => combined.searchParams.append('src', src));
+
+  return combined.toString();
+}
+
 type GoogleCalendarPanelProps = {
   title?: string;
   description?: string;
@@ -81,13 +140,18 @@ export function GoogleCalendarPanel({
         );
 
         const resolved =
-          byProjectId?.googleCalendarEmbedUrl?.trim() ||
-          byMembership?.googleCalendarEmbedUrl?.trim() ||
-          byPmOwnership?.googleCalendarEmbedUrl?.trim() ||
-          firstWithCalendar?.googleCalendarEmbedUrl?.trim() ||
-          fallbackCalendarUrl;
+          byProjectId?.googleCalendarEmbedUrl?.trim() ??
+          byMembership?.googleCalendarEmbedUrl?.trim() ??
+          byPmOwnership?.googleCalendarEmbedUrl?.trim() ??
+          firstWithCalendar?.googleCalendarEmbedUrl?.trim() ??
+          null;
 
-        setCalendarUrl(sanitizeCalendarEmbedUrl(resolved, fallbackCalendarUrl));
+        setCalendarUrl(
+          sanitizeCalendarEmbedUrl(
+            buildCombinedCalendarEmbedUrl(fallbackCalendarUrl, resolved),
+            fallbackCalendarUrl,
+          ),
+        );
       })
       .catch(() => {
         if (!canceled) {

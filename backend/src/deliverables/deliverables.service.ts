@@ -10,6 +10,16 @@ export class DeliverablesService {
     private notificationsService: NotificationsService,
   ) {}
 
+  private get deliverableSubtaskModel() {
+    const model = (this.prisma as any).deliverableSubtask;
+    if (!model) {
+      throw new Error(
+        'DeliverableSubtask model not found on Prisma client. Run: npx prisma generate',
+      );
+    }
+    return model;
+  }
+
   private getDisplayName(firstName?: string | null, lastName?: string | null, email?: string | null): string {
     const fullName = `${firstName || ''} ${lastName || ''}`.trim();
     return fullName || 'Team member';
@@ -263,6 +273,19 @@ export class DeliverablesService {
             email: true,
             firstName: true,
             lastName: true,
+          },
+        },
+        subtasks: {
+          orderBy: [{ completed: 'asc' }, { dueDate: 'asc' }, { createdAt: 'asc' }],
+          include: {
+            assignee: {
+              select: {
+                id: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+              },
+            },
           },
         },
         submissions: {
@@ -550,6 +573,107 @@ export class DeliverablesService {
         },
       });
     }
+  }
+
+  async findSubtask(id: string) {
+    return this.deliverableSubtaskModel.findUnique({
+      where: { id },
+      include: {
+        assignee: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+        deliverable: {
+          select: {
+            id: true,
+            projectId: true,
+            sprint: {
+              select: {
+                id: true,
+                status: true,
+              },
+            },
+          },
+        },
+      },
+    } as any);
+  }
+
+  async createSubtask(
+    deliverableId: string,
+    data: {
+      title: string;
+      notes?: string;
+      dueDate?: string;
+      assigneeId?: string;
+    },
+  ) {
+    const title = data.title?.trim();
+    if (!title) {
+      throw new BadRequestException('Subtask title is required');
+    }
+
+    return this.deliverableSubtaskModel.create({
+      data: {
+        deliverableId,
+        title,
+        notes: data.notes?.trim() || null,
+        dueDate: data.dueDate ? new Date(data.dueDate) : null,
+        assigneeId: data.assigneeId || null,
+      },
+      include: {
+        assignee: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    } as any);
+  }
+
+  async updateSubtask(
+    id: string,
+    data: {
+      title?: string;
+      notes?: string;
+      dueDate?: string | null;
+      completed?: boolean;
+      assigneeId?: string | null;
+    },
+  ) {
+    return this.deliverableSubtaskModel.update({
+      where: { id },
+      data: {
+        ...(data.title !== undefined && { title: data.title.trim() }),
+        ...(data.notes !== undefined && { notes: data.notes?.trim() || null }),
+        ...(data.dueDate !== undefined && { dueDate: data.dueDate ? new Date(data.dueDate) : null }),
+        ...(data.completed !== undefined && { completed: data.completed }),
+        ...(data.assigneeId !== undefined && { assigneeId: data.assigneeId || null }),
+      },
+      include: {
+        assignee: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    } as any);
+  }
+
+  async removeSubtask(id: string) {
+    return this.deliverableSubtaskModel.delete({
+      where: { id },
+    });
   }
 
   async getAssignmentUserIds(deliverableId: string): Promise<string[]> {

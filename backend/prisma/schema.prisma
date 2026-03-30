@@ -118,6 +118,7 @@ model User {
   tasksCreated       Task[]
   assignedDeliverables Deliverable[] @relation("DeliverableAssignee")
   deliverableAssignments DeliverableAssignment[]
+  assignedDeliverableSubtasks DeliverableSubtask[] @relation("DeliverableSubtaskAssignee")
   slackOAuthStates   SlackOAuthState[]
   slackConnections   SlackUserConnection[]
   installedWorkspaces SlackWorkspace[] @relation("SlackWorkspaceInstaller")
@@ -389,6 +390,7 @@ model Deliverable {
   sprint      Sprint?      @relation(fields: [sprintId], references: [id], onDelete: SetNull)
   assignee    User?        @relation("DeliverableAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   assignments DeliverableAssignment[]
+  subtasks    DeliverableSubtask[]
   submissions Submission[]
   extensions  Extension[]
 
@@ -397,6 +399,25 @@ model Deliverable {
   @@index([assigneeId])
   @@index([deadline])
   @@index([status])
+}
+
+model DeliverableSubtask {
+  id            String   @id @default(cuid())
+  deliverableId  String
+  title         String
+  notes         String?
+  dueDate       DateTime?
+  completed     Boolean  @default(false)
+  assigneeId    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  deliverable Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+  assignee   User?        @relation("DeliverableSubtaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  @@index([deliverableId])
+  @@index([assigneeId])
+  @@index([dueDate])
 }
 
 model DeliverableAssignment {

@@ -191,6 +191,8 @@ export default function TeamsPage() {
   const [selectedSprintId, setSelectedSprintId] = useState<string>('');
   const [draftDeliverablesInput, setDraftDeliverablesInput] = useState('');
   const [draftDeliverablesSaving, setDraftDeliverablesSaving] = useState(false);
+  const [teamCalendarDraft, setTeamCalendarDraft] = useState('');
+  const [teamCalendarSaving, setTeamCalendarSaving] = useState(false);
   const [actionFeedback, setActionFeedback] = useState<{ message: string; tone: 'success' | 'warning' | 'info' } | null>(null);
 
   const fetchProjects = useCallback(async () => {
@@ -283,6 +285,7 @@ export default function TeamsPage() {
     resolvedRole === 'PM' ||
     resolvedRole === 'LC' ||
     resolvedRole === 'ADMIN';
+  const canEditTeamCalendar = resolvedRole === 'PM' || resolvedRole === 'ADMIN';
   const isConsultant = resolvedRole === 'CONSULTANT';
   const isExecutive = resolvedRole === 'EXECUTIVE';
   const isPartnerLike = resolvedRole === 'PARTNER' || isExecutive;
@@ -294,6 +297,10 @@ export default function TeamsPage() {
       : null;
   const selectedTeam = selectedTeamId ? projects.find((p) => p.id === selectedTeamId) : null;
   const selectedMemberEmails = selectedTeam ? getMemberEmails(selectedTeam) : [];
+
+  useEffect(() => {
+    setTeamCalendarDraft(selectedTeam?.googleCalendarEmbedUrl?.trim() ?? '');
+  }, [selectedTeam?.id, selectedTeam?.googleCalendarEmbedUrl]);
 
   useEffect(() => {
     if (!actionFeedback) return;
@@ -448,6 +455,29 @@ export default function TeamsPage() {
           tone: 'warning',
         }),
       );
+  };
+
+  const handleSaveTeamCalendar = async () => {
+    if (!selectedTeam || !canEditTeamCalendar) return;
+
+    setTeamCalendarSaving(true);
+    try {
+      await projectsAPI.update(selectedTeam.id, {
+        googleCalendarEmbedUrl: teamCalendarDraft.trim() || null,
+      });
+      await fetchProjects();
+      setActionFeedback({
+        message: teamCalendarDraft.trim() ? 'Team calendar saved' : 'Team calendar removed',
+        tone: 'success',
+      });
+    } catch (err) {
+      setActionFeedback({
+        message: parseApiError(err, 'Failed to save team calendar'),
+        tone: 'warning',
+      });
+    } finally {
+      setTeamCalendarSaving(false);
+    }
   };
 
   const handleSaveSprintConfig = async () => {
@@ -796,6 +826,52 @@ export default function TeamsPage() {
                           )}
                         </div>
                       )}
+                      <div className="mb-4 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] space-y-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <p className="text-sm font-semibold flex items-center gap-2">
+                              <CalendarDays className="w-4 h-4 text-[var(--primary)]" />
+                              Team calendar
+                            </p>
+                            <p className="text-xs text-[var(--foreground)]/60 mt-1">
+                              Add the Google Calendar embed link for this team. The dashboard calendar will automatically show both the OTCR calendar and this team calendar together.
+                            </p>
+                          </div>
+                        </div>
+
+                        {canEditTeamCalendar ? (
+                          <>
+                            <label className="space-y-1 text-sm block">
+                              <span className="font-medium text-[var(--foreground)]">Google Calendar embed link</span>
+                              <input
+                                type="url"
+                                value={teamCalendarDraft}
+                                onChange={(e) => setTeamCalendarDraft(e.target.value)}
+                                placeholder="https://calendar.google.com/calendar/embed?src=..."
+                                className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
+                              />
+                            </label>
+                            <div className="flex flex-wrap items-center gap-3">
+                              <Button
+                                size="sm"
+                                onClick={handleSaveTeamCalendar}
+                                disabled={teamCalendarSaving}
+                              >
+                                {teamCalendarSaving ? 'Saving...' : 'Save team calendar'}
+                              </Button>
+                              <p className="text-xs text-[var(--foreground)]/60">
+                                Use Google Calendar&apos;s embeddable link, not the normal browser URL.
+                              </p>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="rounded-lg border border-dashed border-[var(--border)] p-3 text-sm text-[var(--foreground)]/60">
+                            {selectedTeam.googleCalendarEmbedUrl
+                              ? 'A team calendar is configured for this team.'
+                              : 'No team calendar has been configured yet.'}
+                          </div>
+                        )}
+                      </div>
                       <p className="text-xs font-medium text-[var(--foreground)]/70 mb-2">Members and roles</p>
                       <ul className="space-y-2 mb-4">
                         {(selectedTeam.members ?? []).map((m) => (
