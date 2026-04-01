@@ -17,6 +17,7 @@ type CreateAttendanceEventInput = {
   title?: string;
   eventDate?: string;
   locationType?: 'IN_PERSON' | 'ONLINE';
+  category?: 'CLIENT_CALL' | 'TEAM_MEETING' | 'FIRMWIDE_EVENT' | 'SOCIAL';
   locationLabel?: string;
   latitude?: number;
   longitude?: number;
@@ -30,6 +31,8 @@ type CheckInInput = {
   geofenceVerified?: boolean;
   code?: string;
 };
+
+type AttendanceEventCategory = 'CLIENT_CALL' | 'TEAM_MEETING' | 'FIRMWIDE_EVENT' | 'SOCIAL';
 
 @Injectable()
 export class AttendanceService {
@@ -97,6 +100,88 @@ export class AttendanceService {
 
   private generateVerificationCode() {
     return String(Math.floor(1000 + Math.random() * 9000));
+  }
+
+  private defaultCategoryForScope(scope: 'TEAM' | 'GLOBAL'): AttendanceEventCategory {
+    return scope === 'TEAM' ? 'TEAM_MEETING' : 'FIRMWIDE_EVENT';
+  }
+
+  private normalizeAttendanceCategory(
+    scope: 'TEAM' | 'GLOBAL',
+    category?: string | null,
+  ): AttendanceEventCategory {
+    const normalized = (category ?? '').trim().toUpperCase();
+    const allowedCategories =
+      scope === 'TEAM'
+        ? ['CLIENT_CALL', 'TEAM_MEETING']
+        : ['FIRMWIDE_EVENT', 'SOCIAL'];
+
+    if (!normalized) {
+      return this.defaultCategoryForScope(scope);
+    }
+
+    if (!allowedCategories.includes(normalized)) {
+      throw new BadRequestException(
+        scope === 'TEAM'
+          ? 'Team events must be tagged as CLIENT_CALL or TEAM_MEETING'
+          : 'Firmwide events must be tagged as FIRMWIDE_EVENT or SOCIAL',
+      );
+    }
+
+    return normalized as AttendanceEventCategory;
+  }
+
+  private async ensureAttendanceEventCategoryTable() {
+    await this.prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "AttendanceEventCategorySetting" (
+        "eventId" TEXT PRIMARY KEY REFERENCES "AttendanceEvent"("id") ON DELETE CASCADE,
+        "category" TEXT NOT NULL,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  }
+
+  private async listAttendanceEventCategories(eventIds: string[]) {
+    if (eventIds.length === 0) {
+      return new Map<string, AttendanceEventCategory>();
+    }
+
+    await this.ensureAttendanceEventCategoryTable();
+    const rows = await this.prisma.$queryRawUnsafe<Array<{ eventId: string; category: AttendanceEventCategory }>>(
+      `SELECT "eventId", "category"
+       FROM "AttendanceEventCategorySetting"
+       WHERE "eventId" = ANY($1::text[])`,
+      eventIds,
+    );
+
+    return new Map(rows.map((row) => [row.eventId, row.category]));
+  }
+
+  private async upsertAttendanceEventCategory(eventId: string, category: AttendanceEventCategory) {
+    await this.ensureAttendanceEventCategoryTable();
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "AttendanceEventCategorySetting" ("eventId", "category", "createdAt", "updatedAt")
+       VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       ON CONFLICT ("eventId")
+       DO UPDATE SET
+         "category" = EXCLUDED."category",
+         "updatedAt" = CURRENT_TIMESTAMP`,
+      eventId,
+      category,
+    );
+  }
+
+  private attachEventCategory(event: any, categoryByEventId: Map<string, AttendanceEventCategory>) {
+    return {
+      ...event,
+      category: categoryByEventId.get(event.id) ?? this.defaultCategoryForScope(event.audienceScope),
+    };
+  }
+
+  private async attachEventCategories(events: any[]) {
+    const categoryByEventId = await this.listAttendanceEventCategories(events.map((event) => event.id));
+    return events.map((event) => this.attachEventCategory(event, categoryByEventId));
   }
 
   private isManagerRole(role: AttendanceUser['role']) {
@@ -182,6 +267,10 @@ export class AttendanceService {
     return event.createdById === user.id || user.role === 'PARTNER';
   }
 
+  private canRevealVerificationCode(event: any, user: AttendanceUser) {
+    return event.createdById === user.id || user.role === 'PARTNER';
+  }
+
   private async canOpenCodeWindow(eventId: string, user: AttendanceUser) {
     const event = await this.canAccessEvent(eventId, user);
 
@@ -196,6 +285,7 @@ export class AttendanceService {
     const attendeeRecord = event.attendances.find((attendance: any) => attendance.userId === user.id) ?? null;
     const canManage = event.createdById === user.id;
     const canControlOnlineCode = this.canControlOnlineCode(event, user);
+    const canRevealVerificationCode = this.canRevealVerificationCode(event, user);
 
     return {
       id: event.id,
@@ -209,13 +299,14 @@ export class AttendanceService {
       audienceScope: event.audienceScope,
       projectId: event.projectId,
       projectName: event.project?.name ?? null,
+      category: event.category ?? this.defaultCategoryForScope(event.audienceScope),
       createdById: event.createdById,
       createdByName: this.formatName(event.createdBy),
       canManage,
       canControlOnlineCode,
-      verificationCode: canControlOnlineCode ? event.verificationCode : null,
-      codeWindowOpensAt: canControlOnlineCode ? event.codeWindowOpensAt : null,
-      codeWindowClosesAt: canControlOnlineCode ? event.codeWindowClosesAt : null,
+      verificationCode: canRevealVerificationCode ? event.verificationCode : null,
+      codeWindowOpensAt: canRevealVerificationCode ? event.codeWindowOpensAt : null,
+      codeWindowClosesAt: canRevealVerificationCode ? event.codeWindowClosesAt : null,
       attendanceCount: event._count?.attendances ?? 0,
       attendance: attendeeRecord
         ? {
@@ -264,9 +355,10 @@ export class AttendanceService {
       include: this.baseEventInclude,
       orderBy: [{ eventDate: 'asc' }, { createdAt: 'desc' }],
     });
+    const eventsWithCategories = await this.attachEventCategories(events);
 
     return {
-      events: events.map((event) => this.sanitizeEventForUser(event, user)),
+      events: eventsWithCategories.map((event) => this.sanitizeEventForUser(event, user)),
     };
   }
 
@@ -301,6 +393,7 @@ export class AttendanceService {
       const project = await this.ensureCanTargetProject(user, body.projectId);
       projectId = project.id;
     }
+    const category = this.normalizeAttendanceCategory(normalizedScope, body.category);
 
     const locationLabel = body.locationLabel?.trim() || null;
 
@@ -330,8 +423,10 @@ export class AttendanceService {
       },
       include: this.baseEventInclude,
     });
+    await this.upsertAttendanceEventCategory(event.id, category);
+    const eventWithCategory = this.attachEventCategory(event, new Map([[event.id, category]]));
 
-    return this.sanitizeEventForUser(event, user);
+    return this.sanitizeEventForUser(eventWithCategory, user);
   }
 
   async openCodeWindow(eventId: string, user: AttendanceUser) {
@@ -352,8 +447,9 @@ export class AttendanceService {
       },
       include: this.baseEventInclude,
     });
+    const [updatedWithCategory] = await this.attachEventCategories([updated]);
 
-    return this.sanitizeEventForUser(updated, user);
+    return this.sanitizeEventForUser(updatedWithCategory, user);
   }
 
   async listAttendances(eventId: string, user: AttendanceUser) {
@@ -375,8 +471,10 @@ export class AttendanceService {
       orderBy: { checkedInAt: 'desc' },
     });
 
+    const [eventWithCategory] = await this.attachEventCategories([event]);
+
     return {
-      event: this.sanitizeEventForUser(event, user),
+      event: this.sanitizeEventForUser(eventWithCategory, user),
       attendances: attendances.map((attendance) => ({
         id: attendance.id,
         userId: attendance.userId,
@@ -470,6 +568,140 @@ export class AttendanceService {
         verificationMethod: checkIn.verificationMethod,
         codeVerified: checkIn.codeVerified,
         checkedInAt: checkIn.checkedInAt,
+      },
+    };
+  }
+
+  async listMemberAttendanceHistory(memberId: string, projectId: string, user: AttendanceUser) {
+    if (!projectId?.trim()) {
+      throw new BadRequestException('projectId is required');
+    }
+
+    const project = await this.ensureProjectExists(projectId);
+
+    if (user.role === 'PM' && project.pmId !== user.id) {
+      throw new ForbiddenException('PMs can only review attendance for their own teams');
+    }
+
+    const member = await this.prisma.user.findUnique({
+      where: { id: memberId },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+      },
+    });
+
+    if (!member) {
+      throw new NotFoundException('Team member not found');
+    }
+
+    const membership = await this.prisma.projectMember.findFirst({
+      where: {
+        projectId,
+        userId: memberId,
+        leftAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('That user is not an active member of this team');
+    }
+
+    const pastEvents = await this.attendanceEventModel.findMany({
+      where: {
+        eventDate: {
+          lt: new Date(),
+        },
+        OR: [
+          {
+            audienceScope: 'TEAM',
+            projectId,
+          },
+          {
+            audienceScope: 'GLOBAL',
+          },
+        ],
+      },
+      include: {
+        createdBy: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+          },
+        },
+        project: {
+          select: {
+            id: true,
+            name: true,
+            pmId: true,
+          },
+        },
+        attendances: {
+          where: {
+            userId: memberId,
+          },
+          select: {
+            id: true,
+            userId: true,
+            present: true,
+            verificationMethod: true,
+            codeVerified: true,
+            checkedInAt: true,
+          },
+        },
+      },
+      orderBy: [{ eventDate: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    const eventsWithCategories = await this.attachEventCategories(pastEvents);
+    const eventItems = eventsWithCategories.map((event) => {
+      const attendance = event.attendances[0] ?? null;
+      const base = {
+        id: event.id,
+        title: event.title,
+        eventDate: event.eventDate,
+        audienceScope: event.audienceScope,
+        projectId: event.projectId,
+        projectName: event.project?.name ?? null,
+        locationType: event.locationType,
+        locationLabel: event.locationLabel,
+        category: event.category ?? this.defaultCategoryForScope(event.audienceScope),
+        createdByName: this.formatName(event.createdBy),
+        attended: Boolean(attendance?.present),
+        checkedInAt: attendance?.checkedInAt ?? null,
+        verificationMethod: attendance?.verificationMethod ?? null,
+      };
+      return base;
+    });
+
+    const teamCategories = new Set<AttendanceEventCategory>(['CLIENT_CALL', 'TEAM_MEETING']);
+    const firmwideCategories = new Set<AttendanceEventCategory>(['FIRMWIDE_EVENT', 'SOCIAL']);
+    const teamEvents = eventItems.filter(
+      (event) => event.audienceScope === 'TEAM' && event.projectId === projectId && teamCategories.has(event.category),
+    );
+    const firmwideEvents = eventItems.filter(
+      (event) => event.audienceScope === 'GLOBAL' && firmwideCategories.has(event.category),
+    );
+
+    return {
+      member: {
+        id: member.id,
+        email: member.email,
+        name: this.formatName(member),
+      },
+      team: {
+        attended: teamEvents.filter((event) => event.attended),
+        missed: teamEvents.filter((event) => !event.attended),
+      },
+      firmwide: {
+        attended: firmwideEvents.filter((event) => event.attended),
+        missed: firmwideEvents.filter((event) => !event.attended),
       },
     };
   }

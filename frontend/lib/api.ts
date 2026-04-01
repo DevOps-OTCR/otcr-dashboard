@@ -138,6 +138,7 @@ export const notificationsAPI = {
 export type AttendanceLocationType = 'IN_PERSON' | 'ONLINE';
 export type AttendanceAudienceScope = 'TEAM' | 'GLOBAL';
 export type AttendanceVerificationMethod = 'GEOFENCE' | 'CODE';
+export type AttendanceEventCategory = 'CLIENT_CALL' | 'TEAM_MEETING' | 'FIRMWIDE_EVENT' | 'SOCIAL';
 
 export type AttendanceEvent = {
   id: string;
@@ -149,6 +150,7 @@ export type AttendanceEvent = {
   longitude: number | null;
   geofenceRadiusMeters: number;
   audienceScope: AttendanceAudienceScope;
+  category: AttendanceEventCategory;
   projectId: string | null;
   projectName: string | null;
   createdById: string;
@@ -173,6 +175,7 @@ export const attendanceAPI = {
     title: string;
     eventDate: string;
     locationType: AttendanceLocationType;
+    category?: AttendanceEventCategory;
     locationLabel?: string;
     latitude?: number;
     longitude?: number;
@@ -188,6 +191,8 @@ export const attendanceAPI = {
     code?: string;
   }) => api.post(`/attendance/events/${eventId}/check-in`, data),
   listAttendances: (eventId: string) => api.get(`/attendance/events/${eventId}/attendances`),
+  getMemberHistory: (memberId: string, projectId: string) =>
+    api.get(`/attendance/members/${memberId}/history`, { params: { projectId } }),
 };
 
 export type ProjectsQuery = {

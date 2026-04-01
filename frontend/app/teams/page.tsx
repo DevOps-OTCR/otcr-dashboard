@@ -16,6 +16,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import { cn } from '@/lib/utils';
@@ -23,7 +24,7 @@ import { getEffectiveRole, getUserRole, type AppRole } from '@/lib/permissions';
 import { AppNavbar } from '@/components/AppNavbar';
 import { getLastDashboard } from '@/lib/dashboard-context';
 import { useRouter } from 'next/navigation';
-import { projectsAPI, authAPI, deliverablesAPI, setAuthToken } from '@/lib/api';
+import { projectsAPI, authAPI, attendanceAPI, deliverablesAPI, setAuthToken, type AttendanceEventCategory } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { parseDashPrefixedDeliverables } from '@/lib/deliverables-parser';
@@ -76,6 +77,40 @@ type SprintRecord = {
   deliverables?: SprintDeliverable[];
 };
 
+type AttendanceHistoryEvent = {
+  id: string;
+  title: string;
+  eventDate: string;
+  audienceScope: 'TEAM' | 'GLOBAL';
+  projectId: string | null;
+  projectName: string | null;
+  locationType: 'ONLINE' | 'IN_PERSON';
+  locationLabel: string | null;
+  category: AttendanceEventCategory;
+  createdByName: string;
+  attended: boolean;
+  checkedInAt: string | null;
+  verificationMethod: 'GEOFENCE' | 'CODE' | null;
+};
+
+type MemberAttendanceHistory = {
+  member: {
+    id: string;
+    email: string;
+    name: string;
+  };
+  team: {
+    attended: AttendanceHistoryEvent[];
+    missed: AttendanceHistoryEvent[];
+  };
+  firmwide: {
+    attended: AttendanceHistoryEvent[];
+    missed: AttendanceHistoryEvent[];
+  };
+};
+
+type HistoryFilter = 'TEAM' | 'FIRMWIDE';
+
 const WEEKDAY_OPTIONS = [
   'MONDAY',
   'TUESDAY',
@@ -93,6 +128,13 @@ const DEFAULT_SPRINT_CONFIG: Omit<SprintConfig, 'id'> = {
   defaultDueTime: '23:59',
   sprintTimezone: 'America/Chicago',
   autoGenerateSprints: true,
+};
+
+const ATTENDANCE_CATEGORY_LABELS: Record<AttendanceEventCategory, string> = {
+  CLIENT_CALL: 'Client call',
+  TEAM_MEETING: 'Team meeting',
+  FIRMWIDE_EVENT: 'Firmwide event',
+  SOCIAL: 'Social',
 };
 
 function getMemberEmails(project: ProjectFromApi): string[] {
@@ -193,6 +235,10 @@ export default function TeamsPage() {
   const [draftDeliverablesSaving, setDraftDeliverablesSaving] = useState(false);
   const [teamCalendarDraft, setTeamCalendarDraft] = useState('');
   const [teamCalendarSaving, setTeamCalendarSaving] = useState(false);
+  const [memberHistoryOpen, setMemberHistoryOpen] = useState(false);
+  const [memberHistoryLoading, setMemberHistoryLoading] = useState(false);
+  const [memberHistoryFilter, setMemberHistoryFilter] = useState<HistoryFilter>('TEAM');
+  const [memberHistory, setMemberHistory] = useState<MemberAttendanceHistory | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{ message: string; tone: 'success' | 'warning' | 'info' } | null>(null);
 
   const fetchProjects = useCallback(async () => {
@@ -286,6 +332,8 @@ export default function TeamsPage() {
     resolvedRole === 'LC' ||
     resolvedRole === 'ADMIN';
   const canEditTeamCalendar = resolvedRole === 'PM' || resolvedRole === 'ADMIN';
+  const canInspectMemberAttendance =
+    resolvedRole === 'PM' || resolvedRole === 'PARTNER' || resolvedRole === 'EXECUTIVE' || resolvedRole === 'ADMIN';
   const isConsultant = resolvedRole === 'CONSULTANT';
   const isExecutive = resolvedRole === 'EXECUTIVE';
   const isPartnerLike = resolvedRole === 'PARTNER' || isExecutive;
@@ -480,6 +528,28 @@ export default function TeamsPage() {
     }
   };
 
+  const handleOpenMemberHistory = async (member: ProjectMember['user']) => {
+    if (!selectedTeam || !canInspectMemberAttendance) return;
+
+    setMemberHistoryOpen(true);
+    setMemberHistoryLoading(true);
+    setMemberHistoryFilter('TEAM');
+    setMemberHistory(null);
+
+    try {
+      const response = await attendanceAPI.getMemberHistory(member.id, selectedTeam.id);
+      setMemberHistory(response.data as MemberAttendanceHistory);
+    } catch (err) {
+      setMemberHistory(null);
+      setActionFeedback({
+        message: parseApiError(err, 'Failed to load member attendance history'),
+        tone: 'warning',
+      });
+    } finally {
+      setMemberHistoryLoading(false);
+    }
+  };
+
   const handleSaveSprintConfig = async () => {
     if (!selectedTeam) return;
 
@@ -613,6 +683,45 @@ export default function TeamsPage() {
   };
   const labelForWeekday = (value: string) =>
     value.charAt(0) + value.slice(1).toLowerCase();
+  const activeHistoryBuckets =
+    memberHistoryFilter === 'TEAM'
+      ? memberHistory?.team ?? { attended: [], missed: [] }
+      : memberHistory?.firmwide ?? { attended: [], missed: [] };
+
+  const renderHistoryCard = (event: AttendanceHistoryEvent, variant: 'attended' | 'missed') => (
+    <div key={event.id} className="rounded-xl border border-[var(--border)] bg-[var(--secondary)]/60 p-4 space-y-2">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <p className="text-sm font-semibold text-[var(--foreground)]">{event.title}</p>
+          <p className="text-xs text-[var(--foreground)]/60 mt-1">
+            {new Date(event.eventDate).toLocaleString()}
+          </p>
+        </div>
+        <Badge variant={variant === 'attended' ? 'success' : 'warning'}>
+          {variant === 'attended' ? 'Attended' : 'Missed'}
+        </Badge>
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <Badge variant="info">{ATTENDANCE_CATEGORY_LABELS[event.category]}</Badge>
+        <Badge variant={event.locationType === 'ONLINE' ? 'default' : 'purple'}>
+          {event.locationType === 'ONLINE' ? 'Online' : 'In person'}
+        </Badge>
+      </div>
+      <p className="text-xs text-[var(--foreground)]/65">
+        Created by {event.createdByName}
+      </p>
+      {event.projectName && (
+        <p className="text-xs text-[var(--foreground)]/65">
+          Team: {event.projectName}
+        </p>
+      )}
+      {variant === 'attended' && event.checkedInAt && (
+        <p className="text-xs text-[var(--foreground)]/65">
+          Checked in {new Date(event.checkedInAt).toLocaleString()}
+        </p>
+      )}
+    </div>
+  );
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--background)]">
@@ -883,6 +992,15 @@ export default function TeamsPage() {
                               <span className="font-medium text-[var(--foreground)]">{formatMemberName(m.user)}</span>
                               <span className="text-[var(--foreground)]/60 ml-2">({getUserRole(m.user.email)})</span>
                             </span>
+                            {canInspectMemberAttendance && (
+                              <button
+                                type="button"
+                                onClick={() => void handleOpenMemberHistory(m.user)}
+                                className="ml-3 text-xs font-medium text-[var(--primary)] hover:underline"
+                              >
+                                View attendance
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => handleRemoveMemberFromTeam(selectedTeam.id, m.user.id)}
@@ -1059,6 +1177,15 @@ export default function TeamsPage() {
                               <span className="font-medium text-[var(--foreground)]">{formatMemberName(m.user)}</span>
                               <span className="text-[var(--foreground)]/60 ml-2">({getUserRole(m.user.email)})</span>
                             </span>
+                            {canInspectMemberAttendance && (
+                              <button
+                                type="button"
+                                onClick={() => void handleOpenMemberHistory(m.user)}
+                                className="ml-3 text-xs font-medium text-[var(--primary)] hover:underline"
+                              >
+                                View attendance
+                              </button>
+                            )}
                           </li>
                         ))}
                       </ul>
@@ -1191,6 +1318,84 @@ export default function TeamsPage() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        isOpen={memberHistoryOpen}
+        onClose={() => setMemberHistoryOpen(false)}
+        title={
+          memberHistory
+            ? `${memberHistory.member.name} attendance`
+            : 'Member attendance'
+        }
+        size="xl"
+      >
+        {memberHistoryLoading ? (
+          <p className="text-sm text-[var(--foreground)]/65">Loading attendance history...</p>
+        ) : !memberHistory ? (
+          <p className="text-sm text-[var(--foreground)]/65">No attendance history available.</p>
+        ) : (
+          <div className="space-y-5">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-sm font-semibold text-[var(--foreground)]">{memberHistory.member.name}</p>
+                <p className="text-xs text-[var(--foreground)]/60">{memberHistory.member.email}</p>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={memberHistoryFilter === 'TEAM' ? 'primary' : 'outline'}
+                  onClick={() => setMemberHistoryFilter('TEAM')}
+                >
+                  Team events
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={memberHistoryFilter === 'FIRMWIDE' ? 'primary' : 'outline'}
+                  onClick={() => setMemberHistoryFilter('FIRMWIDE')}
+                >
+                  Firmwide events
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid gap-5 lg:grid-cols-2">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-[var(--foreground)]">Attended</h3>
+                  <Badge variant="success">{activeHistoryBuckets.attended.length}</Badge>
+                </div>
+                <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+                  {activeHistoryBuckets.attended.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-[var(--border)] p-4 text-sm text-[var(--foreground)]/60">
+                      No attended events in this filter.
+                    </div>
+                  ) : (
+                    activeHistoryBuckets.attended.map((event) => renderHistoryCard(event, 'attended'))
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-[var(--foreground)]">Missed</h3>
+                  <Badge variant="warning">{activeHistoryBuckets.missed.length}</Badge>
+                </div>
+                <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+                  {activeHistoryBuckets.missed.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-[var(--border)] p-4 text-sm text-[var(--foreground)]/60">
+                      No missed events in this filter.
+                    </div>
+                  ) : (
+                    activeHistoryBuckets.missed.map((event) => renderHistoryCard(event, 'missed'))
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

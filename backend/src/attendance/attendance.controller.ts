@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { AttendanceService } from './attendance.service';
@@ -31,6 +32,7 @@ export class AttendanceController {
       title?: string;
       eventDate?: string;
       locationType?: 'IN_PERSON' | 'ONLINE';
+      category?: 'CLIENT_CALL' | 'TEAM_MEETING' | 'FIRMWIDE_EVENT' | 'SOCIAL';
       locationLabel?: string;
       latitude?: number;
       longitude?: number;
@@ -53,6 +55,16 @@ export class AttendanceController {
   @Roles('ADMIN', 'PM', 'LC', 'CONSULTANT', 'PARTNER', 'EXECUTIVE')
   async listAttendances(@Param('id') id: string, @GetUser() user: any) {
     return this.attendanceService.listAttendances(id, user);
+  }
+
+  @Get('members/:memberId/history')
+  @Roles('ADMIN', 'PM', 'PARTNER', 'EXECUTIVE')
+  async listMemberHistory(
+    @Param('memberId') memberId: string,
+    @Query('projectId') projectId: string,
+    @GetUser() user: any,
+  ) {
+    return this.attendanceService.listMemberAttendanceHistory(memberId, projectId, user);
   }
 
   @Delete('events/:id')

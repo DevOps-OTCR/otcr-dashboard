@@ -22,6 +22,7 @@ import {
   projectsAPI,
   setAuthToken,
   type AttendanceAudienceScope,
+  type AttendanceEventCategory,
   type AttendanceEvent,
   type AttendanceLocationType,
 } from '@/lib/api';
@@ -60,6 +61,7 @@ type CreateFormState = {
   locationType: AttendanceLocationType;
   locationLabel: string;
   audienceScope: AttendanceAudienceScope;
+  category: AttendanceEventCategory;
   projectId: string;
 };
 
@@ -69,8 +71,27 @@ const DEFAULT_FORM: CreateFormState = {
   locationType: 'ONLINE',
   locationLabel: '',
   audienceScope: 'TEAM',
+  category: 'TEAM_MEETING',
   projectId: '',
 };
+
+const ATTENDANCE_CATEGORY_LABELS: Record<AttendanceEventCategory, string> = {
+  CLIENT_CALL: 'Client call',
+  TEAM_MEETING: 'Team meeting',
+  FIRMWIDE_EVENT: 'Firmwide event',
+  SOCIAL: 'Social',
+};
+
+const TEAM_EVENT_CATEGORIES: AttendanceEventCategory[] = ['CLIENT_CALL', 'TEAM_MEETING'];
+const FIRMWIDE_EVENT_CATEGORIES: AttendanceEventCategory[] = ['FIRMWIDE_EVENT', 'SOCIAL'];
+
+function getAllowedCategoriesForScope(scope: AttendanceAudienceScope): AttendanceEventCategory[] {
+  return scope === 'TEAM' ? TEAM_EVENT_CATEGORIES : FIRMWIDE_EVENT_CATEGORIES;
+}
+
+function getDefaultCategoryForScope(scope: AttendanceAudienceScope): AttendanceEventCategory {
+  return scope === 'TEAM' ? 'TEAM_MEETING' : 'FIRMWIDE_EVENT';
+}
 
 function parseApiError(err: any, fallback: string): string {
   const message = err?.response?.data?.message ?? err?.message ?? fallback;
@@ -372,7 +393,16 @@ export default function AttendancePage() {
   }
 
   const handleFormChange = (field: keyof CreateFormState, value: string) => {
-    setForm((current) => ({ ...current, [field]: value }));
+    setForm((current) => {
+      const next = { ...current, [field]: value };
+      if (field === 'audienceScope') {
+        const allowedCategories = getAllowedCategoriesForScope(value as AttendanceAudienceScope);
+        next.category = allowedCategories.includes(current.category)
+          ? current.category
+          : getDefaultCategoryForScope(value as AttendanceAudienceScope);
+      }
+      return next;
+    });
     if (field === 'locationLabel') {
       setResolvedLocation(null);
       setLocationResolvedFor('');
@@ -384,6 +414,7 @@ export default function AttendancePage() {
     setForm({
       ...DEFAULT_FORM,
       audienceScope: role === 'PM' ? 'TEAM' : 'TEAM',
+      category: getDefaultCategoryForScope('TEAM'),
       projectId: role === 'PM' ? projects[0]?.id || '' : '',
     });
     setResolvedLocation(null);
@@ -423,6 +454,7 @@ export default function AttendancePage() {
         title: form.title.trim(),
         eventDate: new Date(form.eventDate).toISOString(),
         locationType: form.locationType,
+        category: form.category,
         locationLabel: form.locationType === 'IN_PERSON' ? form.locationLabel.trim() : undefined,
         latitude: form.locationType === 'IN_PERSON' ? locationCoordinates?.latitude : undefined,
         longitude: form.locationType === 'IN_PERSON' ? locationCoordinates?.longitude : undefined,
@@ -437,7 +469,7 @@ export default function AttendancePage() {
       setCreateOpen(false);
       resetForm();
       setMessage(
-        created.locationType === 'ONLINE' && created.verificationCode
+        created.locationType === 'ONLINE' && created.canControlOnlineCode && created.verificationCode
           ? `Event created. Online verification code: ${created.verificationCode}.`
           : 'Attendance event created.',
       );
@@ -600,6 +632,9 @@ export default function AttendancePage() {
               <Badge variant={attendanceEvent.audienceScope === 'GLOBAL' ? 'warning' : 'default'}>
                 {attendanceEvent.audienceScope === 'GLOBAL' ? 'Everyone' : attendanceEvent.projectName || 'Team'}
               </Badge>
+              <Badge variant="purple">
+                {ATTENDANCE_CATEGORY_LABELS[attendanceEvent.category]}
+              </Badge>
             </div>
           }
         >
@@ -613,7 +648,7 @@ export default function AttendancePage() {
               <span className="inline-flex items-center gap-1.5">
                 {attendanceEvent.locationType === 'ONLINE' ? <Monitor className="w-4 h-4" /> : <MapPin className="w-4 h-4" />}
                 {attendanceEvent.locationType === 'ONLINE'
-                  ? 'Code-based online check-in'
+                  ? 'Online check-in'
                   : attendanceEvent.locationLabel || 'In-person location'}
               </span>
               <span className="inline-flex items-center gap-1.5">
@@ -710,7 +745,7 @@ export default function AttendancePage() {
                 loading={submittingEventId === attendanceEvent.id}
                 icon={<LocateFixed className="w-4 h-4" />}
               >
-                Check in with geofence
+                Check in
               </Button>
             )}
           </div>
@@ -914,6 +949,22 @@ export default function AttendancePage() {
               </select>
             </label>
           )}
+
+          <label className="space-y-2 text-sm block">
+            <span className="font-medium">Event tag</span>
+            <select
+              value={form.category}
+              onChange={(event) => handleFormChange('category', event.target.value)}
+              className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2"
+              required
+            >
+              {getAllowedCategoriesForScope(role === 'PM' ? 'TEAM' : form.audienceScope).map((category) => (
+                <option key={category} value={category}>
+                  {ATTENDANCE_CATEGORY_LABELS[category]}
+                </option>
+              ))}
+            </select>
+          </label>
 
           {form.locationType === 'IN_PERSON' ? (
             <div className="grid gap-4 md:grid-cols-2">
