@@ -20,10 +20,21 @@ function resolveAuthHeaderValue(token: string | null, email?: string): string | 
   return token || email || null;
 }
 
+type SlackConnection = {
+  slackUserId: string;
+  workspace?: {
+    teamId?: string | null;
+    teamName?: string | null;
+    installedAt?: string | null;
+  } | null;
+};
+
 export default function SlackSettingsPage() {
   const session = useAuth();
   const [role, setRole] = useState<AppRole>('CONSULTANT');
   const [isConnectingSlack, setIsConnectingSlack] = useState(false);
+  const [loadingSlackConnections, setLoadingSlackConnections] = useState(false);
+  const [slackConnections, setSlackConnections] = useState<SlackConnection[]>([]);
   const [isGrantingAccess, setIsGrantingAccess] = useState(false);
   const [dashboardAccessEmail, setDashboardAccessEmail] = useState('');
   const [onboardingRequests, setOnboardingRequests] = useState<any[]>([]);
@@ -33,6 +44,61 @@ export default function SlackSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const canGrantDashboardAccess = role === 'ADMIN' || role === 'EXECUTIVE' || role === 'PM';
   const canReviewOnboarding = role === 'ADMIN' || role === 'PARTNER' || role === 'EXECUTIVE' || role === 'PM';
+  const hasSlackConnection = slackConnections.length > 0;
+  const latestSlackConnection = slackConnections[0] ?? null;
+
+  const loadSlackConnections = async (options?: { silent?: boolean }) => {
+    if (!session.isLoggedIn) {
+      setSlackConnections([]);
+      return [];
+    }
+
+    if (!options?.silent) {
+      setLoadingSlackConnections(true);
+    }
+
+    try {
+      const token = await session.getToken();
+      setAuthToken(resolveAuthHeaderValue(token, session.user?.email));
+      const res = await slackAPI.getConnections();
+      const connections = Array.isArray(res.data?.connections) ? res.data.connections : [];
+      setSlackConnections(connections);
+      return connections as SlackConnection[];
+    } catch (e: any) {
+      if (!options?.silent) {
+        setError(parseApiError(e, 'Failed to load Slack connection status'));
+      }
+      return [];
+    } finally {
+      if (!options?.silent) {
+        setLoadingSlackConnections(false);
+      }
+    }
+  };
+
+  const finalizeSlackConnect = async () => {
+    const existingConnections = await loadSlackConnections({ silent: true });
+    if (existingConnections.length > 0) {
+      setMessage('Slack connected successfully.');
+      return;
+    }
+
+    try {
+      const token = await session.getToken();
+      setAuthToken(resolveAuthHeaderValue(token, session.user?.email));
+      await slackAPI.connectByEmail();
+      const refreshedConnections = await loadSlackConnections({ silent: true });
+      if (refreshedConnections.length > 0) {
+        setMessage('Slack connected successfully.');
+        return;
+      }
+    } catch (e: any) {
+      setError(parseApiError(e, 'Slack finished OAuth, but we could not link your OTCR account yet'));
+      return;
+    }
+
+    setError('Slack finished OAuth, but your OTCR account is still not linked. Try connecting again.');
+  };
 
   useEffect(() => {
     const syncRole = async () => {
@@ -54,6 +120,22 @@ export default function SlackSettingsPage() {
     };
     void syncRole();
   }, [session]);
+
+  useEffect(() => {
+    void loadSlackConnections();
+
+    if (!session.isLoggedIn) return;
+
+    const handleFocus = () => {
+      void loadSlackConnections({ silent: true });
+    };
+
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [session.isLoggedIn, session.user?.email]);
 
   useEffect(() => {
     const loadRequests = async () => {
@@ -114,6 +196,13 @@ export default function SlackSettingsPage() {
       }
 
       setMessage('Slack connect opened in a new window. Complete the flow and close it.');
+
+      const pollForPopupClose = window.setInterval(() => {
+        if (!popup.closed) return;
+
+        window.clearInterval(pollForPopupClose);
+        void finalizeSlackConnect();
+      }, 800);
     } catch (e: any) {
       setError(parseApiError(e, 'Could not start Slack connect flow'));
     } finally {
@@ -178,15 +267,36 @@ export default function SlackSettingsPage() {
               <Slack className="w-5 h-5 text-[var(--primary)]" />
               Slack
             </CardTitle>
-            <CardDescription>Connect your Slack account.</CardDescription>
+            <CardDescription>
+              {hasSlackConnection
+                ? `Connected${latestSlackConnection?.workspace?.teamName ? ` to ${latestSlackConnection.workspace.teamName}` : ''}.`
+                : 'Connect your Slack account.'}
+            </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
+            {loadingSlackConnections ? (
+              <p className="text-sm text-[var(--foreground)]/60">Checking Slack connection...</p>
+            ) : hasSlackConnection ? (
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--secondary)]/50 p-3 text-sm">
+                <p className="font-medium text-[var(--foreground)]">
+                  Slack is connected
+                  {latestSlackConnection?.workspace?.teamName ? ` to ${latestSlackConnection.workspace.teamName}` : ''}.
+                </p>
+                <p className="mt-1 text-[var(--foreground)]/60">
+                  Alerts will be sent to your linked Slack account when notifications fire.
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-[var(--foreground)]/60">
+                No Slack connection found yet.
+              </p>
+            )}
             <Button
               onClick={handleConnectSlack}
               loading={isConnectingSlack}
               icon={!isConnectingSlack ? <Slack className="w-4 h-4" /> : undefined}
             >
-              Connect Slack
+              {hasSlackConnection ? 'Reconnect Slack' : 'Connect Slack'}
             </Button>
           </CardContent>
         </Card>
