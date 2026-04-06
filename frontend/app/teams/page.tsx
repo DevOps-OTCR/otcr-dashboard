@@ -36,6 +36,7 @@ type ProjectFromApi = {
   name: string;
   status?: string;
   createdAt: string;
+  googleCalendarId?: string | null;
   googleCalendarEmbedUrl?: string | null;
   members?: ProjectMember[];
 };
@@ -228,8 +229,15 @@ export default function TeamsPage() {
   const [loading, setLoading] = useState(true);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [createTeamModalOpen, setCreateTeamModalOpen] = useState(false);
-  const [createTeamForm, setCreateTeamForm] = useState({ name: '', selectedEmails: [] as string[], search: '' });
+  const [createTeamForm, setCreateTeamForm] = useState({
+    name: '',
+    googleCalendarId: '',
+    selectedEmails: [] as string[],
+    search: '',
+  });
   const [addMemberSearch, setAddMemberSearch] = useState('');
+  const [teamCalendarIdDraft, setTeamCalendarIdDraft] = useState('');
+  const [teamCalendarSaving, setTeamCalendarSaving] = useState(false);
   const [sprintConfigDraft, setSprintConfigDraft] = useState(DEFAULT_SPRINT_CONFIG);
   const [sprintDataLoading, setSprintDataLoading] = useState(false);
   const [sprintConfigSaving, setSprintConfigSaving] = useState(false);
@@ -361,6 +369,10 @@ export default function TeamsPage() {
     return () => clearTimeout(timer);
   }, [actionFeedback]);
 
+  useEffect(() => {
+    setTeamCalendarIdDraft(selectedTeam?.googleCalendarId ?? '');
+  }, [selectedTeam?.id, selectedTeam?.googleCalendarId]);
+
   const loadSelectedTeamSprintData = useCallback(async (projectId: string) => {
     setSprintDataLoading(true);
     try {
@@ -446,11 +458,12 @@ export default function TeamsPage() {
     projectsAPI
       .create({
         name: createTeamForm.name.trim(),
+        googleCalendarId: createTeamForm.googleCalendarId.trim() || null,
         startDate: new Date().toISOString().slice(0, 10),
         memberEmails: createTeamForm.selectedEmails,
       })
       .then(() => {
-        setCreateTeamForm({ name: '', selectedEmails: [], search: '' });
+        setCreateTeamForm({ name: '', googleCalendarId: '', selectedEmails: [], search: '' });
         setCreateTeamModalOpen(false);
         setSelectedTeamId(null);
         setActionFeedback({ message: 'Team created', tone: 'success' });
@@ -462,6 +475,26 @@ export default function TeamsPage() {
           tone: 'warning',
         }),
       );
+  };
+
+  const handleSaveTeamCalendar = async () => {
+    if (!selectedTeam) return;
+
+    setTeamCalendarSaving(true);
+    try {
+      await projectsAPI.update(selectedTeam.id, {
+        googleCalendarId: teamCalendarIdDraft.trim() || null,
+      });
+      await fetchProjects();
+      setActionFeedback({ message: 'Team calendar saved', tone: 'success' });
+    } catch (err) {
+      setActionFeedback({
+        message: parseApiError(err, 'Failed to save team calendar'),
+        tone: 'warning',
+      });
+    } finally {
+      setTeamCalendarSaving(false);
+    }
   };
 
   const handleAddMemberToTeam = (projectId: string, email: string) => {
@@ -791,6 +824,34 @@ export default function TeamsPage() {
                       </div>
                       {canManageTeams && (
                         <div className="mb-4 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] space-y-4">
+                          <div className="space-y-3 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/40 p-4">
+                            <div>
+                              <p className="text-sm font-semibold text-[var(--foreground)]">
+                                Team Google Calendar
+                              </p>
+                              <p className="text-xs text-[var(--foreground)]/60 mt-1">
+                                Paste the team calendar secret/ID here, not the public embed URL. Team-specific events sync to this calendar automatically.
+                              </p>
+                            </div>
+                            <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                              <input
+                                type="text"
+                                value={teamCalendarIdDraft}
+                                onChange={(e) => setTeamCalendarIdDraft(e.target.value)}
+                                placeholder="team-calendar@group.calendar.google.com"
+                                className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[var(--foreground)]"
+                              />
+                              <Button
+                                size="sm"
+                                onClick={handleSaveTeamCalendar}
+                                disabled={teamCalendarSaving}
+                                className="shrink-0"
+                              >
+                                {teamCalendarSaving ? 'Saving...' : 'Save calendar'}
+                              </Button>
+                            </div>
+                          </div>
+
                           <div className="flex items-start justify-between gap-4">
                             <div>
                               <p className="text-sm font-semibold flex items-center gap-2">
@@ -1261,7 +1322,7 @@ export default function TeamsPage() {
         isOpen={createTeamModalOpen}
         onClose={() => {
           setCreateTeamModalOpen(false);
-          setCreateTeamForm({ name: '', selectedEmails: [], search: '' });
+          setCreateTeamForm({ name: '', googleCalendarId: '', selectedEmails: [], search: '' });
         }}
         title="Create team"
         size="lg"
@@ -1275,6 +1336,20 @@ export default function TeamsPage() {
               className="w-full mt-2 px-3 py-2 rounded-xl border border-[var(--border)] bg-[var(--secondary)]"
               placeholder="e.g. Market Research Team"
             />
+          </div>
+          <div>
+            <label className="text-sm font-semibold">Team calendar secret / ID</label>
+            <input
+              value={createTeamForm.googleCalendarId}
+              onChange={(e) =>
+                setCreateTeamForm((prev) => ({ ...prev, googleCalendarId: e.target.value }))
+              }
+              className="w-full mt-2 px-3 py-2 rounded-xl border border-[var(--border)] bg-[var(--secondary)]"
+              placeholder="team-calendar@group.calendar.google.com"
+            />
+            <p className="mt-1 text-xs text-[var(--foreground)]/60">
+              Optional now, but required if team-specific events should sync into Google Calendar.
+            </p>
           </div>
           <div>
             <label className="text-sm font-semibold">Add members (OTCR list)</label>
@@ -1312,7 +1387,7 @@ export default function TeamsPage() {
               variant="ghost"
               onClick={() => {
                 setCreateTeamModalOpen(false);
-                setCreateTeamForm({ name: '', selectedEmails: [], search: '' });
+                setCreateTeamForm({ name: '', googleCalendarId: '', selectedEmails: [], search: '' });
               }}
             >
               Cancel

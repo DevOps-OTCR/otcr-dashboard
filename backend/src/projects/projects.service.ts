@@ -1,14 +1,6 @@
-import {
-  Injectable,
-  BadRequestException,
-  NotFoundException,
-  InternalServerErrorException,
-} from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotificationsService } from '../notifications/notifications.service';
-
-const CHICAGO_TIMEZONE = 'America/Chicago';
 
 type SprintConfigInput = {
   sprintStartDay?: string;
@@ -141,7 +133,6 @@ export class ProjectsService {
       endDate?: string;
       pmId?: string;
       memberIds?: string[];
-      memberEmails?: string[];
     },
     userId: string,
   ) {
@@ -172,91 +163,18 @@ export class ProjectsService {
       throw new BadRequestException('PM must have PM or ADMIN role');
     }
 
-    const normalizedMemberIds = Array.from(
-      new Set((memberIds ?? []).map((id) => id.trim()).filter(Boolean)),
-    );
-    const normalizedMemberEmails = Array.from(
-      new Set((memberEmails ?? []).map((email) => email.trim().toLowerCase()).filter(Boolean)),
-    );
-
-    let resolvedMemberIds = normalizedMemberIds;
-
-    if (normalizedMemberEmails.length > 0) {
-      let usersByEmail = await this.prisma.user.findMany({
-        where: {
-          email: { in: normalizedMemberEmails },
-        },
-        select: { id: true, email: true },
-      });
-
-      let foundEmailSet = new Set(usersByEmail.map((user) => user.email.toLowerCase()));
-      const missingEmails = normalizedMemberEmails.filter((email) => !foundEmailSet.has(email));
-
-      if (missingEmails.length > 0) {
-        const allowedEntries = await this.prisma.allowedEmail.findMany({
-          where: {
-            email: { in: missingEmails },
-            active: true,
-          },
-          select: { email: true, role: true },
-        });
-
-        const allowedByEmail = new Map(
-          allowedEntries.map((entry) => [entry.email.toLowerCase(), entry]),
-        );
-        const disallowedEmails = missingEmails.filter((email) => !allowedByEmail.has(email));
-
-        if (disallowedEmails.length > 0) {
-          throw new BadRequestException(
-            `Users not found for emails: ${disallowedEmails.join(', ')}`,
-          );
-        }
-
-        const onboardingEntries = await (this.prisma as any).onboardingRequest.findMany({
-          where: { email: { in: missingEmails } },
-          select: { email: true, name: true },
-        });
-        const onboardingNameByEmail = new Map<string, string>(
-          onboardingEntries.map((entry: { email: string; name?: string | null }) => [
-            String(entry.email).toLowerCase(),
-            entry.name || '',
-          ]),
-        );
-
-        await this.prisma.user.createMany({
-          data: missingEmails.map((email) => ({
-            email,
-            ...this.splitNameParts(onboardingNameByEmail.get(email) || null),
-            role: (allowedByEmail.get(email)?.role ?? 'CONSULTANT') as any,
-          })),
-          skipDuplicates: true,
-        });
-
-        usersByEmail = await this.prisma.user.findMany({
-          where: {
-            email: { in: normalizedMemberEmails },
-          },
-          select: { id: true, email: true },
-        });
-        foundEmailSet = new Set(usersByEmail.map((user) => user.email.toLowerCase()));
-      }
-
-      resolvedMemberIds = Array.from(new Set([...normalizedMemberIds, ...usersByEmail.map((u) => u.id)]));
-    }
-
     // Create project with members
     const project = await this.prisma.project.create({
       data: {
         name,
         description,
         clientName,
-        startDate: parsedStartDate,
+        startDate: new Date(startDate),
         endDate: endDate ? new Date(endDate) : null,
         pmId: pmId || userId,
         status: 'ACTIVE',
-        sprintStartDay: this.weekdayFromDate(parsedStartDate) as any,
         members: {
-          create: resolvedMemberIds.map((userId) => ({
+          create: memberIds?.map((userId) => ({
             userId,
           })) || [],
         },
@@ -689,27 +607,8 @@ export class ProjectsService {
       throw new BadRequestException('User not found');
     }
 
-    if (!user.firstName && !user.lastName && user.email) {
-      const onboarding = await (this.prisma as any).onboardingRequest.findUnique({
-        where: { email: user.email.toLowerCase() },
-        select: { name: true },
-      });
-      const parsed = this.splitNameParts(onboarding?.name ?? null);
-      if (parsed.firstName || parsed.lastName) {
-        await this.prisma.user.update({
-          where: { id: user.id },
-          data: {
-            firstName: parsed.firstName,
-            lastName: parsed.lastName,
-          },
-        });
-        user.firstName = parsed.firstName;
-        user.lastName = parsed.lastName;
-      }
-    }
-
-    // Check if already an active member
-    const existingActiveMember = await this.prisma.projectMember.findFirst({
+    // Check if already a member
+    const existingMember = await this.prisma.projectMember.findFirst({
       where: {
         projectId,
         userId: user.id,
@@ -717,39 +616,8 @@ export class ProjectsService {
       },
     });
 
-    if (existingActiveMember) {
+    if (existingMember) {
       throw new BadRequestException('User is already a member');
-    }
-
-    // If the user was previously removed, reactivate the same membership row
-    // to avoid unique(projectId, userId) violations.
-    const existingAnyMember = await this.prisma.projectMember.findFirst({
-      where: {
-        projectId,
-        userId: user.id,
-      },
-      orderBy: { joinedAt: 'desc' },
-    });
-
-    if (existingAnyMember) {
-      return this.prisma.projectMember.update({
-        where: { id: existingAnyMember.id },
-        data: {
-          leftAt: null,
-          joinedAt: new Date(),
-        },
-        include: {
-          user: {
-            select: {
-              id: true,
-              email: true,
-              firstName: true,
-              lastName: true,
-              role: true,
-            },
-          },
-        },
-      });
     }
 
     return this.prisma.projectMember.create({
@@ -908,7 +776,6 @@ export class ProjectsService {
           d."title",
           d."deadline",
           d."templateKind"::text AS "templateKind",
-          d."dueDateSource"::text AS "dueDateSource",
           d."status"::text AS "status",
           d."completed"
         FROM "Deliverable" d
@@ -932,50 +799,9 @@ export class ProjectsService {
             ORDER BY da."assignedAt" ASC
           `)
         : [];
-      const subtasks = deliverableIds.length
-        ? await this.prisma.$queryRaw<any[]>(Prisma.sql`
-            SELECT
-              ds."id",
-              ds."deliverableId",
-              ds."title",
-              ds."notes",
-              ds."dueDate",
-              ds."completed",
-              ds."assigneeId",
-              ds."createdAt",
-              ds."updatedAt",
-              u."email" AS "assigneeEmail",
-              u."firstName" AS "assigneeFirstName",
-              u."lastName" AS "assigneeLastName"
-            FROM "DeliverableSubtask" ds
-            LEFT JOIN "User" u ON u."id" = ds."assigneeId"
-            WHERE ds."deliverableId" IN (${Prisma.join(deliverableIds)})
-            ORDER BY ds."completed" ASC, ds."dueDate" ASC NULLS LAST, ds."createdAt" ASC
-          `)
-        : [];
-      const latestSubmissions = deliverableIds.length
-        ? await this.prisma.$queryRaw<any[]>(Prisma.sql`
-            SELECT DISTINCT ON (s."deliverableId")
-              s."id",
-              s."deliverableId",
-              s."fileUrl",
-              s."submittedAt",
-              s."status"::text AS "status",
-              u."id" AS "submitterId",
-              u."email" AS "submitterEmail",
-              u."firstName" AS "submitterFirstName",
-              u."lastName" AS "submitterLastName"
-            FROM "Submission" s
-            JOIN "User" u ON u."id" = s."userId"
-            WHERE s."deliverableId" IN (${Prisma.join(deliverableIds)})
-            ORDER BY s."deliverableId", s."submittedAt" DESC
-          `)
-        : [];
 
       const bySprint = new Map<string, any[]>();
       const assignmentsByDeliverable = new Map<string, any[]>();
-      const subtasksByDeliverable = new Map<string, any[]>();
-      const latestSubmissionByDeliverable = new Map<string, any>();
 
       assignments.forEach((assignment) => {
         const existing = assignmentsByDeliverable.get(assignment.deliverableId) ?? [];
@@ -988,54 +814,17 @@ export class ProjectsService {
         });
         assignmentsByDeliverable.set(assignment.deliverableId, existing);
       });
-      subtasks.forEach((subtask) => {
-        const existing = subtasksByDeliverable.get(subtask.deliverableId) ?? [];
-        existing.push({
-          id: subtask.id,
-          title: subtask.title,
-          notes: subtask.notes,
-          dueDate: subtask.dueDate,
-          completed: subtask.completed,
-          assigneeId: subtask.assigneeId,
-          assignee: subtask.assigneeId
-            ? {
-                id: subtask.assigneeId,
-                email: subtask.assigneeEmail,
-                firstName: subtask.assigneeFirstName,
-                lastName: subtask.assigneeLastName,
-              }
-            : null,
-        });
-        subtasksByDeliverable.set(subtask.deliverableId, existing);
-      });
-      latestSubmissions.forEach((submission) => {
-        latestSubmissionByDeliverable.set(submission.deliverableId, {
-          id: submission.id,
-          fileUrl: submission.fileUrl,
-          submittedAt: submission.submittedAt,
-          status: submission.status,
-          submitter: {
-            id: submission.submitterId,
-            email: submission.submitterEmail,
-            firstName: submission.submitterFirstName,
-            lastName: submission.submitterLastName,
-          },
-        });
-      });
 
       deliverables.forEach((deliverable) => {
-        const sprint = sprints.find((item) => item.id === deliverable.sprintId);
         const existing = bySprint.get(deliverable.sprintId) ?? [];
         existing.push({
           id: deliverable.id,
           title: deliverable.title,
-          deadline: this.normalizeSprintDeliverableDeadline(deliverable, sprint),
+          deadline: deliverable.deadline,
           templateKind: deliverable.templateKind,
           status: deliverable.status,
           completed: deliverable.completed,
           assignees: assignmentsByDeliverable.get(deliverable.id) ?? [],
-          subtasks: subtasksByDeliverable.get(deliverable.id) ?? [],
-          latestSubmission: latestSubmissionByDeliverable.get(deliverable.id) ?? null,
         });
         bySprint.set(deliverable.sprintId, existing);
       });
@@ -1079,10 +868,6 @@ export class ProjectsService {
         throw new BadRequestException('Sprint not found');
       }
 
-      if (status === 'RELEASED') {
-        await this.notifySprintReleased(projectId, sprint);
-      }
-
       return sprint;
     } catch (error) {
       if (error instanceof BadRequestException) {
@@ -1091,209 +876,6 @@ export class ProjectsService {
 
       console.warn('Failed to update sprint status.', error);
       throw new BadRequestException('Unable to update this week right now. Please try again.');
-    }
-  }
-
-  async updateSprintNotes(
-    projectId: string,
-    sprintId: string,
-    input: { generalNotes?: string },
-  ) {
-    const sprint = await this.prisma.sprint.findFirst({
-      where: {
-        id: sprintId,
-        projectId,
-      },
-      select: {
-        id: true,
-        configSnapshot: true,
-      },
-    });
-
-    if (!sprint) {
-      throw new BadRequestException('Sprint not found');
-    }
-
-    const existingSnapshot =
-      sprint.configSnapshot &&
-      typeof sprint.configSnapshot === 'object' &&
-      !Array.isArray(sprint.configSnapshot)
-        ? (sprint.configSnapshot as Record<string, unknown>)
-        : {};
-
-    const trimmedNotes = (input.generalNotes ?? '').trim();
-    const nextSnapshot: Record<string, unknown> = {
-      ...existingSnapshot,
-      generalNotes: trimmedNotes || null,
-    };
-
-    const result = await this.prisma.sprint.updateMany({
-      where: {
-        id: sprintId,
-        projectId,
-      },
-      data: {
-        configSnapshot: nextSnapshot as Prisma.InputJsonValue,
-      },
-    });
-
-    if (result.count === 0) {
-      throw new BadRequestException('Sprint not found');
-    }
-
-    const updated = await this.getSprint(projectId, sprintId);
-    if (!updated) {
-      throw new BadRequestException('Sprint not found');
-    }
-    return updated;
-  }
-
-  async updateSprint(
-    projectId: string,
-    sprintId: string,
-    input: { weekStartDate?: string },
-  ) {
-    const normalizedWeekStartDate = this.parseUtcDateOnly(
-      input.weekStartDate,
-      'weekStartDate',
-    );
-    const weekEndDate = this.addDaysUtc(normalizedWeekStartDate, 6);
-
-    const sprint = await this.prisma.sprint.findFirst({
-      where: {
-        id: sprintId,
-        projectId,
-      },
-      select: {
-        id: true,
-        configSnapshot: true,
-        deliverables: {
-          select: {
-            id: true,
-            templateKind: true,
-            dueDateSource: true,
-          },
-        },
-      },
-    });
-
-    if (!sprint) {
-      throw new BadRequestException('Sprint not found');
-    }
-
-    const config =
-      sprint.configSnapshot &&
-      typeof sprint.configSnapshot === 'object' &&
-      !Array.isArray(sprint.configSnapshot)
-        ? (sprint.configSnapshot as Record<string, unknown>)
-        : {};
-    const defaultDueTime =
-      typeof config.defaultDueTime === 'string' && config.defaultDueTime.trim()
-        ? config.defaultDueTime
-        : '23:59';
-    const initialSlideDueDay =
-      typeof config.initialSlideDueDay === 'string' && config.initialSlideDueDay.trim()
-        ? config.initialSlideDueDay
-        : 'TUESDAY';
-    const finalSlideDueDay =
-      typeof config.finalSlideDueDay === 'string' && config.finalSlideDueDay.trim()
-        ? config.finalSlideDueDay
-        : 'THURSDAY';
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.sprint.update({
-        where: { id: sprintId },
-        data: {
-          weekStartDate: normalizedWeekStartDate,
-          weekEndDate,
-        },
-      });
-
-      for (const deliverable of sprint.deliverables) {
-        if (deliverable.dueDateSource !== 'AUTO') continue;
-
-        let deadline: Date;
-        if (
-          deliverable.templateKind === 'INITIAL_SLIDES' ||
-          deliverable.templateKind === 'INITIAL_WHITEPAPER'
-        ) {
-          deadline = this.buildDeadlineForWeek(
-            normalizedWeekStartDate,
-            initialSlideDueDay,
-            defaultDueTime,
-          );
-        } else if (
-          deliverable.templateKind === 'FINAL_SLIDES' ||
-          deliverable.templateKind === 'FINAL_WHITEPAPER'
-        ) {
-          deadline = this.buildDeadlineForWeek(
-            normalizedWeekStartDate,
-            finalSlideDueDay,
-            defaultDueTime,
-          );
-        } else {
-          deadline = this.chicagoDateTimeToUtc(
-            weekEndDate.getUTCFullYear(),
-            weekEndDate.getUTCMonth() + 1,
-            weekEndDate.getUTCDate(),
-            Number.parseInt(defaultDueTime.split(':')[0] ?? '23', 10),
-            Number.parseInt(defaultDueTime.split(':')[1] ?? '59', 10),
-          );
-        }
-
-        await tx.deliverable.update({
-          where: { id: deliverable.id },
-          data: { deadline },
-        });
-      }
-    });
-
-    const updated = await this.getSprint(projectId, sprintId);
-    if (!updated) {
-      throw new BadRequestException('Sprint not found');
-    }
-
-    return updated;
-  }
-
-  private async notifySprintReleased(projectId: string, sprint: {
-    id: string;
-    label: string;
-    deliverables?: Array<{ id: string }>;
-  }): Promise<void> {
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
-      select: {
-        id: true,
-        name: true,
-        pmId: true,
-        members: {
-          where: { leftAt: null },
-          select: { userId: true },
-        },
-      },
-    });
-
-    if (!project) return;
-
-    const recipientIds = new Set<string>([
-      project.pmId,
-      ...project.members.map((member) => member.userId),
-    ]);
-    const deliverableCount = Array.isArray(sprint.deliverables) ? sprint.deliverables.length : 0;
-    const countSuffix = deliverableCount > 0 ? ` (${deliverableCount} deliverable${deliverableCount === 1 ? '' : 's'})` : '';
-
-    for (const userId of recipientIds) {
-      await this.notificationsService.queueNotification({
-        userId,
-        type: 'PROJECT_UPDATED',
-        channel: 'BOTH',
-        data: {
-          projectName: project.name,
-          deliverableTitle: sprint.label,
-          feedback: `${sprint.label} has been released${countSuffix}. Deliverables are now available for review and updates.`,
-        },
-      });
     }
   }
 
@@ -1367,7 +949,7 @@ export class ProjectsService {
     }
   }
 
-  async generateNextSprint(projectId: string, startDate?: string) {
+  async generateNextSprint(projectId: string) {
     try {
       const createdSprintId = await this.prisma.$transaction(async (tx) => {
         const project = await tx.project.findUnique({
@@ -1407,29 +989,10 @@ export class ProjectsService {
 
         const latestSprint = project.sprints[0];
         const sequenceNumber = latestSprint ? latestSprint.sequenceNumber + 1 : 1;
-        const customStartDate = startDate ? new Date(startDate) : null;
-        if (customStartDate && Number.isNaN(customStartDate.getTime())) {
-          throw new BadRequestException('startDate must be a valid date');
-        }
-
-        const baseDate = customStartDate
-          ? new Date(
-              Date.UTC(
-                customStartDate.getUTCFullYear(),
-                customStartDate.getUTCMonth(),
-                customStartDate.getUTCDate(),
-                0,
-                0,
-                0,
-                0,
-              ),
-            )
-          : latestSprint
-            ? this.addDaysUtc(latestSprint.weekStartDate, 7)
-            : project.startDate;
-        const weekStartDate = customStartDate
-          ? this.alignToWeekdayOnOrBefore(baseDate, project.sprintStartDay)
-          : this.alignToWeekday(baseDate, project.sprintStartDay);
+        const baseDate = latestSprint
+          ? this.addDaysUtc(latestSprint.weekStartDate, 7)
+          : project.startDate;
+        const weekStartDate = this.alignToWeekday(baseDate, project.sprintStartDay);
         const weekEndDate = this.addDaysUtc(weekStartDate, 6);
         const configSnapshot = {
           sprintStartDay: project.sprintStartDay,
@@ -1672,37 +1235,6 @@ export class ProjectsService {
     return normalized;
   }
 
-  private parseUtcDateOnly(value: string | undefined, fieldName: string) {
-    const normalized = value?.trim();
-    if (!normalized) {
-      throw new BadRequestException(`${fieldName} is required`);
-    }
-
-    const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (!match) {
-      throw new BadRequestException(`${fieldName} must use YYYY-MM-DD format`);
-    }
-
-    const [, yearRaw, monthRaw, dayRaw] = match;
-    const year = Number.parseInt(yearRaw, 10);
-    const month = Number.parseInt(monthRaw, 10);
-    const day = Number.parseInt(dayRaw, 10);
-    const date = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
-
-    if (
-      !Number.isFinite(year) ||
-      !Number.isFinite(month) ||
-      !Number.isFinite(day) ||
-      date.getUTCFullYear() !== year ||
-      date.getUTCMonth() !== month - 1 ||
-      date.getUTCDate() !== day
-    ) {
-      throw new BadRequestException(`${fieldName} must be a valid date`);
-    }
-
-    return date;
-  }
-
   private alignToWeekday(date: Date, weekday: string) {
     const current = new Date(
       Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0),
@@ -1713,26 +1245,11 @@ export class ProjectsService {
     return this.addDaysUtc(current, offset);
   }
 
-  private alignToWeekdayOnOrBefore(date: Date, weekday: string) {
-    const current = new Date(
-      Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0),
-    );
-    const currentDay = this.toIsoWeekday(current.getUTCDay());
-    const targetDay = this.weekdayToIsoNumber(weekday);
-    const offset = (currentDay - targetDay + 7) % 7;
-    return this.addDaysUtc(current, -offset);
-  }
-
   private buildDeadlineForWeek(weekStartDate: Date, weekday: string, dueTime: string) {
     const targetDate = this.alignToWeekday(weekStartDate, weekday);
     const [hours, minutes] = dueTime.split(':').map((part) => Number.parseInt(part, 10));
-    return this.chicagoDateTimeToUtc(
-      targetDate.getUTCFullYear(),
-      targetDate.getUTCMonth() + 1,
-      targetDate.getUTCDate(),
-      hours,
-      minutes,
-    );
+    targetDate.setUTCHours(hours, minutes, 0, 0);
+    return targetDate;
   }
 
   private addDaysUtc(date: Date, days: number) {
@@ -1757,106 +1274,5 @@ export class ProjectsService {
 
   private toIsoWeekday(jsDay: number) {
     return jsDay === 0 ? 7 : jsDay;
-  }
-
-  private weekdayFromDate(date: Date) {
-    const mapping: Record<number, string> = {
-      0: 'SUNDAY',
-      1: 'MONDAY',
-      2: 'TUESDAY',
-      3: 'WEDNESDAY',
-      4: 'THURSDAY',
-      5: 'FRIDAY',
-      6: 'SATURDAY',
-    };
-
-    return mapping[date.getUTCDay()] ?? 'MONDAY';
-  }
-
-  private normalizeSprintDeliverableDeadline(deliverable: any, sprint?: any) {
-    if (!sprint || deliverable?.dueDateSource !== 'AUTO') {
-      return deliverable.deadline;
-    }
-
-    const config = sprint.configSnapshot ?? {};
-    const dueTime = config.defaultDueTime || '23:59';
-
-    if (deliverable.templateKind === 'INITIAL_SLIDES' || deliverable.templateKind === 'INITIAL_WHITEPAPER') {
-      return this.buildDeadlineForWeek(
-        sprint.weekStartDate,
-        config.initialSlideDueDay || 'TUESDAY',
-        dueTime,
-      );
-    }
-
-    if (deliverable.templateKind === 'FINAL_SLIDES' || deliverable.templateKind === 'FINAL_WHITEPAPER') {
-      return this.buildDeadlineForWeek(
-        sprint.weekStartDate,
-        config.finalSlideDueDay || 'THURSDAY',
-        dueTime,
-      );
-    }
-
-    return this.chicagoDateTimeToUtc(
-      sprint.weekEndDate.getUTCFullYear(),
-      sprint.weekEndDate.getUTCMonth() + 1,
-      sprint.weekEndDate.getUTCDate(),
-      Number.parseInt(dueTime.split(':')[0] ?? '23', 10),
-      Number.parseInt(dueTime.split(':')[1] ?? '59', 10),
-    );
-  }
-
-  private getChicagoDateParts(date: Date) {
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: CHICAGO_TIMEZONE,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    });
-    const parts = formatter.formatToParts(date);
-    const read = (type: Intl.DateTimeFormatPartTypes) =>
-      Number.parseInt(parts.find((part) => part.type === type)?.value ?? '0', 10);
-
-    return {
-      year: read('year'),
-      month: read('month'),
-      day: read('day'),
-      hour: read('hour'),
-      minute: read('minute'),
-      second: read('second'),
-    };
-  }
-
-  private chicagoDateTimeToUtc(
-    year: number,
-    month: number,
-    day: number,
-    hour: number,
-    minute: number,
-  ) {
-    let guess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0, 0));
-
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const chicago = this.getChicagoDateParts(guess);
-      const desiredMs = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
-      const actualMs = Date.UTC(
-        chicago.year,
-        chicago.month - 1,
-        chicago.day,
-        chicago.hour,
-        chicago.minute,
-        chicago.second,
-        0,
-      );
-      const diffMs = desiredMs - actualMs;
-      if (diffMs === 0) break;
-      guess = new Date(guess.getTime() + diffMs);
-    }
-
-    return guess;
   }
 }

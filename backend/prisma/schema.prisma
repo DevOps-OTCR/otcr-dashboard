@@ -203,6 +203,7 @@ model Project {
   name        String
   description String?
   clientName  String?
+  googleCalendarId String?
   pmId        String
   startDate   DateTime
   endDate     DateTime?
@@ -221,10 +222,20 @@ model Project {
   deliverables Deliverable[]
   sprints      Sprint[]
   attendanceEvents AttendanceEvent[]
+  calendarSetting ProjectCalendarSetting?
 
   @@index([pmId])
   @@index([status])
   @@index([startDate])
+}
+
+model ProjectCalendarSetting {
+  projectId               String   @id
+  googleCalendarEmbedUrl  String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 enum ProjectStatus {
@@ -280,11 +291,21 @@ model AttendanceEvent {
   project     Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
   createdBy   User                 @relation("AttendanceEventCreator", fields: [createdById], references: [id], onDelete: Cascade)
   attendances AttendanceCheckIn[]
+  categorySetting AttendanceEventCategorySetting?
 
   @@index([eventDate])
   @@index([projectId])
   @@index([createdById])
   @@index([audienceScope])
+}
+
+model AttendanceEventCategorySetting {
+  eventId    String   @id
+  category   String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  event AttendanceEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
 }
 
 model AttendanceCheckIn {
@@ -339,6 +360,8 @@ model Task {
   assigneeType  TaskAssigneeType
   assigneeEmail String?
   projectId     String?      // For ALL_TEAM: which project's members
+  googleCalendarEventId String?
+  googleCalendarId String?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 

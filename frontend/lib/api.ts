@@ -217,6 +217,7 @@ export type ProjectListItem = {
       email?: string | null;
     };
   }>;
+  googleCalendarId?: string | null;
   googleCalendarEmbedUrl?: string | null;
 };
 
@@ -261,6 +262,7 @@ export const projectsAPI = {
     clientName?: string;
     startDate: string;
     endDate?: string;
+    googleCalendarId?: string | null;
     googleCalendarEmbedUrl?: string | null;
     pmId?: string;
     memberIds?: string[];
@@ -275,6 +277,7 @@ export const projectsAPI = {
     clientName?: string;
     startDate?: string;
     endDate?: string;
+    googleCalendarId?: string | null;
     googleCalendarEmbedUrl?: string | null;
     status?: 'ACTIVE' | 'COMPLETED' | 'ON_HOLD' | 'CANCELLED';
   }) => api.patch(`/projects/${id}`, data).then((response) => {
