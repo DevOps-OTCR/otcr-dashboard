@@ -20,23 +20,6 @@ type ProjectOption = {
   name: string;
 };
 
-type TeamMemberOption = {
-  id: string;
-  email?: string;
-  firstName?: string;
-  lastName?: string;
-};
-
-type DeliverableSubtask = {
-  id: string;
-  title: string;
-  notes?: string | null;
-  dueDate?: string | null;
-  completed: boolean;
-  assigneeId?: string | null;
-  assignee?: TeamMemberOption | null;
-};
-
 type DeliverableItem = {
   id: string;
   sprintId?: string;
@@ -50,7 +33,6 @@ type DeliverableItem = {
     firstName?: string;
     lastName?: string;
   }>;
-  subtasks?: DeliverableSubtask[];
 };
 
 type SprintItem = {
@@ -74,12 +56,6 @@ function formatAssignees(assignees?: DeliverableItem['assignees']) {
       return fullName || 'Assigned';
     })
     .join(', ');
-}
-
-function formatPerson(person?: TeamMemberOption | null) {
-  if (!person) return 'Unassigned';
-  const fullName = [person.firstName, person.lastName].filter(Boolean).join(' ').trim();
-  return fullName || person.email || 'Unassigned';
 }
 
 function normalizeWeekText(value: string) {
@@ -137,7 +113,6 @@ export default function WorkstreamPage() {
   const router = useRouter();
   const [role, setRole] = useState<AppRole>('CONSULTANT');
   const [projects, setProjects] = useState<ProjectOption[]>([]);
-  const [teamMembers, setTeamMembers] = useState<TeamMemberOption[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [sprints, setSprints] = useState<SprintItem[]>([]);
   const [selectedSprintId, setSelectedSprintId] = useState('');
@@ -155,14 +130,6 @@ export default function WorkstreamPage() {
   const [sprintDateInput, setSprintDateInput] = useState('');
   const [deadlineInputs, setDeadlineInputs] = useState<Record<string, string>>({});
   const [updatingSprintDate, setUpdatingSprintDate] = useState(false);
-  const [subtaskEdits, setSubtaskEdits] = useState<
-    Record<string, { title: string; dueDate: string; assigneeId: string; completed: boolean }>
-  >({});
-  const [newSubtasks, setNewSubtasks] = useState<
-    Record<string, { title: string; dueDate: string; assigneeId: string }>
-  >({});
-  const [busySubtaskId, setBusySubtaskId] = useState<string | null>(null);
-  const [creatingSubtaskFor, setCreatingSubtaskFor] = useState<string | null>(null);
 
   const canManage = role === 'PM' || role === 'LC' || role === 'ADMIN';
 
@@ -185,25 +152,6 @@ export default function WorkstreamPage() {
         error?.message ??
         'Failed to load workstream weeks.';
       setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
-    }
-  }, []);
-
-  const loadTeamMembers = useCallback(async (projectId: string) => {
-    try {
-      const res = await projectsAPI.getById(projectId, { includeMembers: true });
-      const project = (res.data ?? {}) as {
-        pm?: TeamMemberOption;
-        members?: Array<{ user?: TeamMemberOption | null }>;
-      };
-
-      const nextMembers = new Map<string, TeamMemberOption>();
-      if (project.pm?.id) nextMembers.set(project.pm.id, project.pm);
-      (project.members ?? []).forEach((member) => {
-        if (member.user?.id) nextMembers.set(member.user.id, member.user);
-      });
-      setTeamMembers(Array.from(nextMembers.values()));
-    } catch {
-      setTeamMembers([]);
     }
   }, []);
 
@@ -233,7 +181,7 @@ export default function WorkstreamPage() {
         const firstProjectId = nextProjects[0]?.id ?? '';
         setSelectedProjectId(firstProjectId);
         if (firstProjectId) {
-          await Promise.all([loadSprints(firstProjectId), loadTeamMembers(firstProjectId)]);
+          await loadSprints(firstProjectId);
         }
       } catch (error: any) {
         setProjects([]);
@@ -251,7 +199,7 @@ export default function WorkstreamPage() {
     };
 
     void init();
-  }, [session, session.isLoggedIn, session.user?.email, loadSprints, loadTeamMembers]);
+  }, [session, session.isLoggedIn, session.user?.email, loadSprints]);
 
   useEffect(() => {
     if (!feedback) return;
@@ -275,30 +223,6 @@ export default function WorkstreamPage() {
         (selectedSprint?.deliverables ?? []).map((deliverable) => [
           deliverable.id,
           toDateTimeLocalValue(deliverable.deadline),
-        ]),
-      ),
-    );
-    setSubtaskEdits(
-      Object.fromEntries(
-        (selectedSprint?.deliverables ?? [])
-          .flatMap((deliverable) =>
-            (deliverable.subtasks ?? []).map((subtask) => [
-              subtask.id,
-              {
-                title: subtask.title,
-                dueDate: subtask.dueDate ? toDateTimeLocalValue(subtask.dueDate) : '',
-                assigneeId: subtask.assigneeId ?? '',
-                completed: subtask.completed,
-              },
-            ]),
-          ),
-      ),
-    );
-    setNewSubtasks(
-      Object.fromEntries(
-        (selectedSprint?.deliverables ?? []).map((deliverable) => [
-          deliverable.id,
-          { title: '', dueDate: '', assigneeId: '' },
         ]),
       ),
     );
@@ -342,13 +266,12 @@ export default function WorkstreamPage() {
     setNewSprintStartDate(new Date().toISOString().slice(0, 10));
     if (!projectId) {
       setSprints([]);
-      setTeamMembers([]);
       return;
     }
 
     setLoading(true);
     try {
-      await Promise.all([loadSprints(projectId), loadTeamMembers(projectId)]);
+      await loadSprints(projectId);
     } finally {
       setLoading(false);
     }
@@ -564,79 +487,6 @@ export default function WorkstreamPage() {
       setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
     } finally {
       setBusyDeliverableId(null);
-    }
-  };
-
-  const handleCreateSubtask = async (deliverable: DeliverableItem) => {
-    if (!selectedProjectId || !canManage) return;
-    const draft = newSubtasks[deliverable.id];
-    if (!draft?.title.trim()) return;
-
-    setCreatingSubtaskFor(deliverable.id);
-    try {
-      setLoadError(null);
-      await deliverablesAPI.createSubtask(deliverable.id, {
-        title: draft.title.trim(),
-        dueDate: draft.dueDate ? new Date(draft.dueDate).toISOString() : undefined,
-        assigneeId: draft.assigneeId || undefined,
-      });
-      await loadSprints(selectedProjectId);
-      setFeedback('Subtask added');
-    } catch (error: any) {
-      const message =
-        error?.response?.data?.message ??
-        error?.message ??
-        'Failed to create subtask.';
-      setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
-    } finally {
-      setCreatingSubtaskFor(null);
-    }
-  };
-
-  const handleUpdateSubtask = async (subtask: DeliverableSubtask) => {
-    if (!selectedProjectId || !canManage) return;
-    const edit = subtaskEdits[subtask.id];
-    if (!edit?.title.trim()) return;
-
-    setBusySubtaskId(subtask.id);
-    try {
-      setLoadError(null);
-      await deliverablesAPI.updateSubtask(subtask.id, {
-        title: edit.title.trim(),
-        dueDate: edit.dueDate ? new Date(edit.dueDate).toISOString() : null,
-        assigneeId: edit.assigneeId || null,
-        completed: edit.completed,
-      });
-      await loadSprints(selectedProjectId);
-      setFeedback('Subtask updated');
-    } catch (error: any) {
-      const message =
-        error?.response?.data?.message ??
-        error?.message ??
-        'Failed to update subtask.';
-      setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
-    } finally {
-      setBusySubtaskId(null);
-    }
-  };
-
-  const handleDeleteSubtask = async (subtaskId: string) => {
-    if (!selectedProjectId || !canManage) return;
-
-    setBusySubtaskId(subtaskId);
-    try {
-      setLoadError(null);
-      await deliverablesAPI.deleteSubtask(subtaskId);
-      await loadSprints(selectedProjectId);
-      setFeedback('Subtask deleted');
-    } catch (error: any) {
-      const message =
-        error?.response?.data?.message ??
-        error?.message ??
-        'Failed to delete subtask.';
-      setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
-    } finally {
-      setBusySubtaskId(null);
     }
   };
 
@@ -1020,201 +870,6 @@ export default function WorkstreamPage() {
                           )}
                         </div>
 
-                        <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--card)] p-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold text-[var(--foreground)]">Subtasks</p>
-                              <p className="text-xs text-[var(--foreground)]/60">
-                                Break large work into smaller assignable steps.
-                              </p>
-                            </div>
-                            <span className="text-xs text-[var(--foreground)]/55">
-                              {(deliverable.subtasks ?? []).filter((subtask) => subtask.completed).length}/
-                              {(deliverable.subtasks ?? []).length} done
-                            </span>
-                          </div>
-
-                          <div className="mt-3 space-y-3">
-                            {(deliverable.subtasks ?? []).length === 0 && (
-                              <div className="rounded-lg border border-dashed border-[var(--border)] p-3 text-xs text-[var(--foreground)]/60">
-                                No subtasks yet.
-                              </div>
-                            )}
-
-                            {(deliverable.subtasks ?? []).map((subtask) => {
-                              const edit = subtaskEdits[subtask.id] ?? {
-                                title: subtask.title,
-                                dueDate: subtask.dueDate ? toDateTimeLocalValue(subtask.dueDate) : '',
-                                assigneeId: subtask.assigneeId ?? '',
-                                completed: subtask.completed,
-                              };
-
-                              return (
-                                <div
-                                  key={subtask.id}
-                                  className="rounded-lg border border-[var(--border)] bg-[var(--secondary)]/50 p-3"
-                                >
-                                  {canManage ? (
-                                    <>
-                                      <div className="grid gap-2 md:grid-cols-[minmax(0,2fr)_180px_180px_auto_auto]">
-                                        <input
-                                          value={edit.title}
-                                          onChange={(e) =>
-                                            setSubtaskEdits((current) => ({
-                                              ...current,
-                                              [subtask.id]: { ...edit, title: e.target.value },
-                                            }))
-                                          }
-                                          placeholder="Subtask title"
-                                          className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
-                                        />
-                                        <select
-                                          value={edit.assigneeId}
-                                          onChange={(e) =>
-                                            setSubtaskEdits((current) => ({
-                                              ...current,
-                                              [subtask.id]: { ...edit, assigneeId: e.target.value },
-                                            }))
-                                          }
-                                          className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
-                                        >
-                                          <option value="">Unassigned</option>
-                                          {teamMembers.map((member) => (
-                                            <option key={member.id} value={member.id}>
-                                              {formatPerson(member)}
-                                            </option>
-                                          ))}
-                                        </select>
-                                        <input
-                                          type="datetime-local"
-                                          value={edit.dueDate}
-                                          onChange={(e) =>
-                                            setSubtaskEdits((current) => ({
-                                              ...current,
-                                              [subtask.id]: { ...edit, dueDate: e.target.value },
-                                            }))
-                                          }
-                                          className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
-                                        />
-                                        <label className="flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm">
-                                          <input
-                                            type="checkbox"
-                                            checked={edit.completed}
-                                            onChange={(e) =>
-                                              setSubtaskEdits((current) => ({
-                                                ...current,
-                                                [subtask.id]: { ...edit, completed: e.target.checked },
-                                              }))
-                                            }
-                                          />
-                                          Done
-                                        </label>
-                                        <div className="flex gap-2">
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            disabled={busySubtaskId === subtask.id || !edit.title.trim()}
-                                            onClick={() => void handleUpdateSubtask(subtask)}
-                                          >
-                                            Save
-                                          </Button>
-                                          <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            disabled={busySubtaskId === subtask.id}
-                                            onClick={() => void handleDeleteSubtask(subtask.id)}
-                                          >
-                                            Delete
-                                          </Button>
-                                        </div>
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <div className="flex flex-wrap items-center justify-between gap-3">
-                                      <div>
-                                        <p className={cn('text-sm font-medium text-[var(--foreground)]', subtask.completed && 'line-through opacity-60')}>
-                                          {subtask.title}
-                                        </p>
-                                        <p className="mt-1 text-xs text-[var(--foreground)]/60">
-                                          {formatPerson(subtask.assignee)}
-                                          {subtask.dueDate ? ` • Due ${new Date(subtask.dueDate).toLocaleString()}` : ''}
-                                        </p>
-                                      </div>
-                                      <span className="text-xs text-[var(--foreground)]/55">
-                                        {subtask.completed ? 'Done' : 'Open'}
-                                      </span>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-
-                            {canManage && (
-                              <div className="rounded-lg border border-dashed border-[var(--border)] p-3">
-                                <div className="grid gap-2 md:grid-cols-[minmax(0,2fr)_180px_180px_auto]">
-                                  <input
-                                    value={newSubtasks[deliverable.id]?.title ?? ''}
-                                    onChange={(e) =>
-                                      setNewSubtasks((current) => ({
-                                        ...current,
-                                        [deliverable.id]: {
-                                          ...(current[deliverable.id] ?? { title: '', dueDate: '', assigneeId: '' }),
-                                          title: e.target.value,
-                                        },
-                                      }))
-                                    }
-                                    placeholder="Add a subtask"
-                                    className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
-                                  />
-                                  <select
-                                    value={newSubtasks[deliverable.id]?.assigneeId ?? ''}
-                                    onChange={(e) =>
-                                      setNewSubtasks((current) => ({
-                                        ...current,
-                                        [deliverable.id]: {
-                                          ...(current[deliverable.id] ?? { title: '', dueDate: '', assigneeId: '' }),
-                                          assigneeId: e.target.value,
-                                        },
-                                      }))
-                                    }
-                                    className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
-                                  >
-                                    <option value="">Assign later</option>
-                                    {teamMembers.map((member) => (
-                                      <option key={member.id} value={member.id}>
-                                        {formatPerson(member)}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <input
-                                    type="datetime-local"
-                                    value={newSubtasks[deliverable.id]?.dueDate ?? ''}
-                                    onChange={(e) =>
-                                      setNewSubtasks((current) => ({
-                                        ...current,
-                                        [deliverable.id]: {
-                                          ...(current[deliverable.id] ?? { title: '', dueDate: '', assigneeId: '' }),
-                                          dueDate: e.target.value,
-                                        },
-                                      }))
-                                    }
-                                    className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
-                                  />
-                                  <Button
-                                    size="sm"
-                                    disabled={
-                                      creatingSubtaskFor === deliverable.id ||
-                                      !(newSubtasks[deliverable.id]?.title ?? '').trim()
-                                    }
-                                    onClick={() => void handleCreateSubtask(deliverable)}
-                                  >
-                                    Add Subtask
-                                  </Button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
                       </div>
                     ))}
 

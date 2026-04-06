@@ -20,7 +20,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import { cn } from '@/lib/utils';
-import { getEffectiveRole, getUserRole, type AppRole } from '@/lib/permissions';
+import { getEffectiveRole, ROLE_FULL_LABELS, isValidAppRole, type AppRole } from '@/lib/permissions';
 import { AppNavbar } from '@/components/AppNavbar';
 import { getLastDashboard } from '@/lib/dashboard-context';
 import { useRouter } from 'next/navigation';
@@ -161,6 +161,11 @@ function formatAssigneeLabel(
 function formatMemberName(member: ProjectMember['user']): string {
   const fullName = [member.firstName, member.lastName].filter(Boolean).join(' ').trim();
   return fullName || 'Team member';
+}
+
+function formatMemberRole(role?: string): string {
+  if (!role) return ROLE_FULL_LABELS.CONSULTANT;
+  return isValidAppRole(role) ? ROLE_FULL_LABELS[role] : role;
 }
 
 function TeamDeliverableCard({
@@ -990,7 +995,7 @@ export default function TeamsPage() {
                           >
                             <span className="text-sm">
                               <span className="font-medium text-[var(--foreground)]">{formatMemberName(m.user)}</span>
-                              <span className="text-[var(--foreground)]/60 ml-2">({getUserRole(m.user.email)})</span>
+                              <span className="text-[var(--foreground)]/60 ml-2">({formatMemberRole(m.user.role)})</span>
                             </span>
                             {canInspectMemberAttendance && (
                               <button
@@ -1128,7 +1133,7 @@ export default function TeamsPage() {
                         >
                           <span className="text-sm">
                             <span className="font-medium text-[var(--foreground)]">{formatMemberName(m.user)}</span>
-                            <span className="text-[var(--foreground)]/60 ml-2">({getUserRole(m.user.email)})</span>
+                            <span className="text-[var(--foreground)]/60 ml-2">({formatMemberRole(m.user.role)})</span>
                           </span>
                         </li>
                       ))}
@@ -1175,7 +1180,7 @@ export default function TeamsPage() {
                           >
                             <span className="text-sm">
                               <span className="font-medium text-[var(--foreground)]">{formatMemberName(m.user)}</span>
-                              <span className="text-[var(--foreground)]/60 ml-2">({getUserRole(m.user.email)})</span>
+                              <span className="text-[var(--foreground)]/60 ml-2">({formatMemberRole(m.user.role)})</span>
                             </span>
                             {canInspectMemberAttendance && (
                               <button
