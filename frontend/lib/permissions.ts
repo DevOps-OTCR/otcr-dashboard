@@ -236,6 +236,7 @@ export function canShowNavItem(navId: string, role: AppRole): boolean {
     downloadDeck: (r) => ['PM', 'PARTNER', 'EXECUTIVE', 'ADMIN'].includes(r),
     clientCallNotes: (r) => ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'EXECUTIVE', 'ADMIN'].includes(r),
     team: (r) => ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'EXECUTIVE', 'ADMIN'].includes(r),
+    attendance: (r) => ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'EXECUTIVE', 'ADMIN'].includes(r),
   };
   return map[navId]?.(role) ?? false;
 }

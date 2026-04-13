@@ -16,14 +16,15 @@ import {
   FileText,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import { cn } from '@/lib/utils';
-import { getEffectiveRole, ROLE_FULL_LABELS, isValidAppRole, type AppRole } from '@/lib/permissions';
+import { getEffectiveRole, getUserRole, type AppRole } from '@/lib/permissions';
 import { AppNavbar } from '@/components/AppNavbar';
 import { getLastDashboard } from '@/lib/dashboard-context';
 import { useRouter } from 'next/navigation';
-import { projectsAPI, authAPI, deliverablesAPI, setAuthToken } from '@/lib/api';
+import { projectsAPI, authAPI, attendanceAPI, deliverablesAPI, setAuthToken, type AttendanceEventCategory } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { parseDashPrefixedDeliverables } from '@/lib/deliverables-parser';
@@ -35,7 +36,7 @@ type ProjectFromApi = {
   name: string;
   status?: string;
   createdAt: string;
-  googleCalendarEmbedUrl?: string | null;
+  googleCalendarId?: string | null;
   members?: ProjectMember[];
 };
 
@@ -76,6 +77,40 @@ type SprintRecord = {
   deliverables?: SprintDeliverable[];
 };
 
+type AttendanceHistoryEvent = {
+  id: string;
+  title: string;
+  eventDate: string;
+  audienceScope: 'TEAM' | 'GLOBAL';
+  projectId: string | null;
+  projectName: string | null;
+  locationType: 'ONLINE' | 'IN_PERSON';
+  locationLabel: string | null;
+  category: AttendanceEventCategory;
+  createdByName: string;
+  attended: boolean;
+  checkedInAt: string | null;
+  verificationMethod: 'GEOFENCE' | 'CODE' | null;
+};
+
+type MemberAttendanceHistory = {
+  member: {
+    id: string;
+    email: string;
+    name: string;
+  };
+  team: {
+    attended: AttendanceHistoryEvent[];
+    missed: AttendanceHistoryEvent[];
+  };
+  firmwide: {
+    attended: AttendanceHistoryEvent[];
+    missed: AttendanceHistoryEvent[];
+  };
+};
+
+type HistoryFilter = 'TEAM' | 'FIRMWIDE';
+
 const WEEKDAY_OPTIONS = [
   'MONDAY',
   'TUESDAY',
@@ -93,6 +128,13 @@ const DEFAULT_SPRINT_CONFIG: Omit<SprintConfig, 'id'> = {
   defaultDueTime: '23:59',
   sprintTimezone: 'America/Chicago',
   autoGenerateSprints: true,
+};
+
+const ATTENDANCE_CATEGORY_LABELS: Record<AttendanceEventCategory, string> = {
+  CLIENT_CALL: 'Client call',
+  TEAM_MEETING: 'Team meeting',
+  FIRMWIDE_EVENT: 'Firmwide event',
+  SOCIAL: 'Social',
 };
 
 function getMemberEmails(project: ProjectFromApi): string[] {
@@ -119,11 +161,6 @@ function formatAssigneeLabel(
 function formatMemberName(member: ProjectMember['user']): string {
   const fullName = [member.firstName, member.lastName].filter(Boolean).join(' ').trim();
   return fullName || 'Team member';
-}
-
-function formatMemberRole(role?: string): string {
-  if (!role) return ROLE_FULL_LABELS.CONSULTANT;
-  return isValidAppRole(role) ? ROLE_FULL_LABELS[role] : role;
 }
 
 function TeamDeliverableCard({
@@ -186,8 +223,15 @@ export default function TeamsPage() {
   const [loading, setLoading] = useState(true);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [createTeamModalOpen, setCreateTeamModalOpen] = useState(false);
-  const [createTeamForm, setCreateTeamForm] = useState({ name: '', selectedEmails: [] as string[], search: '' });
+  const [createTeamForm, setCreateTeamForm] = useState({
+    name: '',
+    googleCalendarId: '',
+    selectedEmails: [] as string[],
+    search: '',
+  });
   const [addMemberSearch, setAddMemberSearch] = useState('');
+  const [teamCalendarIdDraft, setTeamCalendarIdDraft] = useState('');
+  const [teamCalendarIdSaving, setTeamCalendarIdSaving] = useState(false);
   const [sprintConfigDraft, setSprintConfigDraft] = useState(DEFAULT_SPRINT_CONFIG);
   const [sprintDataLoading, setSprintDataLoading] = useState(false);
   const [sprintConfigSaving, setSprintConfigSaving] = useState(false);
@@ -196,6 +240,10 @@ export default function TeamsPage() {
   const [selectedSprintId, setSelectedSprintId] = useState<string>('');
   const [draftDeliverablesInput, setDraftDeliverablesInput] = useState('');
   const [draftDeliverablesSaving, setDraftDeliverablesSaving] = useState(false);
+  const [memberHistoryOpen, setMemberHistoryOpen] = useState(false);
+  const [memberHistoryLoading, setMemberHistoryLoading] = useState(false);
+  const [memberHistoryFilter, setMemberHistoryFilter] = useState<HistoryFilter>('TEAM');
+  const [memberHistory, setMemberHistory] = useState<MemberAttendanceHistory | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{ message: string; tone: 'success' | 'warning' | 'info' } | null>(null);
 
   const fetchProjects = useCallback(async () => {
@@ -288,6 +336,9 @@ export default function TeamsPage() {
     resolvedRole === 'PM' ||
     resolvedRole === 'LC' ||
     resolvedRole === 'ADMIN';
+  const canEditTeamCalendar = resolvedRole === 'PM' || resolvedRole === 'ADMIN';
+  const canInspectMemberAttendance =
+    resolvedRole === 'PM' || resolvedRole === 'PARTNER' || resolvedRole === 'EXECUTIVE' || resolvedRole === 'ADMIN';
   const isConsultant = resolvedRole === 'CONSULTANT';
   const isExecutive = resolvedRole === 'EXECUTIVE';
   const isPartnerLike = resolvedRole === 'PARTNER' || isExecutive;
@@ -305,6 +356,10 @@ export default function TeamsPage() {
     const timer = setTimeout(() => setActionFeedback(null), 2400);
     return () => clearTimeout(timer);
   }, [actionFeedback]);
+
+  useEffect(() => {
+    setTeamCalendarIdDraft(selectedTeam?.googleCalendarId ?? '');
+  }, [selectedTeam?.id, selectedTeam?.googleCalendarId]);
 
   const loadSelectedTeamSprintData = useCallback(async (projectId: string) => {
     setSprintDataLoading(true);
@@ -391,11 +446,12 @@ export default function TeamsPage() {
     projectsAPI
       .create({
         name: createTeamForm.name.trim(),
+        googleCalendarId: createTeamForm.googleCalendarId.trim() || null,
         startDate: new Date().toISOString().slice(0, 10),
         memberEmails: createTeamForm.selectedEmails,
       })
       .then(() => {
-        setCreateTeamForm({ name: '', selectedEmails: [], search: '' });
+        setCreateTeamForm({ name: '', googleCalendarId: '', selectedEmails: [], search: '' });
         setCreateTeamModalOpen(false);
         setSelectedTeamId(null);
         setActionFeedback({ message: 'Team created', tone: 'success' });
@@ -407,6 +463,26 @@ export default function TeamsPage() {
           tone: 'warning',
         }),
       );
+  };
+
+  const handleSaveTeamCalendarId = async () => {
+    if (!selectedTeam) return;
+
+    setTeamCalendarIdSaving(true);
+    try {
+      await projectsAPI.update(selectedTeam.id, {
+        googleCalendarId: teamCalendarIdDraft.trim() || null,
+      });
+      await fetchProjects();
+      setActionFeedback({ message: 'Team calendar saved', tone: 'success' });
+    } catch (err) {
+      setActionFeedback({
+        message: parseApiError(err, 'Failed to save team calendar'),
+        tone: 'warning',
+      });
+    } finally {
+      setTeamCalendarIdSaving(false);
+    }
   };
 
   const handleAddMemberToTeam = (projectId: string, email: string) => {
@@ -453,6 +529,28 @@ export default function TeamsPage() {
           tone: 'warning',
         }),
       );
+  };
+
+  const handleOpenMemberHistory = async (member: ProjectMember['user']) => {
+    if (!selectedTeam || !canInspectMemberAttendance) return;
+
+    setMemberHistoryOpen(true);
+    setMemberHistoryLoading(true);
+    setMemberHistoryFilter('TEAM');
+    setMemberHistory(null);
+
+    try {
+      const response = await attendanceAPI.getMemberHistory(member.id, selectedTeam.id);
+      setMemberHistory(response.data as MemberAttendanceHistory);
+    } catch (err) {
+      setMemberHistory(null);
+      setActionFeedback({
+        message: parseApiError(err, 'Failed to load member attendance history'),
+        tone: 'warning',
+      });
+    } finally {
+      setMemberHistoryLoading(false);
+    }
   };
 
   const handleSaveSprintConfig = async () => {
@@ -588,6 +686,45 @@ export default function TeamsPage() {
   };
   const labelForWeekday = (value: string) =>
     value.charAt(0) + value.slice(1).toLowerCase();
+  const activeHistoryBuckets =
+    memberHistoryFilter === 'TEAM'
+      ? memberHistory?.team ?? { attended: [], missed: [] }
+      : memberHistory?.firmwide ?? { attended: [], missed: [] };
+
+  const renderHistoryCard = (event: AttendanceHistoryEvent, variant: 'attended' | 'missed') => (
+    <div key={event.id} className="rounded-xl border border-[var(--border)] bg-[var(--secondary)]/60 p-4 space-y-2">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <p className="text-sm font-semibold text-[var(--foreground)]">{event.title}</p>
+          <p className="text-xs text-[var(--foreground)]/60 mt-1">
+            {new Date(event.eventDate).toLocaleString()}
+          </p>
+        </div>
+        <Badge variant={variant === 'attended' ? 'success' : 'warning'}>
+          {variant === 'attended' ? 'Attended' : 'Missed'}
+        </Badge>
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <Badge variant="info">{ATTENDANCE_CATEGORY_LABELS[event.category]}</Badge>
+        <Badge variant={event.locationType === 'ONLINE' ? 'default' : 'purple'}>
+          {event.locationType === 'ONLINE' ? 'Online' : 'In person'}
+        </Badge>
+      </div>
+      <p className="text-xs text-[var(--foreground)]/65">
+        Created by {event.createdByName}
+      </p>
+      {event.projectName && (
+        <p className="text-xs text-[var(--foreground)]/65">
+          Team: {event.projectName}
+        </p>
+      )}
+      {variant === 'attended' && event.checkedInAt && (
+        <p className="text-xs text-[var(--foreground)]/65">
+          Checked in {new Date(event.checkedInAt).toLocaleString()}
+        </p>
+      )}
+    </div>
+  );
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--background)]">
@@ -652,6 +789,7 @@ export default function TeamsPage() {
                       </div>
                       {canManageTeams && (
                         <div className="mb-4 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] space-y-4">
+
                           <div className="flex items-start justify-between gap-4">
                             <div>
                               <p className="text-sm font-semibold flex items-center gap-2">
@@ -801,6 +939,52 @@ export default function TeamsPage() {
                           )}
                         </div>
                       )}
+                      <div className="mb-4 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] space-y-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <p className="text-sm font-semibold flex items-center gap-2">
+                              <CalendarDays className="w-4 h-4 text-[var(--primary)]" />
+                              Team calendar
+                            </p>
+                            <p className="text-xs text-[var(--foreground)]/60 mt-1">
+                              Store the team Google Calendar secret/ID here. Team-specific attendance events sync to this calendar automatically.
+                            </p>
+                          </div>
+                        </div>
+
+                        {canEditTeamCalendar ? (
+                          <>
+                            <label className="space-y-1 text-sm block">
+                              <span className="font-medium text-[var(--foreground)]">Google Calendar secret / ID</span>
+                              <input
+                                type="text"
+                                value={teamCalendarIdDraft}
+                                onChange={(e) => setTeamCalendarIdDraft(e.target.value)}
+                                placeholder="team-calendar@group.calendar.google.com"
+                                className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
+                              />
+                            </label>
+                            <div className="flex flex-wrap items-center gap-3">
+                              <Button
+                                size="sm"
+                                onClick={handleSaveTeamCalendarId}
+                                disabled={teamCalendarIdSaving}
+                              >
+                                {teamCalendarIdSaving ? 'Saving...' : 'Save team calendar'}
+                              </Button>
+                              <p className="text-xs text-[var(--foreground)]/60">
+                                Use the calendar secret/ID, not the public embed URL.
+                              </p>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="rounded-lg border border-dashed border-[var(--border)] p-3 text-sm text-[var(--foreground)]/60">
+                            {selectedTeam.googleCalendarId
+                              ? 'A team calendar is configured for this team.'
+                              : 'No team calendar has been configured yet.'}
+                          </div>
+                        )}
+                      </div>
                       <p className="text-xs font-medium text-[var(--foreground)]/70 mb-2">Members and roles</p>
                       <ul className="space-y-2 mb-4">
                         {(selectedTeam.members ?? []).map((m) => (
@@ -810,8 +994,17 @@ export default function TeamsPage() {
                           >
                             <span className="text-sm">
                               <span className="font-medium text-[var(--foreground)]">{formatMemberName(m.user)}</span>
-                              <span className="text-[var(--foreground)]/60 ml-2">({formatMemberRole(m.user.role)})</span>
+                              <span className="text-[var(--foreground)]/60 ml-2">({getUserRole(m.user.email)})</span>
                             </span>
+                            {canInspectMemberAttendance && (
+                              <button
+                                type="button"
+                                onClick={() => void handleOpenMemberHistory(m.user)}
+                                className="ml-3 text-xs font-medium text-[var(--primary)] hover:underline"
+                              >
+                                View attendance
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => handleRemoveMemberFromTeam(selectedTeam.id, m.user.id)}
@@ -939,7 +1132,7 @@ export default function TeamsPage() {
                         >
                           <span className="text-sm">
                             <span className="font-medium text-[var(--foreground)]">{formatMemberName(m.user)}</span>
-                            <span className="text-[var(--foreground)]/60 ml-2">({formatMemberRole(m.user.role)})</span>
+                            <span className="text-[var(--foreground)]/60 ml-2">({getUserRole(m.user.email)})</span>
                           </span>
                         </li>
                       ))}
@@ -986,8 +1179,17 @@ export default function TeamsPage() {
                           >
                             <span className="text-sm">
                               <span className="font-medium text-[var(--foreground)]">{formatMemberName(m.user)}</span>
-                              <span className="text-[var(--foreground)]/60 ml-2">({formatMemberRole(m.user.role)})</span>
+                              <span className="text-[var(--foreground)]/60 ml-2">({getUserRole(m.user.email)})</span>
                             </span>
+                            {canInspectMemberAttendance && (
+                              <button
+                                type="button"
+                                onClick={() => void handleOpenMemberHistory(m.user)}
+                                className="ml-3 text-xs font-medium text-[var(--primary)] hover:underline"
+                              >
+                                View attendance
+                              </button>
+                            )}
                           </li>
                         ))}
                       </ul>
@@ -1058,7 +1260,7 @@ export default function TeamsPage() {
         isOpen={createTeamModalOpen}
         onClose={() => {
           setCreateTeamModalOpen(false);
-          setCreateTeamForm({ name: '', selectedEmails: [], search: '' });
+          setCreateTeamForm({ name: '', googleCalendarId: '', selectedEmails: [], search: '' });
         }}
         title="Create team"
         size="lg"
@@ -1072,6 +1274,20 @@ export default function TeamsPage() {
               className="w-full mt-2 px-3 py-2 rounded-xl border border-[var(--border)] bg-[var(--secondary)]"
               placeholder="e.g. Market Research Team"
             />
+          </div>
+          <div>
+            <label className="text-sm font-semibold">Team calendar secret / ID</label>
+            <input
+              value={createTeamForm.googleCalendarId}
+              onChange={(e) =>
+                setCreateTeamForm((prev) => ({ ...prev, googleCalendarId: e.target.value }))
+              }
+              className="w-full mt-2 px-3 py-2 rounded-xl border border-[var(--border)] bg-[var(--secondary)]"
+              placeholder="team-calendar@group.calendar.google.com"
+            />
+            <p className="mt-1 text-xs text-[var(--foreground)]/60">
+              Optional now, but required if team-specific events should sync into Google Calendar.
+            </p>
           </div>
           <div>
             <label className="text-sm font-semibold">Add members (OTCR list)</label>
@@ -1109,7 +1325,7 @@ export default function TeamsPage() {
               variant="ghost"
               onClick={() => {
                 setCreateTeamModalOpen(false);
-                setCreateTeamForm({ name: '', selectedEmails: [], search: '' });
+                setCreateTeamForm({ name: '', googleCalendarId: '', selectedEmails: [], search: '' });
               }}
             >
               Cancel
@@ -1120,6 +1336,84 @@ export default function TeamsPage() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        isOpen={memberHistoryOpen}
+        onClose={() => setMemberHistoryOpen(false)}
+        title={
+          memberHistory
+            ? `${memberHistory.member.name} attendance`
+            : 'Member attendance'
+        }
+        size="xl"
+      >
+        {memberHistoryLoading ? (
+          <p className="text-sm text-[var(--foreground)]/65">Loading attendance history...</p>
+        ) : !memberHistory ? (
+          <p className="text-sm text-[var(--foreground)]/65">No attendance history available.</p>
+        ) : (
+          <div className="space-y-5">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-sm font-semibold text-[var(--foreground)]">{memberHistory.member.name}</p>
+                <p className="text-xs text-[var(--foreground)]/60">{memberHistory.member.email}</p>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={memberHistoryFilter === 'TEAM' ? 'primary' : 'outline'}
+                  onClick={() => setMemberHistoryFilter('TEAM')}
+                >
+                  Team events
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={memberHistoryFilter === 'FIRMWIDE' ? 'primary' : 'outline'}
+                  onClick={() => setMemberHistoryFilter('FIRMWIDE')}
+                >
+                  Firmwide events
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid gap-5 lg:grid-cols-2">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-[var(--foreground)]">Attended</h3>
+                  <Badge variant="success">{activeHistoryBuckets.attended.length}</Badge>
+                </div>
+                <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+                  {activeHistoryBuckets.attended.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-[var(--border)] p-4 text-sm text-[var(--foreground)]/60">
+                      No attended events in this filter.
+                    </div>
+                  ) : (
+                    activeHistoryBuckets.attended.map((event) => renderHistoryCard(event, 'attended'))
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-[var(--foreground)]">Missed</h3>
+                  <Badge variant="warning">{activeHistoryBuckets.missed.length}</Badge>
+                </div>
+                <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+                  {activeHistoryBuckets.missed.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-[var(--border)] p-4 text-sm text-[var(--foreground)]/60">
+                      No missed events in this filter.
+                    </div>
+                  ) : (
+                    activeHistoryBuckets.missed.map((event) => renderHistoryCard(event, 'missed'))
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

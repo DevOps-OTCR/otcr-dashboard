@@ -135,6 +135,91 @@ export const notificationsAPI = {
   getMy: (limit?: number) => api.get('/notifications/my', { params: limit ? { limit } : undefined }),
 };
 
+export type AttendanceLocationType = 'IN_PERSON' | 'ONLINE';
+export type AttendanceAudienceScope = 'TEAM' | 'GLOBAL';
+export type AttendanceVerificationMethod = 'GEOFENCE' | 'CODE';
+export type AttendanceEventCategory = 'CLIENT_CALL' | 'TEAM_MEETING' | 'FIRMWIDE_EVENT' | 'SOCIAL';
+export type AttendanceAvailabilitySlot = {
+  start: string;
+  end: string;
+  availableCount: number;
+};
+export type AttendanceAvailabilityPoll = {
+  enabled: boolean;
+  windowStart: string;
+  windowEnd: string;
+  slotMinutes: number;
+  teamSize: number;
+  respondentCount: number;
+  currentUserSlots: string[];
+  slots: AttendanceAvailabilitySlot[];
+  bestSlots: AttendanceAvailabilitySlot[];
+};
+
+export type AttendanceEvent = {
+  id: string;
+  title: string;
+  eventDate: string;
+  locationType: AttendanceLocationType;
+  locationLabel: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  geofenceRadiusMeters: number;
+  audienceScope: AttendanceAudienceScope;
+  category: AttendanceEventCategory;
+  projectId: string | null;
+  projectName: string | null;
+  createdById: string;
+  createdByName: string;
+  canManage: boolean;
+  canControlOnlineCode: boolean;
+  verificationCode: string | null;
+  codeWindowOpensAt: string | null;
+  codeWindowClosesAt: string | null;
+  availabilityPoll: AttendanceAvailabilityPoll | null;
+  attendanceCount: number;
+  attendance: {
+    present: boolean;
+    verificationMethod: AttendanceVerificationMethod;
+    codeVerified: boolean;
+    checkedInAt: string;
+  } | null;
+};
+
+export const attendanceAPI = {
+  listEvents: () => api.get('/attendance/events'),
+  createEvent: (data: {
+    title: string;
+    eventDate: string;
+    locationType: AttendanceLocationType;
+    category?: AttendanceEventCategory;
+    locationLabel?: string;
+    latitude?: number;
+    longitude?: number;
+    geofenceRadiusMeters?: number;
+    audienceScope?: AttendanceAudienceScope;
+    projectId?: string;
+    availabilityPoll?: {
+      enabled?: boolean;
+      windowStart?: string;
+      windowEnd?: string;
+      slotMinutes?: number;
+    };
+  }) => api.post('/attendance/events', data),
+  saveAvailability: (eventId: string, data: { slotStarts: string[] }) =>
+    api.post(`/attendance/events/${eventId}/availability`, data),
+  openCodeWindow: (eventId: string) => api.post(`/attendance/events/${eventId}/code-window`),
+  deleteEvent: (eventId: string) => api.delete(`/attendance/events/${eventId}`),
+  checkIn: (eventId: string, data: {
+    method: AttendanceVerificationMethod;
+    geofenceVerified?: boolean;
+    code?: string;
+  }) => api.post(`/attendance/events/${eventId}/check-in`, data),
+  listAttendances: (eventId: string) => api.get(`/attendance/events/${eventId}/attendances`),
+  getMemberHistory: (memberId: string, projectId: string) =>
+    api.get(`/attendance/members/${memberId}/history`, { params: { projectId } }),
+};
+
 export type ProjectsQuery = {
   status?: 'ACTIVE' | 'COMPLETED' | 'ON_HOLD' | 'CANCELLED';
   search?: string;
@@ -157,6 +242,7 @@ export type ProjectListItem = {
       email?: string | null;
     };
   }>;
+  googleCalendarId?: string | null;
   googleCalendarEmbedUrl?: string | null;
 };
 
@@ -201,6 +287,7 @@ export const projectsAPI = {
     clientName?: string;
     startDate: string;
     endDate?: string;
+    googleCalendarId?: string | null;
     googleCalendarEmbedUrl?: string | null;
     pmId?: string;
     memberIds?: string[];
@@ -215,6 +302,7 @@ export const projectsAPI = {
     clientName?: string;
     startDate?: string;
     endDate?: string;
+    googleCalendarId?: string | null;
     googleCalendarEmbedUrl?: string | null;
     status?: 'ACTIVE' | 'COMPLETED' | 'ON_HOLD' | 'CANCELLED';
   }) => api.patch(`/projects/${id}`, data).then((response) => {

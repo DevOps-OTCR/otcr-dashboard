@@ -80,6 +80,7 @@ NEXT_PUBLIC_MSAL_AUTHORITY=https://login.microsoftonline.com/<tenant-id>
 NEXT_PUBLIC_MSAL_REDIRECT_URI=http://localhost:3000/auth/callback
 NEXT_PUBLIC_API_URL=http://localhost:4000
 NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_GEOAPIFY_API_KEY=your-geoapify-key
 NEXTAUTH_URL=http://localhost:3000
 NEXTAUTH_SECRET=replace-me
 ```

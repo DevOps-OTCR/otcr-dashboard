@@ -37,6 +37,8 @@ export class ProjectsController {
       name: string;
       description?: string;
       clientName?: string;
+      googleCalendarEmbedUrl?: string | null;
+      googleCalendarId?: string;
       startDate: string;
       endDate?: string;
       pmId?: string;
@@ -348,6 +350,8 @@ export class ProjectsController {
       name?: string;
       description?: string;
       clientName?: string;
+      googleCalendarEmbedUrl?: string | null;
+      googleCalendarId?: string | null;
       startDate?: string;
       endDate?: string;
       status?: "ACTIVE" | "COMPLETED" | "ON_HOLD" | "CANCELLED";

@@ -1,12 +1,16 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import type { User } from '@prisma/client';
+import { GoogleCalendarService } from '../integrations/google-calendar.service';
 
 type TaskAssigneeType = 'PERSON' | 'ALL' | 'ALL_PMS' | 'ALL_TEAM';
 
 @Injectable()
 export class TasksService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private googleCalendarService: GoogleCalendarService,
+  ) {}
   private static readonly DEFAULT_DUE_TIME = '23:59';
   private static readonly CHICAGO_TIMEZONE = 'America/Chicago';
 
@@ -184,7 +188,7 @@ export class TasksService {
   ) {
     const normalizedDueDate = this.combineDueDateTime(data.dueDate, data.dueTime);
 
-    return this.taskModel.create({
+    const task = await this.taskModel.create({
       data: {
         taskName: data.taskName,
         description: data.description,
@@ -201,6 +205,8 @@ export class TasksService {
         createdBy: { select: { id: true, email: true, firstName: true, lastName: true } },
       },
     });
+
+    return this.syncTaskCalendarFields(task);
   }
 
   async update(
@@ -234,7 +240,7 @@ export class TasksService {
         )
       : undefined;
 
-    return this.taskModel.update({
+    const updatedTask = await this.taskModel.update({
       where: { id },
       data: {
         ...(data.taskName != null && { taskName: data.taskName }),
@@ -250,10 +256,25 @@ export class TasksService {
         createdBy: { select: { id: true, email: true, firstName: true, lastName: true } },
       },
     });
+
+    return this.syncTaskCalendarFields(updatedTask);
   }
 
   async remove(id: string) {
     try {
+      const existing = await this.taskModel.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          googleCalendarEventId: true,
+          googleCalendarId: true,
+        },
+      });
+      if (!existing) {
+        throw new NotFoundException('Task not found');
+      }
+
+      await this.googleCalendarService.removeTaskEvent(existing);
       return await this.taskModel.delete({ where: { id } });
     } catch {
       throw new NotFoundException('Task not found');
@@ -305,6 +326,43 @@ export class TasksService {
       normalizedTime,
       TasksService.CHICAGO_TIMEZONE,
     );
+  }
+
+  private async syncTaskCalendarFields<T extends {
+    id: string;
+    taskName: string;
+    description?: string | null;
+    dueDate: Date;
+    projectName: string;
+    workstream: string;
+    assigneeType: TaskAssigneeType;
+    projectId?: string | null;
+    googleCalendarEventId?: string | null;
+    googleCalendarId?: string | null;
+  }>(task: T): Promise<T> {
+    const syncState = await this.googleCalendarService.syncTask(task);
+    const nextEventId = syncState.googleCalendarEventId ?? null;
+    const nextCalendarId = syncState.googleCalendarId ?? null;
+
+    if (
+      (task.googleCalendarEventId ?? null) === nextEventId &&
+      (task.googleCalendarId ?? null) === nextCalendarId
+    ) {
+      return task;
+    }
+
+    const updated = await this.taskModel.update({
+      where: { id: task.id },
+      data: {
+        googleCalendarEventId: nextEventId,
+        googleCalendarId: nextCalendarId,
+      },
+      include: {
+        createdBy: { select: { id: true, email: true, firstName: true, lastName: true } },
+      },
+    });
+
+    return updated as T;
   }
 
   private createDateInTimeZone(
