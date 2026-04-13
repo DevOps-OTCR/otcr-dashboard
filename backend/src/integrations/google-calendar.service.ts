@@ -17,6 +17,18 @@ type CalendarEligibleTask = {
   googleCalendarId?: string | null;
 };
 
+type AttendanceCalendarEvent = {
+  id: string;
+  title: string;
+  eventDate: Date;
+  audienceScope: 'TEAM' | 'GLOBAL';
+  projectId?: string | null;
+  category: 'CLIENT_CALL' | 'TEAM_MEETING' | 'FIRMWIDE_EVENT' | 'SOCIAL';
+  locationType: 'ONLINE' | 'IN_PERSON';
+  locationLabel?: string | null;
+  projectName?: string | null;
+};
+
 @Injectable()
 export class GoogleCalendarService {
   private readonly logger = new Logger(GoogleCalendarService.name);
@@ -26,6 +38,22 @@ export class GoogleCalendarService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
   ) {}
+
+  private async ensureProjectCalendarSettingsTable() {
+    await this.prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "ProjectCalendarSetting" (
+        "projectId" TEXT PRIMARY KEY REFERENCES "Project"("id") ON DELETE CASCADE,
+        "googleCalendarEmbedUrl" TEXT,
+        "googleCalendarId" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await this.prisma.$executeRawUnsafe(`
+      ALTER TABLE "ProjectCalendarSetting"
+      ADD COLUMN IF NOT EXISTS "googleCalendarId" TEXT
+    `);
+  }
 
   async syncTask(task: CalendarEligibleTask): Promise<{
     googleCalendarEventId: string | null;
@@ -111,6 +139,78 @@ export class GoogleCalendarService {
     }
   }
 
+  async resolveAttendanceCalendarId(event: Pick<AttendanceCalendarEvent, 'audienceScope' | 'projectId'>) {
+    if (event.audienceScope === 'GLOBAL') {
+      return this.configService.get<string>('GOOGLE_CALENDAR_FIRMWIDE_ID')?.trim() || null;
+    }
+
+    if (!event.projectId) {
+      return null;
+    }
+
+    return this.getProjectCalendarId(event.projectId);
+  }
+
+  async createAttendanceEvent(event: AttendanceCalendarEvent): Promise<{
+    googleCalendarEventId: string | null;
+    googleCalendarId: string | null;
+  }> {
+    const targetCalendarId = await this.resolveAttendanceCalendarId(event);
+
+    if (!targetCalendarId) {
+      return {
+        googleCalendarEventId: null,
+        googleCalendarId: null,
+      };
+    }
+
+    if (!this.isConfigured()) {
+      this.logger.warn(
+        `Skipping Google Calendar sync for attendance event ${event.id}: service account env vars are missing.`,
+      );
+      return {
+        googleCalendarEventId: null,
+        googleCalendarId: targetCalendarId,
+      };
+    }
+
+    try {
+      const created = await this.createEvent(
+        targetCalendarId,
+        this.buildAttendanceEventPayload(event),
+      );
+
+      return {
+        googleCalendarEventId: created.id ?? null,
+        googleCalendarId: targetCalendarId,
+      };
+    } catch (error: any) {
+      const message = error?.message ?? 'Unknown Google Calendar sync error';
+      this.logger.error(
+        `Failed to sync attendance event ${event.id} to Google Calendar: ${message}`,
+      );
+      return {
+        googleCalendarEventId: null,
+        googleCalendarId: targetCalendarId,
+      };
+    }
+  }
+
+  async deleteCalendarEvent(calendarId?: string | null, eventId?: string | null) {
+    if (!calendarId || !eventId) {
+      return;
+    }
+
+    if (!this.isConfigured()) {
+      this.logger.warn(
+        `Skipping Google Calendar delete for external event ${eventId}: service account env vars are missing.`,
+      );
+      return;
+    }
+
+    await this.deleteEvent(calendarId, eventId);
+  }
+
   private async resolveTaskCalendarId(task: CalendarEligibleTask): Promise<string | null> {
     if (task.assigneeType === 'ALL') {
       return this.configService.get<string>('GOOGLE_CALENDAR_FIRMWIDE_ID')?.trim() || null;
@@ -120,12 +220,20 @@ export class GoogleCalendarService {
       return null;
     }
 
-    const project = await (this.prisma.project as any).findUnique({
-      where: { id: task.projectId },
-      select: { googleCalendarId: true },
-    });
+    return this.getProjectCalendarId(task.projectId);
+  }
 
-    return project?.googleCalendarId?.trim() || null;
+  private async getProjectCalendarId(projectId: string): Promise<string | null> {
+    await this.ensureProjectCalendarSettingsTable();
+    const rows = await this.prisma.$queryRawUnsafe<Array<{ googleCalendarId: string | null }>>(
+      `SELECT "googleCalendarId"
+       FROM "ProjectCalendarSetting"
+       WHERE "projectId" = $1
+       LIMIT 1`,
+      projectId,
+    );
+
+    return rows[0]?.googleCalendarId?.trim() || null;
   }
 
   private buildEventPayload(task: CalendarEligibleTask) {
@@ -143,6 +251,34 @@ export class GoogleCalendarService {
 
     return {
       summary: task.taskName,
+      description: details.join('\n\n'),
+      start: {
+        dateTime: start.toISOString(),
+        timeZone,
+      },
+      end: {
+        dateTime: end.toISOString(),
+        timeZone,
+      },
+    };
+  }
+
+  private buildAttendanceEventPayload(event: AttendanceCalendarEvent) {
+    const start = new Date(event.eventDate);
+    const end = new Date(start.getTime() + 60 * 60 * 1000);
+    const timeZone =
+      this.configService.get<string>('GOOGLE_CALENDAR_TIMEZONE')?.trim() || 'America/Chicago';
+
+    const details = [
+      `Category: ${event.category}`,
+      `Scope: ${event.audienceScope === 'GLOBAL' ? 'Firmwide' : 'Team-specific'}`,
+      event.projectName ? `Team: ${event.projectName}` : null,
+      event.locationLabel ? `Location: ${event.locationLabel}` : `Location type: ${event.locationType}`,
+      `Dashboard attendance event ID: ${event.id}`,
+    ].filter(Boolean);
+
+    return {
+      summary: event.title,
       description: details.join('\n\n'),
       start: {
         dateTime: start.toISOString(),

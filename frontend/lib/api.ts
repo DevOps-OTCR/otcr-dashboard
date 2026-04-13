@@ -139,6 +139,22 @@ export type AttendanceLocationType = 'IN_PERSON' | 'ONLINE';
 export type AttendanceAudienceScope = 'TEAM' | 'GLOBAL';
 export type AttendanceVerificationMethod = 'GEOFENCE' | 'CODE';
 export type AttendanceEventCategory = 'CLIENT_CALL' | 'TEAM_MEETING' | 'FIRMWIDE_EVENT' | 'SOCIAL';
+export type AttendanceAvailabilitySlot = {
+  start: string;
+  end: string;
+  availableCount: number;
+};
+export type AttendanceAvailabilityPoll = {
+  enabled: boolean;
+  windowStart: string;
+  windowEnd: string;
+  slotMinutes: number;
+  teamSize: number;
+  respondentCount: number;
+  currentUserSlots: string[];
+  slots: AttendanceAvailabilitySlot[];
+  bestSlots: AttendanceAvailabilitySlot[];
+};
 
 export type AttendanceEvent = {
   id: string;
@@ -160,6 +176,7 @@ export type AttendanceEvent = {
   verificationCode: string | null;
   codeWindowOpensAt: string | null;
   codeWindowClosesAt: string | null;
+  availabilityPoll: AttendanceAvailabilityPoll | null;
   attendanceCount: number;
   attendance: {
     present: boolean;
@@ -182,7 +199,15 @@ export const attendanceAPI = {
     geofenceRadiusMeters?: number;
     audienceScope?: AttendanceAudienceScope;
     projectId?: string;
+    availabilityPoll?: {
+      enabled?: boolean;
+      windowStart?: string;
+      windowEnd?: string;
+      slotMinutes?: number;
+    };
   }) => api.post('/attendance/events', data),
+  saveAvailability: (eventId: string, data: { slotStarts: string[] }) =>
+    api.post(`/attendance/events/${eventId}/availability`, data),
   openCodeWindow: (eventId: string) => api.post(`/attendance/events/${eventId}/code-window`),
   deleteEvent: (eventId: string) => api.delete(`/attendance/events/${eventId}`),
   checkIn: (eventId: string, data: {

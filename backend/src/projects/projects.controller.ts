@@ -38,10 +38,12 @@ export class ProjectsController {
       description?: string;
       clientName?: string;
       googleCalendarEmbedUrl?: string | null;
+      googleCalendarId?: string;
       startDate: string;
       endDate?: string;
       pmId?: string;
       memberIds?: string[];
+      memberEmails?: string[];
     },
     @Headers('authorization') authorization: string,
     @GetUser() user: any
@@ -151,7 +153,11 @@ export class ProjectsController {
 
   @Post(':id/sprints/generate-next')
   @Roles('ADMIN', 'PM')
-  async generateNextSprint(@Param('id') id: string, @GetUser() user: any) {
+  async generateNextSprint(
+    @Param('id') id: string,
+    @Body() body: { startDate?: string },
+    @GetUser() user: any,
+  ) {
     const project = await this.projectsService.findOne(id);
 
     if (!project) {
@@ -163,7 +169,7 @@ export class ProjectsController {
     }
 
     try {
-      return await this.projectsService.generateNextSprint(id);
+      return await this.projectsService.generateNextSprint(id, body?.startDate);
     } catch (error: any) {
       if (error instanceof BadRequestException) {
         throw error;
@@ -232,6 +238,48 @@ export class ProjectsController {
     }
 
     return this.projectsService.updateSprintStatus(id, sprintId, body.status);
+  }
+
+  @Patch(':id/sprints/:sprintId/notes')
+  @Roles('ADMIN', 'PM', 'LC')
+  async updateSprintNotes(
+    @Param('id') id: string,
+    @Param('sprintId') sprintId: string,
+    @Body() body: { generalNotes?: string },
+    @GetUser() user: any,
+  ) {
+    const project = await this.projectsService.findOne(id);
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    if (user.role !== 'ADMIN' && user.role !== 'LC' && project.pmId !== user.id) {
+      throw new ForbiddenException('Only PM, LC, or Admin can update week notes');
+    }
+
+    return this.projectsService.updateSprintNotes(id, sprintId, body);
+  }
+
+  @Patch(':id/sprints/:sprintId')
+  @Roles('ADMIN', 'PM', 'LC')
+  async updateSprint(
+    @Param('id') id: string,
+    @Param('sprintId') sprintId: string,
+    @Body() body: { weekStartDate?: string },
+    @GetUser() user: any,
+  ) {
+    const project = await this.projectsService.findOne(id);
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    if (user.role !== 'ADMIN' && user.role !== 'LC' && project.pmId !== user.id) {
+      throw new ForbiddenException('Only PM, LC, or Admin can update weeks');
+    }
+
+    return this.projectsService.updateSprint(id, sprintId, body);
   }
 
   @Delete(':id/sprints/:sprintId')
@@ -303,6 +351,7 @@ export class ProjectsController {
       description?: string;
       clientName?: string;
       googleCalendarEmbedUrl?: string | null;
+      googleCalendarId?: string | null;
       startDate?: string;
       endDate?: string;
       status?: "ACTIVE" | "COMPLETED" | "ON_HOLD" | "CANCELLED";

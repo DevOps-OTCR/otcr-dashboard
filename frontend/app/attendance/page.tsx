@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Fragment, useEffect, useMemo, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   CalendarDays,
   Clock3,
@@ -63,6 +63,10 @@ type CreateFormState = {
   audienceScope: AttendanceAudienceScope;
   category: AttendanceEventCategory;
   projectId: string;
+  availabilityPollEnabled: boolean;
+  availabilityWindowStart: string;
+  availabilityWindowEnd: string;
+  availabilitySlotMinutes: '15' | '30' | '60';
 };
 
 const DEFAULT_FORM: CreateFormState = {
@@ -73,6 +77,10 @@ const DEFAULT_FORM: CreateFormState = {
   audienceScope: 'TEAM',
   category: 'TEAM_MEETING',
   projectId: '',
+  availabilityPollEnabled: false,
+  availabilityWindowStart: '',
+  availabilityWindowEnd: '',
+  availabilitySlotMinutes: '30',
 };
 
 const ATTENDANCE_CATEGORY_LABELS: Record<AttendanceEventCategory, string> = {
@@ -169,6 +177,69 @@ function formatCountdown(target: string | null, nowMs: number) {
   return `${minutes}:${String(seconds).padStart(2, '0')} remaining`;
 }
 
+function formatAvailabilitySlotLabel(start: string, end: string) {
+  return `${new Date(start).toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })} - ${new Date(end).toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+  })}`;
+}
+
+function formatAvailabilityDayLabel(value: string) {
+  return new Date(value).toLocaleDateString([], {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function formatAvailabilityTimeLabel(value: string) {
+  return new Date(value).toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function getAvailabilityDayKey(value: string) {
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getAvailabilityHeatColor(availableCount: number, teamSize: number, isSelected: boolean) {
+  if (teamSize <= 0) {
+    return isSelected ? 'rgba(34, 197, 94, 0.28)' : '#ffffff';
+  }
+
+  const intensity = Math.max(0, Math.min(1, availableCount / teamSize));
+  const green = { r: 34, g: 197, b: 94 };
+  const white = { r: 255, g: 255, b: 255 };
+  const mix = (start: number, end: number) => Math.round(start + (end - start) * intensity);
+  const borderBoost = isSelected ? 16 : 0;
+  const r = Math.max(0, mix(white.r, green.r) - borderBoost);
+  const g = Math.max(0, mix(white.g, green.g) - borderBoost);
+  const b = Math.max(0, mix(white.b, green.b) - borderBoost);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+function getAvailabilityWindowStartIso(day: string) {
+  return new Date(`${day}T00:00:00`).toISOString();
+}
+
+function getAvailabilityWindowEndIso(day: string) {
+  return new Date(`${day}T23:59:59.999`).toISOString();
+}
+
+function attendancePollHasFlexibleTiming(attendanceEvent: AttendanceEvent) {
+  return Boolean(attendanceEvent.audienceScope === 'TEAM' && attendanceEvent.availabilityPoll);
+}
+
 export default function AttendancePage() {
   const session = useAuth();
   const [role, setRole] = useState<AppRole>('CONSULTANT');
@@ -192,6 +263,11 @@ export default function AttendancePage() {
   const [roster, setRoster] = useState<AttendanceRosterRow[]>([]);
   const [loadingRoster, setLoadingRoster] = useState(false);
   const [nowMs, setNowMs] = useState<number>(Date.now());
+  const [availabilitySelections, setAvailabilitySelections] = useState<Record<string, string[]>>({});
+  const [availabilityDragState, setAvailabilityDragState] = useState<{
+    eventId: string;
+    mode: 'add' | 'remove';
+  } | null>(null);
 
   const canCreate = role === 'ADMIN' || role === 'PM' || role === 'PARTNER' || role === 'EXECUTIVE';
 
@@ -256,6 +332,26 @@ export default function AttendancePage() {
     }, 1000);
     return () => window.clearInterval(intervalId);
   }, []);
+
+  useEffect(() => {
+    const clearDragState = () => setAvailabilityDragState(null);
+    window.addEventListener('pointerup', clearDragState);
+    return () => window.removeEventListener('pointerup', clearDragState);
+  }, []);
+
+  useEffect(() => {
+    setAvailabilitySelections((current) => {
+      const next = { ...current };
+      for (const attendanceEvent of events) {
+        if (attendanceEvent.availabilityPoll) {
+          next[attendanceEvent.id] = current[attendanceEvent.id] ?? attendanceEvent.availabilityPoll.currentUserSlots;
+        } else {
+          delete next[attendanceEvent.id];
+        }
+      }
+      return next;
+    });
+  }, [events]);
 
   useEffect(() => {
     if (form.locationType !== 'IN_PERSON') {
@@ -400,6 +496,9 @@ export default function AttendancePage() {
         next.category = allowedCategories.includes(current.category)
           ? current.category
           : getDefaultCategoryForScope(value as AttendanceAudienceScope);
+        if (value !== 'TEAM') {
+          next.availabilityPollEnabled = false;
+        }
       }
       return next;
     });
@@ -443,6 +542,16 @@ export default function AttendancePage() {
     setError(null);
 
     try {
+      if ((role === 'PM' || form.audienceScope === 'TEAM') && form.availabilityPollEnabled) {
+        if (!form.availabilityWindowStart || !form.availabilityWindowEnd) {
+          throw new Error('Choose both a start day and end day for the team availability poll.');
+        }
+
+        if (form.availabilityWindowEnd < form.availabilityWindowStart) {
+          throw new Error('The poll end day must be the same as or after the start day.');
+        }
+      }
+
       const locationCoordinates =
         form.locationType === 'IN_PERSON'
           ? locationResolvedFor === form.locationLabel.trim() && resolvedLocation
@@ -461,6 +570,15 @@ export default function AttendancePage() {
         geofenceRadiusMeters: form.locationType === 'IN_PERSON' ? 150 : undefined,
         audienceScope: role === 'PM' ? 'TEAM' : form.audienceScope,
         projectId: (role === 'PM' || form.audienceScope === 'TEAM') ? form.projectId : undefined,
+        availabilityPoll:
+          (role === 'PM' || form.audienceScope === 'TEAM') && form.availabilityPollEnabled
+            ? {
+                enabled: true,
+                windowStart: getAvailabilityWindowStartIso(form.availabilityWindowStart),
+                windowEnd: getAvailabilityWindowEndIso(form.availabilityWindowEnd),
+                slotMinutes: Number(form.availabilitySlotMinutes),
+              }
+            : undefined,
       } as const;
 
       const response = await attendanceAPI.createEvent(payload);
@@ -613,12 +731,94 @@ export default function AttendancePage() {
     }
   };
 
+  const setAvailabilitySlotValue = (eventId: string, slotStart: string, shouldSelect: boolean) => {
+    setAvailabilitySelections((current) => {
+      const existing = new Set(current[eventId] ?? []);
+      if (shouldSelect) existing.add(slotStart);
+      else existing.delete(slotStart);
+      return {
+        ...current,
+        [eventId]: Array.from(existing).sort(),
+      };
+    });
+  };
+
+  const handleAvailabilityPointerDown = (
+    eventId: string,
+    slotStart: string,
+    isSelected: boolean,
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    event.preventDefault();
+    const mode: 'add' | 'remove' = isSelected ? 'remove' : 'add';
+    setAvailabilityDragState({ eventId, mode });
+    setAvailabilitySlotValue(eventId, slotStart, mode === 'add');
+  };
+
+  const handleAvailabilityPointerEnter = (eventId: string, slotStart: string) => {
+    if (!availabilityDragState || availabilityDragState.eventId !== eventId) return;
+    setAvailabilitySlotValue(eventId, slotStart, availabilityDragState.mode === 'add');
+  };
+
+  const handleSaveAvailability = async (attendanceEvent: AttendanceEvent) => {
+    const selectedSlots = availabilitySelections[attendanceEvent.id] ?? [];
+    setSubmittingEventId(attendanceEvent.id);
+    setMessage(null);
+    setError(null);
+
+    try {
+      const response = await attendanceAPI.saveAvailability(attendanceEvent.id, {
+        slotStarts: selectedSlots,
+      });
+      const updated = response.data?.event as AttendanceEvent;
+      setEvents((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setAvailabilitySelections((current) => ({
+        ...current,
+        [attendanceEvent.id]: updated.availabilityPoll?.currentUserSlots ?? [],
+      }));
+      setMessage(`Saved your availability for ${attendanceEvent.title}.`);
+    } catch (err: any) {
+      setError(parseApiError(err, 'Failed to save your availability.'));
+    } finally {
+      setSubmittingEventId(null);
+    }
+  };
+
   const renderEventCard = (attendanceEvent: AttendanceEvent) => {
     const codeWindowOpen =
       attendanceEvent.codeWindowOpensAt != null &&
       attendanceEvent.codeWindowClosesAt != null &&
       new Date(attendanceEvent.codeWindowOpensAt).getTime() <= nowMs &&
       new Date(attendanceEvent.codeWindowClosesAt).getTime() >= nowMs;
+    const availabilityPoll = attendanceEvent.availabilityPoll;
+    const selectedAvailabilitySlots = availabilitySelections[attendanceEvent.id] ?? availabilityPoll?.currentUserSlots ?? [];
+    const availabilityDayKeys = availabilityPoll
+      ? Array.from(new Set(availabilityPoll.slots.map((slot) => getAvailabilityDayKey(slot.start))))
+      : [];
+    const availabilityTimeRows = availabilityPoll
+      ? Array.from(
+          availabilityPoll.slots.reduce((map, slot) => {
+            const date = new Date(slot.start);
+            const key = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+            if (!map.has(key)) {
+              map.set(key, {
+                key,
+                label: formatAvailabilityTimeLabel(slot.start),
+              });
+            }
+            return map;
+          }, new Map<string, { key: string; label: string }>()).values(),
+        )
+      : [];
+    const availabilitySlotByGridKey = availabilityPoll
+      ? new Map(
+          availabilityPoll.slots.map((slot) => {
+            const date = new Date(slot.start);
+            const timeKey = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+            return [`${getAvailabilityDayKey(slot.start)}__${timeKey}`, slot] as const;
+          }),
+        )
+      : new Map<string, NonNullable<AttendanceEvent['availabilityPoll']>['slots'][number]>();
 
     return (
       <Card key={attendanceEvent.id} className="border border-[var(--border)]">
@@ -641,10 +841,12 @@ export default function AttendancePage() {
           <div className="space-y-2">
             <CardTitle>{attendanceEvent.title}</CardTitle>
             <CardDescription className="flex flex-wrap items-center gap-4">
-              <span className="inline-flex items-center gap-1.5">
-                <CalendarDays className="w-4 h-4" />
-                {new Date(attendanceEvent.eventDate).toLocaleString()}
-              </span>
+              {!attendancePollHasFlexibleTiming(attendanceEvent) && (
+                <span className="inline-flex items-center gap-1.5">
+                  <CalendarDays className="w-4 h-4" />
+                  {new Date(attendanceEvent.eventDate).toLocaleString()}
+                </span>
+              )}
               <span className="inline-flex items-center gap-1.5">
                 {attendanceEvent.locationType === 'ONLINE' ? <Monitor className="w-4 h-4" /> : <MapPin className="w-4 h-4" />}
                 {attendanceEvent.locationType === 'ONLINE'
@@ -749,6 +951,118 @@ export default function AttendancePage() {
               </Button>
             )}
           </div>
+
+          {availabilityPoll && attendanceEvent.audienceScope === 'TEAM' && (
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 space-y-4">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <p className="text-sm font-semibold">Team availability</p>
+                  <p className="text-xs text-[var(--foreground)]/65">
+                    {availabilityPoll.respondentCount} of {availabilityPoll.teamSize} teammates have responded
+                  </p>
+                </div>
+                <Badge variant="info">{availabilityPoll.slotMinutes}-minute slots</Badge>
+              </div>
+
+              <div className="grid gap-2 md:grid-cols-3">
+                {availabilityPoll.bestSlots.map((slot) => (
+                  <div key={slot.start} className="rounded-xl border border-[var(--border)] bg-[var(--secondary)]/35 px-3 py-2">
+                    <p className="text-xs uppercase tracking-[0.16em] text-[var(--foreground)]/55">Best time</p>
+                    <p className="text-sm font-medium">{formatAvailabilitySlotLabel(slot.start, slot.end)}</p>
+                    <p className="text-xs text-[var(--foreground)]/65">{slot.availableCount} available</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-[0.16em] text-[var(--foreground)]/55">
+                  Click and drag across the chart to mark when you are free
+                </p>
+                <div className="overflow-x-auto">
+                  <div
+                    className="grid gap-1 min-w-[620px]"
+                    style={{ gridTemplateColumns: `72px repeat(${availabilityDayKeys.length}, minmax(84px, 1fr))` }}
+                  >
+                    <div className="sticky left-0 z-10 rounded-tl-xl bg-[var(--card)]" />
+                    {availabilityDayKeys.map((dayKey) => {
+                      const firstSlot = availabilityPoll.slots.find((slot) => getAvailabilityDayKey(slot.start) === dayKey);
+                      return (
+                        <div
+                          key={dayKey}
+                          className="rounded-lg border border-[var(--border)] bg-[var(--secondary)]/35 px-2 py-1.5 text-center"
+                        >
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--foreground)]/60">
+                            {firstSlot ? formatAvailabilityDayLabel(firstSlot.start) : dayKey}
+                          </p>
+                        </div>
+                      );
+                    })}
+
+                    {availabilityTimeRows.map((timeRow) => (
+                      <Fragment key={timeRow.key}>
+                        <div
+                          key={`${timeRow.key}-label`}
+                          className="sticky left-0 z-10 flex items-center rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1.5 text-[11px] font-medium text-[var(--foreground)]/70"
+                        >
+                          {timeRow.label}
+                        </div>
+                        {availabilityDayKeys.map((dayKey) => {
+                          const slot = availabilitySlotByGridKey.get(`${dayKey}__${timeRow.key}`);
+                          if (!slot) {
+                            return <div key={`${dayKey}-${timeRow.key}-empty`} className="rounded-lg bg-transparent" />;
+                          }
+
+                          const isSelected = selectedAvailabilitySlots.includes(slot.start);
+                          return (
+                            <button
+                              key={slot.start}
+                              type="button"
+                              onPointerDown={(event) =>
+                                handleAvailabilityPointerDown(attendanceEvent.id, slot.start, isSelected, event)
+                              }
+                              onPointerEnter={() => handleAvailabilityPointerEnter(attendanceEvent.id, slot.start)}
+                              className="h-9 rounded-lg border transition-colors"
+                              title={`${formatAvailabilitySlotLabel(slot.start, slot.end)} • ${slot.availableCount}/${availabilityPoll.teamSize} available`}
+                              style={{
+                                borderColor: isSelected ? 'rgb(22, 163, 74)' : 'var(--border)',
+                                backgroundColor: getAvailabilityHeatColor(slot.availableCount, availabilityPoll.teamSize, isSelected),
+                                boxShadow: isSelected ? 'inset 0 0 0 2px rgba(22, 163, 74, 0.55)' : 'none',
+                              }}
+                            />
+                          );
+                        })}
+                      </Fragment>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap text-xs text-[var(--foreground)]/65">
+                  <span>Your selections are outlined in green.</span>
+                  <span className="inline-flex items-center gap-2">
+                    <span className="h-3 w-3 rounded-sm border border-[var(--border)] bg-white" />
+                    None available
+                  </span>
+                  <span className="inline-flex items-center gap-2">
+                    <span className="h-3 w-3 rounded-sm border border-emerald-600 bg-emerald-500" />
+                    Everyone available
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <p className="text-xs text-[var(--foreground)]/65">
+                  Availability window: {new Date(availabilityPoll.windowStart).toLocaleString()} to {new Date(availabilityPoll.windowEnd).toLocaleString()}
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void handleSaveAvailability(attendanceEvent)}
+                  loading={submittingEventId === attendanceEvent.id}
+                >
+                  Save my availability
+                </Button>
+              </div>
+            </div>
+          )}
 
           {attendanceEvent.canManage && (
             <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -932,22 +1246,86 @@ export default function AttendancePage() {
           )}
 
           {(role === 'PM' || form.audienceScope === 'TEAM') && (
-            <label className="space-y-2 text-sm block">
-              <span className="font-medium">Team</span>
-              <select
-                value={form.projectId}
-                onChange={(event) => handleFormChange('projectId', event.target.value)}
-                className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2"
-                required
-              >
-                <option value="">Select team</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="space-y-4">
+              <label className="space-y-2 text-sm block">
+                <span className="font-medium">Team</span>
+                <select
+                  value={form.projectId}
+                  onChange={(event) => handleFormChange('projectId', event.target.value)}
+                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2"
+                  required
+                >
+                  <option value="">Select team</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="rounded-2xl border border-[var(--border)] bg-[var(--secondary)]/35 p-4 space-y-4">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    <p className="text-sm font-medium">When2Meet</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant={form.availabilityPollEnabled ? 'primary' : 'outline'}
+                    onClick={() =>
+                      setForm((current) => ({
+                        ...current,
+                        availabilityPollEnabled: !current.availabilityPollEnabled,
+                      }))
+                    }
+                  >
+                    {form.availabilityPollEnabled ? 'Enabled' : 'Add timing poll'}
+                  </Button>
+                </div>
+
+                {form.availabilityPollEnabled && (
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <label className="space-y-2 text-sm">
+                      <span className="font-medium">Start day</span>
+                      <input
+                        type="date"
+                        value={form.availabilityWindowStart}
+                        onChange={(event) => handleFormChange('availabilityWindowStart', event.target.value)}
+                        className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2"
+                        required
+                      />
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="font-medium">End day</span>
+                      <input
+                        type="date"
+                        value={form.availabilityWindowEnd}
+                        onChange={(event) => handleFormChange('availabilityWindowEnd', event.target.value)}
+                        className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2"
+                        required
+                      />
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="font-medium">Slot size</span>
+                      <select
+                        value={form.availabilitySlotMinutes}
+                        onChange={(event) => handleFormChange('availabilitySlotMinutes', event.target.value)}
+                        className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2"
+                      >
+                        <option value="15">15 minutes</option>
+                        <option value="30">30 minutes</option>
+                        <option value="60">60 minutes</option>
+                      </select>
+                    </label>
+                  </div>
+                )}
+                {form.availabilityPollEnabled && (
+                  <p className="text-xs text-[var(--foreground)]/65">
+                    The chart will automatically cover each selected day from 12:00 AM through 11:59 PM.
+                  </p>
+                )}
+              </div>
+            </div>
           )}
 
           <label className="space-y-2 text-sm block">

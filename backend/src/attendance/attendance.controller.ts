@@ -39,10 +39,29 @@ export class AttendanceController {
       geofenceRadiusMeters?: number;
       audienceScope?: 'TEAM' | 'GLOBAL';
       projectId?: string;
+      availabilityPoll?: {
+        enabled?: boolean;
+        windowStart?: string;
+        windowEnd?: string;
+        slotMinutes?: number;
+      };
     },
     @GetUser() user: any,
   ) {
     return this.attendanceService.createEvent(user, body);
+  }
+
+  @Post('events/:id/availability')
+  @Roles('ADMIN', 'PM', 'LC', 'CONSULTANT', 'PARTNER', 'EXECUTIVE')
+  async saveAvailability(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      slotStarts?: string[];
+    },
+    @GetUser() user: any,
+  ) {
+    return this.attendanceService.saveAvailability(id, user, body);
   }
 
   @Post('events/:id/code-window')

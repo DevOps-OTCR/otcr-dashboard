@@ -52,6 +52,41 @@ function extractGoogleCalendarSources(candidate?: string | null): string[] {
   }
 }
 
+function buildGoogleCalendarEmbedUrlFromId(
+  calendarId?: string | null,
+  fallback?: string,
+): string | null {
+  const normalizedId = calendarId?.trim();
+  if (!normalizedId) return null;
+
+  const base = new URL(fallback || DEFAULT_CALENDAR_URL);
+  const embed = new URL('https://calendar.google.com/calendar/embed');
+  const ctz = base.searchParams.get('ctz') || 'America/Chicago';
+  const mode = base.searchParams.get('mode') || 'WEEK';
+  const showTitle = base.searchParams.get('showTitle') || '0';
+  const showPrint = base.searchParams.get('showPrint') || '0';
+  const showNav = base.searchParams.get('showNav') || '1';
+  const showTabs = base.searchParams.get('showTabs') || '0';
+  const showCalendars = base.searchParams.get('showCalendars') || '0';
+  const wkst = base.searchParams.get('wkst') || '1';
+  const height = base.searchParams.get('height');
+  const bgcolor = base.searchParams.get('bgcolor');
+
+  embed.searchParams.set('ctz', ctz);
+  embed.searchParams.set('mode', mode);
+  embed.searchParams.set('showTitle', showTitle);
+  embed.searchParams.set('showPrint', showPrint);
+  embed.searchParams.set('showNav', showNav);
+  embed.searchParams.set('showTabs', showTabs);
+  embed.searchParams.set('showCalendars', showCalendars);
+  embed.searchParams.set('wkst', wkst);
+  if (height) embed.searchParams.set('height', height);
+  if (bgcolor) embed.searchParams.set('bgcolor', bgcolor);
+  embed.searchParams.append('src', normalizedId);
+
+  return embed.toString();
+}
+
 function buildCombinedCalendarEmbedUrl(primary: string, secondary?: string | null): string {
   const primarySources = extractGoogleCalendarSources(primary);
   const secondarySources = extractGoogleCalendarSources(secondary);
@@ -136,14 +171,23 @@ export function GoogleCalendarPanel({
           (project) => (project.pm?.email ?? '').toLowerCase() === normalizedEmail,
         );
         const firstWithCalendar = projects.find(
-          (project) => typeof project.googleCalendarEmbedUrl === 'string' && project.googleCalendarEmbedUrl.trim(),
+          (project) =>
+            (typeof project.googleCalendarId === 'string' && project.googleCalendarId.trim()) ||
+            (typeof project.googleCalendarEmbedUrl === 'string' && project.googleCalendarEmbedUrl.trim()),
         );
 
+        const resolvedProject =
+          byProjectId ??
+          byMembership ??
+          byPmOwnership ??
+          firstWithCalendar ??
+          null;
         const resolved =
-          byProjectId?.googleCalendarEmbedUrl?.trim() ??
-          byMembership?.googleCalendarEmbedUrl?.trim() ??
-          byPmOwnership?.googleCalendarEmbedUrl?.trim() ??
-          firstWithCalendar?.googleCalendarEmbedUrl?.trim() ??
+          buildGoogleCalendarEmbedUrlFromId(
+            resolvedProject?.googleCalendarId?.trim() ?? null,
+            fallbackCalendarUrl,
+          ) ??
+          resolvedProject?.googleCalendarEmbedUrl?.trim() ??
           null;
 
         setCalendarUrl(

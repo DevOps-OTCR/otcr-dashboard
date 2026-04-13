@@ -6,6 +6,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { GoogleCalendarService } from '../integrations/google-calendar.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 type AttendanceUser = {
   id: string;
@@ -24,6 +26,12 @@ type CreateAttendanceEventInput = {
   geofenceRadiusMeters?: number;
   audienceScope?: 'TEAM' | 'GLOBAL';
   projectId?: string;
+  availabilityPoll?: {
+    enabled?: boolean;
+    windowStart?: string;
+    windowEnd?: string;
+    slotMinutes?: number;
+  };
 };
 
 type CheckInInput = {
@@ -36,7 +44,11 @@ type AttendanceEventCategory = 'CLIENT_CALL' | 'TEAM_MEETING' | 'FIRMWIDE_EVENT'
 
 @Injectable()
 export class AttendanceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly googleCalendarService: GoogleCalendarService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   private get attendanceEventModel(): any {
     const model = (this.prisma as any).attendanceEvent;
@@ -73,6 +85,22 @@ export class AttendanceService {
         id: true,
         name: true,
         pmId: true,
+        members: {
+          where: {
+            leftAt: null,
+          },
+          select: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+                role: true,
+              },
+            },
+          },
+        },
       },
     },
     attendances: {
@@ -172,6 +200,303 @@ export class AttendanceService {
     );
   }
 
+  private async ensureAttendanceEventCalendarSyncTable() {
+    await this.prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "AttendanceEventCalendarSync" (
+        "eventId" TEXT PRIMARY KEY REFERENCES "AttendanceEvent"("id") ON DELETE CASCADE,
+        "googleCalendarId" TEXT NOT NULL,
+        "googleCalendarEventId" TEXT NOT NULL,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  }
+
+  private async ensureAttendanceAvailabilityTables() {
+    await this.prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "AttendanceEventAvailabilityPoll" (
+        "eventId" TEXT PRIMARY KEY REFERENCES "AttendanceEvent"("id") ON DELETE CASCADE,
+        "windowStart" TIMESTAMP(3) NOT NULL,
+        "windowEnd" TIMESTAMP(3) NOT NULL,
+        "slotMinutes" INTEGER NOT NULL DEFAULT 30,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await this.prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "AttendanceEventAvailabilitySelection" (
+        "eventId" TEXT NOT NULL REFERENCES "AttendanceEvent"("id") ON DELETE CASCADE,
+        "userId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+        "slotStart" TIMESTAMP(3) NOT NULL,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY ("eventId", "userId", "slotStart")
+      )
+    `);
+    await this.prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "AttendanceEventAvailabilitySelection_eventId_idx"
+      ON "AttendanceEventAvailabilitySelection" ("eventId")
+    `);
+  }
+
+  private async getAvailabilityPollRows(eventIds: string[]) {
+    if (eventIds.length === 0) {
+      return new Map<string, { windowStart: Date; windowEnd: Date; slotMinutes: number }>();
+    }
+
+    await this.ensureAttendanceAvailabilityTables();
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{ eventId: string; windowStart: Date; windowEnd: Date; slotMinutes: number }>
+    >(
+      `SELECT "eventId", "windowStart", "windowEnd", "slotMinutes"
+       FROM "AttendanceEventAvailabilityPoll"
+       WHERE "eventId" = ANY($1::text[])`,
+      eventIds,
+    );
+
+    return new Map(rows.map((row) => [row.eventId, row]));
+  }
+
+  private async getAvailabilitySelectionRows(eventIds: string[]) {
+    if (eventIds.length === 0) {
+      return [] as Array<{ eventId: string; userId: string; slotStart: Date }>;
+    }
+
+    await this.ensureAttendanceAvailabilityTables();
+    return this.prisma.$queryRawUnsafe<Array<{ eventId: string; userId: string; slotStart: Date }>>(
+      `SELECT "eventId", "userId", "slotStart"
+       FROM "AttendanceEventAvailabilitySelection"
+       WHERE "eventId" = ANY($1::text[])`,
+      eventIds,
+    );
+  }
+
+  private normalizeAvailabilityPollInput(
+    scope: 'TEAM' | 'GLOBAL',
+    input?: { enabled?: boolean; windowStart?: string; windowEnd?: string; slotMinutes?: number } | null,
+  ) {
+    if (!input?.enabled) {
+      return null;
+    }
+
+    if (scope !== 'TEAM') {
+      throw new BadRequestException('Availability polls are only available for team attendance events');
+    }
+
+    const windowStart = input.windowStart ? new Date(input.windowStart) : null;
+    const windowEnd = input.windowEnd ? new Date(input.windowEnd) : null;
+    const slotMinutes = Number(input.slotMinutes ?? 30);
+
+    if (!windowStart || Number.isNaN(windowStart.getTime())) {
+      throw new BadRequestException('Availability poll start time is required');
+    }
+
+    if (!windowEnd || Number.isNaN(windowEnd.getTime())) {
+      throw new BadRequestException('Availability poll end time is required');
+    }
+
+    if (windowEnd <= windowStart) {
+      throw new BadRequestException('Availability poll end time must be after the start time');
+    }
+
+    if (![15, 30, 60].includes(slotMinutes)) {
+      throw new BadRequestException('Availability poll slot length must be 15, 30, or 60 minutes');
+    }
+
+    return {
+      windowStart,
+      windowEnd,
+      slotMinutes,
+    };
+  }
+
+  private enumerateAvailabilitySlotStarts(poll: { windowStart: Date; windowEnd: Date; slotMinutes: number }) {
+    const slots: Date[] = [];
+    const stepMs = poll.slotMinutes * 60 * 1000;
+    for (let time = poll.windowStart.getTime(); time < poll.windowEnd.getTime(); time += stepMs) {
+      slots.push(new Date(time));
+    }
+    return slots;
+  }
+
+  private buildAvailabilityPollSummary(
+    event: any,
+    currentUserId: string,
+    pollByEventId: Map<string, { windowStart: Date; windowEnd: Date; slotMinutes: number }>,
+    selectionRows: Array<{ eventId: string; userId: string; slotStart: Date }>,
+  ) {
+    const poll = pollByEventId.get(event.id);
+    if (!poll || event.audienceScope !== 'TEAM' || !event.projectId) {
+      return null;
+    }
+
+    const teamMembers = (event.project?.members ?? [])
+      .map((member: any) => member.user)
+      .filter((user: any) => Boolean(user?.id));
+
+    const teamMemberIds = new Set(teamMembers.map((user: any) => user.id));
+    const selectionsForEvent = selectionRows.filter(
+      (row) => row.eventId === event.id && teamMemberIds.has(row.userId),
+    );
+    const countsBySlot = new Map<string, number>();
+    const selectedSlotsForUser: string[] = [];
+    const respondingUserIds = new Set<string>();
+
+    for (const row of selectionsForEvent) {
+      const key = new Date(row.slotStart).toISOString();
+      countsBySlot.set(key, (countsBySlot.get(key) ?? 0) + 1);
+      respondingUserIds.add(row.userId);
+      if (row.userId === currentUserId) {
+        selectedSlotsForUser.push(key);
+      }
+    }
+
+    const slots = this.enumerateAvailabilitySlotStarts(poll).map((slotStart) => {
+      const key = slotStart.toISOString();
+      return {
+        start: key,
+        end: new Date(slotStart.getTime() + poll.slotMinutes * 60 * 1000).toISOString(),
+        availableCount: countsBySlot.get(key) ?? 0,
+      };
+    });
+
+    const bestSlots = [...slots]
+      .sort((a, b) => b.availableCount - a.availableCount || a.start.localeCompare(b.start))
+      .slice(0, 3);
+
+    return {
+      enabled: true,
+      windowStart: poll.windowStart.toISOString(),
+      windowEnd: poll.windowEnd.toISOString(),
+      slotMinutes: poll.slotMinutes,
+      teamSize: teamMembers.length,
+      respondentCount: respondingUserIds.size,
+      currentUserSlots: selectedSlotsForUser,
+      slots,
+      bestSlots,
+    };
+  }
+
+  private async attachAvailabilityPollSummary(events: any[], currentUserId: string) {
+    if (events.length === 0) return events;
+
+    const eventIds = events.map((event) => event.id);
+    const [pollByEventId, selectionRows] = await Promise.all([
+      this.getAvailabilityPollRows(eventIds),
+      this.getAvailabilitySelectionRows(eventIds),
+    ]);
+
+    return events.map((event) => ({
+      ...event,
+      availabilityPoll: this.buildAvailabilityPollSummary(event, currentUserId, pollByEventId, selectionRows),
+    }));
+  }
+
+  private async upsertAvailabilityPoll(
+    eventId: string,
+    poll: { windowStart: Date; windowEnd: Date; slotMinutes: number } | null,
+  ) {
+    await this.ensureAttendanceAvailabilityTables();
+
+    if (!poll) {
+      await this.prisma.$executeRawUnsafe(
+        `DELETE FROM "AttendanceEventAvailabilityPoll" WHERE "eventId" = $1`,
+        eventId,
+      );
+      await this.prisma.$executeRawUnsafe(
+        `DELETE FROM "AttendanceEventAvailabilitySelection" WHERE "eventId" = $1`,
+        eventId,
+      );
+      return;
+    }
+
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "AttendanceEventAvailabilityPoll" ("eventId", "windowStart", "windowEnd", "slotMinutes", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       ON CONFLICT ("eventId")
+       DO UPDATE SET
+         "windowStart" = EXCLUDED."windowStart",
+         "windowEnd" = EXCLUDED."windowEnd",
+         "slotMinutes" = EXCLUDED."slotMinutes",
+         "updatedAt" = CURRENT_TIMESTAMP`,
+      eventId,
+      poll.windowStart,
+      poll.windowEnd,
+      poll.slotMinutes,
+    );
+  }
+
+  private async notifyTeamAvailabilityPoll(event: {
+    id: string;
+    title: string;
+    projectId?: string | null;
+    project?: { name?: string | null; members?: Array<{ user: { id: string } }> } | null;
+  }, actorUserId: string) {
+    if (!event.projectId) return;
+
+    const recipients = (event.project?.members ?? [])
+      .map((member) => member.user.id)
+      .filter((userId) => userId && userId !== actorUserId);
+
+    for (const userId of recipients) {
+      await this.notificationsService.queueNotification({
+        userId,
+        type: 'PROJECT_UPDATED',
+        channel: 'BOTH',
+        data: {
+          projectName: event.project?.name ?? 'Your team',
+          deliverableTitle: event.title,
+          targetPath: '/attendance',
+          feedback: `A team availability poll was added for "${event.title}" in Attendance. Add your available times to help lock in the meeting.`,
+          reason: 'attendance-availability-poll',
+        } as any,
+      });
+    }
+  }
+
+  private async getAttendanceEventCalendarSync(eventId: string) {
+    await this.ensureAttendanceEventCalendarSyncTable();
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{ eventId: string; googleCalendarId: string; googleCalendarEventId: string }>
+    >(
+      `SELECT "eventId", "googleCalendarId", "googleCalendarEventId"
+       FROM "AttendanceEventCalendarSync"
+       WHERE "eventId" = $1
+       LIMIT 1`,
+      eventId,
+    );
+
+    return rows[0] ?? null;
+  }
+
+  private async upsertAttendanceEventCalendarSync(
+    eventId: string,
+    googleCalendarId: string,
+    googleCalendarEventId: string,
+  ) {
+    await this.ensureAttendanceEventCalendarSyncTable();
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "AttendanceEventCalendarSync" ("eventId", "googleCalendarId", "googleCalendarEventId", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       ON CONFLICT ("eventId")
+       DO UPDATE SET
+         "googleCalendarId" = EXCLUDED."googleCalendarId",
+         "googleCalendarEventId" = EXCLUDED."googleCalendarEventId",
+         "updatedAt" = CURRENT_TIMESTAMP`,
+      eventId,
+      googleCalendarId,
+      googleCalendarEventId,
+    );
+  }
+
+  private async deleteAttendanceEventCalendarSync(eventId: string) {
+    await this.ensureAttendanceEventCalendarSyncTable();
+    await this.prisma.$executeRawUnsafe(
+      `DELETE FROM "AttendanceEventCalendarSync" WHERE "eventId" = $1`,
+      eventId,
+    );
+  }
+
   private attachEventCategory(event: any, categoryByEventId: Map<string, AttendanceEventCategory>) {
     return {
       ...event,
@@ -186,6 +511,43 @@ export class AttendanceService {
 
   private isManagerRole(role: AttendanceUser['role']) {
     return ['ADMIN', 'PM', 'PARTNER', 'EXECUTIVE'].includes(role);
+  }
+
+  private async syncAttendanceEventToGoogleCalendar(
+    event: {
+      id: string;
+      title: string;
+      eventDate: Date;
+      audienceScope: 'TEAM' | 'GLOBAL';
+      locationType: 'IN_PERSON' | 'ONLINE';
+      locationLabel?: string | null;
+      projectId?: string | null;
+      project?: { name?: string | null } | null;
+    },
+    category: AttendanceEventCategory,
+  ) {
+    const syncState = await this.googleCalendarService.createAttendanceEvent({
+      id: event.id,
+      title: event.title,
+      eventDate: event.eventDate,
+      audienceScope: event.audienceScope,
+      projectId: event.projectId,
+      category,
+      locationType: event.locationType,
+      locationLabel: event.locationLabel ?? null,
+      projectName: event.project?.name ?? null,
+    });
+
+    if (syncState.googleCalendarId && syncState.googleCalendarEventId) {
+      await this.upsertAttendanceEventCalendarSync(
+        event.id,
+        syncState.googleCalendarId,
+        syncState.googleCalendarEventId,
+      );
+      return;
+    }
+
+    await this.deleteAttendanceEventCalendarSync(event.id);
   }
 
   private async ensureProjectExists(projectId: string) {
@@ -307,6 +669,7 @@ export class AttendanceService {
       verificationCode: canRevealVerificationCode ? event.verificationCode : null,
       codeWindowOpensAt: canRevealVerificationCode ? event.codeWindowOpensAt : null,
       codeWindowClosesAt: canRevealVerificationCode ? event.codeWindowClosesAt : null,
+      availabilityPoll: event.availabilityPoll ?? null,
       attendanceCount: event._count?.attendances ?? 0,
       attendance: attendeeRecord
         ? {
@@ -356,9 +719,10 @@ export class AttendanceService {
       orderBy: [{ eventDate: 'asc' }, { createdAt: 'desc' }],
     });
     const eventsWithCategories = await this.attachEventCategories(events);
+    const eventsWithAvailability = await this.attachAvailabilityPollSummary(eventsWithCategories, user.id);
 
     return {
-      events: eventsWithCategories.map((event) => this.sanitizeEventForUser(event, user)),
+      events: eventsWithAvailability.map((event) => this.sanitizeEventForUser(event, user)),
     };
   }
 
@@ -389,11 +753,13 @@ export class AttendanceService {
     }
 
     let projectId: string | null = null;
+    let project: { id: string; name: string; pmId: string } | null = null;
     if (normalizedScope === 'TEAM' && body.projectId) {
-      const project = await this.ensureCanTargetProject(user, body.projectId);
+      project = await this.ensureCanTargetProject(user, body.projectId);
       projectId = project.id;
     }
     const category = this.normalizeAttendanceCategory(normalizedScope, body.category);
+    const availabilityPoll = this.normalizeAvailabilityPollInput(normalizedScope, body.availabilityPoll);
 
     const locationLabel = body.locationLabel?.trim() || null;
 
@@ -424,9 +790,27 @@ export class AttendanceService {
       include: this.baseEventInclude,
     });
     await this.upsertAttendanceEventCategory(event.id, category);
+    await this.upsertAvailabilityPoll(event.id, availabilityPoll);
+    await this.syncAttendanceEventToGoogleCalendar(event, category);
     const eventWithCategory = this.attachEventCategory(event, new Map([[event.id, category]]));
+    const [eventWithAvailability] = await this.attachAvailabilityPollSummary([eventWithCategory], user.id);
 
-    return this.sanitizeEventForUser(eventWithCategory, user);
+    if (availabilityPoll && projectId) {
+      await this.notifyTeamAvailabilityPoll(
+        {
+          id: event.id,
+          title: event.title,
+          projectId,
+          project: {
+            name: project?.name ?? null,
+            members: event.project?.members ?? [],
+          },
+        },
+        user.id,
+      );
+    }
+
+    return this.sanitizeEventForUser(eventWithAvailability, user);
   }
 
   async openCodeWindow(eventId: string, user: AttendanceUser) {
@@ -448,8 +832,9 @@ export class AttendanceService {
       include: this.baseEventInclude,
     });
     const [updatedWithCategory] = await this.attachEventCategories([updated]);
+    const [updatedWithAvailability] = await this.attachAvailabilityPollSummary([updatedWithCategory], user.id);
 
-    return this.sanitizeEventForUser(updatedWithCategory, user);
+    return this.sanitizeEventForUser(updatedWithAvailability, user);
   }
 
   async listAttendances(eventId: string, user: AttendanceUser) {
@@ -472,9 +857,10 @@ export class AttendanceService {
     });
 
     const [eventWithCategory] = await this.attachEventCategories([event]);
+    const [eventWithAvailability] = await this.attachAvailabilityPollSummary([eventWithCategory], user.id);
 
     return {
-      event: this.sanitizeEventForUser(eventWithCategory, user),
+      event: this.sanitizeEventForUser(eventWithAvailability, user),
       attendances: attendances.map((attendance) => ({
         id: attendance.id,
         userId: attendance.userId,
@@ -489,8 +875,95 @@ export class AttendanceService {
     };
   }
 
+  async saveAvailability(
+    eventId: string,
+    user: AttendanceUser,
+    body: { slotStarts?: string[] },
+  ) {
+    const event = await this.canAccessEvent(eventId, user);
+
+    if (event.audienceScope !== 'TEAM' || !event.projectId) {
+      throw new BadRequestException('Availability polls are only available for team attendance events');
+    }
+
+    const pollByEventId = await this.getAvailabilityPollRows([eventId]);
+    const poll = pollByEventId.get(eventId);
+
+    if (!poll) {
+      throw new NotFoundException('This event does not have an availability poll');
+    }
+
+    const membership = await this.prisma.projectMember.findFirst({
+      where: {
+        projectId: event.projectId,
+        userId: user.id,
+        leftAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (!membership && !['ADMIN', 'PM', 'PARTNER', 'EXECUTIVE'].includes(user.role)) {
+      throw new ForbiddenException('Only assigned team members can respond to this availability poll');
+    }
+
+    const requestedSlots = Array.from(new Set((body.slotStarts ?? []).map((value) => value?.trim()).filter(Boolean)));
+    const allowedSlotStarts = new Set(this.enumerateAvailabilitySlotStarts(poll).map((slot) => slot.toISOString()));
+
+    for (const slotStart of requestedSlots) {
+      const parsed = new Date(slotStart);
+      if (Number.isNaN(parsed.getTime()) || !allowedSlotStarts.has(parsed.toISOString())) {
+        throw new BadRequestException('One or more selected availability slots are invalid');
+      }
+    }
+
+    await this.ensureAttendanceAvailabilityTables();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        `DELETE FROM "AttendanceEventAvailabilitySelection" WHERE "eventId" = $1 AND "userId" = $2`,
+        eventId,
+        user.id,
+      );
+
+      for (const slotStart of requestedSlots) {
+        await tx.$executeRawUnsafe(
+          `INSERT INTO "AttendanceEventAvailabilitySelection" ("eventId", "userId", "slotStart", "createdAt", "updatedAt")
+           VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+          eventId,
+          user.id,
+          new Date(slotStart),
+        );
+      }
+    });
+
+    const refreshed = await this.attendanceEventModel.findUnique({
+      where: { id: eventId },
+      include: this.baseEventInclude,
+    });
+
+    if (!refreshed) {
+      throw new NotFoundException('Attendance event not found');
+    }
+
+    const [eventWithCategory] = await this.attachEventCategories([refreshed]);
+    const [eventWithAvailability] = await this.attachAvailabilityPollSummary([eventWithCategory], user.id);
+
+    return {
+      success: true,
+      event: this.sanitizeEventForUser(eventWithAvailability, user),
+    };
+  }
+
   async deleteEvent(eventId: string, user: AttendanceUser) {
     await this.canManageEvent(eventId, user);
+
+    const calendarSync = await this.getAttendanceEventCalendarSync(eventId);
+    if (calendarSync) {
+      await this.googleCalendarService.deleteCalendarEvent(
+        calendarSync.googleCalendarId,
+        calendarSync.googleCalendarEventId,
+      );
+      await this.deleteAttendanceEventCalendarSync(eventId);
+    }
 
     await this.attendanceEventModel.delete({
       where: { id: eventId },
