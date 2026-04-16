@@ -9,6 +9,7 @@ import {
   Activity,
   FileText,
   Presentation,
+  ClipboardList,
   MessageSquare,
   MessageSquareWarning,
   Users,
@@ -16,6 +17,7 @@ import {
   CheckCircle2,
   Settings,
   MapPinned,
+  CalendarDays,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/utils';
@@ -48,6 +50,7 @@ export type AppNavPath =
   | '/client-notes'
   | '/feedback'
   | '/attendance'
+  | '/when2meet'
   | '/settings/slack';
 
 export interface AppNavbarProps {
@@ -252,6 +255,13 @@ export function AppNavbar({ role, currentPath = '/dashboard', unreadNotification
       icon: MapPinned,
       href: '/attendance',
       canAccess: (r) => canShowNavItem('attendance', r),
+    },
+    {
+      id: 'when2meet',
+      label: 'When2Meet',
+      icon: CalendarDays,
+      href: '/when2meet',
+      canAccess: (r) => canShowNavItem('attendance', r), // Same permissions as attendance for now
     },
     {
       id: 'team',
