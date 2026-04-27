@@ -10,7 +10,6 @@ import {
   ClipboardList,
   FileText,
   Presentation,
-  ClipboardList,
   MessageSquare,
   Users,
   Bell,

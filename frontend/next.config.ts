@@ -1,9 +1,13 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 
 const isGitHubPagesBuild = process.env.GITHUB_PAGES === 'true';
 const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || '').replace(/\/+$/, '');
 
 const nextConfig: NextConfig = {
+  turbopack: {
+    root: path.join(__dirname),
+  },
   basePath: isGitHubPagesBuild ? basePath : undefined,
   assetPrefix: isGitHubPagesBuild && basePath ? `${basePath}/` : undefined,
   trailingSlash: isGitHubPagesBuild,
@@ -31,45 +35,41 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ['lucide-react', 'recharts', 'framer-motion'],
   },
-
-  // Security headers
-  async headers() {
-    if (isGitHubPagesBuild) {
-      return [];
-    }
-
-    return [
-      {
-        source: '/:path*',
-        headers: [
+  ...(!isGitHubPagesBuild
+    ? {
+        headers: async () => [
           {
-            key: 'X-DNS-Prefetch-Control',
-            value: 'on'
-          },
-          {
-            key: 'Strict-Transport-Security',
-            value: 'max-age=63072000; includeSubDomains; preload'
-          },
-          {
-            key: 'X-Frame-Options',
-            value: 'SAMEORIGIN'
-          },
-          {
-            key: 'X-Content-Type-Options',
-            value: 'nosniff'
-          },
-          {
-            key: 'X-XSS-Protection',
-            value: '1; mode=block'
-          },
-          {
-            key: 'Referrer-Policy',
-            value: 'strict-origin-when-cross-origin'
+            source: '/:path*',
+            headers: [
+              {
+                key: 'X-DNS-Prefetch-Control',
+                value: 'on',
+              },
+              {
+                key: 'Strict-Transport-Security',
+                value: 'max-age=63072000; includeSubDomains; preload',
+              },
+              {
+                key: 'X-Frame-Options',
+                value: 'SAMEORIGIN',
+              },
+              {
+                key: 'X-Content-Type-Options',
+                value: 'nosniff',
+              },
+              {
+                key: 'X-XSS-Protection',
+                value: '1; mode=block',
+              },
+              {
+                key: 'Referrer-Policy',
+                value: 'strict-origin-when-cross-origin',
+              },
+            ],
           },
         ],
-      },
-    ]
-  },
+      }
+    : {}),
 };
 
 export default nextConfig;
