@@ -91,7 +91,7 @@ function formatAssignees(assignees?: DeliverableItem['assignees']) {
   if (!assignees || assignees.length === 0) return 'Unassigned';
   return assignees
     .map((assignee) => {
-      const fullName = [assignee.firstName, assignee.lastName].filter(Boolean).join(' ').trim();
+      const fullName = [assignee.lastName, assignee.firstName].filter(Boolean).join(' ').trim();
       return fullName || 'Assigned';
     })
     .join(', ');
@@ -99,7 +99,7 @@ function formatAssignees(assignees?: DeliverableItem['assignees']) {
 
 function formatPerson(person?: TeamMemberOption | null) {
   if (!person) return 'Unassigned';
-  const fullName = [person.firstName, person.lastName].filter(Boolean).join(' ').trim();
+  const fullName = [person.lastName, person.firstName].filter(Boolean).join(' ').trim();
   return fullName || person.email || 'Team member';
 }
 
@@ -107,7 +107,7 @@ function formatSubmitter(
   submitter?: DeliverableSubmitter,
 ) {
   if (!submitter) return 'Unknown submitter';
-  const fullName = [submitter.firstName, submitter.lastName].filter(Boolean).join(' ').trim();
+  const fullName = [submitter.lastName, submitter.firstName].filter(Boolean).join(' ').trim();
   return fullName || 'Unknown submitter';
 }
 

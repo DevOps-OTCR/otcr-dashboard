@@ -52,7 +52,7 @@ function formatAssignees(assignees?: DeliverableItem['assignees']) {
   if (!assignees || assignees.length === 0) return 'Unassigned';
   return assignees
     .map((assignee) => {
-      const fullName = [assignee.firstName, assignee.lastName].filter(Boolean).join(' ').trim();
+      const fullName = [assignee.lastName, assignee.firstName].filter(Boolean).join(' ').trim();
       return fullName || 'Assigned';
     })
     .join(', ');

@@ -58,7 +58,7 @@ function formatAssignees(assignees?: DeliverableItem['assignees']) {
   if (!assignees || assignees.length === 0) return 'Unassigned';
   return assignees
     .map((assignee) => {
-      const fullName = [assignee.firstName, assignee.lastName].filter(Boolean).join(' ').trim();
+      const fullName = [assignee.lastName, assignee.firstName].filter(Boolean).join(' ').trim();
       return fullName || 'Assigned';
     })
     .join(', ');
@@ -68,7 +68,7 @@ function formatSubmitter(
   submitter?: SlideSubmissionFromApi['submitter'],
 ) {
   if (!submitter) return 'Unknown submitter';
-  const fullName = [submitter.firstName, submitter.lastName].filter(Boolean).join(' ').trim();
+  const fullName = [submitter.lastName, submitter.firstName].filter(Boolean).join(' ').trim();
   return fullName || 'Unknown submitter';
 }
 
