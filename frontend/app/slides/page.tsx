@@ -56,19 +56,29 @@ type SlideSubmissionFromApi = {
 
 function formatAssignees(assignees?: DeliverableItem['assignees']) {
   if (!assignees || assignees.length === 0) return 'Unassigned';
-  return assignees
-    .map((assignee) => {
-      const fullName = [assignee.lastName, assignee.firstName].filter(Boolean).join(' ').trim();
-      return fullName || 'Assigned';
-    })
-    .join(', ');
+  const names = assignees
+    .map((assignee) =>
+      [assignee.firstName, assignee.lastName]
+        .filter((value): value is string => Boolean(value && value.trim()))
+        .map((value) => value.replace(/,+/g, '').trim())
+        .filter(Boolean)
+        .join(' ')
+        .trim(),
+    )
+    .filter(Boolean);
+  return names.length > 0 ? names.join(', ') : 'Assigned';
 }
 
 function formatSubmitter(
   submitter?: SlideSubmissionFromApi['submitter'],
 ) {
   if (!submitter) return 'Unknown submitter';
-  const fullName = [submitter.lastName, submitter.firstName].filter(Boolean).join(' ').trim();
+  const fullName = [submitter.firstName, submitter.lastName]
+    .filter((value): value is string => Boolean(value && value.trim()))
+    .map((value) => value.replace(/,+/g, '').trim())
+    .filter(Boolean)
+    .join(' ')
+    .trim();
   return fullName || 'Unknown submitter';
 }
 
