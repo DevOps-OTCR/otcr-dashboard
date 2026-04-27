@@ -25,6 +25,10 @@ export class DeliverablesService {
     return fullName || 'Team member';
   }
 
+  private getLateByMinutes(deadline: Date, submittedAt: Date): number {
+    return Math.max(0, Math.floor((submittedAt.getTime() - deadline.getTime()) / 60000));
+  }
+
   async create(
     projectId: string,
     data: {
@@ -468,6 +472,26 @@ export class DeliverablesService {
       throw new BadRequestException('Submission link must be a valid URL');
     }
 
+    const deliverable = await this.prisma.deliverable.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        title: true,
+        deadline: true,
+        project: {
+          select: {
+            id: true,
+            name: true,
+            pmId: true,
+          },
+        },
+      },
+    });
+
+    if (!deliverable) {
+      throw new BadRequestException('Deliverable not found');
+    }
+
     const latest = await this.prisma.submission.findFirst({
       where: { deliverableId: id, userId },
       orderBy: { version: 'desc' },
@@ -478,6 +502,8 @@ export class DeliverablesService {
     });
 
     const nextVersion = (latest?.version ?? 0) + 1;
+    const submittedAt = new Date();
+    const isLate = submittedAt.getTime() > deliverable.deadline.getTime();
 
     const submission = await this.prisma.submission.create({
       data: {
@@ -490,6 +516,8 @@ export class DeliverablesService {
         version: nextVersion,
         replacesId: latest?.id,
         status: 'PENDING_REVIEW',
+        submittedAt,
+        isLate,
       },
       include: {
         submitter: {
@@ -510,7 +538,11 @@ export class DeliverablesService {
       },
     });
 
-    await this.notifyProjectReviewersOnSubmission(id, userId);
+    await this.notifyProjectReviewersOnSubmission(id, userId, {
+      isLate,
+      submittedAt,
+      deadline: deliverable.deadline,
+    });
 
     return submission;
   }
@@ -518,6 +550,11 @@ export class DeliverablesService {
   private async notifyProjectReviewersOnSubmission(
     deliverableId: string,
     submitterId: string,
+    options?: {
+      isLate?: boolean;
+      submittedAt?: Date;
+      deadline?: Date;
+    },
   ): Promise<void> {
     const deliverable = await this.prisma.deliverable.findUnique({
       where: { id: deliverableId },
@@ -543,6 +580,7 @@ export class DeliverablesService {
     const submitter = await this.prisma.user.findUnique({
       where: { id: submitterId },
       select: {
+        role: true,
         firstName: true,
         lastName: true,
         email: true,
@@ -569,6 +607,34 @@ export class DeliverablesService {
           projectName: deliverable.project.name,
           deliverableTitle: deliverable.title,
           feedback: `${submitterName} made a new submission to ${deliverable.title}.`,
+          targetPath: '/deliverables',
+        },
+      });
+    }
+
+    if (
+      options?.isLate &&
+      submitter?.role === 'CONSULTANT' &&
+      deliverable.project.pmId &&
+      deliverable.project.pmId !== submitterId
+    ) {
+      const lateByMinutes = options.deadline && options.submittedAt
+        ? this.getLateByMinutes(options.deadline, options.submittedAt)
+        : 0;
+
+      await this.notificationsService.queueNotification({
+        userId: deliverable.project.pmId,
+        type: 'OVERDUE_ALERT',
+        channel: 'BOTH',
+        data: {
+          projectName: deliverable.project.name,
+          deliverableTitle: deliverable.title,
+          submitterName,
+          submittedAt: options.submittedAt,
+          deadline: options.deadline,
+          isLate: true,
+          lateByMinutes,
+          feedback: `${submitterName} submitted ${deliverable.title} after the deadline.`,
           targetPath: '/deliverables',
         },
       });

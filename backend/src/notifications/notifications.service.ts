@@ -18,6 +18,10 @@ export interface NotificationJob {
     projectName?: string;
     deadline?: Date;
     hoursRemaining?: number;
+    submittedAt?: Date;
+    isLate?: boolean;
+    lateByMinutes?: number;
+    submitterName?: string;
     reason?: string;
     taskId?: string;
     customTitle?: string;
@@ -348,6 +352,8 @@ export class NotificationsService {
         return data?.projectName
           ? `Project Assigned: ${data.projectName}`
           : 'Project Assigned';
+      case 'OVERDUE_ALERT':
+        return `Late Submission: ${data.deliverableTitle}`;
       default:
         return 'Notification';
     }
@@ -378,6 +384,8 @@ export class NotificationsService {
         return data?.projectName
           ? `You have been assigned to project ${data.projectName}`
           : 'You have been assigned to a new project.';
+      case 'OVERDUE_ALERT':
+        return data?.feedback || 'A late submission needs your review.';
       default:
         return 'You have a new notification';
     }
@@ -450,6 +458,11 @@ export class NotificationsService {
             text: this.buildProjectUpdateSlackMessage(data),
           });
 
+        case 'OVERDUE_ALERT':
+          return await this.slackService.sendDirectMessageToUser(userId, {
+            text: this.buildLateSubmissionSlackMessage(data),
+          });
+
         default:
           this.logger.warn(`Unsupported inline Slack notification type: ${type}`);
           return false;
@@ -467,5 +480,33 @@ export class NotificationsService {
       : '';
     const feedback = data?.feedback ? String(data.feedback) : 'A project update is available.';
     return `${projectName}${deliverableTitle}${feedback}`.trim();
+  }
+
+  private buildLateSubmissionSlackMessage(data: any): string {
+    const projectName = data?.projectName ? `Project: ${data.projectName}. ` : '';
+    const deliverableTitle = data?.deliverableTitle
+      ? `Assignment: ${data.deliverableTitle}. `
+      : '';
+    const submitter = data?.submitterName ? `${data.submitterName} submitted late. ` : 'A submission was late. ';
+    const lateness =
+      typeof data?.lateByMinutes === 'number' && data.lateByMinutes > 0
+        ? `Late by ${this.formatLateDuration(data.lateByMinutes)}. `
+        : '';
+    return `${projectName}${deliverableTitle}${submitter}${lateness}`.trim();
+  }
+
+  private formatLateDuration(totalMinutes: number): string {
+    const minutes = Math.max(0, Math.floor(totalMinutes));
+    const days = Math.floor(minutes / (60 * 24));
+    const hours = Math.floor((minutes % (60 * 24)) / 60);
+    const remainingMinutes = minutes % 60;
+
+    if (days > 0) {
+      return `${days}d ${hours}h`;
+    }
+    if (hours > 0) {
+      return `${hours}h ${remainingMinutes}m`;
+    }
+    return `${remainingMinutes}m`;
   }
 }

@@ -16,6 +16,10 @@ export class SlideSubmissionsService {
     return fullName || 'Team member';
   }
 
+  private getLateByMinutes(deadline: Date, submittedAt: Date): number {
+    return Math.max(0, Math.floor((submittedAt.getTime() - deadline.getTime()) / 60000));
+  }
+
   async submitSlide(
     userId: string,
     deliverableId: string,
@@ -60,6 +64,8 @@ export class SlideSubmissionsService {
     });
 
     const nextVersion = latest ? latest.version + 1 : 1;
+    const submittedAt = new Date();
+    const isLate = submittedAt.getTime() > deliverable.deadline.getTime();
 
     const submission = await this.prisma.submission.create({
       data: {
@@ -71,6 +77,8 @@ export class SlideSubmissionsService {
         mimeType: mimeType?.trim() || 'text/uri-list',
         version: nextVersion,
         status: 'PENDING_REVIEW',
+        submittedAt,
+        isLate,
       },
       include: {
         submitter: {
@@ -102,7 +110,11 @@ export class SlideSubmissionsService {
       data: { status: 'SUBMITTED' },
     });
 
-    await this.notifyPMsAndLCs(submission);
+    await this.notifyPMsAndLCs(submission, {
+      deadline: deliverable.deadline,
+      isLate,
+      submittedAt,
+    });
     return submission;
   }
 
@@ -121,17 +133,24 @@ export class SlideSubmissionsService {
   }
 
   private async notifyPMsAndLCs(submission: {
-    submitter: { firstName: string | null; lastName: string | null; email: string };
+    submitter: { id: string; firstName: string | null; lastName: string | null; email: string };
     deliverable: { title: string; project: { id: string; pmId: string; name: string } | null };
     fileUrl: string;
     submittedAt: Date;
     id: string;
-  }) {
+  }, options?: { deadline?: Date; isLate?: boolean; submittedAt?: Date }) {
     const projectId = submission.deliverable.project?.id;
     const projectPmId = submission.deliverable.project?.pmId;
     const projectName = submission.deliverable.project?.name;
 
     if (!projectId || !projectPmId) return;
+
+    const submitter = await this.prisma.user.findUnique({
+      where: { id: submission.submitter.id },
+      select: {
+        role: true,
+      },
+    });
 
     const projectLcs = await this.prisma.projectMember.findMany({
       where: {
@@ -162,6 +181,28 @@ export class SlideSubmissionsService {
           projectName,
           deliverableTitle: submission.deliverable.title,
           feedback: `${submitterName} made a new submission to ${submission.deliverable.title}.`,
+          targetPath: '/slides',
+        },
+      });
+    }
+
+    if (options?.isLate && submitter?.role === 'CONSULTANT') {
+      await this.notificationsService.queueNotification({
+        userId: projectPmId,
+        type: 'OVERDUE_ALERT',
+        channel: 'BOTH',
+        data: {
+          projectName,
+          deliverableTitle: submission.deliverable.title,
+          submitterName,
+          submittedAt: options.submittedAt,
+          deadline: options.deadline,
+          isLate: true,
+          lateByMinutes:
+            options.deadline && options.submittedAt
+              ? this.getLateByMinutes(options.deadline, options.submittedAt)
+              : 0,
+          feedback: `${submitterName} submitted ${submission.deliverable.title} after the deadline.`,
           targetPath: '/slides',
         },
       });
