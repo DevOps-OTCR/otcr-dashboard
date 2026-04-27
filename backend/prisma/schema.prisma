@@ -154,11 +154,15 @@ model OnboardingRequest {
 
 model FeedbackSubmission {
   id             String   @id @default(cuid())
-  problem        String
+  formType       String   @default("DASHBOARD_FEEDBACK")
+  problem        String?
   description    String
+  urgency        String?
+  contactName    String?
+  contactEmail   String?
   submitterId    String?
-  submitterEmail String
-  submitterName  String
+  submitterEmail String?
+  submitterName  String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -166,6 +170,7 @@ model FeedbackSubmission {
 
   @@index([submitterId])
   @@index([createdAt])
+  @@index([formType, createdAt])
 }
 
 enum Role {

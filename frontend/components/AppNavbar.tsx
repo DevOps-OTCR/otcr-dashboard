@@ -1,16 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
   Activity,
+  ClipboardList,
   FileText,
   Presentation,
   MessageSquare,
-  MessageSquareWarning,
   Users,
   Bell,
   CheckCircle2,
@@ -28,7 +28,7 @@ import { getNotificationsRefreshEventName } from '@/lib/notification-events';
 export type NavItem = {
   id: string;
   label: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string }>;
   href: string;
   badge?: string;
   canAccess: (role: AppRole) => boolean;
@@ -40,6 +40,7 @@ export type AppNavPath =
   | '/pm'
   | '/lc'
   | '/partner'
+  | '/forms'
   | '/deliverables'
   | '/workstream'
   | '/workstream-docs'
@@ -261,10 +262,10 @@ export function AppNavbar({ role, currentPath = '/dashboard', unreadNotification
       canAccess: (r) => canShowNavItem('team', r),
     },
     {
-      id: 'feedback',
-      label: 'Feedback Form',
-      icon: MessageSquareWarning,
-      href: '/feedback',
+      id: 'forms',
+      label: 'Forms',
+      icon: ClipboardList,
+      href: '/forms',
       canAccess: () => true,
     },
   ];

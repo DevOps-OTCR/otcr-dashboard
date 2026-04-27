@@ -121,6 +121,24 @@ export const feedbackAPI = {
         Pragma: 'no-cache',
       },
     }),
+  createFormSubmission: (
+    formType: 'DASHBOARD_FEEDBACK' | 'ANONYMOUS_FEEDBACK' | 'PRC',
+    data: {
+      problem?: string;
+      description: string;
+      urgency?: 'VERY_URGENT' | 'SOMEWHAT_URGENT' | 'NOT_VERY_URGENT';
+      contactName?: string;
+      contactEmail?: string;
+    },
+  ) => api.post(`/feedback/forms/${formType}/submissions`, data),
+  listFormSubmissions: (formType: 'DASHBOARD_FEEDBACK' | 'ANONYMOUS_FEEDBACK' | 'PRC') =>
+    api.get(`/feedback/forms/${formType}/submissions`, {
+      params: { _ts: Date.now() },
+      headers: {
+        'Cache-Control': 'no-cache, no-store, max-age=0',
+        Pragma: 'no-cache',
+      },
+    }),
 };
 
 export const notificationsAPI = {
