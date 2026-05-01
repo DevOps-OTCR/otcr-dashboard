@@ -76,9 +76,9 @@ export class AuthService {
           role: resolvedRole as any,
         },
       });
-    } else if (user.role !== resolvedRole && resolvedRole !== 'CONSULTANT') {
-      // Keep elevated roles in sync with AllowedEmail so team/project creation
-      // checks that rely on user.role stay accurate.
+    } else if (user.role !== resolvedRole) {
+      // Keep user.role fully in sync with AllowedEmail, including demotions
+      // (e.g. ADMIN -> CONSULTANT) so stale elevated access is removed.
       user = await this.prisma.user.update({
         where: { id: user.id },
         data: { role: resolvedRole as any },
@@ -322,14 +322,12 @@ export class AuthService {
   ): Promise<'ADMIN' | 'PM' | 'LC' | 'PARTNER' | 'EXECUTIVE' | 'CONSULTANT' | null> {
     const normalized = email?.toLowerCase().trim();
     if (!normalized) return null;
-    const user = await this.prisma.user.findUnique({
+    const resolvedRole = await this.determineRole(normalized);
+    await this.prisma.user.updateMany({
       where: { email: normalized },
+      data: { role: resolvedRole as any },
     });
-    if (user) return user.role;
-    const allowed = await this.prisma.allowedEmail.findFirst({
-      where: { email: { equals: normalized, mode: 'insensitive' }, active: true },
-    });
-    return allowed?.role ?? null;
+    return resolvedRole;
   }
 
   async removeAllowedEmail(email: string) {

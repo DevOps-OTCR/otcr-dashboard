@@ -841,7 +841,7 @@ export default function AttendancePage() {
               </div>
             )} */}
 
-            {attendanceEvent.locationType === 'ONLINE' && attendanceEvent.canControlOnlineCode && (
+            {attendanceEvent.locationType === 'ONLINE' && attendanceEvent.canControlOnlineCode && canCreate && (
               <div className="flex flex-wrap items-center gap-3">
                 <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2">
                   <p className="text-xs uppercase tracking-[0.18em] text-[var(--foreground)]/55">4-digit code</p>

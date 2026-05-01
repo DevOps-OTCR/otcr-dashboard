@@ -14,6 +14,7 @@ import { FeedbackModule } from './feedback/feedback.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { AlumniModule } from './alumni/alumni.module';
 import { When2MeetModule } from './when2meet/when2meet.module';
+import { MetaModule } from './meta/meta.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { When2MeetModule } from './when2meet/when2meet.module';
     AttendanceModule,
     AlumniModule,
     When2MeetModule,
+    MetaModule,
   ],
   controllers: [DeliverablesController],
   providers: [DeliverablesService],
