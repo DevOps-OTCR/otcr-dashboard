@@ -341,7 +341,6 @@ model AttendanceEventAvailabilityPoll {
   eventId      String   @id
   windowStart  DateTime
   windowEnd    DateTime
-  slotMinutes  Int      @default(30)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

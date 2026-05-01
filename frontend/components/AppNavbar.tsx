@@ -17,6 +17,7 @@ import {
   Settings,
   MapPinned,
   CalendarDays,
+  GraduationCap,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/utils';
@@ -51,6 +52,7 @@ export type AppNavPath =
   | '/feedback'
   | '/attendance'
   | '/when2meet'
+  | '/alumni-database'
   | '/settings/slack';
 
 export interface AppNavbarProps {
@@ -275,6 +277,13 @@ export function AppNavbar({ role, currentPath = '/dashboard', unreadNotification
       label: 'Forms',
       icon: ClipboardList,
       href: '/forms',
+      canAccess: () => true,
+    },
+    {
+      id: 'alumniDatabase',
+      label: 'Alumni Database',
+      icon: GraduationCap,
+      href: '/alumni-database',
       canAccess: () => true,
     },
   ];

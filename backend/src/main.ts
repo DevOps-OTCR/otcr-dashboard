@@ -35,6 +35,13 @@ async function bootstrap() {
   // Enable CORS for frontend
   app.enableCors({
     origin: (origin, callback) => {
+      // Outside production, mirror any Origin (LAN IP, [::1], different ports).
+      // Axios often surfaces CORS failures as "Network Error" in the browser.
+      if (process.env.NODE_ENV !== 'production') {
+        callback(null, true);
+        return;
+      }
+
       const normalizedOrigin = origin ? normalizeOrigin(origin) : origin;
       if (!normalizedOrigin || allowAllOrigins || allowedOrigins.has(normalizedOrigin)) {
         callback(null, true);

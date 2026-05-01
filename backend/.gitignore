@@ -36,6 +36,9 @@ Thumbs.db
 *.swo
 *~
 
+# Private alumni export (deploy from CI/secret volume; never commit workbook)
+/data/alumni.json
+
 # Prisma
 /generated/prisma
 prisma/*.db

@@ -43,7 +43,6 @@ export class AttendanceController {
         enabled?: boolean;
         windowStart?: string;
         windowEnd?: string;
-        slotMinutes?: number;
       };
     },
     @GetUser() user: any,

@@ -90,6 +90,10 @@ export const authAPI = {
     api.post('/auth/sync-user', data),
 };
 
+export const alumniAPI = {
+  getDataset: () => api.get('/alumni'),
+};
+
 export const onboardingAPI = {
   createRequest: (data: {
     name: string;
@@ -161,12 +165,19 @@ export type AttendanceAvailabilitySlot = {
   start: string;
   end: string;
   availableCount: number;
+  availableUsers?: Array<{
+    id: string;
+    name: string;
+  }>;
+  unavailableUsers?: Array<{
+    id: string;
+    name: string;
+  }>;
 };
 export type AttendanceAvailabilityPoll = {
   enabled: boolean;
   windowStart: string;
   windowEnd: string;
-  slotMinutes: number;
   teamSize: number;
   respondentCount: number;
   currentUserSlots: string[];
@@ -221,7 +232,6 @@ export const attendanceAPI = {
       enabled?: boolean;
       windowStart?: string;
       windowEnd?: string;
-      slotMinutes?: number;
     };
   }) => api.post('/attendance/events', data),
   saveAvailability: (eventId: string, data: { slotStarts: string[] }) =>

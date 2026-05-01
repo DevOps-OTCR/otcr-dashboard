@@ -30,7 +30,6 @@ type CreateAttendanceEventInput = {
     enabled?: boolean;
     windowStart?: string;
     windowEnd?: string;
-    slotMinutes?: number;
   };
 };
 
@@ -218,7 +217,6 @@ export class AttendanceService {
         "eventId" TEXT PRIMARY KEY REFERENCES "AttendanceEvent"("id") ON DELETE CASCADE,
         "windowStart" TIMESTAMP(3) NOT NULL,
         "windowEnd" TIMESTAMP(3) NOT NULL,
-        "slotMinutes" INTEGER NOT NULL DEFAULT 30,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
@@ -241,14 +239,14 @@ export class AttendanceService {
 
   private async getAvailabilityPollRows(eventIds: string[]) {
     if (eventIds.length === 0) {
-      return new Map<string, { windowStart: Date; windowEnd: Date; slotMinutes: number }>();
+      return new Map<string, { windowStart: Date; windowEnd: Date; }>();
     }
 
     await this.ensureAttendanceAvailabilityTables();
     const rows = await this.prisma.$queryRawUnsafe<
-      Array<{ eventId: string; windowStart: Date; windowEnd: Date; slotMinutes: number }>
+      Array<{ eventId: string; windowStart: Date; windowEnd: Date;}>
     >(
-      `SELECT "eventId", "windowStart", "windowEnd", "slotMinutes"
+      `SELECT "eventId", "windowStart", "windowEnd"
        FROM "AttendanceEventAvailabilityPoll"
        WHERE "eventId" = ANY($1::text[])`,
       eventIds,
@@ -273,7 +271,7 @@ export class AttendanceService {
 
   private normalizeAvailabilityPollInput(
     scope: 'TEAM' | 'GLOBAL',
-    input?: { enabled?: boolean; windowStart?: string; windowEnd?: string; slotMinutes?: number } | null,
+    input?: { enabled?: boolean; windowStart?: string; windowEnd?: string; } | null,
   ) {
     if (!input?.enabled) {
       return null;
@@ -285,7 +283,6 @@ export class AttendanceService {
 
     const windowStart = input.windowStart ? new Date(input.windowStart) : null;
     const windowEnd = input.windowEnd ? new Date(input.windowEnd) : null;
-    const slotMinutes = Number(input.slotMinutes ?? 30);
 
     if (!windowStart || Number.isNaN(windowStart.getTime())) {
       throw new BadRequestException('Availability poll start time is required');
@@ -299,22 +296,19 @@ export class AttendanceService {
       throw new BadRequestException('Availability poll end time must be after the start time');
     }
 
-    if (![15, 30, 60].includes(slotMinutes)) {
-      throw new BadRequestException('Availability poll slot length must be 15, 30, or 60 minutes');
-    }
 
     return {
       windowStart,
       windowEnd,
-      slotMinutes,
     };
   }
 
-  private enumerateAvailabilitySlotStarts(poll: { windowStart: Date; windowEnd: Date; slotMinutes: number }) {
+  /** 15-minute steps to match When2Meet-style grids (stored poll window drives span only). */
+  private enumerateAvailabilityPollSlotStarts(windowStart: Date, windowEnd: Date): Date[] {
     const slots: Date[] = [];
-    const stepMs = poll.slotMinutes * 60 * 1000;
-    for (let time = poll.windowStart.getTime(); time < poll.windowEnd.getTime(); time += stepMs) {
-      slots.push(new Date(time));
+    const stepMs = 15 * 60 * 1000;
+    for (let t = windowStart.getTime(); t < windowEnd.getTime(); t += stepMs) {
+      slots.push(new Date(t));
     }
     return slots;
   }
@@ -322,7 +316,7 @@ export class AttendanceService {
   private buildAvailabilityPollSummary(
     event: any,
     currentUserId: string,
-    pollByEventId: Map<string, { windowStart: Date; windowEnd: Date; slotMinutes: number }>,
+    pollByEventId: Map<string, { windowStart: Date; windowEnd: Date; }>,
     selectionRows: Array<{ eventId: string; userId: string; slotStart: Date }>,
   ) {
     const poll = pollByEventId.get(event.id);
@@ -338,25 +332,44 @@ export class AttendanceService {
     const selectionsForEvent = selectionRows.filter(
       (row) => row.eventId === event.id && teamMemberIds.has(row.userId),
     );
-    const countsBySlot = new Map<string, number>();
+    const usersBySlot = new Map<string, any[]>();
     const selectedSlotsForUser: string[] = [];
     const respondingUserIds = new Set<string>();
 
     for (const row of selectionsForEvent) {
       const key = new Date(row.slotStart).toISOString();
-      countsBySlot.set(key, (countsBySlot.get(key) ?? 0) + 1);
+      const user = teamMembers.find((member: any) => member.id === row.userId);
+      if (user) {
+        usersBySlot.set(key, [...(usersBySlot.get(key) ?? []), user]);
+      }
       respondingUserIds.add(row.userId);
       if (row.userId === currentUserId) {
         selectedSlotsForUser.push(key);
       }
     }
 
-    const slots = this.enumerateAvailabilitySlotStarts(poll).map((slotStart) => {
+    const slotStepMs = 15 * 60 * 1000;
+    const slots = this.enumerateAvailabilityPollSlotStarts(poll.windowStart, poll.windowEnd).map((slotStart) => {
       const key = slotStart.toISOString();
+      const availablePeople = usersBySlot.get(key) ?? [];
+      const availableIds = new Set(availablePeople.map((u: { id: string }) => u.id));
+      const availableUsers = availablePeople.map((u: any) => ({
+        id: u.id,
+        name: this.formatName(u),
+      }));
+      const unavailableUsers = teamMembers
+        .filter((member: any) => !availableIds.has(member.id))
+        .map((member: any) => ({
+          id: member.id,
+          name: this.formatName(member),
+        }));
+
       return {
         start: key,
-        end: new Date(slotStart.getTime() + poll.slotMinutes * 60 * 1000).toISOString(),
-        availableCount: countsBySlot.get(key) ?? 0,
+        end: new Date(slotStart.getTime() + slotStepMs).toISOString(),
+        availableCount: availableIds.size,
+        availableUsers,
+        unavailableUsers,
       };
     });
 
@@ -368,7 +381,6 @@ export class AttendanceService {
       enabled: true,
       windowStart: poll.windowStart.toISOString(),
       windowEnd: poll.windowEnd.toISOString(),
-      slotMinutes: poll.slotMinutes,
       teamSize: teamMembers.length,
       respondentCount: respondingUserIds.size,
       currentUserSlots: selectedSlotsForUser,
@@ -394,7 +406,7 @@ export class AttendanceService {
 
   private async upsertAvailabilityPoll(
     eventId: string,
-    poll: { windowStart: Date; windowEnd: Date; slotMinutes: number } | null,
+    poll: { windowStart: Date; windowEnd: Date } | null,
   ) {
     await this.ensureAttendanceAvailabilityTables();
 
@@ -411,18 +423,16 @@ export class AttendanceService {
     }
 
     await this.prisma.$executeRawUnsafe(
-      `INSERT INTO "AttendanceEventAvailabilityPoll" ("eventId", "windowStart", "windowEnd", "slotMinutes", "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `INSERT INTO "AttendanceEventAvailabilityPoll" ("eventId", "windowStart", "windowEnd", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
        ON CONFLICT ("eventId")
        DO UPDATE SET
          "windowStart" = EXCLUDED."windowStart",
          "windowEnd" = EXCLUDED."windowEnd",
-         "slotMinutes" = EXCLUDED."slotMinutes",
          "updatedAt" = CURRENT_TIMESTAMP`,
       eventId,
       poll.windowStart,
       poll.windowEnd,
-      poll.slotMinutes,
     );
   }
 
@@ -907,14 +917,7 @@ export class AttendanceService {
     }
 
     const requestedSlots = Array.from(new Set((body.slotStarts ?? []).map((value) => value?.trim()).filter(Boolean)));
-    const allowedSlotStarts = new Set(this.enumerateAvailabilitySlotStarts(poll).map((slot) => slot.toISOString()));
 
-    for (const slotStart of requestedSlots) {
-      const parsed = new Date(slotStart);
-      if (Number.isNaN(parsed.getTime()) || !allowedSlotStarts.has(parsed.toISOString())) {
-        throw new BadRequestException('One or more selected availability slots are invalid');
-      }
-    }
 
     await this.ensureAttendanceAvailabilityTables();
     await this.prisma.$transaction(async (tx) => {

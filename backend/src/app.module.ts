@@ -12,6 +12,7 @@ import { TasksModule } from './tasks/tasks.module';
 import { SlideSubmissionsModule } from './slide-submissions/slide.submissions.module';
 import { FeedbackModule } from './feedback/feedback.module';
 import { AttendanceModule } from './attendance/attendance.module';
+import { AlumniModule } from './alumni/alumni.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { AttendanceModule } from './attendance/attendance.module';
     SlideSubmissionsModule,
     FeedbackModule,
     AttendanceModule,
+    AlumniModule,
   ],
   controllers: [DeliverablesController],
   providers: [DeliverablesService],
