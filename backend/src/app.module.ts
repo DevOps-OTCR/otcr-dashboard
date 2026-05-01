@@ -13,6 +13,7 @@ import { SlideSubmissionsModule } from './slide-submissions/slide.submissions.mo
 import { FeedbackModule } from './feedback/feedback.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { AlumniModule } from './alumni/alumni.module';
+import { When2MeetModule } from './when2meet/when2meet.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { AlumniModule } from './alumni/alumni.module';
     FeedbackModule,
     AttendanceModule,
     AlumniModule,
+    When2MeetModule,
   ],
   controllers: [DeliverablesController],
   providers: [DeliverablesService],

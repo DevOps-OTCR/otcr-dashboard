@@ -127,6 +127,8 @@ model User {
   attendanceEventsCreated AttendanceEvent[] @relation("AttendanceEventCreator")
   attendanceCheckIns AttendanceCheckIn[]
   attendanceAvailabilitySelections AttendanceEventAvailabilitySelection[]
+  when2MeetPollsCreated When2MeetPoll[]          @relation("When2MeetPollCreator")
+  when2MeetAvailabilities When2MeetAvailability[]
 
   @@index([googleId])
   @@index([email])
@@ -229,6 +231,7 @@ model Project {
   sprints      Sprint[]
   attendanceEvents AttendanceEvent[]
   calendarSetting ProjectCalendarSetting?
+  when2MeetPolls When2MeetPoll[]
 
   @@index([pmId])
   @@index([status])
@@ -359,6 +362,44 @@ model AttendanceEventAvailabilitySelection {
 
   @@id([eventId, userId, slotStart])
   @@index([eventId])
+  @@index([userId])
+}
+
+model When2MeetPoll {
+  id          String   @id @default(cuid())
+  title       String
+  projectId   String
+  createdById String
+  /// Inclusive calendar first day shown as a grid column (`null` = legacy poll: weekday columns without dates).
+  gridFirstDate DateTime? @db.Date
+  gridLastDate  DateTime? @db.Date
+  /// Minute-of-day `[0..1440)`, aligned to 15-minute steps. Inclusive interval `[slotStartMinute, slotEndMinute)`.
+  slotStartMinute Int @default(540)
+  slotEndMinute   Int @default(1020)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project       Project                   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy     User                      @relation("When2MeetPollCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  availabilities When2MeetAvailability[]
+
+  @@index([projectId])
+  @@index([createdById])
+}
+
+model When2MeetAvailability {
+  id        String   @id @default(cuid())
+  pollId    String
+  userId    String
+  slotIndex Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  poll When2MeetPoll @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  user User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([pollId, userId, slotIndex])
+  @@index([pollId])
   @@index([userId])
 }
 

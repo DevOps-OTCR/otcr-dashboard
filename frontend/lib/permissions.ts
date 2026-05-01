@@ -237,6 +237,7 @@ export function canShowNavItem(navId: string, role: AppRole): boolean {
     clientCallNotes: (r) => ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'EXECUTIVE', 'ADMIN'].includes(r),
     team: (r) => ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'EXECUTIVE', 'ADMIN'].includes(r),
     attendance: (r) => ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'EXECUTIVE', 'ADMIN'].includes(r),
+    when2meet: (r) => ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'EXECUTIVE', 'ADMIN'].includes(r),
   };
   return map[navId]?.(role) ?? false;
 }

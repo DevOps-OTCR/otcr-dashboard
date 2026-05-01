@@ -263,7 +263,7 @@ export function AppNavbar({ role, currentPath = '/dashboard', unreadNotification
       label: 'When2Meet',
       icon: CalendarDays,
       href: '/when2meet',
-      canAccess: (r) => canShowNavItem('attendance', r), // Same permissions as attendance for now
+      canAccess: (r) => canShowNavItem('when2meet', r),
     },
     {
       id: 'team',

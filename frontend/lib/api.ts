@@ -248,6 +248,51 @@ export const attendanceAPI = {
     api.get(`/attendance/members/${memberId}/history`, { params: { projectId } }),
 };
 
+export type When2MeetPollSummary = {
+  id: string;
+  title: string;
+  projectId: string;
+  createdAt: string;
+};
+
+export type When2MeetGridSpec = {
+  numCols: number;
+  numRows: number;
+  totalSlots: number;
+  slotStartMinute: number;
+  slotEndMinute: number;
+  gridFirstDate: string | null;
+  gridLastDate: string | null;
+  columnLabels: string[];
+  rowStartLabels: string[];
+};
+
+export type When2MeetPollDetail = {
+  poll: When2MeetPollSummary;
+  grid: When2MeetGridSpec;
+  teamSize: number;
+  members: Array<{ id: string; email: string; displayName: string }>;
+  slots: Array<{ slotIndex: number; names: string[] }>;
+  mySlots: number[];
+};
+
+export const when2meetAPI = {
+  createPoll: (body: {
+    projectId: string;
+    title: string;
+    gridFirstDate: string;
+    gridLastDate: string;
+    slotStart: string;
+    slotEnd: string;
+  }) => api.post('/when2meet/polls', body),
+  listPolls: (projectId: string) =>
+    api.get('/when2meet/polls', { params: { projectId } }),
+  getPoll: (id: string) => api.get(`/when2meet/polls/${id}`),
+  deletePoll: (id: string) => api.delete(`/when2meet/polls/${id}`),
+  saveMyAvailability: (id: string, slots: number[]) =>
+    api.put(`/when2meet/polls/${id}/my-availability`, { slots }),
+};
+
 export type ProjectsQuery = {
   status?: 'ACTIVE' | 'COMPLETED' | 'ON_HOLD' | 'CANCELLED';
   search?: string;

@@ -49,6 +49,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const checkAuth = async () => {
       try {
+        // MSAL v4+ requires this before acquireTokenSilent / redirects; avoids
+        // BrowserAuthError: uninitialized_public_client_application on first navigation.
+        await instance.initialize();
+
         const result = await instance.handleRedirectPromise();
         const account = result?.account ?? accounts[0];
 
@@ -81,6 +85,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [instance, accounts, inProgress]);
 
   const login = useCallback(async () => {
+    await instance.initialize();
     await instance.loginRedirect({
       scopes: ["openid", "profile", "email", "User.Read"],
     });
@@ -100,12 +105,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     document.cookie = "__Secure-next-auth.session-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
 
     // 3. Trigger MSAL logout to clear the Microsoft server session
+    await instance.initialize();
     await instance.logoutRedirect({
         postLogoutRedirectUri: `${window.location.origin}${basePath}/sign-in`,
     });
     }, [basePath, instance, user?.email]);
 
   const getToken = useCallback(async () => {
+    await instance.initialize();
+
     const account = instance.getActiveAccount();
     if (!account) return null;
 

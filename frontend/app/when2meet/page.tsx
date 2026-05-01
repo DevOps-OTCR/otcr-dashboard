@@ -1,743 +1,474 @@
 'use client';
 
-import React, { Fragment, useEffect, useRef, useState } from 'react';
-import { CalendarDays } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Be_Vietnam_Pro, Mulish } from 'next/font/google';
 import { AppNavbar } from '@/components/AppNavbar';
-import { useAuth } from '@/components/AuthContext';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
-import { Card, CardContent } from '@/components/ui/Card';
+import { useAuth } from '@/components/AuthContext';
 import { Button } from '@/components/ui/Button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import {
-  attendanceAPI,
+  when2meetAPI,
   projectsAPI,
   setAuthToken,
-  type AttendanceAvailabilitySlot,
-  type AttendanceEvent,
+  type When2MeetPollDetail,
+  type When2MeetPollSummary,
 } from '@/lib/api';
 import { getEffectiveRole, type AppRole } from '@/lib/permissions';
+import { When2MeetBoard } from '@/when2meet/When2MeetBoard';
 
-type ProjectOption = {
-  id: string;
-  name: string;
-};
+const mulish = Mulish({
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700', '800'],
+});
 
-type PollFormState = {
-  title: string;
-  projectId: string;
-  availabilityWindowStart: string;
-  availabilityWindowEnd: string;
-  availabilityWindowStartTime: string;
-  availabilityWindowEndTime: string;
-};
+const beVietnam = Be_Vietnam_Pro({
+  subsets: ['latin'],
+  weight: ['400', '600', '700', '800'],
+});
 
-type DragState = {
-  pollId: string;
-  mode: 'add' | 'remove';
-};
+const PROJECT_STORAGE_KEY = 'otcr_when2meet_project_id';
 
-type HoveredSlot = {
-  pollId: string;
-  slot: AttendanceAvailabilitySlot;
-};
-
-const DEFAULT_POLL_FORM: PollFormState = {
-  title: '',
-  projectId: '',
-  availabilityWindowStart: '',
-  availabilityWindowEnd: '',
-  availabilityWindowStartTime: '09:00',
-  availabilityWindowEndTime: '17:00',
-};
-
-function formatAvailabilityDayLabel(value: string) {
-  return new Date(value).toLocaleDateString([], {
-    weekday: 'short',
-  });
+function localCalendarDateISO(d = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
-function formatAvailabilityTimeLabel(value: string) {
-  return new Date(value).toLocaleTimeString([], {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+function parseApiError(err: unknown, fallback: string): string {
+  const message =
+    typeof err === 'object' && err !== null && 'response' in err
+      ? (err as { response?: { data?: { message?: unknown } } }).response?.data?.message
+      : undefined;
+  if (Array.isArray(message)) return message.join(', ');
+  if (typeof message === 'string') return message;
+  if (err instanceof Error) return err.message;
+  return fallback;
 }
 
-function getAvailabilityDayKey(value: string) {
-  const date = new Date(value);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function getAvailabilityTimeKey(value: string) {
-  const date = new Date(value);
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-}
-
-function localDateTimeToIso(date: string, time: string) {
-  return new Date(`${date}T${time}:00`).toISOString();
-}
-
-function getAvailabilityHeatColor(availableCount: number, teamSize: number) {
-  if (teamSize <= 0) {
-    return 'rgba(48, 147, 56, 0)';
-  }
-
-  const opacity = Math.max(0, Math.min(1, availableCount / teamSize));
-  return `rgba(48, 147, 56, ${opacity})`;
-}
-
-function getSlotAvailableUsers(slot: AttendanceAvailabilitySlot) {
-  return slot.availableUsers ?? [];
-}
-
-function getSlotUnavailableUsers(slot: AttendanceAvailabilitySlot) {
-  return slot.unavailableUsers ?? [];
-}
+type ProjectOption = { id: string; name: string };
 
 export default function When2MeetPage() {
   const session = useAuth();
   const [role, setRole] = useState<AppRole>('CONSULTANT');
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
-  const [polls, setPolls] = useState<AttendanceEvent[]>([]);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState<PollFormState>(DEFAULT_POLL_FORM);
-  const [creating, setCreating] = useState(false);
-  const [savingPollId, setSavingPollId] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState('');
+  const [polls, setPolls] = useState<When2MeetPollSummary[]>([]);
+  const [selectedPollId, setSelectedPollId] = useState<string | null>(null);
+  const [pollDetail, setPollDetail] = useState<When2MeetPollDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [availabilitySelections, setAvailabilitySelections] = useState<Record<string, string[]>>({});
-  const [dragState, setDragState] = useState<DragState | null>(null);
-  const [hoveredSlot, setHoveredSlot] = useState<HoveredSlot | null>(null);
-  const availabilitySelectionsRef = useRef<Record<string, string[]>>({});
-  const dragStateRef = useRef<DragState | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [gridFirstDate, setGridFirstDate] = useState('');
+  const [gridLastDate, setGridLastDate] = useState('');
+  const [slotStart, setSlotStart] = useState('09:00');
+  const [slotEnd, setSlotEnd] = useState('17:00');
+  const [creating, setCreating] = useState(false);
+  const [deletingPoll, setDeletingPoll] = useState(false);
 
-  const setSyncedAvailabilitySelections = (
-    updater: Record<string, string[]> | ((current: Record<string, string[]>) => Record<string, string[]>),
-  ) => {
-    setAvailabilitySelections((current) => {
-      const next = typeof updater === 'function' ? updater(current) : updater;
-      availabilitySelectionsRef.current = next;
-      return next;
-    });
-  };
+  const canCreatePoll =
+    role === 'ADMIN' || role === 'PM' || role === 'PARTNER' || role === 'EXECUTIVE';
 
-  const mergeCurrentUserSelections = (events: AttendanceEvent[]) => {
-    setSyncedAvailabilitySelections((current) => {
-      const next = { ...current };
-      for (const event of events) {
-        if (event.availabilityPoll) {
-          next[event.id] = current[event.id] ?? event.availabilityPoll.currentUserSlots;
-        }
-      }
-      return next;
-    });
-  };
-
-  useEffect(() => {
-    const syncRole = async () => {
-      if (!session.isLoggedIn || !session.user) {
-        setLoading(false);
+  const loadPolls = useCallback(
+    async (opts?: { selectPollId?: string; droppedPollId?: string }) => {
+      if (!projectId) {
+        setPolls([]);
         return;
       }
+      try {
+        const res = await when2meetAPI.listPolls(projectId);
+        const list = Array.isArray(res.data?.polls) ? (res.data.polls as When2MeetPollSummary[]) : [];
+        setPolls(list);
+        const preferred = opts?.selectPollId;
+        const dropped = opts?.droppedPollId;
+        setSelectedPollId((prev) => {
+          if (dropped && prev === dropped) {
+            return list[0]?.id ?? null;
+          }
+          if (preferred && list.some((p) => p.id === preferred)) return preferred;
+          if (prev && list.some((p) => p.id === prev)) return prev;
+          return list[0]?.id ?? null;
+        });
+      } catch (err) {
+        setPolls([]);
+        setError(parseApiError(err, 'Could not load When2Meet polls.'));
+      }
+    },
+    [projectId],
+  );
 
+  useEffect(() => {
+    if (!createOpen) return;
+    const today = localCalendarDateISO();
+    setGridFirstDate(today);
+    setGridLastDate(today);
+    setSlotStart('09:00');
+    setSlotEnd('17:00');
+  }, [createOpen]);
+
+  const loadPollDetail = useCallback(async (pollId: string) => {
+    setDetailLoading(true);
+    try {
+      const res = await when2meetAPI.getPoll(pollId);
+      setPollDetail(res.data as When2MeetPollDetail);
+      setError(null);
+    } catch (err) {
+      setPollDetail(null);
+      setError(parseApiError(err, 'Could not load this poll.'));
+    } finally {
+      setDetailLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!session.isLoggedIn || !session.user?.email) return;
+
+    let cancelled = false;
+
+    const bootstrap = async () => {
+      setLoading(true);
       try {
         const token = await session.getToken();
-        const email = session.user.email;
+        const email = session.user!.email!;
         setAuthToken(token || email || null);
         const resolvedRole = await getEffectiveRole(token, email);
+        if (cancelled) return;
         setRole(resolvedRole);
 
-        const projectsResponse = await projectsAPI.getAll({
-          status: 'ACTIVE',
-          includeMembers: false,
-          includeDeliverables: false,
-        });
-        setProjects(projectsResponse.data?.projects ?? []);
+        const projectsRes = await projectsAPI.getAll({ limit: 100 });
+        const raw = Array.isArray(projectsRes.data?.projects)
+          ? (projectsRes.data.projects as Array<{ id: string; name: string }>)
+          : [];
+        const options = raw.map((p) => ({ id: p.id, name: p.name }));
+        if (cancelled) return;
+        setProjects(options);
 
-        const eventsResponse = await attendanceAPI.listEvents();
-        const pollEvents = (Array.isArray(eventsResponse.data?.events) ? eventsResponse.data.events : []).filter(
-          (event: AttendanceEvent) => event.availabilityPoll?.enabled,
-        );
-        setPolls(pollEvents);
-        mergeCurrentUserSelections(pollEvents);
-      } catch (error) {
-        console.error('Failed to load When2Meet page data', error);
+        let initialProject =
+          typeof window !== 'undefined' ? window.localStorage.getItem(PROJECT_STORAGE_KEY) : null;
+        if (initialProject && !options.some((p) => p.id === initialProject)) {
+          initialProject = null;
+        }
+        const pid = initialProject || options[0]?.id || '';
+        setProjectId(pid);
+      } catch (err) {
+        if (!cancelled) setError(parseApiError(err, 'Failed to load teams.'));
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
-    void syncRole();
+    void bootstrap();
+    return () => {
+      cancelled = true;
+    };
   }, [session]);
 
   useEffect(() => {
-    const handleWindowPointerUp = () => {
-      const activeDragState = dragStateRef.current;
-      if (!activeDragState) return;
-      void saveAvailabilityForPoll(activeDragState.pollId);
-      dragStateRef.current = null;
-      setDragState(null);
-    };
+    if (!projectId || !session.isLoggedIn) return;
+    void loadPolls();
+  }, [projectId, session.isLoggedIn, loadPolls]);
 
-    window.addEventListener('pointerup', handleWindowPointerUp);
-    window.addEventListener('pointercancel', handleWindowPointerUp);
-    return () => {
-      window.removeEventListener('pointerup', handleWindowPointerUp);
-      window.removeEventListener('pointercancel', handleWindowPointerUp);
-    };
-  }, [polls]);
-
-  const resetForm = () => {
-    setForm(DEFAULT_POLL_FORM);
-  };
-
-  const handleFormChange = (key: keyof PollFormState, value: string) => {
-    setForm((current) => ({ ...current, [key]: value }));
-  };
-
-  const replacePoll = (updated: AttendanceEvent) => {
-    setPolls((current) => current.map((poll) => (poll.id === updated.id ? updated : poll)));
-    if (updated.availabilityPoll) {
-      setSyncedAvailabilitySelections((current) => ({
-        ...current,
-        [updated.id]: updated.availabilityPoll?.currentUserSlots ?? current[updated.id] ?? [],
-      }));
+  useEffect(() => {
+    if (!selectedPollId) {
+      setPollDetail(null);
+      return;
     }
+    void loadPollDetail(selectedPollId);
+  }, [selectedPollId, loadPollDetail]);
+
+  useEffect(() => {
+    if (!projectId || typeof window === 'undefined') return;
+    window.localStorage.setItem(PROJECT_STORAGE_KEY, projectId);
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!selectedPollId || !session.isLoggedIn) return;
+    const id = window.setInterval(() => {
+      void loadPollDetail(selectedPollId);
+    }, 45000);
+    return () => window.clearInterval(id);
+  }, [selectedPollId, session.isLoggedIn, loadPollDetail]);
+
+  const handleProjectChange = (nextId: string) => {
+    setProjectId(nextId);
+    setSelectedPollId(null);
+    setPollDetail(null);
   };
 
-  const saveAvailabilityForPoll = async (pollId: string) => {
-    const poll = polls.find((item) => item.id === pollId);
-    if (!poll?.availabilityPoll) return;
-
-    const selectedSlots = availabilitySelectionsRef.current[pollId] ?? [];
-    setSavingPollId(pollId);
-    setError(null);
-    try {
-      const response = await attendanceAPI.saveAvailability(pollId, { slotStarts: selectedSlots });
-      const updated = response.data?.event as AttendanceEvent | undefined;
-      if (updated) {
-        replacePoll(updated);
-      }
-      setMessage(`Saved your availability for ${poll.title}.`);
-    } catch (err: any) {
-      setError(err.response?.data?.message || err.message || 'Failed to submit availability.');
-    } finally {
-      setSavingPollId(null);
+  const handleCreatePoll = async (ev: React.FormEvent) => {
+    ev.preventDefault();
+    if (!projectId || !newTitle.trim()) return;
+    if (!gridFirstDate || !gridLastDate) {
+      setError('Choose both the first and last day for this poll.');
+      return;
     }
-  };
+    if (gridLastDate < gridFirstDate) {
+      setError('The last day must be on or after the first day.');
+      return;
+    }
 
-  const handleCreatePoll = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+    const ss = slotStart.split(':').map(Number);
+    const ee = slotEnd.split(':').map(Number);
+    const sh = ss[0];
+    const sm = ss[1];
+    const eh = ee[0];
+    const em = ee[1];
+    const startM = sh * 60 + sm;
+    const endM = eh * 60 + em;
+    if (
+      ![sh, sm, eh, em].every((n) => Number.isFinite(n)) ||
+      endM <= startM ||
+      startM % 15 !== 0 ||
+      endM % 15 !== 0
+    ) {
+      setError('Pick a valid time window in fifteen‑minute steps (start before end).');
+      return;
+    }
+
     setCreating(true);
-    setMessage(null);
     setError(null);
-
     try {
-      if (!form.title.trim()) {
-        throw new Error('Poll title is required.');
-      }
-      if (!form.availabilityWindowStart || !form.availabilityWindowEnd) {
-        throw new Error('Choose both a start day and end day for the availability poll.');
-      }
-      if (form.availabilityWindowEnd < form.availabilityWindowStart) {
-        throw new Error('The poll end day must be the same as or after the start day.');
-      }
-      if (!form.availabilityWindowStartTime || !form.availabilityWindowEndTime) {
-        throw new Error('Choose both a start time and end time for the availability poll.');
-      }
-      if (form.availabilityWindowStartTime >= form.availabilityWindowEndTime) {
-        throw new Error('The poll end time must be after the start time.');
-      }
-      if (!form.projectId) {
-        throw new Error('Select a team for the poll.');
-      }
-
-      const payload = {
-        title: form.title.trim(),
-        eventDate: new Date().toISOString(),
-        locationType: 'ONLINE' as const,
-        category: 'TEAM_MEETING' as const,
-        audienceScope: 'TEAM' as const,
-        projectId: form.projectId,
-        availabilityPoll: {
-          enabled: true,
-          windowStart: localDateTimeToIso(form.availabilityWindowStart, form.availabilityWindowStartTime),
-          windowEnd: localDateTimeToIso(form.availabilityWindowEnd, form.availabilityWindowEndTime),
-        },
-      };
-
-      const response = await attendanceAPI.createEvent(payload);
-      const created = response.data as AttendanceEvent;
-      setPolls((current) => [...current, created]);
-      mergeCurrentUserSelections([created]);
+      const res = await when2meetAPI.createPoll({
+        projectId,
+        title: newTitle.trim(),
+        gridFirstDate,
+        gridLastDate,
+        slotStart,
+        slotEnd,
+      });
+      const createdId =
+        res.data && typeof res.data === 'object' && 'poll' in res.data
+          ? (res.data as { poll?: { id?: string } }).poll?.id
+          : undefined;
+      setNewTitle('');
       setCreateOpen(false);
-      resetForm();
-      setMessage('Availability poll created successfully.');
-    } catch (err: any) {
-      setError(err.response?.data?.message || err.message || 'Failed to create availability poll.');
+      await loadPolls(createdId ? { selectPollId: createdId } : undefined);
+    } catch (err) {
+      setError(parseApiError(err, 'Could not create poll.'));
     } finally {
       setCreating(false);
     }
   };
 
-  const handleDeletePoll = async (poll: AttendanceEvent) => {
-    if (!confirm(`Are you sure you want to delete the poll "${poll.title}"? This action cannot be undone.`)) {
-      return;
-    }
+  const commitAvailability = async (slots: number[]) => {
+    if (!selectedPollId) return;
+    const res = await when2meetAPI.saveMyAvailability(selectedPollId, slots);
+    setPollDetail(res.data as When2MeetPollDetail);
+  };
+
+  const handleDeletePoll = async () => {
+    if (!selectedPollId) return;
+    const pollTitle =
+      polls.find((p) => p.id === selectedPollId)?.title ??
+      pollDetail?.poll.title ??
+      'this poll';
+    const confirmed = window.confirm(
+      `Delete “${pollTitle}”? Availability data will be removed. This cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    const idBeingDeleted = selectedPollId;
+    setDeletingPoll(true);
+    setError(null);
     try {
-      await attendanceAPI.deleteEvent(poll.id);
-      setPolls((current) => current.filter((p) => p.id !== poll.id));
-      setMessage('Poll deleted successfully.');
-    } catch (err: any) {
-      setError(err.response?.data?.message || err.message || 'Failed to delete poll.');
+      await when2meetAPI.deletePoll(idBeingDeleted);
+      await loadPolls({ droppedPollId: idBeingDeleted });
+    } catch (err) {
+      setError(parseApiError(err, 'Could not delete this poll.'));
+    } finally {
+      setDeletingPoll(false);
     }
   };
 
-  const setAvailabilitySlotValue = (pollId: string, slotStart: string, selected: boolean) => {
-    setSyncedAvailabilitySelections((current) => {
-      const existing = new Set(current[pollId] ?? []);
-      if (selected) {
-        existing.add(slotStart);
-      } else {
-        existing.delete(slotStart);
-      }
-      return {
-        ...current,
-        [pollId]: Array.from(existing),
-      };
-    });
-  };
-
-  const startSlotDrag = (pollId: string, slotStart: string) => {
-    const selectedSlots = availabilitySelectionsRef.current[pollId] ?? [];
-    const mode = selectedSlots.includes(slotStart) ? 'remove' : 'add';
-    dragStateRef.current = { pollId, mode };
-    setDragState({ pollId, mode });
-    setAvailabilitySlotValue(pollId, slotStart, mode === 'add');
-  };
-
-  const continueSlotDrag = (pollId: string, slotStart: string) => {
-    const activeDragState = dragStateRef.current;
-    if (!activeDragState || activeDragState.pollId !== pollId) return;
-    setAvailabilitySlotValue(pollId, slotStart, activeDragState.mode === 'add');
-  };
-
-  const getSlotStartFromPointerEvent = (event: React.PointerEvent<HTMLElement>) => {
-    const target = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-slot-start]') : null;
-    return target?.dataset.slotStart ?? null;
-  };
-
-  const handleUserGridPointerDown = (event: React.PointerEvent<HTMLDivElement>, pollId: string) => {
-    const slotStart = getSlotStartFromPointerEvent(event);
-    if (!slotStart) return;
-    event.preventDefault();
-    (event.currentTarget as HTMLDivElement).setPointerCapture(event.pointerId);
-    startSlotDrag(pollId, slotStart);
-  };
-
-  const handleUserGridPointerMove = (event: React.PointerEvent<HTMLDivElement>, pollId: string) => {
-    if (!dragStateRef.current || dragStateRef.current.pollId !== pollId) return;
-    // When pointer is captured, event.target stays on the capture element.
-    // elementFromPoint finds the real element under the cursor.
-    const el = document.elementFromPoint(event.clientX, event.clientY);
-    const target = el?.closest<HTMLElement>('[data-slot-start]');
-    if (!target) return;
-    const slotStart = target.dataset.slotStart;
-    if (!slotStart) return;
-    continueSlotDrag(pollId, slotStart);
-  };
-  const renderAvailabilityGrid = (
-    poll: AttendanceEvent,
-    variant: 'user' | 'group',
-    dayKeys: string[],
-    timeRows: Array<{ key: string; label: string }>,
-    slotByGridKey: Map<string, AttendanceAvailabilitySlot>,
-  ) => {
-    const pollData = poll.availabilityPoll!;
-    const selectedSlots = availabilitySelections[poll.id] ?? [];
-
-    return (
-      <div
-        className="grid touch-none select-none border-t border-[#161515]"
-        style={{
-          gridTemplateColumns: `repeat(${dayKeys.length}, minmax(34px, 1fr))`,
-          gridAutoFlow: 'column',
-        }}
-        onPointerDown={variant === 'user' ? (event) => handleUserGridPointerDown(event, poll.id) : undefined}
-        onPointerMove={variant === 'user' ? (event) => handleUserGridPointerMove(event, poll.id) : undefined}
-      >
-        {dayKeys.map((dayKey) => (
-          <Fragment key={`${poll.id}-${variant}-${dayKey}`}>
-            {timeRows.map((timeRow, index) => {
-              const slot = slotByGridKey.get(`${dayKey}__${timeRow.key}`);
-
-              if (!slot) {
-                return (
-                  <div
-                    key={`${poll.id}-${variant}-${dayKey}-${timeRow.key}`}
-                    className="h-[12px] border-l border-r border-[#161515]"
-                  />
-                );
-              }
-
-              const selected = selectedSlots.includes(slot.start);
-              const backgroundColor =
-                variant === 'user'
-                  ? selected
-                    ? 'rgb(48, 147, 56)'
-                    : 'rgb(255, 216, 216)'
-                  : getAvailabilityHeatColor(slot.availableCount, pollData.teamSize);
-
-              if (variant === 'user') {
-                return (
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    data-slot-start={slot.start}
-                    aria-label={`${formatAvailabilityTimeLabel(slot.start)} availability`}
-                    key={slot.start}
-                    className="h-[12px] w-full cursor-pointer select-none border-l border-r border-[#161515] transition-colors"
-                    style={{ backgroundColor }}
-                  />
-                );
-              }
-
-              return (
-                <div
-                  key={`${slot.start}-group`}
-                  className="h-[12px] w-full border-l border-r border-[#161515] transition-colors"
-                  style={{ backgroundColor }}
-                  onMouseEnter={() => setHoveredSlot({ pollId: poll.id, slot })}
-                />
-              );
-            })}
-          </Fragment>
-        ))}
-      </div>
-    );
-  };
-
-  const renderSchedule = (
-    poll: AttendanceEvent,
-    variant: 'user' | 'group',
-    dayKeys: string[],
-    timeRows: Array<{ key: string; label: string }>,
-    slotByGridKey: Map<string, AttendanceAvailabilitySlot>,
-  ) => {
-    const pollData = poll.availabilityPoll!;
-
-    return (
-      <div className="mx-auto grid w-full max-w-[400px] grid-cols-[52px_1fr] gap-x-2.5">
-        <div className="mt-5 text-right">
-          <p className="mb-0 h-[12px] text-[11px] leading-[12px] text-[#6f6c6c]">
-            {formatAvailabilityTimeLabel(pollData.windowEnd)}
-          </p>
-        </div>
-        <div>
-          <div
-            className="grid w-full"
-            style={{
-              gridTemplateColumns: `repeat(${dayKeys.length}, minmax(34px, 1fr))`,
-            }}
-          >
-            {dayKeys.map((dayKey) => {
-              const firstSlot = poll.availabilityPoll?.slots.find((slot) => getAvailabilityDayKey(slot.start) === dayKey);
-              return (
-                <p key={dayKey} className="mb-0 text-center text-base font-medium leading-5 text-[#161515]">
-                  {firstSlot ? formatAvailabilityDayLabel(firstSlot.start) : dayKey}
-                </p>
-              );
-            })}
-          </div>
-          {renderAvailabilityGrid(poll, variant, dayKeys, timeRows, slotByGridKey)}
-        </div>
-      </div>
-    );
-  };
-
-  const renderPollCard = (poll: AttendanceEvent) => {
-    const pollData = poll.availabilityPoll!;
-    const dayKeys = Array.from(new Set(pollData.slots.map((slot) => getAvailabilityDayKey(slot.start))));
-    const timeRows = Array.from(
-      pollData.slots
-        .reduce((map, slot) => {
-          const key = getAvailabilityTimeKey(slot.start);
-          if (!map.has(key)) {
-            map.set(key, {
-              key,
-              label: formatAvailabilityTimeLabel(slot.start),
-            });
-          }
-          return map;
-        }, new Map<string, { key: string; label: string }>())
-        .values(),
-    );
-    const slotByGridKey = new Map(
-      pollData.slots.map((slot) => [`${getAvailabilityDayKey(slot.start)}__${getAvailabilityTimeKey(slot.start)}`, slot] as const),
-    );
-    const activeHoveredSlot = hoveredSlot?.pollId === poll.id ? hoveredSlot.slot : null;
-    const availableUsers = activeHoveredSlot ? getSlotAvailableUsers(activeHoveredSlot) : [];
-    const unavailableUsers = activeHoveredSlot ? getSlotUnavailableUsers(activeHoveredSlot) : [];
-    const colorSteps = Array.from({ length: Math.max(1, pollData.teamSize + 1) }, (_, index) => index);
-
-    return (
-      <Card key={poll.id} className="overflow-visible rounded-lg">
-        <CardContent className="p-5">
-          <h2 className="mb-1 text-center font-['Be_Vietnam_Pro',sans-serif] text-2xl font-extrabold leading-tight text-[#161515]">
-            {poll.title}
-          </h2>
-          <p className="mb-5 text-center text-sm text-[#6f6c6c]">
-            {new Date(pollData.windowStart).toLocaleDateString()} - {new Date(pollData.windowEnd).toLocaleDateString()}
-            {poll.projectName ? ` • ${poll.projectName}` : ''}
-          </p>
-
-          <div className="grid gap-8 xl:grid-cols-2 xl:gap-[calc(50px_+_5vw)]">
-            <div className="relative text-center">
-              {activeHoveredSlot ? (
-                <div className="mx-auto max-w-[400px] bg-white text-center transition-opacity">
-                  <h5 className="font-['Be_Vietnam_Pro',sans-serif] text-lg font-semibold text-[#161515]">
-                    {activeHoveredSlot.availableCount}/{pollData.teamSize} Available
-                  </h5>
-                  <p className="mb-4 text-sm text-[#6f6c6c]">
-                    {formatAvailabilityTimeLabel(activeHoveredSlot.start)} - {formatAvailabilityTimeLabel(activeHoveredSlot.end)}
-                  </p>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <p className="mb-1 text-sm font-semibold text-[#161515]">Available</p>
-                      {availableUsers.length === 0 ? (
-                        <p className="mb-0 text-sm text-[#6f6c6c]">No one</p>
-                      ) : (
-                        availableUsers.map((user) => (
-                          <p key={user.id} className="mb-0 text-sm text-[#161515]">
-                            {user.name}
-                          </p>
-                        ))
-                      )}
-                    </div>
-                    <div>
-                      <p className="mb-1 text-sm font-semibold text-[#161515]">Unavailable</p>
-                      {unavailableUsers.length === 0 ? (
-                        <p className="mb-0 text-sm text-[#6f6c6c]">No one</p>
-                      ) : (
-                        unavailableUsers.map((user) => (
-                          <p key={user.id} className="mb-0 text-sm text-[#161515]">
-                            {user.name}
-                          </p>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <h5 className="font-['Be_Vietnam_Pro',sans-serif] text-lg font-semibold text-[#161515]">Your Availability</h5>
-                  <div className="mt-1 inline-flex">
-                    <div className="mr-2.5 flex justify-center">
-                      <p className="mb-0 inline-block text-sm text-[#161515]">Unavailable</p>
-                      <span className="ml-1 inline-block h-[22px] w-[34px] border border-[#161515] bg-[#ffd8d8]" />
-                    </div>
-                    <div className="flex justify-center">
-                      <p className="mb-0 inline-block text-sm text-[#161515]">Available</p>
-                      <span className="ml-1 inline-block h-[22px] w-[34px] border border-[#161515] bg-[#309338]" />
-                    </div>
-                  </div>
-                  <p className="my-3 text-sm italic text-[#161515]">
-                    Click and Drag to Toggle; Saved Immediately
-                  </p>
-                  {renderSchedule(poll, 'user', dayKeys, timeRows, slotByGridKey)}
-                  <div className="mt-4 flex items-center justify-center gap-3">
-                    <p className="mb-0 text-xs text-[#6f6c6c]">
-                      {savingPollId === poll.id ? 'Saving...' : 'Changes save when you release the mouse.'}
-                    </p>
-                    {poll.canManage && (
-                      <Button size="sm" variant="outline" onClick={() => void handleDeletePoll(poll)}>
-                        Delete
-                      </Button>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-
-            <div className="text-center" onMouseLeave={() => setHoveredSlot(null)}>
-              <h5 className="font-['Be_Vietnam_Pro',sans-serif] text-lg font-semibold text-[#161515]">Group&apos;s Availability</h5>
-              <div className="mt-1 inline-flex items-center">
-                <p className="mb-0 text-sm text-[#161515]">0/{pollData.teamSize} available</p>
-                <div className="mx-1 flex items-center border border-[#161515]">
-                  {colorSteps.map((step) => (
-                    <span
-                      key={step}
-                      className="inline-block h-[22px] w-[22px]"
-                      style={{ backgroundColor: getAvailabilityHeatColor(step, pollData.teamSize) }}
-                    />
-                  ))}
-                </div>
-                <p className="mb-0 text-sm text-[#161515]">
-                  {pollData.teamSize}/{pollData.teamSize} available
-                </p>
-              </div>
-              <p className="my-3 text-sm italic text-[#161515]">
-                Mouseover the Calendar to See Who Is Available
-              </p>
-              {renderSchedule(poll, 'group', dayKeys, timeRows, slotByGridKey)}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  };
-
-  if (loading) {
+  if (!session.isLoggedIn || session.loading || loading) {
     return <FullScreenLoader />;
   }
 
-  const canCreate = role === 'PM' || role === 'ADMIN' || role === 'PARTNER' || role === 'EXECUTIVE';
-
   return (
-    <>
+    <div className={`min-h-screen bg-[var(--background)] ${mulish.className}`}>
       <AppNavbar role={role} currentPath="/when2meet" />
-      <main className="mx-auto max-w-[2000px] space-y-8 px-4 py-8 font-['Mulish',sans-serif] sm:px-6 lg:px-8">
-        <section className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <CalendarDays className="h-6 w-6 text-[var(--primary)]" />
-            <h1 className="font-['Be_Vietnam_Pro',sans-serif] text-2xl font-extrabold text-[#161515]">When2Meet</h1>
-          </div>
-          {canCreate && (
-            <Button onClick={() => setCreateOpen(true)}>
-              Create Availability Poll
-            </Button>
-          )}
-        </section>
 
-        {message && (
-          <p className="rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700">
-            {message}
-          </p>
-        )}
-        {error && (
-          <p className="rounded-lg border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm text-red-700">
+      <main className="max-w-[2000px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>When2Meet</CardTitle>
+            <CardDescription>
+              Coordinate weekly availability with your team.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
+            <label className="flex flex-col gap-1 text-sm min-w-[200px]">
+              <span className="font-medium text-[var(--foreground)]">Team</span>
+              <select
+                className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                value={projectId}
+                onChange={(e) => handleProjectChange(e.target.value)}
+              >
+                {projects.length === 0 ? (
+                  <option value="">No teams available</option>
+                ) : (
+                  projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </label>
+
+            <label className="flex flex-col gap-1 text-sm min-w-[220px]">
+              <span className="font-medium text-[var(--foreground)]">Poll</span>
+              <select
+                className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                value={selectedPollId ?? ''}
+                onChange={(e) => setSelectedPollId(e.target.value || null)}
+                disabled={!polls.length}
+              >
+                {polls.length === 0 ? (
+                  <option value="">No polls yet</option>
+                ) : (
+                  polls.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.title}
+                    </option>
+                  ))
+                )}
+              </select>
+            </label>
+
+            {canCreatePoll ? (
+              <Button type="button" onClick={() => setCreateOpen(true)} disabled={!projectId}>
+                New When2Meet
+              </Button>
+            ) : null}
+
+            {canCreatePoll && selectedPollId ? (
+              <Button
+                type="button"
+                variant="danger"
+                onClick={() => void handleDeletePoll()}
+                disabled={deletingPoll || detailLoading}
+                loading={deletingPoll}
+              >
+                Delete poll
+              </Button>
+            ) : null}
+
+            {detailLoading ? (
+              <span className="text-sm text-[var(--foreground)]/60">Refreshing poll…</span>
+            ) : null}
+          </CardContent>
+        </Card>
+
+        {error ? (
+          <p className="text-sm text-red-600 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
             {error}
           </p>
-        )}
+        ) : null}
 
-        <section className="space-y-4">
-          {polls.length === 0 ? (
-            <Card>
-              <CardContent>
-                <p className="text-sm text-[var(--foreground)]/65">No active availability polls.</p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid gap-5">
-              {polls.map(renderPollCard)}
-            </div>
-          )}
-        </section>
-      </main>
-
-      <Modal
-        isOpen={createOpen}
-        onClose={() => setCreateOpen(false)}
-        title="Create Availability Poll"
-        size="lg"
-      >
-        <form onSubmit={handleCreatePoll} className="space-y-5">
-          <label className="block space-y-2 text-sm">
-            <span className="font-medium">Poll Title</span>
-            <input
-              value={form.title}
-              onChange={(event) => handleFormChange('title', event.target.value)}
-              placeholder="Find a time for weekly standup"
-              className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2"
-              required
-            />
-          </label>
-
-          <label className="block space-y-2 text-sm">
-            <span className="font-medium">Team</span>
-            <select
-              value={form.projectId}
-              onChange={(event) => handleFormChange('projectId', event.target.value)}
-              className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2"
-              required
-            >
-              <option value="">Select team</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="grid gap-4 md:grid-cols-5">
-            <label className="space-y-2 text-sm">
-              <span className="font-medium">Start day</span>
-              <input
-                type="date"
-                value={form.availabilityWindowStart}
-                onChange={(event) => handleFormChange('availabilityWindowStart', event.target.value)}
-                className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2"
-                required
-              />
-            </label>
-            <label className="space-y-2 text-sm">
-              <span className="font-medium">Start time</span>
-              <input
-                type="time"
-                value={form.availabilityWindowStartTime}
-                onChange={(event) => handleFormChange('availabilityWindowStartTime', event.target.value)}
-                className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2"
-                required
-              />
-            </label>
-            <label className="space-y-2 text-sm">
-              <span className="font-medium">End day</span>
-              <input
-                type="date"
-                value={form.availabilityWindowEnd}
-                onChange={(event) => handleFormChange('availabilityWindowEnd', event.target.value)}
-                className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2"
-                required
-              />
-            </label>
-            <label className="space-y-2 text-sm">
-              <span className="font-medium">End time</span>
-              <input
-                type="time"
-                value={form.availabilityWindowEndTime}
-                onChange={(event) => handleFormChange('availabilityWindowEndTime', event.target.value)}
-                className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2"
-                required
-              />
-            </label>
-          </div>
-
-          <p className="text-xs text-[var(--foreground)]/65">
-            The poll will cover the selected days from {form.availabilityWindowStartTime || 'start time'} to{' '}
-            {form.availabilityWindowEndTime || 'end time'}.
+        {pollDetail && selectedPollId ? (
+          <When2MeetBoard
+            detail={pollDetail}
+            headlineFontClassName={beVietnam.className}
+            onCommitAvailability={commitAvailability}
+          />
+        ) : !detailLoading && projectId && polls.length === 0 && !error ? (
+          <p className="text-center text-[var(--foreground)]/70 py-12">
+            No polls for this team yet.
+            {canCreatePoll ? ' Create one to get started.' : ''}
           </p>
+        ) : null}
 
-          <div className="flex justify-end gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setCreateOpen(false)}
-              disabled={creating}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={creating}>
-              {creating ? 'Creating...' : 'Create Poll'}
-            </Button>
-          </div>
-        </form>
-      </Modal>
-    </>
+        <Modal
+          isOpen={createOpen}
+          onClose={() => {
+            if (!creating) setCreateOpen(false);
+          }}
+          title="Create When2Meet"
+        >
+          <form id="when2meet-create-form" className="space-y-4" onSubmit={handleCreatePoll}>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="font-medium">Title</span>
+              <input
+                className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder="e.g. Sprint planning sync"
+                autoFocus
+              />
+            </label>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="font-medium">First day</span>
+                <input
+                  type="date"
+                  className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                  value={gridFirstDate}
+                  onChange={(e) => setGridFirstDate(e.target.value)}
+                  required
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="font-medium">Last day</span>
+                <input
+                  type="date"
+                  className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                  value={gridLastDate}
+                  onChange={(e) => setGridLastDate(e.target.value)}
+                  min={gridFirstDate || undefined}
+                  required
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="font-medium">Start time</span>
+                <input
+                  type="time"
+                  step={900}
+                  className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                  value={slotStart}
+                  onChange={(e) => setSlotStart(e.target.value)}
+                  required
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="font-medium">End time</span>
+                <input
+                  type="time"
+                  step={900}
+                  className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                  value={slotEnd}
+                  onChange={(e) => setSlotEnd(e.target.value)}
+                  required
+                />
+              </label>
+            </div>
+            <p className="text-xs text-[var(--foreground)]/60">
+              Columns show each calendar day in the range (one day only if first and last match). Rows are fifteen‑minute
+              steps between start and end time.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setCreateOpen(false)}
+                disabled={creating}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={creating || !newTitle.trim() || !gridFirstDate || !gridLastDate}
+              >
+                {creating ? 'Creating…' : 'Create'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      </main>
+    </div>
   );
 }
