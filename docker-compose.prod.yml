@@ -87,6 +87,8 @@ services:
       dockerfile: Dockerfile.prod
       args:
         DOCKER_BUILD: "true"
+        # Baked into the client bundle — must match how browsers reach Nest (often https://your-domain/api with nginx below).
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
     container_name: otcr-frontend
     restart: unless-stopped
     environment:
