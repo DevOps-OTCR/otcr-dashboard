@@ -2,8 +2,10 @@ import 'module-alias/register';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { materializeAlumniFromEnv } from './materialize-alumni-from-env';
 
 async function bootstrap() {
+  materializeAlumniFromEnv();
   const app = await NestFactory.create(AppModule);
 
   const normalizeOrigin = (value: string) => {
