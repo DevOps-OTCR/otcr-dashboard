@@ -250,6 +250,9 @@ export default function AttendancePage() {
   } | null>(null);
 
   const canCreate = role === 'ADMIN' || role === 'PM' || role === 'PARTNER' || role === 'EXECUTIVE';
+  /** Matches attendance delete API: consultants/LCs cannot delete events. */
+  const canDeleteAttendanceEvents =
+    role === 'ADMIN' || role === 'PM' || role === 'PARTNER' || role === 'EXECUTIVE';
 
   const syncData = async () => {
     if (!session.isLoggedIn || !session.user?.email) return;
@@ -914,7 +917,7 @@ export default function AttendancePage() {
                 <Button variant="outline" size="sm" onClick={() => void handleOpenRoster(attendanceEvent)}>
                   View attendance
                 </Button>
-                {attendanceEvent.locationType === 'IN_PERSON' && (
+                {attendanceEvent.locationType === 'IN_PERSON' && canDeleteAttendanceEvents && (
                   <Button
                     variant="danger"
                     size="sm"
