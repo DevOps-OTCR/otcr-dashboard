@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { type AxiosRequestConfig } from 'axios';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
@@ -81,7 +81,7 @@ export const setAuthToken = (token: string | null) => {
 export const authAPI = {
   getCurrentUser: () => api.get('/auth/me'),
   health: () => api.get('/auth/health'),
-  getRole: () => api.get('/auth/roles'),
+  getRole: (config?: AxiosRequestConfig) => api.get('/auth/role', config),
   checkEmail: (email: string) => api.get(`/auth/check-email?email=${encodeURIComponent(email)}`),
   getAllowedEmails: () => api.get('/auth/allowed-emails'),
   addAllowedEmail: (data: { email: string; role?: 'ADMIN' | 'PM' | 'LC' | 'PARTNER' | 'EXECUTIVE' | 'CONSULTANT' }) =>

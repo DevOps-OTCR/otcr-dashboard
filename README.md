@@ -44,7 +44,7 @@ Authenticated users are redirected to role-specific routes instead of a shared `
 ```bash
 cd backend
 npm install
-cp .env.example .env
+cp ../env/env.example .env
 ```
 
 Set at least:
@@ -90,6 +90,24 @@ Then run:
 ```bash
 npm run dev
 ```
+
+### Frontend linting
+
+From `frontend/`, run:
+
+```bash
+npm run lint
+```
+
+This runs ESLint with the Next.js Core Web Vitals configuration against the
+frontend JavaScript and TypeScript files. Generated output (`.next/`,
+`.open-next/`, `out/`, `build/`, `coverage/`, and `next-env.d.ts`) is excluded.
+
+The initial lint run reports 39 existing errors and 12 warnings. Errors include
+conditional Hooks, state updates in effects, impure rendering, mutation,
+memoization, and ref access. Warnings concern Hook dependencies. The command
+exits with a nonzero status while these errors remain; fixing them is separate
+from restoring the lint command.
 
 ## Production Deployment
 

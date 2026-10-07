@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "import-alumni": "node scripts/import-alumni.cjs",
     "prisma:generate": "prisma generate --schema=./prisma/schema.prisma",
     "postinstall": "prisma generate --schema=./prisma/schema.prisma || true"
@@ -46,7 +46,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.17",
     "@types/json-schema": "^7.0.15",
-    "eslint": "^10.0.1",
-    "eslint-config-next": "^0.2.4"
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.2.4"
   }
 }
