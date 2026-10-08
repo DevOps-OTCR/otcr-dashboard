@@ -1,10 +1,12 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class DeliverablesService {
+  private readonly logger = new Logger(DeliverablesService.name);
+
   constructor(
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
@@ -538,11 +540,18 @@ export class DeliverablesService {
       },
     });
 
-    await this.notifyProjectReviewersOnSubmission(id, userId, {
-      isLate,
-      submittedAt,
-      deadline: deliverable.deadline,
-    });
+    // The submission is already saved, so a notification failure must not fail the request.
+    try {
+      await this.notifyProjectReviewersOnSubmission(id, userId, {
+        isLate,
+        submittedAt,
+        deadline: deliverable.deadline,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to notify reviewers for submission ${submission.id} on deliverable ${id}: ${error?.message ?? error}`,
+      );
+    }
 
     return submission;
   }
@@ -599,17 +608,23 @@ export class DeliverablesService {
     reviewerIds.delete(submitterId);
 
     for (const reviewerId of reviewerIds) {
-      await this.notificationsService.queueNotification({
-        userId: reviewerId,
-        type: 'PROJECT_UPDATED',
-        channel: 'BOTH',
-        data: {
-          projectName: deliverable.project.name,
-          deliverableTitle: deliverable.title,
-          feedback: `${submitterName} made a new submission to ${deliverable.title}.`,
-          targetPath: '/deliverables',
-        },
-      });
+      try {
+        await this.notificationsService.queueNotification({
+          userId: reviewerId,
+          type: 'PROJECT_UPDATED',
+          channel: 'BOTH',
+          data: {
+            projectName: deliverable.project.name,
+            deliverableTitle: deliverable.title,
+            feedback: `${submitterName} made a new submission to ${deliverable.title}.`,
+            targetPath: '/deliverables',
+          },
+        });
+      } catch (error) {
+        this.logger.error(
+          `Failed to notify reviewer ${reviewerId} of submission on deliverable ${deliverableId}: ${error?.message ?? error}`,
+        );
+      }
     }
 
     if (
