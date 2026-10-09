@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/Badge';
 import { getEffectiveRole, hasAccess } from '@/lib/permissions';
 import { deliverablesAPI, projectsAPI } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
+import { RoleDashboardRedirect } from '@/components/RoleDashboardRedirect';
 import type { AppRole } from '@/lib/permissions';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { dispatchNotificationsRefresh } from '@/lib/notification-events';
@@ -57,6 +58,7 @@ function parseApiError(err: any, fallback: string): string {
 
 export default function ClientNotesPage() {
   const session = useAuth();
+  const [roleLookupFailed, setRoleLookupFailed] = useState(false);
   const [resolvedRole, setResolvedRole] = useState<AppRole>('CONSULTANT');
 
   const [notes, setNotes] = useState<ClientNote[]>([]);
@@ -76,7 +78,7 @@ export default function ClientNotesPage() {
       const role = await getEffectiveRole(token, email);
       setResolvedRole(role);
     };
-    void syncRole();
+    void syncRole().catch(() => setRoleLookupFailed(true));
   }, [session]);
 
   if (session.loading || !session.isLoggedIn) {
@@ -177,6 +179,8 @@ export default function ClientNotesPage() {
       setSubmitting(false);
     }
   };
+
+  if (roleLookupFailed) return <RoleDashboardRedirect />;
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">

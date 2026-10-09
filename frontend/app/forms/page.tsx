@@ -5,6 +5,7 @@ import { useEffect, useState, type ComponentType } from 'react';
 import { ClipboardList, MessageSquare, ShieldAlert, TriangleAlert } from 'lucide-react';
 import { AppNavbar } from '@/components/AppNavbar';
 import { useAuth } from '@/components/AuthContext';
+import { RoleDashboardRedirect } from '@/components/RoleDashboardRedirect';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { getEffectiveRole, type AppRole } from '@/lib/permissions';
@@ -47,6 +48,7 @@ const forms: FormCard[] = [
 
 export default function FormsPage() {
   const session = useAuth();
+  const [roleLookupFailed, setRoleLookupFailed] = useState(false);
   const [role, setRole] = useState<AppRole>('CONSULTANT');
 
   useEffect(() => {
@@ -58,12 +60,14 @@ export default function FormsPage() {
       const resolvedRole = await getEffectiveRole(token, email);
       setRole(resolvedRole);
     };
-    void syncRole();
+    void syncRole().catch(() => setRoleLookupFailed(true));
   }, [session]);
 
   if (session.loading || !session.isLoggedIn) {
     return <FullScreenLoader />;
   }
+
+  if (roleLookupFailed) return <RoleDashboardRedirect />;
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
