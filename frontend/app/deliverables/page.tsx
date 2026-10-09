@@ -49,6 +49,15 @@ type DeliverableItem = {
       lastName?: string;
     };
   } | null;
+  assigneeSubmissions?: Array<{
+    assignee: {
+      id: string;
+      email?: string;
+      firstName?: string;
+      lastName?: string;
+    };
+    submission: DeliverableItem['latestSubmission'];
+  }>;
   subtasks?: Array<{
     id: string;
     title: string;
@@ -826,23 +835,57 @@ export default function DeliverablesPage() {
                                   Assign yourself first to submit this deliverable.
                                 </p>
                               )}
-                              {deliverable.latestSubmission && (
-                                <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--secondary)]/60 p-3">
-                                  <p className="text-xs font-medium text-[var(--foreground)]/70">
-                                    Latest submission by {formatSubmitter(deliverable.latestSubmission.submitter)}
-                                  </p>
-                                  <a
-                                    href={deliverable.latestSubmission.fileUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="mt-1 block text-sm font-medium text-[var(--primary)] hover:underline"
-                                  >
-                                    View submission
-                                  </a>
-                                  <p className="mt-1 text-xs text-[var(--foreground)]/60">
-                                    {new Date(deliverable.latestSubmission.submittedAt).toLocaleString()}
-                                  </p>
+                              {deliverable.assigneeSubmissions ? (
+                                <div className="mt-3 space-y-2">
+                                  {deliverable.assigneeSubmissions.map(({ assignee, submission }) => (
+                                    <div
+                                      key={assignee.id}
+                                      className="rounded-lg border border-[var(--border)] bg-[var(--secondary)]/60 p-3"
+                                    >
+                                      {submission ? (
+                                        <>
+                                          <p className="text-xs font-medium text-[var(--foreground)]/70">
+                                            Submitted by {formatPerson(assignee)}
+                                          </p>
+                                          <a
+                                            href={submission.fileUrl}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="mt-1 block text-sm font-medium text-[var(--primary)] hover:underline"
+                                          >
+                                            View submission
+                                          </a>
+                                          <p className="mt-1 text-xs text-[var(--foreground)]/60">
+                                            {new Date(submission.submittedAt).toLocaleString()}
+                                          </p>
+                                        </>
+                                      ) : (
+                                        <p className="text-xs font-medium text-[var(--foreground)]/70">
+                                          {formatPerson(assignee)} — Not submitted
+                                        </p>
+                                      )}
+                                    </div>
+                                  ))}
                                 </div>
+                              ) : (
+                                deliverable.latestSubmission && (
+                                  <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--secondary)]/60 p-3">
+                                    <p className="text-xs font-medium text-[var(--foreground)]/70">
+                                      Latest submission by {formatSubmitter(deliverable.latestSubmission.submitter)}
+                                    </p>
+                                    <a
+                                      href={deliverable.latestSubmission.fileUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="mt-1 block text-sm font-medium text-[var(--primary)] hover:underline"
+                                    >
+                                      View submission
+                                    </a>
+                                    <p className="mt-1 text-xs text-[var(--foreground)]/60">
+                                      {new Date(deliverable.latestSubmission.submittedAt).toLocaleString()}
+                                    </p>
+                                  </div>
+                                )
                               )}
                             </div>
 
