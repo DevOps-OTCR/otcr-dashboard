@@ -27,6 +27,7 @@ type TeamMemberOption = {
 type DeliverableItem = {
   id: string;
   title: string;
+  description?: string | null;
   deadline: string;
   templateKind?: string;
   status: string;
@@ -686,6 +687,11 @@ export default function DeliverablesPage() {
                               <p className="mt-1 text-xs text-[var(--foreground)]/55">
                                 Due {new Date(deliverable.deadline).toLocaleString()}
                               </p>
+                              {deliverable.description?.trim() ? (
+                                <p className="mt-2 whitespace-pre-wrap break-words text-sm text-[var(--foreground)]/80">
+                                  {deliverable.description.trim()}
+                                </p>
+                              ) : null}
                             </div>
                             <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] uppercase tracking-wide text-emerald-700">
                               {deliverable.status.replace(/_/g, ' ')}
