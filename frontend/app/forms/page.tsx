@@ -53,7 +53,7 @@ export default function FormsPage() {
 
   useEffect(() => {
     const syncRole = async () => {
-      if (!session.isLoggedIn) return;
+      if (!session.isLoggedIn || roleLookupFailed) return;
       const token = await session.getToken();
       const email = session.user?.email || '';
       setAuthToken(token || email || null);
@@ -61,13 +61,13 @@ export default function FormsPage() {
       setRole(resolvedRole);
     };
     void syncRole().catch(() => setRoleLookupFailed(true));
-  }, [session]);
+  }, [session, roleLookupFailed]);
 
   if (session.loading || !session.isLoggedIn) {
     return <FullScreenLoader />;
   }
 
-  if (roleLookupFailed) return <RoleDashboardRedirect />;
+  if (roleLookupFailed) return <RoleDashboardRedirect onRetry={() => setRoleLookupFailed(false)} />;
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">

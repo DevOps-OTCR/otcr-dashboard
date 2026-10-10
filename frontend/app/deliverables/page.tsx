@@ -222,7 +222,8 @@ export default function DeliverablesPage() {
 
   useEffect(() => {
     const init = async () => {
-      if (!session.isLoggedIn || !session.user?.email) return;
+      if (!session.isLoggedIn || !session.user?.email || roleLookupFailed) return;
+      setLoading(true);
 
       try {
         const token = await session.getToken();
@@ -254,7 +255,7 @@ export default function DeliverablesPage() {
     };
 
     void init();
-  }, [session, session.isLoggedIn, session.user?.email, loadSprints, loadTeamMembers]);
+  }, [session, session.isLoggedIn, session.user?.email, loadSprints, loadTeamMembers, roleLookupFailed]);
 
   useEffect(() => {
     if (!feedback) return;
@@ -589,7 +590,7 @@ export default function DeliverablesPage() {
     return <FullScreenLoader />;
   }
 
-  if (roleLookupFailed) return <RoleDashboardRedirect />;
+  if (roleLookupFailed) return <RoleDashboardRedirect onRetry={() => setRoleLookupFailed(false)} />;
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--background)]">

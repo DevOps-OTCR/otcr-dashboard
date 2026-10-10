@@ -72,14 +72,14 @@ export default function ClientNotesPage() {
 
   useEffect(() => {
     const syncRole = async () => {
-      if (!session.isLoggedIn) return;
+      if (!session.isLoggedIn || roleLookupFailed) return;
       const token = await session.getToken();
       const email = session.user?.email || '';
       const role = await getEffectiveRole(token, email);
       setResolvedRole(role);
     };
     void syncRole().catch(() => setRoleLookupFailed(true));
-  }, [session]);
+  }, [session, roleLookupFailed]);
 
   if (session.loading || !session.isLoggedIn) {
     return <FullScreenLoader />;
@@ -144,10 +144,10 @@ export default function ClientNotesPage() {
   };
 
   useEffect(() => {
-    if (!session.user?.email) return;
+    if (!session.user?.email || roleLookupFailed) return;
     void loadNotes();
     void loadProjects();
-  }, [session.user?.email, canWrite]);
+  }, [session.user?.email, canWrite, roleLookupFailed]);
 
   const addNote = async () => {
     if (!title.trim() || !link.trim()) {
@@ -180,7 +180,7 @@ export default function ClientNotesPage() {
     }
   };
 
-  if (roleLookupFailed) return <RoleDashboardRedirect />;
+  if (roleLookupFailed) return <RoleDashboardRedirect onRetry={() => setRoleLookupFailed(false)} />;
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">

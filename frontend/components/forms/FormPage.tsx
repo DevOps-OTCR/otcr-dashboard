@@ -78,7 +78,7 @@ export function FormPage({
 
   useEffect(() => {
     const syncRole = async () => {
-      if (!session.isLoggedIn) return;
+      if (!session.isLoggedIn || roleLookupFailed) return;
       const token = await session.getToken();
       const email = session.user?.email || '';
       setAuthToken(token || email || null);
@@ -86,7 +86,7 @@ export function FormPage({
       setRole(resolvedRole);
     };
     void syncRole().catch(() => setRoleLookupFailed(true));
-  }, [session]);
+  }, [session, roleLookupFailed]);
 
   const showReview = canReview(role);
 
@@ -146,7 +146,7 @@ export function FormPage({
     void submit();
   };
 
-  if (roleLookupFailed) return <RoleDashboardRedirect />;
+  if (roleLookupFailed) return <RoleDashboardRedirect onRetry={() => setRoleLookupFailed(false)} />;
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
