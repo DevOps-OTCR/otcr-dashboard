@@ -335,7 +335,7 @@ export default function ConsultantDashboard() {
                           {item.title}
                         </h5>
                         <p className="text-sm text-[var(--foreground)]/70 mt-1">
-                          {item.projectName} â€¢ {item.weekLabel}
+                          {item.projectName} • {item.weekLabel}
                         </p>
                         <div className="flex items-center gap-2 mt-2">
                           {consultantStatusMeta && (
