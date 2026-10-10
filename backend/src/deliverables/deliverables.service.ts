@@ -558,6 +558,7 @@ export class DeliverablesService {
           where: { id: submission.id },
           data: { reviewerNotificationStatus: 'SENT' },
         });
+        submission.reviewerNotificationStatus = 'SENT';
       }
     } catch (error) {
       this.logger.error(

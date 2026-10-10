@@ -67,7 +67,12 @@ describe('DeliverablesService reviewer notifications', () => {
     it('saves the submission, notifies reviewers, and marks notifications sent', async () => {
       const submission = await service.submitLink(deliverableId, submitterId, link);
 
-      expect(submission).toMatchObject({ id: 'submission-1', fileUrl: link, version: 1 });
+      expect(submission).toMatchObject({
+        id: 'submission-1',
+        fileUrl: link,
+        version: 1,
+        reviewerNotificationStatus: 'SENT',
+      });
       expect(prisma.submission.create.mock.calls[0][0].data.reviewerNotificationStatus).toBe(
         'PENDING',
       );
@@ -92,7 +97,11 @@ describe('DeliverablesService reviewer notifications', () => {
 
       const submission = await service.submitLink(deliverableId, submitterId, link);
 
-      expect(submission).toMatchObject({ id: 'submission-1', fileUrl: link });
+      expect(submission).toMatchObject({
+        id: 'submission-1',
+        fileUrl: link,
+        reviewerNotificationStatus: 'PENDING',
+      });
       expect(prisma.submission.create).toHaveBeenCalledTimes(1);
       expect(prisma.deliverable.update).toHaveBeenCalledTimes(1);
       expect(prisma.submission.update).not.toHaveBeenCalled();
@@ -115,7 +124,10 @@ describe('DeliverablesService reviewer notifications', () => {
 
       const submission = await service.submitLink(deliverableId, submitterId, link);
 
-      expect(submission).toMatchObject({ id: 'submission-1' });
+      expect(submission).toMatchObject({
+        id: 'submission-1',
+        reviewerNotificationStatus: 'PENDING',
+      });
       expect(notificationsService.queueNotification).not.toHaveBeenCalled();
       expect(prisma.submission.update).not.toHaveBeenCalled();
     });
@@ -125,7 +137,10 @@ describe('DeliverablesService reviewer notifications', () => {
 
       const submission = await service.submitLink(deliverableId, submitterId, link);
 
-      expect(submission).toMatchObject({ id: 'submission-1' });
+      expect(submission).toMatchObject({
+        id: 'submission-1',
+        reviewerNotificationStatus: 'PENDING',
+      });
     });
 
     it('rejects and skips notifications when the submission cannot be saved', async () => {
@@ -159,12 +174,14 @@ describe('DeliverablesService reviewer notifications', () => {
       deliverable: { deadline: new Date(Date.now() + 24 * 60 * 60 * 1000) },
     });
 
-    it('only picks up pending submissions older than the retry delay', async () => {
+    it('only picks up pending submissions older than five minutes', async () => {
+      jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-09T12:00:00Z'));
+
       await service.retryPendingReviewerNotifications();
 
       const { where } = prisma.submission.findMany.mock.calls[0][0];
       expect(where.reviewerNotificationStatus).toBe('PENDING');
-      expect(where.submittedAt.lt.getTime()).toBeLessThan(Date.now());
+      expect(where.submittedAt).toEqual({ lt: new Date('2026-10-09T11:55:00Z') });
     });
 
     it('notifies only reviewers who are missing the notification and marks it sent', async () => {
