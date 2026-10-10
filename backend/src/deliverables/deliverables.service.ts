@@ -1,10 +1,16 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationJob, NotificationsService } from '../notifications/notifications.service';
+
+const REVIEWER_NOTIFICATION_MAX_ATTEMPTS = 5;
+const REVIEWER_NOTIFICATION_RETRY_DELAY_MS = 5 * 60 * 1000;
+const REVIEWER_NOTIFICATION_RETRY_BATCH_SIZE = 50;
 
 @Injectable()
 export class DeliverablesService {
+  private readonly logger = new Logger(DeliverablesService.name);
+
   constructor(
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
@@ -518,6 +524,7 @@ export class DeliverablesService {
         status: 'PENDING_REVIEW',
         submittedAt,
         isLate,
+        reviewerNotificationStatus: 'PENDING',
       },
       include: {
         submitter: {
@@ -538,16 +545,122 @@ export class DeliverablesService {
       },
     });
 
-    await this.notifyProjectReviewersOnSubmission(id, userId, {
-      isLate,
-      submittedAt,
-      deadline: deliverable.deadline,
-    });
+    // The submission is already saved, so a notification failure must not fail the request.
+    // It stays PENDING and retryPendingReviewerNotifications picks it up later.
+    try {
+      const delivered = await this.notifyProjectReviewersOnSubmission(submission.id, id, userId, {
+        isLate,
+        submittedAt,
+        deadline: deliverable.deadline,
+      });
+      if (delivered) {
+        await this.prisma.submission.update({
+          where: { id: submission.id },
+          data: { reviewerNotificationStatus: 'SENT' },
+        });
+        submission.reviewerNotificationStatus = 'SENT';
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to notify reviewers for submission ${submission.id} on deliverable ${id}: ${error?.message ?? error}`,
+      );
+    }
 
     return submission;
   }
 
+  async retryPendingReviewerNotifications(): Promise<void> {
+    const pending = await this.prisma.submission.findMany({
+      where: {
+        reviewerNotificationStatus: 'PENDING',
+        // Skip submissions whose original request may still be sending notifications
+        submittedAt: { lt: new Date(Date.now() - REVIEWER_NOTIFICATION_RETRY_DELAY_MS) },
+      },
+      orderBy: { submittedAt: 'asc' },
+      take: REVIEWER_NOTIFICATION_RETRY_BATCH_SIZE,
+      select: {
+        id: true,
+        deliverableId: true,
+        userId: true,
+        isLate: true,
+        submittedAt: true,
+        reviewerNotificationAttempts: true,
+        deliverable: { select: { deadline: true } },
+      },
+    });
+
+    for (const submission of pending) {
+      const attempts = submission.reviewerNotificationAttempts + 1;
+      let delivered = false;
+      try {
+        delivered = await this.notifyProjectReviewersOnSubmission(
+          submission.id,
+          submission.deliverableId,
+          submission.userId,
+          {
+            isLate: submission.isLate,
+            submittedAt: submission.submittedAt,
+            deadline: submission.deliverable.deadline,
+          },
+        );
+      } catch (error) {
+        this.logger.error(
+          `Retry ${attempts} failed to notify reviewers for submission ${submission.id}: ${error?.message ?? error}`,
+        );
+      }
+
+      let status: 'SENT' | 'PENDING' | 'FAILED' = 'PENDING';
+      if (delivered) {
+        status = 'SENT';
+      } else if (attempts >= REVIEWER_NOTIFICATION_MAX_ATTEMPTS) {
+        status = 'FAILED';
+        this.logger.error(
+          `Giving up on reviewer notifications for submission ${submission.id} after ${attempts} retries`,
+        );
+      }
+
+      try {
+        await this.prisma.submission.update({
+          where: { id: submission.id },
+          data: {
+            reviewerNotificationStatus: status,
+            reviewerNotificationAttempts: attempts,
+          },
+        });
+      } catch (error) {
+        this.logger.error(
+          `Failed to record reviewer notification retry for submission ${submission.id}: ${error?.message ?? error}`,
+        );
+      }
+    }
+  }
+
+  // Skips recipients who already have this submission's notification, so retries never duplicate.
+  private async queueSubmissionNotificationOnce(job: NotificationJob): Promise<boolean> {
+    try {
+      const existing = await this.prisma.notification.findFirst({
+        where: {
+          userId: job.userId,
+          type: job.type,
+          metadata: { path: ['submissionId'], equals: job.data.submissionId },
+        },
+        select: { id: true },
+      });
+      if (!existing) {
+        await this.notificationsService.queueNotification(job);
+      }
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `Failed to send ${job.type} notification to ${job.userId} for submission ${job.data.submissionId}: ${error?.message ?? error}`,
+      );
+      return false;
+    }
+  }
+
+  // Returns true when every reviewer notification was saved.
   private async notifyProjectReviewersOnSubmission(
+    submissionId: string,
     deliverableId: string,
     submitterId: string,
     options?: {
@@ -555,7 +668,7 @@ export class DeliverablesService {
       submittedAt?: Date;
       deadline?: Date;
     },
-  ): Promise<void> {
+  ): Promise<boolean> {
     const deliverable = await this.prisma.deliverable.findUnique({
       where: { id: deliverableId },
       select: {
@@ -575,7 +688,7 @@ export class DeliverablesService {
         },
       },
     });
-    if (!deliverable) return;
+    if (!deliverable) return true;
 
     const submitter = await this.prisma.user.findUnique({
       where: { id: submitterId },
@@ -598,8 +711,9 @@ export class DeliverablesService {
     deliverable.project.members.forEach((member) => reviewerIds.add(member.userId));
     reviewerIds.delete(submitterId);
 
+    let delivered = true;
     for (const reviewerId of reviewerIds) {
-      await this.notificationsService.queueNotification({
+      const queued = await this.queueSubmissionNotificationOnce({
         userId: reviewerId,
         type: 'PROJECT_UPDATED',
         channel: 'BOTH',
@@ -608,8 +722,10 @@ export class DeliverablesService {
           deliverableTitle: deliverable.title,
           feedback: `${submitterName} made a new submission to ${deliverable.title}.`,
           targetPath: '/deliverables',
+          submissionId,
         },
       });
+      delivered = delivered && queued;
     }
 
     if (
@@ -622,7 +738,7 @@ export class DeliverablesService {
         ? this.getLateByMinutes(options.deadline, options.submittedAt)
         : 0;
 
-      await this.notificationsService.queueNotification({
+      const queued = await this.queueSubmissionNotificationOnce({
         userId: deliverable.project.pmId,
         type: 'OVERDUE_ALERT',
         channel: 'BOTH',
@@ -636,9 +752,13 @@ export class DeliverablesService {
           lateByMinutes,
           feedback: `${submitterName} submitted ${deliverable.title} after the deadline.`,
           targetPath: '/deliverables',
+          submissionId,
         },
       });
+      delivered = delivered && queued;
     }
+
+    return delivered;
   }
 
   async findSubtask(id: string) {
