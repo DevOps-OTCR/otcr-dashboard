@@ -1,9 +1,16 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import type { User } from '@prisma/client';
 import { GoogleCalendarService } from '../integrations/google-calendar.service';
 
 type TaskAssigneeType = 'PERSON' | 'ALL' | 'ALL_PMS' | 'ALL_TEAM';
+
+type TaskAccess = {
+  createdById: string;
+  assigneeType: string;
+  assigneeEmail?: string | null;
+  projectId?: string | null;
+};
 
 @Injectable()
 export class TasksService {
@@ -22,6 +29,76 @@ export class TasksService {
       );
     }
     return model;
+  }
+
+  private async hasProjectAccess(projectId: string, user: Pick<User, 'id' | 'role'>, allowAdmin = true): Promise<boolean> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { pmId: true },
+    });
+    if (!project) return false;
+    if ((allowAdmin && user.role === 'ADMIN') || project.pmId === user.id) return true;
+    return !!await this.prisma.projectMember.findFirst({
+      where: { projectId, userId: user.id, leftAt: null },
+    });
+  }
+
+  private async assertTaskAccess(task: TaskAccess, user: User, write = false): Promise<void> {
+    if (user.role === 'ADMIN' || task.createdById === user.id) return;
+    const personallyAssigned = task.assigneeType === 'PERSON' &&
+      task.assigneeEmail?.toLowerCase() === user.email.toLowerCase();
+    if (personallyAssigned) return;
+
+    // Broadcast recipients may read a task, but cannot edit it merely because
+    // it appears in their action center. PMs/LCs manage only their own teams.
+    if (!write && await this.taskAppliesToUser(task, user)) return;
+    const organizationWide = task.assigneeType === 'ALL' || task.assigneeType === 'ALL_PMS';
+    const canManageTeam = !organizationWide && (user.role === 'PM' || user.role === 'LC');
+    if (task.projectId && (!write || canManageTeam) && await this.hasProjectAccess(task.projectId, user)) return;
+    throw new ForbiddenException('You do not have access to this task');
+  }
+
+  private async assertAssignmentAllowed(
+    assignment: Omit<TaskAccess, 'createdById'>,
+    user: User,
+  ): Promise<void> {
+    const { assigneeType, assigneeEmail, projectId } = assignment;
+    if (!['PERSON', 'ALL', 'ALL_PMS', 'ALL_TEAM'].includes(assigneeType)) {
+      throw new BadRequestException('Invalid task assignment type');
+    }
+    if (assigneeEmail != null && typeof assigneeEmail !== 'string') {
+      throw new BadRequestException('Invalid assignee');
+    }
+    if (projectId != null && (typeof projectId !== 'string' || !projectId.trim())) {
+      throw new BadRequestException('Invalid project');
+    }
+    if (projectId && !await this.hasProjectAccess(projectId, user)) {
+      throw new ForbiddenException('You do not have access to this project');
+    }
+    if (assigneeType === 'ALL' || assigneeType === 'ALL_PMS') {
+      if (user.role !== 'ADMIN') throw new ForbiddenException('Only admins can assign organization-wide tasks');
+      return;
+    }
+    if (assigneeType === 'ALL_TEAM') {
+      if (!projectId) throw new BadRequestException('Team tasks require a project');
+      if (!['ADMIN', 'PM', 'LC'].includes(user.role)) {
+        throw new ForbiddenException('Only team managers can assign team tasks');
+      }
+      return;
+    }
+    if (typeof assigneeEmail !== 'string' || !assigneeEmail.trim()) {
+      throw new BadRequestException('Personal tasks require an assignee');
+    }
+    if (assigneeEmail.trim().toLowerCase() === user.email.toLowerCase()) return;
+    if (user.role !== 'ADMIN' && (!projectId || !['PM', 'LC'].includes(user.role))) {
+      throw new ForbiddenException('You can only assign your own tasks');
+    }
+    const assignee = await this.prisma.user.findFirst({
+      where: { email: { equals: assigneeEmail.trim(), mode: 'insensitive' } },
+    });
+    if (!assignee || (user.role !== 'ADMIN' && !await this.hasProjectAccess(projectId!, assignee, false))) {
+      throw new ForbiddenException('Assignee must belong to this project');
+    }
   }
 
   /** Whether the task applies to the given user (assignee resolution). */
@@ -184,8 +261,9 @@ export class TasksService {
       assigneeEmail?: string;
       projectId?: string;
     },
-    createdById: string
+    user: User
   ) {
+    await this.assertAssignmentAllowed(data, user);
     const normalizedDueDate = this.combineDueDateTime(data.dueDate, data.dueTime);
 
     const task = await this.taskModel.create({
@@ -197,9 +275,9 @@ export class TasksService {
         workstream: data.workstream,
         workstreamId: data.workstreamId,
         assigneeType: data.assigneeType,
-        assigneeEmail: data.assigneeEmail,
+        assigneeEmail: data.assigneeEmail?.trim(),
         projectId: data.projectId,
-        createdById,
+        createdById: user.id,
       },
       include: {
         createdBy: { select: { id: true, email: true, firstName: true, lastName: true } },
@@ -221,14 +299,18 @@ export class TasksService {
       assigneeType?: TaskAssigneeType;
       assigneeEmail?: string;
       projectId?: string;
-    }
+    },
+    user: User,
   ) {
     const existing = await this.taskModel.findUnique({
       where: { id },
-      select: { dueDate: true },
     });
     if (!existing) {
       throw new NotFoundException('Task not found');
+    }
+    await this.assertTaskAccess(existing, user, true);
+    if (data.assigneeType !== undefined || data.assigneeEmail !== undefined || data.projectId !== undefined) {
+      await this.assertAssignmentAllowed({ ...existing, ...data }, user);
     }
 
     const shouldUpdateDueDate = data.dueDate !== undefined || data.dueTime !== undefined;
@@ -249,7 +331,7 @@ export class TasksService {
         ...(data.status != null && { status: data.status as any }),
         ...(data.completed !== undefined && { completed: data.completed }),
         ...(data.assigneeType != null && { assigneeType: data.assigneeType }),
-        ...(data.assigneeEmail !== undefined && { assigneeEmail: data.assigneeEmail }),
+        ...(data.assigneeEmail !== undefined && { assigneeEmail: data.assigneeEmail?.trim() }),
         ...(data.projectId !== undefined && { projectId: data.projectId }),
       },
       include: {
@@ -260,28 +342,15 @@ export class TasksService {
     return this.syncTaskCalendarFields(updatedTask);
   }
 
-  async remove(id: string) {
-    try {
-      const existing = await this.taskModel.findUnique({
-        where: { id },
-        select: {
-          id: true,
-          googleCalendarEventId: true,
-          googleCalendarId: true,
-        },
-      });
-      if (!existing) {
-        throw new NotFoundException('Task not found');
-      }
-
-      await this.googleCalendarService.removeTaskEvent(existing);
-      return await this.taskModel.delete({ where: { id } });
-    } catch {
-      throw new NotFoundException('Task not found');
-    }
+  async remove(id: string, user: User) {
+    const existing = await this.taskModel.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Task not found');
+    await this.assertTaskAccess(existing, user, true);
+    await this.googleCalendarService.removeTaskEvent(existing);
+    return this.taskModel.delete({ where: { id } });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, user: User) {
     const task = await this.taskModel.findUnique({
       where: { id },
       include: {
@@ -289,6 +358,7 @@ export class TasksService {
       },
     });
     if (!task) throw new NotFoundException('Task not found');
+    await this.assertTaskAccess(task, user);
     return task;
   }
 
