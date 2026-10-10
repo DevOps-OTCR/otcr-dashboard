@@ -20,6 +20,7 @@ import FullScreenLoader from "./LoadingScreen";
 import { ThemeProvider } from "../ThemeProvider";
 import { clearRoleCache } from "@/lib/permissions";
 import { clearProjectsCache } from "@/lib/api";
+import { setResourceCacheScope } from '@/lib/resource-cache';
 import { clearNavigationSnapshots } from "@/lib/navigation-cache";
 
 type AuthUser = {
@@ -52,6 +53,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (previousEmail.current !== user?.email) {
       clearProjectsCache();
+      setResourceCacheScope(user?.email);
       clearNavigationSnapshots();
       previousEmail.current = user?.email;
     }

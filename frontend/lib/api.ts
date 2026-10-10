@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { clearNavigationSnapshots } from './navigation-cache';
+import { cachedRequest, clearResourceCache } from './resource-cache';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
@@ -14,66 +15,18 @@ export const api = axios.create({
 api.interceptors.response.use((response) => {
   if (['post', 'put', 'patch', 'delete'].includes(response.config.method?.toLowerCase() ?? '')) {
     clearNavigationSnapshots();
+    clearResourceCache();
   }
   return response;
 });
 
-const PROJECTS_CACHE_PREFIX = 'otcr_projects_cache:';
-const PROJECTS_CACHE_TTL_MS = 2 * 60 * 1000;
-const projectsMemoryCache = new Map<string, { cachedAt: number; data: unknown }>();
-
-function getProjectsCacheKey(query: string): string {
-  return `${PROJECTS_CACHE_PREFIX}${query || '__all__'}`;
-}
-
-function readProjectsCache(key: string): unknown | null {
-  const memoryEntry = projectsMemoryCache.get(key);
-  if (memoryEntry && Date.now() - memoryEntry.cachedAt <= PROJECTS_CACHE_TTL_MS) {
-    return memoryEntry.data;
-  }
-  if (memoryEntry) projectsMemoryCache.delete(key);
-
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { cachedAt?: number; data?: unknown };
-    if (typeof parsed?.cachedAt !== 'number') {
-      localStorage.removeItem(key);
-      return null;
-    }
-    if (Date.now() - parsed.cachedAt > PROJECTS_CACHE_TTL_MS) {
-      localStorage.removeItem(key);
-      return null;
-    }
-    projectsMemoryCache.set(key, { cachedAt: parsed.cachedAt, data: parsed.data });
-    return parsed.data ?? null;
-  } catch {
-    if (typeof window !== 'undefined') localStorage.removeItem(key);
-    return null;
-  }
-}
-
-function writeProjectsCache(key: string, data: unknown): void {
-  const entry = { cachedAt: Date.now(), data };
-  projectsMemoryCache.set(key, entry);
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(key, JSON.stringify(entry));
-  } catch {
-    // Ignore storage failures.
-  }
-}
-
 export function clearProjectsCache(): void {
-  projectsMemoryCache.clear();
+  clearResourceCache();
+  // Remove entries persisted by the previous project-only cache.
   if (typeof window === 'undefined') return;
-  const keysToDelete: string[] = [];
-  for (let i = 0; i < localStorage.length; i += 1) {
-    const key = localStorage.key(i);
-    if (key?.startsWith(PROJECTS_CACHE_PREFIX)) keysToDelete.push(key);
+  for (const key of Object.keys(localStorage)) {
+    if (key.startsWith('otcr_projects_cache:')) localStorage.removeItem(key);
   }
-  keysToDelete.forEach((key) => localStorage.removeItem(key));
 }
 
 // Add auth token to requests
@@ -225,7 +178,7 @@ export type AttendanceEvent = {
 };
 
 export const attendanceAPI = {
-  listEvents: () => api.get('/attendance/events'),
+  listEvents: () => cachedRequest('/attendance/events', () => api.get('/attendance/events'), 30000),
   createEvent: (data: {
     title: string;
     eventDate: string;
@@ -295,8 +248,9 @@ export const when2meetAPI = {
     slotEnd: string;
   }) => api.post('/when2meet/polls', body),
   listPolls: (projectId: string) =>
-    api.get('/when2meet/polls', { params: { projectId } }),
-  getPoll: (id: string) => api.get(`/when2meet/polls/${id}`),
+    cachedRequest(`/when2meet/polls?projectId=${encodeURIComponent(projectId)}`,
+      () => api.get('/when2meet/polls', { params: { projectId } }), 30000),
+  getPoll: (id: string) => cachedRequest(`/when2meet/polls/${id}`, () => api.get(`/when2meet/polls/${id}`), 30000),
   deletePoll: (id: string) => api.delete(`/when2meet/polls/${id}`),
   saveMyAvailability: (id: string, slots: number[]) =>
     api.put(`/when2meet/polls/${id}/my-availability`, { slots }),
@@ -340,21 +294,8 @@ export const projectsAPI = {
     if (params?.page != null) q.set('page', String(params.page));
     if (params?.limit != null) q.set('limit', String(params.limit));
     const query = q.toString();
-    const cacheKey = getProjectsCacheKey(query);
-    const cachedData = readProjectsCache(cacheKey);
-    if (cachedData !== null) {
-      return Promise.resolve({
-        data: cachedData,
-        status: 200,
-        statusText: 'OK',
-        headers: {},
-        config: {},
-      } as any);
-    }
-    return api.get('/projects' + (query ? `?${query}` : '')).then((response) => {
-      writeProjectsCache(cacheKey, response.data);
-      return response;
-    });
+    const path = '/projects' + (query ? `?${query}` : '');
+    return cachedRequest(path, () => api.get(path));
   },
   getById: (id: string, options?: { includeMembers?: boolean; includeDeliverables?: boolean }) => {
     const q = new URLSearchParams();
@@ -417,7 +358,7 @@ export const projectsAPI = {
       autoGenerateSprints?: boolean;
     },
   ) => api.patch(`/projects/${projectId}/sprint-config`, data),
-  getSprints: (projectId: string) => api.get(`/projects/${projectId}/sprints`),
+  getSprints: (projectId: string) => cachedRequest(`/projects/${projectId}/sprints`, () => api.get(`/projects/${projectId}/sprints`)),
   updateSprintNotes: (projectId: string, sprintId: string, data: { generalNotes?: string }) =>
     api.patch(`/projects/${projectId}/sprints/${sprintId}/notes`, data),
   getSprintById: (projectId: string, sprintId: string) =>

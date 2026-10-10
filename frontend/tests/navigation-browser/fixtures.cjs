@@ -1,4 +1,4 @@
-const projects = [{ id: 'team-1', name: 'Team One' }, { id: 'team-2', name: 'Team Two' }];
+const projects = [{ id: 'team-1', name: 'Team One', googleCalendarId: 'team-1@example.test' }, { id: 'team-2', name: 'Team Two' }];
 function sprints(projectId) {
   return [{
     id: `${projectId}-week-1`, label: 'Week 1', status: 'RELEASED',
@@ -24,5 +24,13 @@ exports.responseFor = (pathname, role) => {
   if (sprintMatch) return sprints(sprintMatch[1]);
   if (pathname.startsWith('/projects/')) return { pm: { id: 'u-1', firstName: 'Test', email: 'pm@example.test' }, members: [] };
   if (pathname === '/attendance/events') return { events };
+  const poll = { id: 'poll-1', projectId: 'team-1', title: 'Planning poll', createdAt: '2026-10-10' };
+  if (pathname === '/when2meet/polls') return { polls: [poll] };
+  if (pathname === '/when2meet/polls/poll-1') return { poll,
+    grid: { numCols: 1, numRows: 2, totalSlots: 2, slotStartMinute: 540, slotEndMinute: 570,
+      gridFirstDate: '2026-10-12', gridLastDate: '2026-10-12', columnLabels: ['Monday'], rowStartLabels: ['9:00', '9:15'] },
+    teamSize: 1, members: [{ id: 'u-1', email: 'pm@example.test', displayName: 'PM' }],
+    slots: [{ slotIndex: 0, names: ['PM'] }], mySlots: [0] };
+
   return [];
 };

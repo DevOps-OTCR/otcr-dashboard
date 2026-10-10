@@ -17,6 +17,8 @@ exports.buildBundle = async () => {
     fs.writeFileSync(path.join(output, `${name}.cjs`),
       `module.exports = require(${JSON.stringify(path.join(__dirname, 'routing.cjs'))}).${exported};`);
   }
+  fs.writeFileSync(path.join(output, 'empty.cjs'), 'module.exports = () => \'\';');
+  fs.writeFileSync(path.join(output, 'fonts.cjs'), 'exports.Mulish = exports.Be_Vietnam_Pro = () => ({ className: \'test-font\' });');
   await new Promise((resolve, reject) => webpack({
     mode: 'development', target: 'web', devtool: false,
     entry: path.join(__dirname, 'entry.tsx'),
@@ -24,11 +26,13 @@ exports.buildBundle = async () => {
     resolve: { extensions: ['.tsx', '.ts', '.js', '.cjs'], alias: {
       '@': root, 'next/navigation$': path.join(__dirname, 'routing.cjs'),
       'next/link$': path.join(output, 'link.cjs'), 'next/image$': path.join(output, 'image.cjs'),
+      'next/font/google$': path.join(output, 'fonts.cjs'),
       '@azure/msal-react$': path.join(__dirname, 'routing.cjs'),
     } },
-    module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: path.join(output, 'loader.cjs') }] },
+    module: { rules: [{ test: /\.css$/, use: path.join(output, 'empty.cjs') }, { test: /\.tsx?$/, exclude: /node_modules/, use: path.join(output, 'loader.cjs') }] },
     plugins: [new webpack.DefinePlugin({
       'process.env.NEXT_PUBLIC_API_URL': JSON.stringify('/api'),
+      'process.env.NEXT_PUBLIC_GOOGLE_CALENDAR_EMBED_URL': JSON.stringify(''),
       'process.env.NEXT_PUBLIC_BASE_PATH': JSON.stringify(''),
       'process.env.NEXT_PUBLIC_MSAL_AUTHORITY': JSON.stringify('https://login.microsoftonline.com/test'),
     })],

@@ -1,5 +1,6 @@
 'use client';
 
+import { DashboardShell } from '@/components/DashboardShell';
 import { AuthApiSync } from '@/components/AuthApiSync';
 import "./globals.css";
 import { PublicClientApplication } from "@azure/msal-browser";
@@ -33,7 +34,7 @@ export default function MsalWrapper({ children }: { children: ReactNode }) {
         <MsalProvider instance={pca}>
           <AuthProvider>
             <AuthApiSync />
-            {children}
+            <DashboardShell>{children}</DashboardShell>
           </AuthProvider>
         </MsalProvider>
       </body>

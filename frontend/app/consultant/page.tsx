@@ -9,7 +9,8 @@ import { cn } from '@/lib/utils';
 import { projectsAPI, setAuthToken, slideSubmissionsAPI } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
-import { GoogleCalendarPanel } from '@/components/GoogleCalendarPanel';
+import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
+import { PageLoading } from '@/components/PageLoading';
 import { AppNavbar } from '@/components/AppNavbar';
 
 type ProjectOption = {
@@ -86,8 +87,12 @@ function getConsultantStatusMeta(status?: string | null): {
 export default function ConsultantDashboard() {
   const session = useAuth();
   const router = useRouter();
-  const [assignments, setAssignments] = useState<AssignmentItem[]>([]);
-  const [selectedWeek, setSelectedWeek] = useState<string>('All Weeks');
+  const { snapshot, saveSnapshot } = useNavigationSnapshot<{ assignments: AssignmentItem[]; selectedWeek: string }>('consultant-overview', session.user?.email);
+  const [assignments, setAssignments] = useState<AssignmentItem[]>(snapshot?.assignments ?? []);
+  const [selectedWeek, setSelectedWeek] = useState(snapshot?.selectedWeek ?? 'All Weeks');
+  const [loading, setLoading] = useState(!snapshot);
+  const [loadError, setLoadError] = useState(false);
+  const [refreshing, setRefreshing] = useState(true);
 
   useEffect(() => {
     if (!session.loading && !session.isLoggedIn) {
@@ -96,6 +101,7 @@ export default function ConsultantDashboard() {
   }, [session, router]);
 
   useEffect(() => {
+    let cancelled = false;
     const loadAssignments = async () => {
       if (!session.isLoggedIn || !session.user?.email) return;
       try {
@@ -123,8 +129,7 @@ export default function ConsultantDashboard() {
           projects.map((project) =>
             projectsAPI
               .getSprints(project.id)
-              .then((res) => ({ project, sprints: (res.data ?? []) as SprintItem[] }))
-              .catch(() => ({ project, sprints: [] as SprintItem[] })),
+              .then((res) => ({ project, sprints: (res.data ?? []) as SprintItem[] })),
           ),
         );
 
@@ -180,18 +185,27 @@ export default function ConsultantDashboard() {
             });
         });
 
+        if (cancelled) return;
+        setLoadError(false);
         setAssignments(
           nextAssignments.sort(
             (a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime(),
           ),
         );
       } catch {
-        setAssignments([]);
+        if (!cancelled) setLoadError(true);
+      } finally {
+        if (!cancelled) { setLoading(false); setRefreshing(false); }
       }
     };
 
     void loadAssignments();
-  }, [session, session.isLoggedIn, session.user?.email]);
+    return () => { cancelled = true; };
+  }, [session.isLoggedIn, session.user?.email, session.getToken]);
+
+  useEffect(() => {
+    if (!loading && !refreshing && !loadError) saveSnapshot({ assignments, selectedWeek });
+  }, [loading, refreshing, loadError, assignments, selectedWeek, saveSnapshot]);
 
   const availableWeeks = useMemo(() => {
     const set = new Set<string>();
@@ -236,11 +250,11 @@ export default function ConsultantDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col">
+    <div>
       <AppNavbar role="CONSULTANT" currentPath="/consultant" />
 
-      <main className="flex-1 px-4 sm:px-6 lg:px-8 py-8">
-        <div className="max-w-[1400px] mx-auto grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+      <main>
+        <div>
           <Card className="shadow-lg h-full">
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -286,9 +300,9 @@ export default function ConsultantDashboard() {
                 ))}
               </div>
 
-              {visibleActionItems.length === 0 ? (
+              {loading ? <PageLoading /> : visibleActionItems.length === 0 ? (
                 <div className="p-4 rounded-xl border border-dashed border-[var(--border)] text-sm text-[var(--foreground)]/60">
-                  No assignments yet.
+                  {loadError ? 'Could not load assignments. Return to Overview to retry.' : 'No assignments yet.'}
                 </div>
               ) : (
                 visibleActionItems.map((item) => {
@@ -321,7 +335,7 @@ export default function ConsultantDashboard() {
                           {item.title}
                         </h5>
                         <p className="text-sm text-[var(--foreground)]/70 mt-1">
-                          {item.projectName} • {item.weekLabel}
+                          {item.projectName} â€¢ {item.weekLabel}
                         </p>
                         <div className="flex items-center gap-2 mt-2">
                           {consultantStatusMeta && (
@@ -351,11 +365,7 @@ export default function ConsultantDashboard() {
             </CardContent>
           </Card>
 
-          <GoogleCalendarPanel
-            className="shadow-lg h-full"
-            title="Google Calendar"
-            description="Upcoming dates and deadlines"
-          />
+          {loadError && assignments.length > 0 && <p role="alert">Could not refresh assignments. Showing previously loaded data.</p>}
         </div>
       </main>
     </div>

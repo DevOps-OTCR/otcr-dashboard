@@ -15,6 +15,10 @@ after(() => browser?.close());
 async function setup(t, initialPath) {
   const context = await browser.newContext();
   t.after(() => context.close());
+  await context.route('https://calendar.google.com/**', route => {
+    state.calendarLoads += 1;
+    return route.fulfill({ contentType: 'text/html', body: '<p>Calendar fixture</p>' });
+  });
   await context.route('http://navigation.test/**', route => route.fulfill({
     contentType: route.request().url().endsWith('/bundle.js') ? 'text/javascript' : 'text/html',
     body: route.request().url().endsWith('/bundle.js') ? bundle : document,
@@ -24,14 +28,18 @@ async function setup(t, initialPath) {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   t.after(() => assert.deepEqual(errors, []));
-  const state = { calls: [], gate: null, failSprints: false };
+  const state = { calls: [], gate: null, failSprints: false, slowGate: null, calendarLoads: 0, eventTitle: 'Team weekly check-in' };
   await page.route('**/api/**', async route => {
     const pathname = new URL(route.request().url()).pathname.slice(4);
     state.calls.push(pathname);
+    if (state.slowGate && pathname === '/slow-test') await state.slowGate;
     if (state.gate && pathname !== '/auth/role' && pathname !== '/notifications/my') await state.gate;
+    if (pathname === '/test-write') state.eventTitle = 'Updated team check-in';
+    const payload = responseFor(pathname, 'PM');
+    if (pathname === '/attendance/events') payload.events = payload.events.map(event => ({ ...event, title: state.eventTitle }));
     const failed = state.failSprints && pathname.endsWith('/sprints');
     await route.fulfill({ status: failed ? 503 : 200, contentType: 'application/json',
-      body: JSON.stringify(failed ? { message: 'Temporary outage' } : responseFor(pathname, 'PM')) });
+      body: JSON.stringify(failed ? { message: 'Temporary outage' } : payload) });
   });
   return { page, state,
     nav: label => page.locator('nav').getByRole('link', { name: label, exact: true }),
@@ -71,6 +79,8 @@ test('returning to a tab restores its project and content during a failed refres
   await nav('Deliverables').click();
   await page.getByText('team-1 Research', { exact: true }).waitFor();
   let release;
+  await page.clock.install({ time: new Date() });
+  await page.clock.fastForward(121000);
   state.gate = new Promise(resolve => { release = resolve; });
   await nav('Slides').click();
   await page.getByText('team-2 Draft deck', { exact: true }).waitFor();
@@ -88,7 +98,15 @@ test('writes invalidate other tabs and logout clears cached data', async t => {
   await page.getByText('Team weekly check-in', { exact: true }).waitFor();
   await nav('Slides').click();
   await page.getByText('team-1 Draft deck', { exact: true }).waitFor();
+  let releaseSlow;
+  state.slowGate = new Promise(resolve => { releaseSlow = resolve; });
+  await page.evaluate(() => { window.pendingResource = Promise.all([window.navigationTest.request(), window.navigationTest.request()]); });
+  await page.waitForFunction(() => Boolean(window.pendingResource));
   await page.evaluate(() => window.navigationTest.write().then(() => true));
+  releaseSlow();
+  await page.evaluate(() => window.pendingResource.then(() => true));
+  assert.equal(state.calls.filter(path => path === '/slow-test').length, 1);
+  assert.equal(await page.evaluate(() => window.navigationTest.readResource('/slow-test')), undefined);
   let release;
   state.gate = new Promise(resolve => { release = resolve; });
   await nav('Attendance').click();
@@ -96,9 +114,76 @@ test('writes invalidate other tabs and logout clears cached data', async t => {
   assert.equal(await page.getByText('Team weekly check-in', { exact: true }).count(), 0);
   assert.equal(await nav('Slides').isVisible(), true);
   release();
-  await page.getByText('Team weekly check-in', { exact: true }).waitFor();
+  await page.getByText('Updated team check-in', { exact: true }).waitFor();
   const key = JSON.stringify(['attendance', 'pm@example.test', null]);
   await page.waitForFunction(key => Boolean(window.navigationTest.readSnapshot(key)), key);
+  await page.evaluate(() => window.navigationTest.switchAccount('other@example.test'));
+  await page.waitForFunction(() => !window.navigationTest.readSnapshot(JSON.stringify(['attendance', 'pm@example.test', null])));
+  assert.equal(await page.evaluate(() => window.navigationTest.readResource('/attendance/events')), undefined);
   await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
   assert.equal(await page.evaluate(key => window.navigationTest.readSnapshot(key), key), undefined);
+});
+
+
+test('Workstream and W2M restore selected content while expired resources refresh', async t => {
+  const { page, state, nav, open } = await setup(t, '/workstream');
+  await open();
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  await page.locator('main select').first().selectOption('team-2');
+  await page.getByText('team-2 Research', { exact: true }).waitFor();
+  await nav('When2Meet').click();
+  await page.getByText('Monday', { exact: true }).first().waitFor();
+  await nav('Attendance').click();
+  await page.getByText('Team weekly check-in', { exact: true }).waitFor();
+  await page.clock.install({ time: new Date() });
+  await page.clock.fastForward(121000);
+  let release;
+  state.gate = new Promise(resolve => { release = resolve; });
+  await nav('Workstream').click();
+  await page.getByText('team-2 Research', { exact: true }).waitFor();
+  assert.equal(await page.locator('main select').first().inputValue(), 'team-2');
+  assert.equal(await page.getByRole('status').count(), 0);
+  await nav('When2Meet').click();
+  await page.getByText('Monday', { exact: true }).first().waitFor();
+  assert.equal(await page.locator('main select').nth(1).inputValue(), 'poll-1');
+  assert.equal(await page.getByRole('status').count(), 0);
+  release();
+});
+
+test('Overview shares sprint requests and retains the calendar across routes and failed refreshes', async t => {
+  const { page, state, nav, open } = await setup(t, '/pm');
+  await open();
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  const iframe = page.locator('iframe');
+  await iframe.waitFor();
+  await page.evaluate(() => { window.originalCalendar = document.querySelector('iframe'); window.originalNavbar = document.querySelector('nav'); });
+  await page.waitForFunction(() => Boolean(document.querySelector('iframe')?.contentWindow));
+  const calendarUrl = await iframe.getAttribute('src');
+  assert.ok(calendarUrl.includes('team-1%40example.test'));
+  await nav('Workstream').click();
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  assert.equal(await iframe.isVisible(), false);
+  assert.equal(state.calls.filter(path => path === '/projects/team-1/sprints').length, 1);
+  await page.clock.install({ time: new Date() });
+  await page.clock.fastForward(121000);
+  let release;
+  state.gate = new Promise(resolve => { release = resolve; });
+  await nav('Overview').click();
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('status').count(), 0);
+  assert.equal(await page.evaluate(() => document.querySelector('iframe') === window.originalCalendar && document.querySelector('nav') === window.originalNavbar), true);
+  assert.equal(await iframe.getAttribute('src'), calendarUrl);
+  state.failSprints = true;
+  release();
+  await page.getByRole('alert').waitFor();
+  assert.equal(await page.getByText('team-1 Research', { exact: true }).isVisible(), true);
+  state.gate = null;
+  state.failSprints = false;
+  for (const path of ['/lc', '/partner', '/consultant']) {
+    await page.evaluate(path => window.navigationTest.navigate(path), path);
+    await page.getByText('team-1 Draft deck', { exact: true }).waitFor();
+    assert.equal(await iframe.isVisible(), true);
+    assert.equal(await page.evaluate(() => document.querySelector('iframe') === window.originalCalendar), true);
+  }
+  assert.equal(state.calendarLoads, 1);
 });
