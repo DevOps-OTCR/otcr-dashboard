@@ -37,6 +37,8 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Generate Prisma client
         run: npm run prisma:generate
+      - name: Lint frontend
+        run: npm run lint
       - name: Check TypeScript
         run: npx tsc --noEmit
       - name: Run role tests
@@ -76,6 +78,8 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Generate Prisma client
         run: npm run prisma:generate
+      - name: Lint backend
+        run: npm run lint
       - name: Check TypeScript
         run: npx tsc --noEmit
       - name: Run unit tests
