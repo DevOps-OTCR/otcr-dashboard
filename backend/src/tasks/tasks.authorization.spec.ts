@@ -124,6 +124,41 @@ describe('task object authorization', () => {
     f.assertNoWrites();
   });
 
+  test.each([
+    { assigneeType: 'ALL', actor: pm },
+    { assigneeType: 'ALL', actor: lc },
+    { assigneeType: 'ALL_PMS', actor: pm },
+    { assigneeType: 'ALL_PMS', actor: lc },
+  ])('$actor.role cannot manage project-linked $assigneeType tasks', async ({ assigneeType, actor }) => {
+    const f = fixtures();
+    f.task.createdById = admin.id;
+    f.task.assigneeType = assigneeType;
+    await expect(f.service.findOne(f.task.id, actor)).resolves.toHaveProperty('id', f.task.id);
+    await expect(f.service.update(f.task.id, { taskName: 'Unauthorized change' }, actor)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(f.service.remove(f.task.id, actor)).rejects.toBeInstanceOf(ForbiddenException);
+    f.assertNoWrites();
+  });
+
+  test.each(['ALL', 'ALL_PMS'])('admins and creators can manage project-linked %s tasks', async assigneeType => {
+    for (const actor of [admin, creator]) {
+      const f = fixtures();
+      f.task.assigneeType = assigneeType;
+      await expect(f.service.update(f.task.id, { taskName: 'Authorized change' }, actor)).resolves.toHaveProperty('taskName', 'Authorized change');
+      await expect(f.service.remove(f.task.id, actor)).resolves.toHaveProperty('id', f.task.id);
+      expect(f.calendar.syncTask).toHaveBeenCalledTimes(1);
+      expect(f.calendar.removeTaskEvent).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  test.each([pm, lc])('team managers can still manage ALL_TEAM tasks for $id', async actor => {
+    const f = fixtures();
+    f.task.assigneeType = 'ALL_TEAM';
+    await expect(f.service.update(f.task.id, { taskName: 'Authorized team change' }, actor)).resolves.toHaveProperty('taskName', 'Authorized team change');
+    await expect(f.service.remove(f.task.id, actor)).resolves.toHaveProperty('id', f.task.id);
+    expect(f.calendar.syncTask).toHaveBeenCalledTimes(1);
+    expect(f.calendar.removeTaskEvent).toHaveBeenCalledTimes(1);
+  });
+
   test('task listing still excludes tasks assigned to another team', async () => {
     const f = fixtures();
     f.task.assigneeType = 'ALL_TEAM';

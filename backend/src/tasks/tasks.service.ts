@@ -52,7 +52,8 @@ export class TasksService {
     // Broadcast recipients may read a task, but cannot edit it merely because
     // it appears in their action center. PMs/LCs manage only their own teams.
     if (!write && await this.taskAppliesToUser(task, user)) return;
-    const canManageTeam = user.role === 'PM' || user.role === 'LC';
+    const organizationWide = task.assigneeType === 'ALL' || task.assigneeType === 'ALL_PMS';
+    const canManageTeam = !organizationWide && (user.role === 'PM' || user.role === 'LC');
     if (task.projectId && (!write || canManageTeam) && await this.hasProjectAccess(task.projectId, user)) return;
     throw new ForbiddenException('You do not have access to this task');
   }
