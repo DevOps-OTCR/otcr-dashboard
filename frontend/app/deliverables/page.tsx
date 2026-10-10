@@ -835,7 +835,7 @@ export default function DeliverablesPage() {
                                   Assign yourself first to submit this deliverable.
                                 </p>
                               )}
-                              {deliverable.assigneeSubmissions ? (
+                              {deliverable.assigneeSubmissions?.length ? (
                                 <div className="mt-3 space-y-2">
                                   {deliverable.assigneeSubmissions.map(({ assignee, submission }) => (
                                     <div
@@ -861,14 +861,17 @@ export default function DeliverablesPage() {
                                         </>
                                       ) : (
                                         <p className="text-xs font-medium text-[var(--foreground)]/70">
-                                          {formatPerson(assignee)} — Not submitted
+                                          {formatPerson(assignee)} - Not submitted
                                         </p>
                                       )}
                                     </div>
                                   ))}
                                 </div>
-                              ) : (
-                                deliverable.latestSubmission && (
+                              ) : null}
+                              {deliverable.latestSubmission &&
+                                !deliverable.assigneeSubmissions?.some(
+                                  ({ submission }) => submission?.id === deliverable.latestSubmission?.id,
+                                ) && (
                                   <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--secondary)]/60 p-3">
                                     <p className="text-xs font-medium text-[var(--foreground)]/70">
                                       Latest submission by {formatSubmitter(deliverable.latestSubmission.submitter)}
@@ -885,8 +888,7 @@ export default function DeliverablesPage() {
                                       {new Date(deliverable.latestSubmission.submittedAt).toLocaleString()}
                                     </p>
                                   </div>
-                                )
-                              )}
+                                )}
                             </div>
 
                             <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-3">

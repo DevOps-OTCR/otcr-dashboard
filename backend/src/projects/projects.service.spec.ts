@@ -56,12 +56,11 @@ describe('ProjectsService.listSprints assignee submissions (#30)', () => {
 
   it('returns each assignee with their own latest submission and marks non-submitters', async () => {
     const submissions = [
-      // Newest overall (user-b) — previously this row hid everyone else.
+      // Newest overall (user-b) - previously this row hid everyone else.
       { id: 'sub-b', deliverableId: 'deliverable-1', fileUrl: 'https://x/b-final', submittedAt: '2026-10-10T12:00:00.000Z', status: 'PENDING_REVIEW', submitterId: 'user-b', submitterEmail: 'b@illinois.edu', submitterFirstName: 'Bob', submitterLastName: 'Beta' },
-      // user-a submitted twice — only the newest must surface.
+      // SQL returns only user-a's newest revision.
       { id: 'sub-a-new', deliverableId: 'deliverable-1', fileUrl: 'https://x/a-v2', submittedAt: '2026-10-09T12:00:00.000Z', status: 'PENDING_REVIEW', submitterId: 'user-a', submitterEmail: 'a@illinois.edu', submitterFirstName: 'Ann', submitterLastName: 'Alpha' },
-      { id: 'sub-a-old', deliverableId: 'deliverable-1', fileUrl: 'https://x/a-v1', submittedAt: '2026-10-08T12:00:00.000Z', status: 'PENDING_REVIEW', submitterId: 'user-a', submitterEmail: 'a@illinois.edu', submitterFirstName: 'Ann', submitterLastName: 'Alpha' },
-      // user-c never submitted — no row.
+      // user-c never submitted - no row.
     ];
     const service = buildService(queryRawImplFor(submissions));
 

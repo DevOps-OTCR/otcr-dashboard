@@ -1092,17 +1092,10 @@ export class ProjectsService {
         if (!current || new Date(submission.submittedAt) > new Date(current.submittedAt)) {
           latestSubmissionByDeliverable.set(submission.deliverableId, shaped);
         }
-        // Newest-per-user wins even if duplicate rows arrive (the DISTINCT ON
-        // query normally returns one row per user; this keeps the map correct
-        // regardless of row order).
-        const userKey = `${submission.deliverableId}:${submission.submitterId}`;
-        const existingForUser = submissionByDeliverableAndUser.get(userKey);
-        if (
-          !existingForUser ||
-          new Date(submission.submittedAt) > new Date(existingForUser.submittedAt)
-        ) {
-          submissionByDeliverableAndUser.set(userKey, shaped);
-        }
+        submissionByDeliverableAndUser.set(
+          `${submission.deliverableId}:${submission.submitterId}`,
+          shaped,
+        );
       });
 
       deliverables.forEach((deliverable) => {
