@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   CalendarDays,
   Clock3,
@@ -13,6 +13,9 @@ import {
 import { AppNavbar } from '@/components/AppNavbar';
 import { useAuth } from '@/components/AuthContext';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
+import { PageLoading } from '@/components/PageLoading';
+import { RoleDashboardRedirect } from '@/components/RoleDashboardRedirect';
+import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
@@ -26,7 +29,7 @@ import {
   type AttendanceEvent,
   type AttendanceLocationType,
 } from '@/lib/api';
-import { getEffectiveRole, type AppRole } from '@/lib/permissions';
+import { getEffectiveRole, getUserRole, type AppRole } from '@/lib/permissions';
 
 type ProjectOption = {
   id: string;
@@ -222,10 +225,17 @@ function getAvailabilityHeatColor(availableCount: number, teamSize: number, isSe
 
 export default function AttendancePage() {
   const session = useAuth();
-  const [role, setRole] = useState<AppRole>('CONSULTANT');
-  const [events, setEvents] = useState<AttendanceEvent[]>([]);
-  const [projects, setProjects] = useState<ProjectOption[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { isLoggedIn, getToken } = session;
+  const email = session.user?.email;
+  const { snapshot, saveSnapshot } = useNavigationSnapshot<{
+    role: AppRole; events: AttendanceEvent[]; projects: ProjectOption[];
+  }>('attendance', email);
+  const [roleLookupFailed, setRoleLookupFailed] = useState(false);
+  const [role, setRole] = useState<AppRole>(() => snapshot?.role ?? getUserRole(email));
+  const [events, setEvents] = useState<AttendanceEvent[]>(snapshot?.events ?? []);
+  const [projects, setProjects] = useState<ProjectOption[]>(snapshot?.projects ?? []);
+  const [loading, setLoading] = useState(!snapshot);
+  const [refreshing, setRefreshing] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -254,16 +264,22 @@ export default function AttendancePage() {
   const canDeleteAttendanceEvents =
     role === 'ADMIN' || role === 'PM' || role === 'PARTNER' || role === 'EXECUTIVE';
 
-  const syncData = async () => {
-    if (!session.isLoggedIn || !session.user?.email) return;
-    setLoading(true);
+  const syncData = useCallback(async () => {
+    if (!isLoggedIn || !email || roleLookupFailed) return;
+    setRefreshing(true);
+    setError(null);
 
     try {
-      const token = await session.getToken();
-      const email = session.user.email;
+      const token = await getToken();
       setAuthToken(token || email || null);
 
-      const resolvedRole = await getEffectiveRole(token, email);
+      let resolvedRole: AppRole;
+      try {
+        resolvedRole = await getEffectiveRole(token, email);
+      } catch {
+        setRoleLookupFailed(true);
+        return;
+      }
       setRole(resolvedRole);
 
       const [eventsRes, projectsRes] = await Promise.all([
@@ -302,12 +318,17 @@ export default function AttendancePage() {
       );
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, [isLoggedIn, email, getToken, roleLookupFailed]);
 
   useEffect(() => {
     void syncData();
-  }, [session.isLoggedIn, session.user?.email]);
+  }, [syncData]);
+
+  useEffect(() => {
+    if (!loading && !refreshing && !error && !roleLookupFailed) saveSnapshot({ role, events, projects });
+  }, [loading, refreshing, error, roleLookupFailed, role, events, projects, saveSnapshot]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -467,9 +488,10 @@ export default function AttendancePage() {
     [events],
   );
 
-  if (session.loading || !session.isLoggedIn || loading) {
+  if (session.loading || !session.isLoggedIn) {
     return <FullScreenLoader />;
   }
+  if (roleLookupFailed) return <RoleDashboardRedirect onRetry={() => setRoleLookupFailed(false)} />;
 
   const handleFormChange = (field: keyof CreateFormState, value: string) => {
     setForm((current) => {
@@ -940,6 +962,7 @@ export default function AttendancePage() {
       <AppNavbar role={role} currentPath="/attendance" />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-6">
+        {loading ? <PageLoading /> : (<>
         <section className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardHeader>
@@ -1018,6 +1041,7 @@ export default function AttendancePage() {
             </div>
           </section>
         )}
+        </>)}
       </main>
 
       <Modal

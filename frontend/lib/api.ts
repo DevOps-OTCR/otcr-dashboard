@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { clearNavigationSnapshots } from './navigation-cache';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
@@ -7,6 +8,14 @@ export const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+});
+
+// A successful write can change data shown on another tab.
+api.interceptors.response.use((response) => {
+  if (['post', 'put', 'patch', 'delete'].includes(response.config.method?.toLowerCase() ?? '')) {
+    clearNavigationSnapshots();
+  }
+  return response;
 });
 
 const PROJECTS_CACHE_PREFIX = 'otcr_projects_cache:';
