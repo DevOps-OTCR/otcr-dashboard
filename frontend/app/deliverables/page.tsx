@@ -10,8 +10,10 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/components/AuthContext';
 import { RoleDashboardRedirect } from '@/components/RoleDashboardRedirect';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
+import { PageLoading } from '@/components/PageLoading';
+import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
 import { deliverablesAPI, projectsAPI, setAuthToken } from '@/lib/api';
-import { getEffectiveRole, type AppRole } from '@/lib/permissions';
+import { getEffectiveRole, getUserRole, type AppRole } from '@/lib/permissions';
 
 type ProjectOption = {
   id: string;
@@ -140,15 +142,22 @@ function toDateTimeLocalValue(value: string) {
 
 export default function DeliverablesPage() {
   const session = useAuth();
+  const { isLoggedIn, getToken } = session;
+  const email = session.user?.email;
+  const { snapshot, saveSnapshot } = useNavigationSnapshot<{
+    role: AppRole; projects: ProjectOption[]; selectedProjectId: string;
+    teamMembers: TeamMemberOption[]; sprints: SprintItem[]; selectedSprintId: string;
+  }>('deliverables', email);
   const [roleLookupFailed, setRoleLookupFailed] = useState(false);
   const router = useRouter();
-  const [role, setRole] = useState<AppRole>('CONSULTANT');
-  const [projects, setProjects] = useState<ProjectOption[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState('');
-  const [teamMembers, setTeamMembers] = useState<TeamMemberOption[]>([]);
-  const [sprints, setSprints] = useState<SprintItem[]>([]);
-  const [selectedSprintId, setSelectedSprintId] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [role, setRole] = useState<AppRole>(() => snapshot?.role ?? getUserRole(email));
+  const [projects, setProjects] = useState<ProjectOption[]>(snapshot?.projects ?? []);
+  const [selectedProjectId, setSelectedProjectId] = useState(snapshot?.selectedProjectId ?? '');
+  const [teamMembers, setTeamMembers] = useState<TeamMemberOption[]>(snapshot?.teamMembers ?? []);
+  const [sprints, setSprints] = useState<SprintItem[]>(snapshot?.sprints ?? []);
+  const [selectedSprintId, setSelectedSprintId] = useState(snapshot?.selectedSprintId ?? '');
+  const [loading, setLoading] = useState(!snapshot);
+  const [refreshing, setRefreshing] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [busyDeliverableId, setBusyDeliverableId] = useState<string | null>(null);
@@ -222,41 +231,58 @@ export default function DeliverablesPage() {
   }, [session.loading, session.isLoggedIn, router]);
 
   useEffect(() => {
+    let cancelled = false;
     const init = async () => {
-      if (!session.isLoggedIn || !session.user?.email || roleLookupFailed) return;
-      setLoading(true);
+      if (!isLoggedIn || !email || roleLookupFailed) return;
+      setRefreshing(true);
 
       try {
-        const token = await session.getToken();
-        if (token) setAuthToken(token);
+        const token = await getToken();
+        if (cancelled) return;
+        setAuthToken(token || email);
 
         let nextRole: AppRole;
         try {
-          nextRole = await getEffectiveRole(token, session.user.email);
+          nextRole = await getEffectiveRole(token, email);
         } catch {
-          setRoleLookupFailed(true);
+          if (!cancelled) setRoleLookupFailed(true);
           return;
         }
+        if (cancelled) return;
         setRole(nextRole);
 
         const projectsRes = await projectsAPI.getAll({ limit: 100 });
+        if (cancelled) return;
         const nextProjects = ((projectsRes.data?.projects ?? []) as Array<{ id: string; name: string }>).map(
           (item) => ({ id: item.id, name: item.name }),
         );
         setProjects(nextProjects);
 
-        const firstProjectId = nextProjects[0]?.id ?? '';
+        const firstProjectId = nextProjects.some(project => project.id === snapshot?.selectedProjectId)
+          ? snapshot!.selectedProjectId : nextProjects[0]?.id ?? '';
         setSelectedProjectId(firstProjectId);
         if (firstProjectId) {
           await Promise.all([loadSprints(firstProjectId), loadTeamMembers(firstProjectId)]);
         }
+      } catch (error: any) {
+        if (!cancelled) setLoadError(error?.message ?? 'Failed to load deliverables.');
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     };
 
     void init();
-  }, [session, session.isLoggedIn, session.user?.email, loadSprints, loadTeamMembers, roleLookupFailed]);
+    return () => { cancelled = true; };
+  }, [isLoggedIn, email, getToken, loadSprints, loadTeamMembers, roleLookupFailed, snapshot]);
+
+  useEffect(() => {
+    if (!loading && !refreshing && !loadError && !roleLookupFailed) {
+      saveSnapshot({ role, projects, selectedProjectId, teamMembers, sprints, selectedSprintId });
+    }
+  }, [loading, refreshing, loadError, roleLookupFailed, role, projects, selectedProjectId, teamMembers, sprints, selectedSprintId, saveSnapshot]);
 
   useEffect(() => {
     if (!feedback) return;
@@ -587,7 +613,7 @@ export default function DeliverablesPage() {
     }
   };
 
-  if (session.loading || !session.isLoggedIn || loading) {
+  if (session.loading || !session.isLoggedIn) {
     return <FullScreenLoader />;
   }
 
@@ -598,6 +624,7 @@ export default function DeliverablesPage() {
       <AppNavbar role={role} currentPath="/deliverables" />
 
       <main className="flex-1 overflow-y-auto">
+        {loading ? <PageLoading /> : (
         <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
           <Card className="shadow-lg">
             <CardHeader>
@@ -1079,6 +1106,7 @@ export default function DeliverablesPage() {
             </CardContent>
           </Card>
         </div>
+        )}
       </main>
 
       {feedback && (

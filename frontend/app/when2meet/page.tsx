@@ -1,9 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Be_Vietnam_Pro, Mulish } from 'next/font/google';
 import { AppNavbar } from '@/components/AppNavbar';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
+import { PageLoading } from '@/components/PageLoading';
+import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
 import { useAuth } from '@/components/AuthContext';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -52,13 +54,26 @@ type ProjectOption = { id: string; name: string };
 
 export default function When2MeetPage() {
   const session = useAuth();
-  const [role, setRole] = useState<AppRole>('CONSULTANT');
-  const [loading, setLoading] = useState(true);
-  const [projects, setProjects] = useState<ProjectOption[]>([]);
-  const [projectId, setProjectId] = useState('');
-  const [polls, setPolls] = useState<When2MeetPollSummary[]>([]);
-  const [selectedPollId, setSelectedPollId] = useState<string | null>(null);
-  const [pollDetail, setPollDetail] = useState<When2MeetPollDetail | null>(null);
+  const { isLoggedIn, getToken } = session;
+  const email = session.user?.email;
+  const { snapshot, saveSnapshot } = useNavigationSnapshot<{
+    role: AppRole; projects: ProjectOption[]; projectId: string; polls: When2MeetPollSummary[];
+    selectedPollId: string | null; pollDetail: When2MeetPollDetail | null;
+  }>('when2meet', email);
+  const [role, setRole] = useState<AppRole>(snapshot?.role ?? 'CONSULTANT');
+  const [loading, setLoading] = useState(!snapshot);
+  const [initialized, setInitialized] = useState(false);
+  const [pollsReady, setPollsReady] = useState(Boolean(snapshot));
+  const [pollsLoading, setPollsLoading] = useState(false);
+  const [projects, setProjects] = useState<ProjectOption[]>(snapshot?.projects ?? []);
+  const [projectId, setProjectId] = useState(snapshot?.projectId ?? '');
+  const [polls, setPolls] = useState<When2MeetPollSummary[]>(snapshot?.polls ?? []);
+  const [selectedPollId, setSelectedPollId] = useState<string | null>(snapshot?.selectedPollId ?? null);
+  const [pollDetail, setPollDetail] = useState<When2MeetPollDetail | null>(snapshot?.pollDetail ?? null);
+  const projectRef = useRef(projectId);
+  const pollRef = useRef(selectedPollId);
+  projectRef.current = projectId;
+  pollRef.current = selectedPollId;
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -79,8 +94,10 @@ export default function When2MeetPage() {
         setPolls([]);
         return;
       }
+      setPollsLoading(true);
       try {
         const res = await when2meetAPI.listPolls(projectId);
+        if (projectRef.current !== projectId) return;
         const list = Array.isArray(res.data?.polls) ? (res.data.polls as When2MeetPollSummary[]) : [];
         setPolls(list);
         const preferred = opts?.selectPollId;
@@ -94,8 +111,9 @@ export default function When2MeetPage() {
           return list[0]?.id ?? null;
         });
       } catch (err) {
-        setPolls([]);
-        setError(parseApiError(err, 'Could not load When2Meet polls.'));
+        if (projectRef.current === projectId) setError(parseApiError(err, 'Could not load When2Meet polls.'));
+      } finally {
+        if (projectRef.current === projectId) { setPollsLoading(false); setPollsReady(true); }
       }
     },
     [projectId],
@@ -114,13 +132,13 @@ export default function When2MeetPage() {
     setDetailLoading(true);
     try {
       const res = await when2meetAPI.getPoll(pollId);
+      if (pollRef.current !== pollId) return;
       setPollDetail(res.data as When2MeetPollDetail);
       setError(null);
     } catch (err) {
-      setPollDetail(null);
-      setError(parseApiError(err, 'Could not load this poll.'));
+      if (pollRef.current === pollId) setError(parseApiError(err, 'Could not load this poll.'));
     } finally {
-      setDetailLoading(false);
+      if (pollRef.current === pollId) setDetailLoading(false);
     }
   }, []);
 
@@ -130,12 +148,11 @@ export default function When2MeetPage() {
     let cancelled = false;
 
     const bootstrap = async () => {
-      setLoading(true);
       try {
-        const token = await session.getToken();
-        const email = session.user!.email!;
+        const token = await getToken();
+        if (cancelled) return;
         setAuthToken(token || email || null);
-        const resolvedRole = await getEffectiveRole(token, email);
+        const resolvedRole = await getEffectiveRole(token, email!);
         if (cancelled) return;
         setRole(resolvedRole);
 
@@ -152,8 +169,10 @@ export default function When2MeetPage() {
         if (initialProject && !options.some((p) => p.id === initialProject)) {
           initialProject = null;
         }
-        const pid = initialProject || options[0]?.id || '';
+        const pid = options.some(project => project.id === projectRef.current)
+          ? projectRef.current : initialProject || options[0]?.id || '';
         setProjectId(pid);
+        setInitialized(true);
       } catch (err) {
         if (!cancelled) setError(parseApiError(err, 'Failed to load teams.'));
       } finally {
@@ -165,20 +184,21 @@ export default function When2MeetPage() {
     return () => {
       cancelled = true;
     };
-  }, [session]);
+  }, [isLoggedIn, email, getToken]);
 
   useEffect(() => {
-    if (!projectId || !session.isLoggedIn) return;
+    if (!projectId || !isLoggedIn || !initialized) return;
     void loadPolls();
-  }, [projectId, session.isLoggedIn, loadPolls]);
+  }, [projectId, isLoggedIn, initialized, loadPolls]);
 
   useEffect(() => {
+    if (!initialized) return;
     if (!selectedPollId) {
       setPollDetail(null);
       return;
     }
     void loadPollDetail(selectedPollId);
-  }, [selectedPollId, loadPollDetail]);
+  }, [selectedPollId, initialized, loadPollDetail]);
 
   useEffect(() => {
     if (!projectId || typeof window === 'undefined') return;
@@ -193,7 +213,16 @@ export default function When2MeetPage() {
     return () => window.clearInterval(id);
   }, [selectedPollId, session.isLoggedIn, loadPollDetail]);
 
+  useEffect(() => {
+    if (!loading && pollsReady && !pollsLoading && !detailLoading && !error
+      && (!selectedPollId || pollDetail?.poll.id === selectedPollId)) {
+      saveSnapshot({ role, projects, projectId, polls, selectedPollId, pollDetail });
+    }
+  }, [loading, pollsReady, pollsLoading, detailLoading, error, role, projects, projectId, polls, selectedPollId, pollDetail, saveSnapshot]);
+
   const handleProjectChange = (nextId: string) => {
+    setPollsReady(false);
+    setPolls([]);
     setProjectId(nextId);
     setSelectedPollId(null);
     setPollDetail(null);
@@ -284,7 +313,7 @@ export default function When2MeetPage() {
     }
   };
 
-  if (!session.isLoggedIn || session.loading || loading) {
+  if (!session.isLoggedIn || session.loading) {
     return <FullScreenLoader />;
   }
 
@@ -293,6 +322,7 @@ export default function When2MeetPage() {
       <AppNavbar role={role} currentPath="/when2meet" />
 
       <main className="max-w-[2000px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        {(loading || (pollsLoading && !pollsReady)) && <PageLoading />}
         <Card>
           <CardHeader>
             <CardTitle>When2Meet</CardTitle>
@@ -325,7 +355,7 @@ export default function When2MeetPage() {
               <select
                 className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
                 value={selectedPollId ?? ''}
-                onChange={(e) => setSelectedPollId(e.target.value || null)}
+                onChange={(e) => { setPollDetail(null); setSelectedPollId(e.target.value || null); }}
                 disabled={!polls.length}
               >
                 {polls.length === 0 ? (
@@ -370,13 +400,13 @@ export default function When2MeetPage() {
           </p>
         ) : null}
 
-        {pollDetail && selectedPollId ? (
+        {pollDetail && pollDetail.poll.id === selectedPollId ? (
           <When2MeetBoard
             detail={pollDetail}
             headlineFontClassName={beVietnam.className}
             onCommitAvailability={commitAvailability}
           />
-        ) : !detailLoading && projectId && polls.length === 0 && !error ? (
+        ) : !loading && pollsReady && !pollsLoading && !detailLoading && projectId && polls.length === 0 && !error ? (
           <p className="text-center text-[var(--foreground)]/70 py-12">
             No polls for this team yet.
             {canCreatePoll ? ' Create one to get started.' : ''}

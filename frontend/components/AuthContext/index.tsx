@@ -12,11 +12,16 @@ import {
   useEffect,
   useState,
   useCallback,
+  useMemo,
+  useRef,
+  Fragment,
 } from "react";
 import FullScreenLoader from "./LoadingScreen";
 import { ThemeProvider } from "../ThemeProvider";
 import { clearRoleCache } from "@/lib/permissions";
 import { clearProjectsCache } from "@/lib/api";
+import { setResourceCacheScope } from '@/lib/resource-cache';
+import { clearNavigationSnapshots } from "@/lib/navigation-cache";
 
 type AuthUser = {
   email?: string;
@@ -43,6 +48,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const previousEmail = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (previousEmail.current !== user?.email) {
+      clearProjectsCache();
+      setResourceCacheScope(user?.email);
+      clearNavigationSnapshots();
+      previousEmail.current = user?.email;
+    }
+  }, [user?.email]);
 
   useEffect(() => {
     if (inProgress !== InteractionStatus.None) return;
@@ -65,10 +80,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             .filter(Boolean)
             .join(' ')
             .trim();
-          setUser({
+          const nextUser = {
             email: account.username,
             name: claimName || claims?.name || account.name || undefined,
-          });
+          };
+          setUser(current => current?.email === nextUser.email && current?.name === nextUser.name ? current : nextUser);
           setIsLoggedIn(true);
         } else {
           setIsLoggedIn(false);
@@ -94,6 +110,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const logout = useCallback(async () => {
     clearRoleCache(user?.email ?? null);
     clearProjectsCache();
+    clearNavigationSnapshots();
 
     // 1. Clear your local React state
     setUser(null);
@@ -164,25 +181,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [instance]);
 
-  const isLoading = inProgress !== InteractionStatus.None || !isAuthReady;
+  // Later token operations must not unmount the current page.
+  const isLoading = !isAuthReady;
+  const contextValue = useMemo(() => ({
+    isLoggedIn, user, loading: isLoading, login, logout, getToken,
+  }), [isLoggedIn, user, isLoading, login, logout, getToken]);
 
   return (
     <AuthContext.Provider
-      value={{
-        isLoggedIn,
-        user,
-        loading: isLoading, 
-        login,
-        logout,
-        getToken,
-      }}
+      value={contextValue}
     >
       {isLoading ? (
         <ThemeProvider>
           <FullScreenLoader />
         </ThemeProvider>
       ) : (
-        children
+        <Fragment key={user?.email ?? 'signed-out'}>{children}</Fragment>
       )}
     </AuthContext.Provider>
   );
