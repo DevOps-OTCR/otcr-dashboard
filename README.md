@@ -60,9 +60,11 @@ Then run:
 
 ```bash
 npx prisma generate
-npx prisma db push
+npx prisma migrate deploy
 npm run start:dev
 ```
+
+`prisma migrate deploy` applies the committed migrations in `backend/prisma/migrations` to your local database. When you change `schema.prisma`, create a new reviewed migration with `npm run prisma:migrate` (`prisma migrate dev`) rather than running `prisma db push`.
 
 ### Frontend setup
 
@@ -99,11 +101,12 @@ Deploy frontend and backend as separate services.
 
 - Root directory: `backend`
 - Build command: `npm install && npx prisma generate && npm run build`
-- Start command: `npm run start:prod` (this now runs `prisma db push` before starting)
+- Start command: `npm run start:prod` (this runs `prisma migrate deploy` before starting)
 
 Backend production env vars:
 
 - `DATABASE_URL`
+- `DIRECT_URL` — direct (non-pooled) Postgres URL used by `prisma migrate deploy`; set this if `DATABASE_URL` points at a pooled endpoint
 - `REDIS_URL`
 - `FRONTEND_URL`
 - `SLACK_WEBHOOK_URL` if used
