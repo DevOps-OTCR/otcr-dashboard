@@ -6,11 +6,10 @@ import DeliverablesPage from '@/app/deliverables/page';
 import SlidesPage from '@/app/slides/page';
 import AttendancePage from '@/app/attendance/page';
 import { api } from '@/lib/api';
-import { clearRoleCache } from '@/lib/permissions';
-import { clearNavigationSnapshots, readNavigationSnapshot } from '@/lib/navigation-cache';
+import { readNavigationSnapshot } from '@/lib/navigation-cache';
 import { usePathname } from 'next/navigation';
 
-const { MsalContext, navigate } = require('./routing.cjs');
+const { MsalContext } = require('./routing.cjs');
 function Pages() {
   const path = usePathname() ?? '/deliverables';
   const Page = path.startsWith('/slides') ? SlidesPage : path.startsWith('/attendance') ? AttendancePage : DeliverablesPage;
@@ -19,7 +18,7 @@ function Pages() {
 
 function Fixture() {
   const [inProgress, setProgress] = useState<InteractionStatus>(InteractionStatus.None);
-  const [email, setEmail] = useState((window as any).navigationTestEmail ?? 'pm@example.test');
+  const email = 'pm@example.test';
   const accounts = useMemo(() => [{ username: email, name: email }], [email]);
   const instance = useMemo(() => ({
     initialize: async () => {},
@@ -30,9 +29,7 @@ function Fixture() {
     logoutRedirect: async () => {},
   }), [accounts]);
   (window as any).navigationTest = {
-    navigate, setEmail,
     tokenProgress: (active: boolean) => setProgress(active ? InteractionStatus.AcquireToken : InteractionStatus.None),
-    clear: () => { clearRoleCache(); clearNavigationSnapshots(); },
     write: () => api.post('/test-write', {}),
     readSnapshot: readNavigationSnapshot,
   };

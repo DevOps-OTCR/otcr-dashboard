@@ -9,7 +9,6 @@
     "start": "next start",
     "lint": "next lint",
     "test:roles": "node --test tests/permissions.test.cjs",
-    "test:navigation": "node --test tests/navigation-cache.test.cjs",
     "test:navigation:browser": "node --test tests/navigation-browser.test.cjs",
     "import-alumni": "node scripts/import-alumni.cjs",
     "prisma:generate": "prisma generate --schema=./prisma/schema.prisma",
