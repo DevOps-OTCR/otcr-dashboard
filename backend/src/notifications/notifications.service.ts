@@ -29,6 +29,7 @@ export interface NotificationJob {
     requestedDate?: Date;
     feedback?: string;
     newDeadline?: Date;
+    submissionId?: string;
   };
 }
 

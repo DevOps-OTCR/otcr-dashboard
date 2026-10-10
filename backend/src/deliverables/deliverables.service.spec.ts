@@ -24,9 +24,14 @@ function createPrismaMock() {
     },
     submission: {
       findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
       create: jest.fn().mockImplementation(({ data }) =>
         Promise.resolve({ id: 'submission-1', ...data }),
       ),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    notification: {
+      findFirst: jest.fn().mockResolvedValue(null),
     },
     user: {
       findUnique: jest.fn().mockResolvedValue({
@@ -59,27 +64,47 @@ describe('DeliverablesService reviewer notifications', () => {
   });
 
   describe('submitLink', () => {
-    it('saves the submission, marks the deliverable submitted, and notifies reviewers', async () => {
+    it('saves the submission, notifies reviewers, and marks notifications sent', async () => {
       const submission = await service.submitLink(deliverableId, submitterId, link);
 
-      expect(submission).toMatchObject({ id: 'submission-1', fileUrl: link, version: 1 });
+      expect(submission).toMatchObject({
+        id: 'submission-1',
+        fileUrl: link,
+        version: 1,
+        reviewerNotificationStatus: 'SENT',
+      });
+      expect(prisma.submission.create.mock.calls[0][0].data.reviewerNotificationStatus).toBe(
+        'PENDING',
+      );
       expect(prisma.deliverable.update).toHaveBeenCalledWith({
         where: { id: deliverableId },
         data: { status: 'SUBMITTED' },
       });
       expect(notifiedUserIds()).toEqual(['pm-1', 'lc-1']);
+      expect(notificationsService.queueNotification.mock.calls[0][0].data.submissionId).toBe(
+        'submission-1',
+      );
+      expect(prisma.submission.update).toHaveBeenCalledWith({
+        where: { id: 'submission-1' },
+        data: { reviewerNotificationStatus: 'SENT' },
+      });
     });
 
-    it('returns the saved submission when notification persistence fails', async () => {
+    it('returns the saved submission and leaves it pending when notification persistence fails', async () => {
       notificationsService.queueNotification.mockRejectedValue(
         new Error('notification insert failed'),
       );
 
       const submission = await service.submitLink(deliverableId, submitterId, link);
 
-      expect(submission).toMatchObject({ id: 'submission-1', fileUrl: link });
+      expect(submission).toMatchObject({
+        id: 'submission-1',
+        fileUrl: link,
+        reviewerNotificationStatus: 'PENDING',
+      });
       expect(prisma.submission.create).toHaveBeenCalledTimes(1);
       expect(prisma.deliverable.update).toHaveBeenCalledTimes(1);
+      expect(prisma.submission.update).not.toHaveBeenCalled();
       expect(Logger.prototype.error).toHaveBeenCalled();
     });
 
@@ -91,6 +116,7 @@ describe('DeliverablesService reviewer notifications', () => {
       await service.submitLink(deliverableId, submitterId, link);
 
       expect(notifiedUserIds()).toEqual(['pm-1', 'lc-1']);
+      expect(prisma.submission.update).not.toHaveBeenCalled();
     });
 
     it('returns the saved submission when the reviewer lookup fails', async () => {
@@ -98,8 +124,23 @@ describe('DeliverablesService reviewer notifications', () => {
 
       const submission = await service.submitLink(deliverableId, submitterId, link);
 
-      expect(submission).toMatchObject({ id: 'submission-1' });
+      expect(submission).toMatchObject({
+        id: 'submission-1',
+        reviewerNotificationStatus: 'PENDING',
+      });
       expect(notificationsService.queueNotification).not.toHaveBeenCalled();
+      expect(prisma.submission.update).not.toHaveBeenCalled();
+    });
+
+    it('returns the saved submission when marking notifications sent fails', async () => {
+      prisma.submission.update.mockRejectedValue(new Error('submission update failed'));
+
+      const submission = await service.submitLink(deliverableId, submitterId, link);
+
+      expect(submission).toMatchObject({
+        id: 'submission-1',
+        reviewerNotificationStatus: 'PENDING',
+      });
     });
 
     it('rejects and skips notifications when the submission cannot be saved', async () => {
@@ -119,6 +160,87 @@ describe('DeliverablesService reviewer notifications', () => {
         'status update failed',
       );
       expect(notificationsService.queueNotification).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('retryPendingReviewerNotifications', () => {
+    const pendingSubmission = (attempts = 0) => ({
+      id: 'submission-1',
+      deliverableId,
+      userId: submitterId,
+      isLate: false,
+      submittedAt: new Date(Date.now() - 60 * 60 * 1000),
+      reviewerNotificationAttempts: attempts,
+      deliverable: { deadline: new Date(Date.now() + 24 * 60 * 60 * 1000) },
+    });
+
+    it('only picks up pending submissions older than five minutes', async () => {
+      jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-09T12:00:00Z'));
+
+      await service.retryPendingReviewerNotifications();
+
+      const { where } = prisma.submission.findMany.mock.calls[0][0];
+      expect(where.reviewerNotificationStatus).toBe('PENDING');
+      expect(where.submittedAt).toEqual({ lt: new Date('2026-10-09T11:55:00Z') });
+    });
+
+    it('notifies only reviewers who are missing the notification and marks it sent', async () => {
+      prisma.submission.findMany.mockResolvedValue([pendingSubmission()]);
+      prisma.notification.findFirst.mockImplementation(({ where }) =>
+        Promise.resolve(where.userId === 'pm-1' ? { id: 'notification-1' } : null),
+      );
+
+      await service.retryPendingReviewerNotifications();
+
+      expect(prisma.notification.findFirst.mock.calls[0][0].where.metadata).toEqual({
+        path: ['submissionId'],
+        equals: 'submission-1',
+      });
+      expect(notifiedUserIds()).toEqual(['lc-1']);
+      expect(prisma.submission.create).not.toHaveBeenCalled();
+      expect(prisma.submission.update).toHaveBeenCalledWith({
+        where: { id: 'submission-1' },
+        data: { reviewerNotificationStatus: 'SENT', reviewerNotificationAttempts: 1 },
+      });
+    });
+
+    it('marks the submission sent without re-sending when every reviewer was already notified', async () => {
+      prisma.submission.findMany.mockResolvedValue([pendingSubmission()]);
+      prisma.notification.findFirst.mockResolvedValue({ id: 'notification-1' });
+
+      await service.retryPendingReviewerNotifications();
+
+      expect(notificationsService.queueNotification).not.toHaveBeenCalled();
+      expect(prisma.submission.update).toHaveBeenCalledWith({
+        where: { id: 'submission-1' },
+        data: { reviewerNotificationStatus: 'SENT', reviewerNotificationAttempts: 1 },
+      });
+    });
+
+    it('keeps the submission pending and counts the attempt when a notification fails again', async () => {
+      prisma.submission.findMany.mockResolvedValue([pendingSubmission(1)]);
+      notificationsService.queueNotification.mockRejectedValue(
+        new Error('notification insert failed'),
+      );
+
+      await service.retryPendingReviewerNotifications();
+
+      expect(prisma.submission.update).toHaveBeenCalledWith({
+        where: { id: 'submission-1' },
+        data: { reviewerNotificationStatus: 'PENDING', reviewerNotificationAttempts: 2 },
+      });
+    });
+
+    it('marks the submission failed after the final attempt', async () => {
+      prisma.submission.findMany.mockResolvedValue([pendingSubmission(4)]);
+      prisma.user.findUnique.mockRejectedValue(new Error('user lookup failed'));
+
+      await service.retryPendingReviewerNotifications();
+
+      expect(prisma.submission.update).toHaveBeenCalledWith({
+        where: { id: 'submission-1' },
+        data: { reviewerNotificationStatus: 'FAILED', reviewerNotificationAttempts: 5 },
+      });
     });
   });
 });
