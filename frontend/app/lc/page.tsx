@@ -32,10 +32,6 @@ export default function LCDashboard() {
     }
   }, [session, router]);
 
-  if (session.loading || !session.isLoggedIn) {
-    return <FullScreenLoader />;
-  }
-
   const navScrollMap: Record<string, RefObject<HTMLDivElement | null>> = {
     overview: dashboardRef,
   };
@@ -46,7 +42,7 @@ export default function LCDashboard() {
 
   useEffect(() => {
     const loadEngagement = async () => {
-      if (!session.isLoggedIn || !session.user?.email) return;
+      if (session.loading || !session.isLoggedIn || !session.user?.email) return;
       try {
         const token = await session.getToken();
         setAuthToken(token || session.user?.email || null);
@@ -70,11 +66,16 @@ export default function LCDashboard() {
       }
     };
     void loadEngagement();
-  }, [session.isLoggedIn, session.user?.email]);
+  }, [session.loading, session.isLoggedIn, session.user?.email]);
 
   useEffect(() => {
+    if (session.loading || !session.isLoggedIn) return;
     setLastDashboard('/lc');
-  }, []);
+  }, [session.loading, session.isLoggedIn]);
+
+  if (session.loading || !session.isLoggedIn) {
+    return <FullScreenLoader />;
+  }
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col">

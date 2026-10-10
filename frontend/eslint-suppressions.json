@@ -13,9 +13,6 @@
     }
   },
   "app/client-notes/page.tsx": {
-    "react-hooks/rules-of-hooks": {
-      "count": 3
-    },
     "react-hooks/set-state-in-effect": {
       "count": 1
     }
@@ -28,21 +25,6 @@
   "app/deliverables/page.tsx": {
     "react-hooks/set-state-in-effect": {
       "count": 1
-    }
-  },
-  "app/lc/page.tsx": {
-    "react-hooks/rules-of-hooks": {
-      "count": 2
-    }
-  },
-  "app/partner/page.tsx": {
-    "react-hooks/rules-of-hooks": {
-      "count": 2
-    }
-  },
-  "app/pm/page.tsx": {
-    "react-hooks/rules-of-hooks": {
-      "count": 2
     }
   },
   "app/settings/slack/page.tsx": {
@@ -61,9 +43,6 @@
     }
   },
   "app/teams/page.tsx": {
-    "react-hooks/rules-of-hooks": {
-      "count": 4
-    },
     "react-hooks/set-state-in-effect": {
       "count": 4
     }
