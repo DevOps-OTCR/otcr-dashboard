@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test:roles": "node --test tests/permissions.test.cjs",
     "import-alumni": "node scripts/import-alumni.cjs",
     "prisma:generate": "prisma generate --schema=./prisma/schema.prisma",
     "postinstall": "prisma generate --schema=./prisma/schema.prisma || true"

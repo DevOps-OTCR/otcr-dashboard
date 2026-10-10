@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/Badge';
 import { getEffectiveRole, type AppRole } from '@/lib/permissions';
 import { projectsAPI, slideSubmissionsAPI, setAuthToken } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
+import { RoleDashboardRedirect } from '@/components/RoleDashboardRedirect';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { dispatchNotificationsRefresh } from '@/lib/notification-events';
 
@@ -109,6 +110,7 @@ function getSubmissionStatusMeta(status: string): {
 
 export default function SlidesPage() {
   const session = useAuth();
+  const [roleLookupFailed, setRoleLookupFailed] = useState(false);
   const searchParams = useSearchParams();
   const queryProjectId = searchParams.get('projectId') ?? '';
   const targetDeliverableId = searchParams.get('deliverableId') ?? '';
@@ -168,18 +170,19 @@ export default function SlidesPage() {
 
   useEffect(() => {
     const syncRole = async () => {
-      if (!session.isLoggedIn) return;
+      if (!session.isLoggedIn || roleLookupFailed) return;
       const token = await session.getToken();
       const email = session.user?.email || '';
       const role = await getEffectiveRole(token, email);
       setResolvedRole(role);
     };
-    void syncRole();
-  }, [session]);
+    void syncRole().catch(() => setRoleLookupFailed(true));
+  }, [session, roleLookupFailed]);
 
   useEffect(() => {
     const init = async () => {
-      if (!session.isLoggedIn || !session.user?.email) return;
+      if (!session.isLoggedIn || !session.user?.email || roleLookupFailed) return;
+      setLoading(true);
       try {
         await loadData();
       } catch {
@@ -192,7 +195,7 @@ export default function SlidesPage() {
     };
 
     void init();
-  }, [session.isLoggedIn, session.user?.email, loadData]);
+  }, [session.isLoggedIn, session.user?.email, loadData, roleLookupFailed]);
 
   useEffect(() => {
     if (!queryProjectId || queryProjectId === selectedProjectId) return;
@@ -327,6 +330,8 @@ export default function SlidesPage() {
   if (session.loading || !session.isLoggedIn || loading) {
     return <FullScreenLoader />;
   }
+
+  if (roleLookupFailed) return <RoleDashboardRedirect onRetry={() => setRoleLookupFailed(false)} />;
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">

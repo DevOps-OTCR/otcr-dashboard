@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/Badge';
 import { getEffectiveRole, hasAccess } from '@/lib/permissions';
 import { deliverablesAPI, projectsAPI } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
+import { RoleDashboardRedirect } from '@/components/RoleDashboardRedirect';
 import type { AppRole } from '@/lib/permissions';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { dispatchNotificationsRefresh } from '@/lib/notification-events';
@@ -57,6 +58,7 @@ function parseApiError(err: any, fallback: string): string {
 
 export default function ClientNotesPage() {
   const session = useAuth();
+  const [roleLookupFailed, setRoleLookupFailed] = useState(false);
   const [resolvedRole, setResolvedRole] = useState<AppRole>('CONSULTANT');
 
   const [notes, setNotes] = useState<ClientNote[]>([]);
@@ -70,14 +72,14 @@ export default function ClientNotesPage() {
 
   useEffect(() => {
     const syncRole = async () => {
-      if (!session.isLoggedIn) return;
+      if (!session.isLoggedIn || roleLookupFailed) return;
       const token = await session.getToken();
       const email = session.user?.email || '';
       const role = await getEffectiveRole(token, email);
       setResolvedRole(role);
     };
-    void syncRole();
-  }, [session]);
+    void syncRole().catch(() => setRoleLookupFailed(true));
+  }, [session, roleLookupFailed]);
 
   if (session.loading || !session.isLoggedIn) {
     return <FullScreenLoader />;
@@ -142,10 +144,10 @@ export default function ClientNotesPage() {
   };
 
   useEffect(() => {
-    if (!session.user?.email) return;
+    if (!session.user?.email || roleLookupFailed) return;
     void loadNotes();
     void loadProjects();
-  }, [session.user?.email, canWrite]);
+  }, [session.user?.email, canWrite, roleLookupFailed]);
 
   const addNote = async () => {
     if (!title.trim() || !link.trim()) {
@@ -177,6 +179,8 @@ export default function ClientNotesPage() {
       setSubmitting(false);
     }
   };
+
+  if (roleLookupFailed) return <RoleDashboardRedirect onRetry={() => setRoleLookupFailed(false)} />;
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">

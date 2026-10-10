@@ -15,6 +15,7 @@ const ROLE_CACHE_TTL_MS = 5 * 60 * 1000;
 type RoleCacheEntry = {
   role: AppRole;
   cachedAt: number;
+  source: 'api';
 };
 
 export function isValidAppRole(r: string): r is AppRole {
@@ -47,7 +48,8 @@ function readCachedRole(email: string): AppRole | null {
     const raw = localStorage.getItem(getRoleCacheKey(email));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<RoleCacheEntry>;
-    if (!parsed || typeof parsed.cachedAt !== 'number' || typeof parsed.role !== 'string') {
+    // Older entries may contain a fallback role from a failed request.
+    if (!parsed || parsed.source !== 'api' || typeof parsed.cachedAt !== 'number' || typeof parsed.role !== 'string') {
       localStorage.removeItem(getRoleCacheKey(email));
       return null;
     }
@@ -69,7 +71,7 @@ function readCachedRole(email: string): AppRole | null {
 function writeCachedRole(email: string, role: AppRole): void {
   if (typeof window === 'undefined') return;
   try {
-    const value: RoleCacheEntry = { role, cachedAt: Date.now() };
+    const value: RoleCacheEntry = { role, cachedAt: Date.now(), source: 'api' };
     localStorage.setItem(getRoleCacheKey(email), JSON.stringify(value));
   } catch {
     // Ignore localStorage quota/unavailable errors.
@@ -120,24 +122,15 @@ export async function getEffectiveRole(
   const cachedRole = readCachedRole(normalizedEmail);
   if (cachedRole) return cachedRole;
 
-  try {
-    const response = await api.get("/auth/role", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    const roleString = response.data.role;
-
-    if (typeof roleString === 'string' && isValidAppRole(roleString)) {
-      writeCachedRole(normalizedEmail, roleString);
-      return roleString;
-    }
-  } catch (error) {
-    console.error("Failed to fetch role from API, falling back to email check", error);
+  const response = await api.get("/auth/role", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const role = response.data?.role;
+  if (typeof role !== 'string' || !isValidAppRole(role)) {
+    throw new Error('The role response did not contain a valid role');
   }
-
-  const fallbackRole = 'CONSULTANT';
-  writeCachedRole(normalizedEmail, fallbackRole);
-  return fallbackRole;
+  writeCachedRole(normalizedEmail, role);
+  return role;
 }
 
 /** Default dashboard path for a role (for redirects and admin switcher). */

@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/components/AuthContext';
+import { RoleDashboardRedirect } from '@/components/RoleDashboardRedirect';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { deliverablesAPI, projectsAPI, setAuthToken } from '@/lib/api';
 import { getEffectiveRole, type AppRole } from '@/lib/permissions';
@@ -139,6 +140,7 @@ function toDateTimeLocalValue(value: string) {
 
 export default function DeliverablesPage() {
   const session = useAuth();
+  const [roleLookupFailed, setRoleLookupFailed] = useState(false);
   const router = useRouter();
   const [role, setRole] = useState<AppRole>('CONSULTANT');
   const [projects, setProjects] = useState<ProjectOption[]>([]);
@@ -221,13 +223,20 @@ export default function DeliverablesPage() {
 
   useEffect(() => {
     const init = async () => {
-      if (!session.isLoggedIn || !session.user?.email) return;
+      if (!session.isLoggedIn || !session.user?.email || roleLookupFailed) return;
+      setLoading(true);
 
       try {
         const token = await session.getToken();
         if (token) setAuthToken(token);
 
-        const nextRole = await getEffectiveRole(token, session.user.email);
+        let nextRole: AppRole;
+        try {
+          nextRole = await getEffectiveRole(token, session.user.email);
+        } catch {
+          setRoleLookupFailed(true);
+          return;
+        }
         setRole(nextRole);
 
         const projectsRes = await projectsAPI.getAll({ limit: 100 });
@@ -247,7 +256,7 @@ export default function DeliverablesPage() {
     };
 
     void init();
-  }, [session, session.isLoggedIn, session.user?.email, loadSprints, loadTeamMembers]);
+  }, [session, session.isLoggedIn, session.user?.email, loadSprints, loadTeamMembers, roleLookupFailed]);
 
   useEffect(() => {
     if (!feedback) return;
@@ -581,6 +590,8 @@ export default function DeliverablesPage() {
   if (session.loading || !session.isLoggedIn || loading) {
     return <FullScreenLoader />;
   }
+
+  if (roleLookupFailed) return <RoleDashboardRedirect onRetry={() => setRoleLookupFailed(false)} />;
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--background)]">
