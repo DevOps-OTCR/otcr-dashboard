@@ -1,4 +1,23 @@
 import { ProjectsService } from './projects.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
+
+type SubmissionRow = {
+  id: string;
+  deliverableId: string;
+  fileUrl: string;
+  submittedAt: string;
+  status: string;
+  submitterId: string;
+  submitterEmail: string;
+  submitterFirstName: string;
+  submitterLastName: string;
+};
+
+type AssigneeResult = {
+  assignee: { id: string; email: string };
+  submission: { fileUrl: string } | null;
+};
 
 // Regression coverage for issue #30: a shared deliverable must surface every
 // assignee's latest submission, not just the single newest row overall.
@@ -35,14 +54,14 @@ describe('ProjectsService.listSprints assignee submissions (#30)', () => {
     { deliverableId: 'deliverable-1', userId: 'user-c', assignedAt: '2026-10-06T00:00:00.000Z', email: 'c@illinois.edu', firstName: 'Cat', lastName: 'Gamma' },
   ];
 
-  function buildService(queryRawImpl: (sql: unknown) => Promise<any[]>) {
-    const prisma = { $queryRaw: jest.fn(queryRawImpl) } as any;
-    const notificationsService = {} as any;
+  function buildService(queryRawImpl: (sql: unknown) => Promise<unknown[]>) {
+    const prisma = { $queryRaw: jest.fn(queryRawImpl) } as unknown as PrismaService;
+    const notificationsService = {} as NotificationsService;
     return new ProjectsService(prisma, notificationsService);
   }
 
   // Calls happen in order: sprints, deliverables, assignments, subtasks, submissions.
-  function queryRawImplFor(submissions: any[]) {
+  function queryRawImplFor(submissions: SubmissionRow[]) {
     const calls = [
       [sprint],
       [deliverable],
@@ -70,7 +89,9 @@ describe('ProjectsService.listSprints assignee submissions (#30)', () => {
 
     expect(item.assigneeSubmissions).toHaveLength(3);
 
-    const byUser = new Map<string, any>(item.assigneeSubmissions.map((entry: any) => [entry.assignee.id, entry]));
+    const byUser = new Map<string, AssigneeResult>(
+      item.assigneeSubmissions.map((entry: AssigneeResult) => [entry.assignee.id, entry]),
+    );
     expect(byUser.get('user-a')?.submission?.fileUrl).toBe('https://x/a-v2');
     expect(byUser.get('user-b')?.submission?.fileUrl).toBe('https://x/b-final');
     expect(byUser.get('user-c')?.submission).toBeNull();
