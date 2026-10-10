@@ -81,10 +81,6 @@ export default function ClientNotesPage() {
     void syncRole().catch(() => setRoleLookupFailed(true));
   }, [session, roleLookupFailed]);
 
-  if (session.loading || !session.isLoggedIn) {
-    return <FullScreenLoader />;
-  }
-
   const canWrite = useMemo(
     () => hasAccess('clientCallNotesWrite', resolvedRole, 'write'),
     [resolvedRole],
@@ -144,10 +140,10 @@ export default function ClientNotesPage() {
   };
 
   useEffect(() => {
-    if (!session.user?.email || roleLookupFailed) return;
+    if (session.loading || !session.isLoggedIn || !session.user?.email || roleLookupFailed) return;
     void loadNotes();
     void loadProjects();
-  }, [session.user?.email, canWrite, roleLookupFailed]);
+  }, [session.loading, session.isLoggedIn, session.user?.email, canWrite, roleLookupFailed]);
 
   const addNote = async () => {
     if (!title.trim() || !link.trim()) {
@@ -179,6 +175,10 @@ export default function ClientNotesPage() {
       setSubmitting(false);
     }
   };
+
+  if (session.loading || !session.isLoggedIn) {
+    return <FullScreenLoader />;
+  }
 
   if (roleLookupFailed) return <RoleDashboardRedirect onRetry={() => setRoleLookupFailed(false)} />;
 
