@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint .",
     "lint:prune": "eslint . --prune-suppressions",
+    "test": "node --test \"tests/*.test.cjs\"",
     "test:roles": "node --test tests/permissions.test.cjs",
     "import-alumni": "node scripts/import-alumni.cjs",
     "prisma:generate": "prisma generate --schema=./prisma/schema.prisma",

@@ -43,7 +43,7 @@ jobs:
       - name: Check TypeScript
         run: npx tsc --noEmit
       - name: Run role tests
-        run: npm run test:roles
+        run: npm test
       - name: Build Pages static export
         env:
           GITHUB_PAGES: 'true'

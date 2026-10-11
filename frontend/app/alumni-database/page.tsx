@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, GraduationCap, Search, X } from 'lucide-react';
 import { AppNavbar } from '@/components/AppNavbar';
@@ -43,12 +43,18 @@ export default function AlumniDatabasePage() {
   const [dataset, setDataset] = useState<AlumniDataset | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [sort, setSort] = useState<AlumniSort>(DEFAULT_ALUMNI_SORT);
   const [pageIndex, setPageIndex] = useState(0);
 
   useEffect(() => {
     setPageIndex(0);
   }, [search, sort]);
+
+  const clearSearch = () => {
+    setSearch('');
+    searchInputRef.current?.focus();
+  };
 
   const toggleSort = (key: AlumniSortKey) => {
     setSort((s) =>
@@ -156,6 +162,7 @@ export default function AlumniDatabasePage() {
                 <div className="relative max-w-2xl">
                   <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--foreground)]/40" />
                   <input
+                    ref={searchInputRef}
                     type="search"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
@@ -174,7 +181,7 @@ export default function AlumniDatabasePage() {
                     <button
                       type="button"
                       aria-label="Clear search"
-                      onClick={() => setSearch('')}
+                      onClick={clearSearch}
                       className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1 text-[var(--foreground)]/50 hover:bg-[var(--accent)] hover:text-[var(--foreground)]"
                     >
                       <X className="w-4 h-4" />
@@ -193,7 +200,7 @@ export default function AlumniDatabasePage() {
                             {' '}
                             <button
                               type="button"
-                              onClick={() => setSearch('')}
+                              onClick={clearSearch}
                               className="font-medium text-[var(--primary)] hover:underline"
                             >
                               Clear search
