@@ -42,7 +42,7 @@ jobs:
         run: npm run lint
       - name: Check TypeScript
         run: npx tsc --noEmit
-      - name: Run role tests
+      - name: Run frontend tests
         run: npm test
       - name: Build Pages static export
         env:
