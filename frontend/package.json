@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "lint:prune": "eslint . --prune-suppressions",
     "test:roles": "node --test tests/permissions.test.cjs",
+    "test:navigation:browser": "node --test tests/navigation-browser.test.cjs",
     "import-alumni": "node scripts/import-alumni.cjs",
     "prisma:generate": "prisma generate --schema=./prisma/schema.prisma",
     "postinstall": "prisma generate --schema=./prisma/schema.prisma || true"

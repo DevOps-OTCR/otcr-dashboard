@@ -6,7 +6,7 @@ import { getDevRoleOverride, setDevRoleOverride, getDefaultDashboardPath, ROLE_F
 import { ChevronDown } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { api } from '@/lib/api';
+import { authAPI } from '@/lib/api';
 
 /** Inline dropdown for admin to switch "View as" role. Renders nothing if user is not admin. Place next to role name in blue. */
 export function AdminRoleSwitcher({ className }: { className?: string }) {
@@ -34,7 +34,7 @@ export function AdminRoleSwitcher({ className }: { className?: string }) {
       try {
         const token = await session.getToken();
         const authValue = token || session.user.email;
-        const response = await api.get('/auth/role', {
+        const response = await authAPI.getRole({
           headers: { Authorization: `Bearer ${authValue}` },
         });
         const roleString = response?.data?.role;

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Users, RefreshCw, FileText } from 'lucide-react';
 import { AppNavbar } from '@/components/AppNavbar';
@@ -9,6 +9,9 @@ import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/components/AuthContext';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
+import { PageLoading } from './PageLoading';
+import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
+import { readResource } from '@/lib/resource-cache';
 import { deliverablesAPI, projectsAPI, setAuthToken } from '@/lib/api';
 import { getEffectiveRole, type AppRole } from '@/lib/permissions';
 import { parseDashPrefixedDeliverables } from '@/lib/deliverables-parser';
@@ -116,12 +119,21 @@ function toDateTimeLocalValue(value: string) {
 export default function WorkstreamPage() {
   const session = useAuth();
   const router = useRouter();
-  const [role, setRole] = useState<AppRole>('CONSULTANT');
-  const [projects, setProjects] = useState<ProjectOption[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState('');
-  const [sprints, setSprints] = useState<SprintItem[]>([]);
-  const [selectedSprintId, setSelectedSprintId] = useState('');
-  const [loading, setLoading] = useState(true);
+  const { isLoggedIn, getToken } = session;
+  const email = session.user?.email;
+  const { snapshot, saveSnapshot } = useNavigationSnapshot<{
+    role: AppRole; projects: ProjectOption[]; selectedProjectId: string;
+    sprints: SprintItem[]; selectedSprintId: string;
+  }>('workstream', email);
+  const [role, setRole] = useState<AppRole>(snapshot?.role ?? 'CONSULTANT');
+  const [projects, setProjects] = useState<ProjectOption[]>(snapshot?.projects ?? []);
+  const [selectedProjectId, setSelectedProjectId] = useState(snapshot?.selectedProjectId ?? '');
+  const projectRef = useRef(selectedProjectId);
+  const sprintRequest = useRef(0);
+  const [sprints, setSprints] = useState<SprintItem[]>(snapshot?.sprints ?? []);
+  const [selectedSprintId, setSelectedSprintId] = useState(snapshot?.selectedSprintId ?? '');
+  const [loading, setLoading] = useState(!snapshot);
+  const [refreshing, setRefreshing] = useState(true);
   const [busyDeliverableId, setBusyDeliverableId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -139,9 +151,11 @@ export default function WorkstreamPage() {
   const canManage = role === 'PM' || role === 'LC' || role === 'ADMIN';
 
   const loadSprints = useCallback(async (projectId: string) => {
+    const request = ++sprintRequest.current;
     try {
       setLoadError(null);
       const res = await projectsAPI.getSprints(projectId);
+      if (request !== sprintRequest.current) return;
       const sprintList = (res.data ?? []) as SprintItem[];
       setSprints(sprintList);
       setSelectedSprintId((current) => {
@@ -150,8 +164,7 @@ export default function WorkstreamPage() {
           : sprintList[0]?.id ?? '';
       });
     } catch (error: any) {
-      setSprints([]);
-      setSelectedSprintId('');
+      if (request !== sprintRequest.current) return;
       const message =
         error?.response?.data?.message ??
         error?.message ??
@@ -167,44 +180,52 @@ export default function WorkstreamPage() {
   }, [session.loading, session.isLoggedIn, router]);
 
   useEffect(() => {
+    let cancelled = false;
     const init = async () => {
-      if (!session.isLoggedIn || !session.user?.email) return;
+      if (!isLoggedIn || !email) return;
 
       try {
-        const token = await session.getToken();
-        if (token) setAuthToken(token);
+        const token = await getToken();
+        if (cancelled) return;
+        setAuthToken(token || email);
 
-        const nextRole = await getEffectiveRole(token, session.user.email);
+        const nextRole = await getEffectiveRole(token, email);
+        if (cancelled) return;
         setRole(nextRole);
 
         const projectsRes = await projectsAPI.getAll({ limit: 100 });
         const nextProjects = ((projectsRes.data?.projects ?? []) as Array<{ id: string; name: string }>).map(
           (item) => ({ id: item.id, name: item.name }),
         );
+        if (cancelled) return;
         setProjects(nextProjects);
 
-        const firstProjectId = nextProjects[0]?.id ?? '';
+        const firstProjectId = nextProjects.some(project => project.id === projectRef.current)
+          ? projectRef.current : nextProjects[0]?.id ?? '';
+        projectRef.current = firstProjectId;
         setSelectedProjectId(firstProjectId);
         if (firstProjectId) {
           await loadSprints(firstProjectId);
         }
       } catch (error: any) {
-        setProjects([]);
-        setSprints([]);
-        setSelectedProjectId('');
-        setSelectedSprintId('');
+        if (cancelled) return;
         const message =
           error?.response?.data?.message ??
           error?.message ??
           'Unable to load the Workstream page right now.';
         setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
       } finally {
-        setLoading(false);
+        if (!cancelled) { setLoading(false); setRefreshing(false); }
       }
     };
 
     void init();
-  }, [session, session.isLoggedIn, session.user?.email, loadSprints]);
+    return () => { cancelled = true; sprintRequest.current += 1; };
+  }, [isLoggedIn, email, getToken, loadSprints]);
+
+  useEffect(() => {
+    if (!loading && !refreshing && !loadError) saveSnapshot({ role, projects, selectedProjectId, sprints, selectedSprintId });
+  }, [loading, refreshing, loadError, role, projects, selectedProjectId, sprints, selectedSprintId, saveSnapshot]);
 
   useEffect(() => {
     if (!feedback) return;
@@ -265,6 +286,7 @@ export default function WorkstreamPage() {
   }, [selectedSprint, sprintIndex]);
 
   const handleProjectChange = async (projectId: string) => {
+    projectRef.current = projectId;
     setSelectedProjectId(projectId);
     setSelectedSprintId('');
     setAddWhitepaperSubmission(false);
@@ -274,10 +296,14 @@ export default function WorkstreamPage() {
       return;
     }
 
-    setLoading(true);
+    const cached = readResource<{ data: SprintItem[] }>(`/projects/${projectId}/sprints`);
+    setSprints(cached?.data ?? []);
+    setLoading(!cached);
+    setRefreshing(true);
     try {
       await loadSprints(projectId);
     } finally {
+      setRefreshing(false);
       setLoading(false);
     }
   };
@@ -513,7 +539,7 @@ export default function WorkstreamPage() {
     }
   };
 
-  if (session.loading || !session.isLoggedIn || loading) {
+  if (session.loading || !session.isLoggedIn) {
     return <FullScreenLoader />;
   }
 
@@ -522,7 +548,7 @@ export default function WorkstreamPage() {
       <AppNavbar role={role} currentPath="/workstream" />
 
       <main className="flex-1 overflow-y-auto">
-        <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        {loading ? <PageLoading /> : <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
           <Card className="shadow-lg">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -888,7 +914,7 @@ export default function WorkstreamPage() {
               )}
             </CardContent>
           </Card>
-        </div>
+        </div>}
       </main>
 
       {feedback && (

@@ -44,7 +44,7 @@ Authenticated users are redirected to role-specific routes instead of a shared `
 ```bash
 cd backend
 npm install
-cp .env.example .env
+cp ../env/env.example .env
 ```
 
 Set at least:

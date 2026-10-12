@@ -1,17 +1,19 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Layers, Upload } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { AppNavbar } from '@/components/AppNavbar';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { getEffectiveRole, type AppRole } from '@/lib/permissions';
+import { getEffectiveRole, getUserRole, type AppRole } from '@/lib/permissions';
 import { projectsAPI, slideSubmissionsAPI, setAuthToken } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
 import { RoleDashboardRedirect } from '@/components/RoleDashboardRedirect';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
+import { PageLoading } from '@/components/PageLoading';
+import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
 import { dispatchNotificationsRefresh } from '@/lib/notification-events';
 
 type ProjectOption = {
@@ -110,18 +112,26 @@ function getSubmissionStatusMeta(status: string): {
 
 export default function SlidesPage() {
   const session = useAuth();
+  const { isLoggedIn, getToken } = session;
+  const email = session.user?.email;
+  const { snapshot, saveSnapshot } = useNavigationSnapshot<{
+    role: AppRole; projects: ProjectOption[]; selectedProjectId: string;
+    sprints: SprintItem[]; submissions: SlideSubmissionFromApi[];
+  }>('slides', email);
   const [roleLookupFailed, setRoleLookupFailed] = useState(false);
   const searchParams = useSearchParams();
   const queryProjectId = searchParams.get('projectId') ?? '';
   const targetDeliverableId = searchParams.get('deliverableId') ?? '';
-  const [resolvedRole, setResolvedRole] = useState<AppRole>('CONSULTANT');
-  const [projects, setProjects] = useState<ProjectOption[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState('');
-  const [sprints, setSprints] = useState<SprintItem[]>([]);
-  const [submissions, setSubmissions] = useState<SlideSubmissionFromApi[]>([]);
+  const [resolvedRole, setResolvedRole] = useState<AppRole>(() => snapshot?.role ?? getUserRole(email));
+  const [projects, setProjects] = useState<ProjectOption[]>(snapshot?.projects ?? []);
+  const [selectedProjectId, setSelectedProjectId] = useState(snapshot?.selectedProjectId ?? '');
+  const selectedProjectRef = useRef(selectedProjectId);
+  const [sprints, setSprints] = useState<SprintItem[]>(snapshot?.sprints ?? []);
+  const [submissions, setSubmissions] = useState<SlideSubmissionFromApi[]>(snapshot?.submissions ?? []);
   const [submitLinks, setSubmitLinks] = useState<Record<string, string>>({});
   const [actioningId, setActioningId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!snapshot);
+  const [refreshing, setRefreshing] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const canSeeAllSubmissions =
@@ -142,14 +152,23 @@ export default function SlidesPage() {
   }, []);
 
   const loadData = useCallback(async () => {
-    if (!session.isLoggedIn || !session.user?.email) return;
+    if (!isLoggedIn || !email) return;
 
-    const token = await session.getToken();
-    setAuthToken(token || session.user.email);
+    const token = await getToken();
+    setAuthToken(token || email);
+    let role: AppRole;
+    try {
+      role = await getEffectiveRole(token, email);
+    } catch (error) {
+      setRoleLookupFailed(true);
+      throw error;
+    }
+    setResolvedRole(role);
+    const seeAll = role !== 'CONSULTANT';
 
     const [projectsRes, submissionsRes] = await Promise.all([
       projectsAPI.getAll({ limit: 100 }),
-      canSeeAllSubmissions ? slideSubmissionsAPI.getAll() : slideSubmissionsAPI.getMine(),
+      seeAll ? slideSubmissionsAPI.getAll() : slideSubmissionsAPI.getMine(),
     ]);
 
     const nextProjects = ((projectsRes.data?.projects ?? []) as Array<{ id: string; name: string }>).map(
@@ -157,7 +176,10 @@ export default function SlidesPage() {
     );
     setProjects(nextProjects);
 
-    const nextProjectId = queryProjectId || selectedProjectId || nextProjects[0]?.id || '';
+    const preferredProjectId = queryProjectId || selectedProjectRef.current;
+    const nextProjectId = nextProjects.some(project => project.id === preferredProjectId)
+      ? preferredProjectId : nextProjects[0]?.id || '';
+    selectedProjectRef.current = nextProjectId;
     setSelectedProjectId(nextProjectId);
     if (nextProjectId) {
       await loadSprints(nextProjectId);
@@ -166,42 +188,31 @@ export default function SlidesPage() {
     }
 
     setSubmissions(Array.isArray(submissionsRes.data) ? submissionsRes.data : []);
-  }, [canSeeAllSubmissions, loadSprints, queryProjectId, selectedProjectId, session]);
-
-  useEffect(() => {
-    const syncRole = async () => {
-      if (!session.isLoggedIn || roleLookupFailed) return;
-      const token = await session.getToken();
-      const email = session.user?.email || '';
-      const role = await getEffectiveRole(token, email);
-      setResolvedRole(role);
-    };
-    void syncRole().catch(() => setRoleLookupFailed(true));
-  }, [session, roleLookupFailed]);
+  }, [isLoggedIn, email, getToken, loadSprints, queryProjectId]);
 
   useEffect(() => {
     const init = async () => {
-      if (!session.isLoggedIn || !session.user?.email || roleLookupFailed) return;
-      setLoading(true);
+      if (!isLoggedIn || !email || roleLookupFailed) return;
+      setRefreshing(true);
+      setError(null);
       try {
         await loadData();
       } catch {
-        setProjects([]);
-        setSprints([]);
-        setSubmissions([]);
+        setError('Failed to load slides. Please try again.');
       } finally {
         setLoading(false);
+        setRefreshing(false);
       }
     };
 
     void init();
-  }, [session.isLoggedIn, session.user?.email, loadData, roleLookupFailed]);
+  }, [isLoggedIn, email, loadData, roleLookupFailed]);
 
   useEffect(() => {
-    if (!queryProjectId || queryProjectId === selectedProjectId) return;
-    if (!projects.some((project) => project.id === queryProjectId)) return;
-    void handleProjectChange(queryProjectId);
-  }, [projects, queryProjectId, selectedProjectId]);
+    if (!loading && !refreshing && !error && !roleLookupFailed) {
+      saveSnapshot({ role: resolvedRole, projects, selectedProjectId, sprints, submissions });
+    }
+  }, [loading, refreshing, error, roleLookupFailed, resolvedRole, projects, selectedProjectId, sprints, submissions, saveSnapshot]);
 
   const visibleSprints = useMemo(
     () =>
@@ -245,6 +256,7 @@ export default function SlidesPage() {
       );
 
   const handleProjectChange = async (projectId: string) => {
+    selectedProjectRef.current = projectId;
     setSelectedProjectId(projectId);
     if (!projectId) {
       setSprints([]);
@@ -327,7 +339,7 @@ export default function SlidesPage() {
     }
   };
 
-  if (session.loading || !session.isLoggedIn || loading) {
+  if (session.loading || !session.isLoggedIn) {
     return <FullScreenLoader />;
   }
 
@@ -338,6 +350,7 @@ export default function SlidesPage() {
       <AppNavbar role={resolvedRole} currentPath="/slides" />
 
       <main className="px-4 sm:px-6 lg:px-8 py-8">
+        {loading ? <PageLoading /> : (
         <div className="max-w-[1200px] mx-auto">
           <Card className="shadow-lg">
             <CardHeader>
@@ -562,6 +575,7 @@ export default function SlidesPage() {
             </CardContent>
           </Card>
         </div>
+        )}
       </main>
     </div>
   );
