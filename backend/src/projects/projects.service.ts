@@ -1054,7 +1054,7 @@ export class ProjectsService {
       const assignmentsByDeliverable = new Map<string, any[]>();
       const subtasksByDeliverable = new Map<string, any[]>();
       const latestSubmissionByDeliverable = new Map<string, any>();
-      const submissionByDeliverableAndUser = new Map<string, SprintSubmission>();
+      const submissionsByDeliverable = new Map<string, SprintSubmission[]>();
 
       assignments.forEach((assignment) => {
         const existing = assignmentsByDeliverable.get(assignment.deliverableId) ?? [];
@@ -1105,10 +1105,9 @@ export class ProjectsService {
         if (!current || new Date(submission.submittedAt) > new Date(current.submittedAt)) {
           latestSubmissionByDeliverable.set(submission.deliverableId, shaped);
         }
-        submissionByDeliverableAndUser.set(
-          `${submission.deliverableId}:${submission.submitterId}`,
-          shaped,
-        );
+        const existing = submissionsByDeliverable.get(submission.deliverableId) ?? [];
+        existing.push(shaped);
+        submissionsByDeliverable.set(submission.deliverableId, existing);
       });
 
       deliverables.forEach((deliverable) => {
@@ -1124,13 +1123,7 @@ export class ProjectsService {
           assignees: assignmentsByDeliverable.get(deliverable.id) ?? [],
           subtasks: subtasksByDeliverable.get(deliverable.id) ?? [],
           latestSubmission: latestSubmissionByDeliverable.get(deliverable.id) ?? null,
-          assigneeSubmissions: (assignmentsByDeliverable.get(deliverable.id) ?? []).map(
-            (assignee) => ({
-              assignee,
-              submission:
-                submissionByDeliverableAndUser.get(`${deliverable.id}:${assignee.id}`) ?? null,
-            }),
-          ),
+          submissions: submissionsByDeliverable.get(deliverable.id) ?? [],
         });
         bySprint.set(deliverable.sprintId, existing);
       });
