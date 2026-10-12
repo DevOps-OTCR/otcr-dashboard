@@ -984,6 +984,7 @@ export class ProjectsService {
           d."id",
           d."sprintId",
           d."title",
+          d."description",
           d."deadline",
           d."templateKind"::text AS "templateKind",
           d."dueDateSource"::text AS "dueDateSource",
@@ -1116,6 +1117,7 @@ export class ProjectsService {
         existing.push({
           id: deliverable.id,
           title: deliverable.title,
+          description: deliverable.description ?? null,
           deadline: this.normalizeSprintDeliverableDeadline(deliverable, sprint),
           templateKind: deliverable.templateKind,
           status: deliverable.status,
