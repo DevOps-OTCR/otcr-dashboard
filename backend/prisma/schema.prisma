@@ -625,6 +625,10 @@ model Submission {
   submittedAt DateTime @default(now())
   isLate      Boolean  @default(false)
 
+  // Reviewer notifications (link submissions only; retried by a scheduled job while PENDING)
+  reviewerNotificationStatus   NotificationStatus?
+  reviewerNotificationAttempts Int                 @default(0)
+
   deliverable Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
   submitter   User        @relation(fields: [userId], references: [id])
   reviewer    User?       @relation("SubmissionReviewer", fields: [reviewedById], references: [id])

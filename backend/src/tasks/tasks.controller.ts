@@ -7,38 +7,25 @@ import {
   Body,
   Param,
   Query,
-  Headers,
-  UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import { TasksService } from './tasks.service';
-import { AuthService } from '../auth/auth.service';
-import { getVerifiedUser } from '../common/utils/verify';
+import { AuthGuard } from '../auth/auth.guard';
+import { Roles } from '../common/roles.decorator';
+import { GetUser } from '../common/get-user.decorator';
+import type { User } from '@prisma/client';
 
 @Controller('tasks')
+@UseGuards(AuthGuard)
 export class TasksController {
-  constructor(
-    private readonly tasksService: TasksService,
-    private readonly authService: AuthService,
-  ) {}
-
-  private async getUserFromHeader(authorization: string) {
-    if (!authorization) throw new UnauthorizedException('No authorization header');
-    const raw = authorization.replace(/^Bearer\s+/i, '').trim();
-    if (!raw) throw new UnauthorizedException('No user identifier in authorization');
-
-    // Support both legacy "Bearer <email>" and modern "Bearer <access_token>".
-    const email = raw.includes('@') ? raw : await getVerifiedUser(raw);
-    const user = await this.authService.getUserByEmail(email);
-    if (!user) throw new UnauthorizedException('User not found');
-    return user;
-  }
+  constructor(private readonly tasksService: TasksService) {}
 
   @Get()
+  @Roles('ADMIN', 'PM', 'LC', 'CONSULTANT', 'PARTNER', 'EXECUTIVE')
   async findAll(
     @Query() query: { workstreamId?: string; includeCompleted?: string },
-    @Headers('authorization') authorization: string,
+    @GetUser() user: User,
   ) {
-    const user = await this.getUserFromHeader(authorization);
     return this.tasksService.findForUser(user, {
       workstreamId: query.workstreamId,
       includeCompleted: query.includeCompleted !== 'false',
@@ -46,12 +33,13 @@ export class TasksController {
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string, @Headers('authorization') authorization: string) {
-    await this.getUserFromHeader(authorization);
-    return this.tasksService.findOne(id);
+  @Roles('ADMIN', 'PM', 'LC', 'CONSULTANT', 'PARTNER', 'EXECUTIVE')
+  async findOne(@Param('id') id: string, @GetUser() user: User) {
+    return this.tasksService.findOne(id, user);
   }
 
   @Post()
+  @Roles('ADMIN', 'PM', 'LC', 'CONSULTANT', 'PARTNER', 'EXECUTIVE')
   async create(
     @Body()
     body: {
@@ -66,13 +54,13 @@ export class TasksController {
       assigneeEmail?: string;
       projectId?: string;
     },
-    @Headers('authorization') authorization: string,
+    @GetUser() user: User,
   ) {
-    const user = await this.getUserFromHeader(authorization);
-    return this.tasksService.create(body, user.id);
+    return this.tasksService.create(body, user);
   }
 
   @Patch(':id')
+  @Roles('ADMIN', 'PM', 'LC', 'CONSULTANT', 'PARTNER', 'EXECUTIVE')
   async update(
     @Param('id') id: string,
     @Body()
@@ -87,15 +75,14 @@ export class TasksController {
       assigneeEmail?: string;
       projectId?: string;
     },
-    @Headers('authorization') authorization: string,
+    @GetUser() user: User,
   ) {
-    await this.getUserFromHeader(authorization);
-    return this.tasksService.update(id, body as any);
+    return this.tasksService.update(id, body as any, user);
   }
 
   @Delete(':id')
-  async remove(@Param('id') id: string, @Headers('authorization') authorization: string) {
-    await this.getUserFromHeader(authorization);
-    return this.tasksService.remove(id);
+  @Roles('ADMIN', 'PM', 'LC', 'CONSULTANT', 'PARTNER', 'EXECUTIVE')
+  async remove(@Param('id') id: string, @GetUser() user: User) {
+    return this.tasksService.remove(id, user);
   }
 }

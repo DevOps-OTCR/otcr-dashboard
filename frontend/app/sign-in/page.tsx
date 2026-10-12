@@ -1,18 +1,17 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/components/AuthContext'; // Using your MSAL-based context
 import { useMsal } from "@azure/msal-react";
 import { InteractionStatus } from "@azure/msal-browser";
 import Image from 'next/image';
-import { getDefaultDashboardPathForUser } from '@/lib/permissions';
+import { RoleDashboardRedirect } from '@/components/RoleDashboardRedirect';
 
 export default function SignInPage() {
-  const { login, logout, user, isLoggedIn, getToken } = useAuth();
+  const { login, logout, user, isLoggedIn } = useAuth();
   const { inProgress } = useMsal();
-  const router = useRouter();
   const searchParams = useSearchParams();
 
   const [accessDeniedError, setAccessDeniedError] = useState<string | null>(null);
@@ -38,19 +37,6 @@ export default function SignInPage() {
       setAccessDeniedError(null);
     }
   }, [searchParams]);
-
-  // 2. Redirect to the user's role-specific dashboard if MSAL reports authenticated
-  useEffect(() => {
-    if (!isLoggedIn || !user?.email || accessDeniedError) return;
-
-    const redirectToRoleDashboard = async () => {
-      const token = await getToken();
-      const target = await getDefaultDashboardPathForUser(token, user.email);
-      router.replace(target);
-    };
-
-    void redirectToRoleDashboard();
-  }, [accessDeniedError, getToken, isLoggedIn, router, user?.email]);
 
   const handleAzureSignIn = async () => {
     // If MSAL is stuck in a redirect loop or "interaction_in_progress"
@@ -82,6 +68,8 @@ export default function SignInPage() {
       </div>
     );
   }
+
+  if (isLoggedIn && user?.email && !accessDeniedError) return <RoleDashboardRedirect />;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#0a1628] relative overflow-hidden">

@@ -36,10 +36,6 @@ export default function PartnerDashboard() {
     }
   }, [session, router]);
 
-  if (session.loading || !session.isLoggedIn) {
-    return <FullScreenLoader />;
-  }
-
   const handleNavClick = (key: string) => {
     const ref = navScrollMap[key];
     if (ref?.current) ref.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -47,7 +43,7 @@ export default function PartnerDashboard() {
 
   useEffect(() => {
     const loadEngagement = async () => {
-      if (!session.isLoggedIn || !session.user?.email) return;
+      if (session.loading || !session.isLoggedIn || !session.user?.email) return;
       try {
         const token = await session.getToken();
         setAuthToken(token || session.user?.email || null);
@@ -71,11 +67,16 @@ export default function PartnerDashboard() {
       }
     };
     void loadEngagement();
-  }, [session.isLoggedIn, session.user?.email]);
+  }, [session.loading, session.isLoggedIn, session.user?.email]);
 
   useEffect(() => {
+    if (session.loading || !session.isLoggedIn) return;
     setLastDashboard('/partner');
-  }, []);
+  }, [session.loading, session.isLoggedIn]);
+
+  if (session.loading || !session.isLoggedIn) {
+    return <FullScreenLoader />;
+  }
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col">

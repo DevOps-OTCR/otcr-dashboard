@@ -35,7 +35,7 @@ Authenticated users are redirected to role-specific routes instead of a shared `
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js 22 LTS, version 22.13.0 or later (CI uses Node 22)
 - PostgreSQL
 - Redis
 
@@ -60,9 +60,11 @@ Then run:
 
 ```bash
 npx prisma generate
-npx prisma db push
+npx prisma migrate deploy
 npm run start:dev
 ```
+
+`prisma migrate deploy` applies the committed migrations in `backend/prisma/migrations` to your local database. When you change `schema.prisma`, create a new reviewed migration with `npm run prisma:migrate` (`prisma migrate dev`) rather than running `prisma db push`.
 
 ### Frontend setup
 
@@ -91,23 +93,27 @@ Then run:
 npm run dev
 ```
 
-### Frontend linting
+## Linting
 
-From `frontend/`, run:
+Run the same lint commands used by PR Validation from the repository root:
 
 ```bash
-npm run lint
+npm --prefix frontend run lint
+npm --prefix backend run lint
 ```
 
-This runs ESLint with the Next.js Core Web Vitals configuration against the
-frontend JavaScript and TypeScript files. Generated output (`.next/`,
-`.open-next/`, `out/`, `build/`, `coverage/`, and `next-env.d.ts`) is excluded.
+The frontend uses Next.js Core Web Vitals rules. The backend uses the recommended ESLint and TypeScript rules. Generated output and dependencies are excluded.
 
-The initial lint run reports 39 existing errors and 12 warnings. Errors include
-conditional Hooks, state updates in effects, impure rendering, mutation,
-memoization, and ref access. Warnings concern Hook dependencies. The command
-exits with a nonzero status while these errors remain; fixing them is separate
-from restoring the lint command.
+Each application commits an `eslint-suppressions.json` file containing the existing error counts by file and rule. Errors in new files, errors from rules without a suppression, and increased error counts fail lint. Existing violations still need cleanup; counts do not identify individual occurrences, so replacing an old violation with another of the same rule in the same file can remain within the recorded count. Warnings are reported without failing CI.
+
+When fixing existing violations, remove their unused suppressions and commit the updated file:
+
+```bash
+npm --prefix frontend run lint:prune
+npm --prefix backend run lint:prune
+```
+
+CI only runs `lint` and never updates suppressions. Do not regenerate all suppressions to make new errors pass. See [ESLint bulk suppressions](https://eslint.org/docs/latest/use/suppressions).
 
 ## Production Deployment
 
@@ -117,11 +123,12 @@ Deploy frontend and backend as separate services.
 
 - Root directory: `backend`
 - Build command: `npm install && npx prisma generate && npm run build`
-- Start command: `npm run start:prod` (this now runs `prisma db push` before starting)
+- Start command: `npm run start:prod` (this runs `prisma migrate deploy` before starting)
 
 Backend production env vars:
 
 - `DATABASE_URL`
+- `DIRECT_URL` — direct (non-pooled) Postgres URL used by `prisma migrate deploy`; set this if `DATABASE_URL` points at a pooled endpoint
 - `REDIS_URL`
 - `FRONTEND_URL`
 - `SLACK_WEBHOOK_URL` if used
