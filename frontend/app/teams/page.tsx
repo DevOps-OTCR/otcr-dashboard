@@ -327,10 +327,6 @@ export default function TeamsPage() {
     }
   }, [session, router]);
 
-  if (session.loading || !session.isLoggedIn) {
-    return <FullScreenLoader />;
-  }
-
   const resolvedRole = hasMounted && session.isLoggedIn ? role : role;
   const canManageTeams =
     resolvedRole === 'PM' ||
@@ -352,14 +348,15 @@ export default function TeamsPage() {
   const selectedMemberEmails = selectedTeam ? getMemberEmails(selectedTeam) : [];
 
   useEffect(() => {
-    if (!actionFeedback) return;
+    if (session.loading || !session.isLoggedIn || !actionFeedback) return;
     const timer = setTimeout(() => setActionFeedback(null), 2400);
     return () => clearTimeout(timer);
-  }, [actionFeedback]);
+  }, [session.loading, session.isLoggedIn, actionFeedback]);
 
   useEffect(() => {
+    if (session.loading || !session.isLoggedIn) return;
     setTeamCalendarIdDraft(selectedTeam?.googleCalendarId ?? '');
-  }, [selectedTeam?.id, selectedTeam?.googleCalendarId]);
+  }, [session.loading, session.isLoggedIn, selectedTeam?.id, selectedTeam?.googleCalendarId]);
 
   const loadSelectedTeamSprintData = useCallback(async (projectId: string) => {
     setSprintDataLoading(true);
@@ -406,6 +403,7 @@ export default function TeamsPage() {
   }, [session]);
 
   useEffect(() => {
+    if (session.loading || !session.isLoggedIn) return;
     if (!selectedTeamId || !canManageTeams) {
       setSprintConfigDraft(DEFAULT_SPRINT_CONFIG);
       setTeamSprints([]);
@@ -414,7 +412,7 @@ export default function TeamsPage() {
     }
 
     void loadSelectedTeamSprintData(selectedTeamId);
-  }, [selectedTeamId, canManageTeams, loadSelectedTeamSprintData]);
+  }, [session.loading, session.isLoggedIn, selectedTeamId, canManageTeams, loadSelectedTeamSprintData]);
 
   const filterEmailsBySearch = (emails: string[], query: string) => {
     if (!query.trim()) return emails;
@@ -667,7 +665,7 @@ export default function TeamsPage() {
     }
   };
 
-  if (!hasMounted) {
+  if (session.loading || !session.isLoggedIn || !hasMounted) {
     return <FullScreenLoader />;
   }
 

@@ -3,7 +3,7 @@
  * R = Read | W = Write | C = Comment | A = Approve | — = No access
  */
 
-import { api } from "./api";
+import { authAPI } from "./api";
 
 export type AppRole = 'CONSULTANT' | 'LC' | 'PM' | 'PARTNER' | 'EXECUTIVE' | 'ADMIN';
 
@@ -122,7 +122,7 @@ export async function getEffectiveRole(
   const cachedRole = readCachedRole(normalizedEmail);
   if (cachedRole) return cachedRole;
 
-  const response = await api.get("/auth/role", {
+  const response = await authAPI.getRole({
     headers: { Authorization: `Bearer ${token}` },
   });
   const role = response.data?.role;

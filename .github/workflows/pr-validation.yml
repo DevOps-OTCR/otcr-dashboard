@@ -1,0 +1,89 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend typecheck and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+      - name: Lint frontend
+        run: npm run lint
+      - name: Check TypeScript
+        run: npx tsc --noEmit
+      - name: Run role tests
+        run: npm run test:roles
+      - name: Build Pages static export
+        env:
+          GITHUB_PAGES: 'true'
+          NEXT_TELEMETRY_DISABLED: '1'
+          # Test-only public configuration. PR builds do not use deployment secrets.
+          NEXT_PUBLIC_API_URL: https://api.example.test
+          NEXT_PUBLIC_MSAL_CLIENT_ID: '00000000-0000-4000-8000-000000000001'
+          NEXT_PUBLIC_MSAL_AUTHORITY: https://login.microsoftonline.com/00000000-0000-4000-8000-000000000002
+          NEXT_PUBLIC_MSAL_REDIRECT_URI: https://app.example.test/auth/callback
+        run: |
+          npm run build
+          test -s out/index.html
+
+  backend:
+    name: Backend typecheck, tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+      - name: Lint backend
+        run: npm run lint
+      - name: Check TypeScript
+        run: npx tsc --noEmit
+      - name: Run unit tests
+        run: npm test -- --runInBand
+      - name: Build backend
+        run: npm run build
