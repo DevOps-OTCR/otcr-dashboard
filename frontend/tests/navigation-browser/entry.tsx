@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { InteractionStatus } from '@azure/msal-browser';
 import { AuthProvider } from '@/components/AuthContext';
@@ -39,15 +39,17 @@ function Fixture() {
     acquireTokenSilent: async () => ({ accessToken: 'test-token' }),
     logoutRedirect: async () => {},
   }), [accounts]);
-  (window as any).navigationTest = {
-    tokenProgress: (active: boolean) => setProgress(active ? InteractionStatus.AcquireToken : InteractionStatus.None),
-    write: () => api.post('/test-write', {}),
-    readSnapshot: readNavigationSnapshot,
-    readResource,
-    switchAccount: setEmail,
-    navigate: require('./routing.cjs').navigate,
-    request: () => cachedRequest('/slow-test', () => api.get('/slow-test')),
-  };
+  useEffect(() => {
+    (window as any).navigationTest = {
+      tokenProgress: (active: boolean) => setProgress(active ? InteractionStatus.AcquireToken : InteractionStatus.None),
+      write: () => api.post('/test-write', {}),
+      readSnapshot: readNavigationSnapshot,
+      readResource,
+      switchAccount: setEmail,
+      navigate: require('./routing.cjs').navigate,
+      request: () => cachedRequest('/slow-test', () => api.get('/slow-test')),
+    };
+  }, []);
   return <MsalContext.Provider value={{ instance, accounts, inProgress }}>
     <AuthProvider><DashboardShell><Pages /></DashboardShell></AuthProvider>
   </MsalContext.Provider>;

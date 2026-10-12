@@ -72,8 +72,10 @@ export default function When2MeetPage() {
   const [pollDetail, setPollDetail] = useState<When2MeetPollDetail | null>(snapshot?.pollDetail ?? null);
   const projectRef = useRef(projectId);
   const pollRef = useRef(selectedPollId);
-  projectRef.current = projectId;
-  pollRef.current = selectedPollId;
+  useEffect(() => {
+    projectRef.current = projectId;
+    pollRef.current = selectedPollId;
+  }, [projectId, selectedPollId]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { useAuth } from './AuthContext';
 import { PersistentNavbar, type AppNavbarProps, type AppNavPath } from './AppNavbar';
@@ -20,9 +20,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const overview = overviewPaths.includes(path);
   const [navbar, setNavbar] = useState<AppNavbarProps>({ role: getUserRole(user?.email) });
   const [calendarVisited, setCalendarVisited] = useState(overview);
-  useEffect(() => {
-    if (overview) setCalendarVisited(true);
-  }, [overview]);
+  if (overview && !calendarVisited) setCalendarVisited(true);
   const showNavbar = isLoggedIn && dashboardPaths.includes(path);
 
   return <NavbarRegistration.Provider value={setNavbar}>

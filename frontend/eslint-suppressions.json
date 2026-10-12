@@ -37,11 +37,6 @@
       "count": 1
     }
   },
-  "app/slides/page.tsx": {
-    "react-hooks/immutability": {
-      "count": 1
-    }
-  },
   "app/teams/page.tsx": {
     "react-hooks/set-state-in-effect": {
       "count": 4
