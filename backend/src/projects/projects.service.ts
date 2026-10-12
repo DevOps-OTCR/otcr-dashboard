@@ -19,6 +19,19 @@ type SprintConfigInput = {
   autoGenerateSprints?: boolean;
 };
 
+type SprintSubmission = {
+  id: string;
+  fileUrl: string;
+  submittedAt: Date | string;
+  status: string;
+  submitter: {
+    id: string;
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
+  };
+};
+
 @Injectable()
 export class ProjectsService {
   constructor(
@@ -1021,7 +1034,7 @@ export class ProjectsService {
         : [];
       const latestSubmissions = deliverableIds.length
         ? await this.prisma.$queryRaw<any[]>(Prisma.sql`
-            SELECT DISTINCT ON (s."deliverableId")
+            SELECT DISTINCT ON (s."deliverableId", s."userId")
               s."id",
               s."deliverableId",
               s."fileUrl",
@@ -1034,7 +1047,7 @@ export class ProjectsService {
             FROM "Submission" s
             JOIN "User" u ON u."id" = s."userId"
             WHERE s."deliverableId" IN (${Prisma.join(deliverableIds)})
-            ORDER BY s."deliverableId", s."submittedAt" DESC
+            ORDER BY s."deliverableId", s."userId", s."submittedAt" DESC
           `)
         : [];
 
@@ -1042,6 +1055,7 @@ export class ProjectsService {
       const assignmentsByDeliverable = new Map<string, any[]>();
       const subtasksByDeliverable = new Map<string, any[]>();
       const latestSubmissionByDeliverable = new Map<string, any>();
+      const submissionsByDeliverable = new Map<string, SprintSubmission[]>();
 
       assignments.forEach((assignment) => {
         const existing = assignmentsByDeliverable.get(assignment.deliverableId) ?? [];
@@ -1075,7 +1089,7 @@ export class ProjectsService {
         subtasksByDeliverable.set(subtask.deliverableId, existing);
       });
       latestSubmissions.forEach((submission) => {
-        latestSubmissionByDeliverable.set(submission.deliverableId, {
+        const shaped = {
           id: submission.id,
           fileUrl: submission.fileUrl,
           submittedAt: submission.submittedAt,
@@ -1086,7 +1100,15 @@ export class ProjectsService {
             firstName: submission.submitterFirstName,
             lastName: submission.submitterLastName,
           },
-        });
+        };
+        // Keep the legacy single latest-per-deliverable meaning: newest overall.
+        const current = latestSubmissionByDeliverable.get(submission.deliverableId);
+        if (!current || new Date(submission.submittedAt) > new Date(current.submittedAt)) {
+          latestSubmissionByDeliverable.set(submission.deliverableId, shaped);
+        }
+        const existing = submissionsByDeliverable.get(submission.deliverableId) ?? [];
+        existing.push(shaped);
+        submissionsByDeliverable.set(submission.deliverableId, existing);
       });
 
       deliverables.forEach((deliverable) => {
@@ -1103,6 +1125,7 @@ export class ProjectsService {
           assignees: assignmentsByDeliverable.get(deliverable.id) ?? [],
           subtasks: subtasksByDeliverable.get(deliverable.id) ?? [],
           latestSubmission: latestSubmissionByDeliverable.get(deliverable.id) ?? null,
+          submissions: submissionsByDeliverable.get(deliverable.id) ?? [],
         });
         bySprint.set(deliverable.sprintId, existing);
       });
