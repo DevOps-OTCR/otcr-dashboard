@@ -187,3 +187,15 @@ test('Overview shares sprint requests and retains the calendar across routes and
   }
   assert.equal(state.calendarLoads, 1);
 });
+
+test('Pages trailing-slash routes keep the navbar and overview calendar', async t => {
+  const { page, nav, open } = await setup(t, '/pm/');
+  await open();
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  assert.equal(await nav('Workstream').isVisible(), true);
+  assert.equal(await page.locator('iframe').isVisible(), true);
+  await page.evaluate(() => window.navigationTest.navigate('/when2meet/'));
+  await page.getByText('Monday', { exact: true }).first().waitFor();
+  assert.equal(await nav('When2Meet').isVisible(), true);
+  assert.match(await nav('When2Meet').getAttribute('class'), /text-\[var\(--primary\)\]/);
+});
