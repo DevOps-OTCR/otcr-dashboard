@@ -19,6 +19,19 @@ type SprintConfigInput = {
   autoGenerateSprints?: boolean;
 };
 
+type SprintSubmission = {
+  id: string;
+  fileUrl: string;
+  submittedAt: Date | string;
+  status: string;
+  submitter: {
+    id: string;
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
+  };
+};
+
 @Injectable()
 export class ProjectsService {
   constructor(
@@ -1041,7 +1054,7 @@ export class ProjectsService {
       const assignmentsByDeliverable = new Map<string, any[]>();
       const subtasksByDeliverable = new Map<string, any[]>();
       const latestSubmissionByDeliverable = new Map<string, any>();
-      const submissionByDeliverableAndUser = new Map<string, any>();
+      const submissionByDeliverableAndUser = new Map<string, SprintSubmission>();
 
       assignments.forEach((assignment) => {
         const existing = assignmentsByDeliverable.get(assignment.deliverableId) ?? [];
