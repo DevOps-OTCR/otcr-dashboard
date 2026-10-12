@@ -14,7 +14,6 @@ import {
   useCallback,
 } from "react";
 import FullScreenLoader from "./LoadingScreen";
-import { ThemeProvider } from "../ThemeProvider";
 import { clearRoleCache } from "@/lib/permissions";
 import { clearProjectsCache } from "@/lib/api";
 
@@ -178,9 +177,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }}
     >
       {isLoading ? (
-        <ThemeProvider>
-          <FullScreenLoader />
-        </ThemeProvider>
+        <FullScreenLoader />
       ) : (
         children
       )}

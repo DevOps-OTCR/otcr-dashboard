@@ -5,6 +5,7 @@ import "./globals.css";
 import { PublicClientApplication } from "@azure/msal-browser";
 import { MsalProvider } from "@azure/msal-react";
 import { AuthProvider } from "../components/AuthContext";
+import { ThemeProvider, themeInitScript } from "../components/ThemeProvider";
 import { ReactNode, useMemo } from "react";
 
 export default function MsalWrapper({ children }: { children: ReactNode }) {
@@ -28,14 +29,20 @@ export default function MsalWrapper({ children }: { children: ReactNode }) {
   }), [basePath, origin]);
 
   return (
-    <html>
+    // The theme script sets the class/color-scheme on <html> before hydration.
+    <html suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body>
-        <MsalProvider instance={pca}>
-          <AuthProvider>
-            <AuthApiSync />
-            {children}
-          </AuthProvider>
-        </MsalProvider>
+        <ThemeProvider>
+          <MsalProvider instance={pca}>
+            <AuthProvider>
+              <AuthApiSync />
+              {children}
+            </AuthProvider>
+          </MsalProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

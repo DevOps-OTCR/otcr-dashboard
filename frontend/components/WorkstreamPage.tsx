@@ -594,7 +594,7 @@ export default function WorkstreamPage() {
 
               <div className="flex flex-wrap gap-2">
                 {loadError && (
-                  <div className="w-full rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-800">
+                  <div className="w-full rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
                     {loadError}
                   </div>
                 )}
@@ -658,7 +658,7 @@ export default function WorkstreamPage() {
                         {new Date(selectedSprint.weekStartDate).toLocaleDateString()} - {new Date(selectedSprint.weekEndDate).toLocaleDateString()}
                       </p>
                     </div>
-                    <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                    <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
                       {selectedSprint.status}
                     </span>
                   </div>
@@ -786,7 +786,7 @@ export default function WorkstreamPage() {
                                   className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2"
                                 >
                                   <p className="text-sm font-medium text-[var(--foreground)]">{item.title}</p>
-                                  <p className="mt-1 text-[11px] uppercase tracking-wide text-amber-700">
+                                  <p className="mt-1 text-[11px] uppercase tracking-wide text-amber-700 dark:text-amber-300">
                                     Draft
                                   </p>
                                 </div>
@@ -797,7 +797,7 @@ export default function WorkstreamPage() {
                                   className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2"
                                 >
                                   <p className="text-sm font-medium text-[var(--foreground)]">{title}</p>
-                                  <p className="mt-1 text-[11px] uppercase tracking-wide text-sky-700">
+                                  <p className="mt-1 text-[11px] uppercase tracking-wide text-sky-700 dark:text-sky-300">
                                     Auto-assigned
                                   </p>
                                 </div>
@@ -824,7 +824,7 @@ export default function WorkstreamPage() {
                               Due {new Date(deliverable.deadline).toLocaleString()}
                             </p>
                           </div>
-                          <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] uppercase tracking-wide text-emerald-700">
+                          <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
                             {selectedSprint.status === 'RELEASED' ? 'final' : 'draft'}
                           </span>
                         </div>

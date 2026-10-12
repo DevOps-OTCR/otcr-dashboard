@@ -194,8 +194,8 @@ function TeamDeliverableCard({
           className={cn(
             'text-[11px] uppercase tracking-wide rounded-full px-2 py-1',
             isReleased
-              ? 'bg-emerald-500/10 text-emerald-700'
-              : 'bg-amber-500/10 text-amber-700',
+              ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+              : 'bg-amber-500/10 text-amber-700 dark:text-amber-300',
           )}
         >
           {isReleased ? 'final' : 'draft'}
@@ -777,7 +777,7 @@ export default function TeamsPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="text-rose-600 hover:bg-rose-500/10"
+                            className="text-rose-600 dark:text-rose-400 hover:bg-rose-500/10"
                             onClick={() => handleDeleteTeam(selectedTeam.id)}
                           >
                             <Trash2 className="w-4 h-4 mr-1" />
@@ -1006,7 +1006,7 @@ export default function TeamsPage() {
                             <button
                               type="button"
                               onClick={() => handleRemoveMemberFromTeam(selectedTeam.id, m.user.id)}
-                              className="p-1.5 rounded hover:bg-rose-500/20 text-rose-600"
+                              className="p-1.5 rounded hover:bg-rose-500/20 text-rose-600 dark:text-rose-400"
                               title="Remove member"
                             >
                               <UserMinus className="w-4 h-4" />
@@ -1085,7 +1085,7 @@ export default function TeamsPage() {
                                     e.stopPropagation();
                                     handleDeleteTeam(project.id);
                                   }}
-                                  className="p-2 rounded-lg hover:bg-rose-500/20 text-rose-600 shrink-0"
+                                  className="p-2 rounded-lg hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 shrink-0"
                                   title="Delete team"
                                 >
                                   <Trash2 className="w-4 h-4" />
