@@ -9,6 +9,23 @@ function setup(responses) {
   const cache = new Map();
   const calls = [];
   const exports = {};
+  const apiExports = {};
+  const apiCode = ts.transpileModule(fs.readFileSync(`${__dirname}/../lib/api.ts`, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 },
+  }).outputText;
+  vm.runInNewContext(apiCode, {
+    exports: apiExports,
+    process: { env: {} },
+    require: name => {
+      assert.equal(name, 'axios');
+      return { default: { create: () => ({ get: async (...args) => {
+        calls.push(args);
+        const response = responses.shift();
+        if (response instanceof Error) throw response;
+        return { data: response };
+      } }) } };
+    },
+  });
   const code = ts.transpileModule(fs.readFileSync(`${__dirname}/../lib/permissions.ts`, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 },
   }).outputText;
@@ -21,12 +38,7 @@ function setup(responses) {
     },
     require: name => {
       assert.equal(name, './api');
-      return { api: { get: async (...args) => {
-        calls.push(args);
-        const response = responses.shift();
-        if (response instanceof Error) throw response;
-        return { data: response };
-      } } };
+      return apiExports;
     },
   });
   return { ...exports, cache, calls };
