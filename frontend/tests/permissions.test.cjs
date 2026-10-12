@@ -10,6 +10,15 @@ function setup(responses) {
   const calls = [];
   const exports = {};
   const apiExports = {};
+  const cacheModules = {};
+  for (const name of ['navigation-cache', 'resource-cache']) {
+    const cacheExports = {};
+    const cacheCode = ts.transpileModule(fs.readFileSync(`${__dirname}/../lib/${name}.ts`, 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 },
+    }).outputText;
+    vm.runInNewContext(cacheCode, { exports: cacheExports });
+    cacheModules[`./${name}`] = cacheExports;
+  }
   const apiCode = ts.transpileModule(fs.readFileSync(`${__dirname}/../lib/api.ts`, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 },
   }).outputText;
@@ -17,12 +26,15 @@ function setup(responses) {
     exports: apiExports,
     process: { env: {} },
     require: name => {
+      if (cacheModules[name]) return cacheModules[name];
       assert.equal(name, 'axios');
-      return { default: { create: () => ({ get: async (...args) => {
-        calls.push(args);
-        const response = responses.shift();
-        if (response instanceof Error) throw response;
-        return { data: response };
+      return { default: { create: () => ({
+        interceptors: { response: { use: () => {} } },
+        get: async (...args) => {
+          calls.push(args);
+          const response = responses.shift();
+          if (response instanceof Error) throw response;
+          return { data: response };
       } }) } };
     },
   });

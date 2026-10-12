@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
+import { useCallback, useContext, useLayoutEffect, useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 import Image from 'next/image';
+import { NavbarRegistration } from './navbar-registration';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -104,7 +105,7 @@ function formatNotificationTime(at: Date): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-export function AppNavbar({ role, currentPath = '/dashboard', unreadNotificationCount = 0 }: AppNavbarProps) {
+export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotificationCount = 0 }: AppNavbarProps) {
   const { logout, user, getToken, isLoggedIn } = useAuth();
   const router = useRouter();
   const overviewPath = getDefaultDashboardPath(role);
@@ -437,4 +438,14 @@ export function AppNavbar({ role, currentPath = '/dashboard', unreadNotification
       </div>
     </header>
   );
+}
+
+// Keep existing page call sites while the root layout owns the actual navbar.
+export function AppNavbar(props: AppNavbarProps) {
+  const register = useContext(NavbarRegistration);
+  const { role, currentPath, unreadNotificationCount } = props;
+  useLayoutEffect(() => {
+    register?.({ role, currentPath, unreadNotificationCount });
+  }, [register, role, currentPath, unreadNotificationCount]);
+  return register ? null : <PersistentNavbar {...props} />;
 }

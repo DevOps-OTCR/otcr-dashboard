@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { PageLoading } from './PageLoading';
 import { CalendarDays } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
-import { projectsAPI, type ProjectListItem } from '@/lib/api';
+import { projectsAPI, setAuthToken, type ProjectListItem } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
 
 const DEFAULT_CALENDAR_URL =
@@ -130,6 +131,7 @@ type GoogleCalendarPanelProps = {
   description?: string;
   className?: string;
   projectId?: string;
+  active?: boolean;
 };
 
 export function GoogleCalendarPanel({
@@ -137,25 +139,31 @@ export function GoogleCalendarPanel({
   description = 'Upcoming dates and deadlines',
   className,
   projectId,
+  active = true,
 }: GoogleCalendarPanelProps) {
   const session = useAuth();
   const fallbackCalendarUrl = useMemo(
     () => process.env.NEXT_PUBLIC_GOOGLE_CALENDAR_EMBED_URL || DEFAULT_CALENDAR_URL,
     [],
   );
-  const [calendarUrl, setCalendarUrl] = useState(fallbackCalendarUrl);
+  const [calendarUrl, setCalendarUrl] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!active) return;
     if (!session?.isLoggedIn || !session?.user?.email) {
       setCalendarUrl(fallbackCalendarUrl);
       return;
     }
 
     let canceled = false;
-    projectsAPI
-      .getAll({ includeMembers: true, limit: 100 })
+    session.getToken()
+      .then((token) => {
+        if (canceled) return null;
+        setAuthToken(token || session.user?.email || null);
+        return projectsAPI.getAll({ includeMembers: true, limit: 100 });
+      })
       .then((res) => {
-        if (canceled) return;
+        if (canceled || !res) return;
         const projects = (res.data?.projects ?? []) as ProjectListItem[];
         const normalizedEmail = (session?.user?.email ?? '').toLowerCase();
 
@@ -199,14 +207,14 @@ export function GoogleCalendarPanel({
       })
       .catch(() => {
         if (!canceled) {
-          setCalendarUrl(fallbackCalendarUrl);
+          setCalendarUrl(current => current ?? fallbackCalendarUrl);
         }
       });
 
     return () => {
       canceled = true;
     };
-  }, [session?.isLoggedIn, session?.user?.email, fallbackCalendarUrl, projectId]);
+  }, [session?.isLoggedIn, session?.user?.email, fallbackCalendarUrl, projectId, active, session.getToken]);
 
   return (
     <Card className={className}>
@@ -219,13 +227,13 @@ export function GoogleCalendarPanel({
       </CardHeader>
       <CardContent>
         <div className="rounded-xl border border-[var(--border)] overflow-hidden bg-[var(--secondary)]/50 h-[430px]">
-          <iframe
+          {calendarUrl ? <iframe
             title="OTCR Google Calendar"
             src={calendarUrl}
             className="w-full h-full"
             frameBorder="0"
             scrolling="no"
-          />
+          /> : <PageLoading />}
         </div>
       </CardContent>
     </Card>
