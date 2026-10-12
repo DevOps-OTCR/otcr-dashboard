@@ -23,8 +23,9 @@ function Pages() {
   const pages: Record<string, typeof DeliverablesPage> = { '/slides': SlidesPage, '/attendance': AttendancePage,
     '/workstream': WorkstreamPage, '/when2meet': When2MeetPage, '/pm': PMDashboard, '/lc': LCDashboard,
     '/partner': PartnerDashboard, '/consultant': ConsultantDashboard };
-  const Page = pages[path.split('?')[0]] ?? DeliverablesPage;
-  return <Page key={path.split('?')[0]} />;
+  const route = path.split('?')[0].replace(/\/+$/, '');
+  const Page = pages[route] ?? DeliverablesPage;
+  return <Page key={route} />;
 }
 
 function Fixture() {

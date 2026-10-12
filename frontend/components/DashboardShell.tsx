@@ -16,7 +16,8 @@ const dashboardPaths = [...overviewPaths, '/dashboard', '/deliverables', '/slide
 
 export function DashboardShell({ children }: { children: ReactNode }) {
   const { isLoggedIn, user } = useAuth();
-  const path = usePathname() ?? '';
+  // Pages builds use trailingSlash, so usePathname() returns '/pm/' rather than '/pm'.
+  const path = (usePathname() ?? '').replace(/\/+$/, '') || '/';
   const overview = overviewPaths.includes(path);
   const [navbar, setNavbar] = useState<AppNavbarProps>({ role: getUserRole(user?.email) });
   const [calendarVisited, setCalendarVisited] = useState(overview);
