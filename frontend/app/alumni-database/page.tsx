@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import { Building2, ChevronLeft, ChevronRight, GraduationCap, Search } from 'lucide-react';
 import { AppNavbar } from '@/components/AppNavbar';
@@ -20,12 +21,21 @@ function normalizedEmployer(r: AlumniRecord): string {
 
 export default function AlumniDatabasePage() {
   const session = useAuth();
+  const router = useRouter();
   const [role, setRole] = useState<AppRole>('CONSULTANT');
   const [dataset, setDataset] = useState<AlumniDataset | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [companySearch, setCompanySearch] = useState('');
   const [personSearch, setPersonSearch] = useState('');
   const [pageIndex, setPageIndex] = useState(0);
+
+  useEffect(() => {
+    // Once auth init finishes, bounce signed-out users to sign-in instead of
+    // leaving them stuck on the loader (deep links / bookmarks).
+    if (!session.loading && !session.isLoggedIn) {
+      router.replace('/sign-in');
+    }
+  }, [session, router]);
 
   useEffect(() => {
     setPageIndex(0);
