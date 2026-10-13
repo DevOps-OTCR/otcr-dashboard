@@ -127,8 +127,6 @@ npm run test:navigation:browser
 
 The suite checks navigation, cached content, and trailing-slash routes in headless Chromium. It uses the real page components with mocked routing, authentication, and API responses; it does not test the deployed GitHub Pages site or real sign-in.
 
-Alumni Database keeps its dataset, search, sort, and page selection in memory for the signed-in browser session. Dataset requests share the dashboard resource cache and remain fresh for two minutes. Returning after that interval revalidates in the background; **Refresh alumni data** requests an update immediately. Refresh failures keep the loaded table visible and can be retried. Sign-out, account changes, and successful API writes clear the shared caches. Permission overrides use separate cache entries. Reloading the browser starts with an empty in-memory cache.
-
 PR Validation installs Chromium and its Linux dependencies, then runs the suite as part of the required frontend check. A browser test failure also blocks the Pages deployment validation. Set `NAVIGATION_BROWSER_CHANNEL=chrome` to use an installed Chrome browser locally.
 
 ## Production Deployment

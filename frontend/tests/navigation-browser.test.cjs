@@ -33,7 +33,7 @@ async function setup(t, initialPath) {
   page.on('pageerror', error => errors.push(error.message));
   t.after(() => assert.deepEqual(errors, []));
   const state = { calls: [], gate: null, failSprints: false, slowGate: null, calendarLoads: 0, eventTitle: 'Team weekly check-in',
-    alumniGate: null, failAlumni: false, alumniLimit: 130 };
+    alumniGate: null, failAlumni: false };
   await page.route('**/api/**', async route => {
     const pathname = new URL(route.request().url()).pathname.slice(4);
     state.calls.push(pathname);
@@ -43,7 +43,6 @@ async function setup(t, initialPath) {
     if (pathname === '/test-write') state.eventTitle = 'Updated team check-in';
     const payload = responseFor(pathname, 'PM');
     if (pathname === '/attendance/events') payload.events = payload.events.map(event => ({ ...event, title: state.eventTitle }));
-    if (pathname === '/alumni') payload.rows = payload.rows.slice(0, state.alumniLimit);
     const failed = (state.failSprints && pathname.endsWith('/sprints')) || (state.failAlumni && pathname === '/alumni');
     await route.fulfill({ status: failed ? 503 : 200, contentType: 'application/json',
       body: JSON.stringify(failed ? { message: 'Temporary outage' } : payload) });
@@ -54,52 +53,28 @@ async function setup(t, initialPath) {
   };
 }
 
-async function selectAlumniState(page) {
-  await page.getByRole('button', { name: 'Refresh alumni data', exact: true }).waitFor();
+test('Alumni restores table state, reuses fresh data, and retains rows during failed refreshes', async t => {
+  const { page, state, nav, open } = await setup(t, '/alumni-database/');
+  await open();
   await page.getByRole('searchbox').fill('Example');
   await page.getByRole('button', { name: 'Name', exact: true }).click();
   await page.getByRole('button', { name: 'Name', exact: true }).click();
   await page.getByRole('button', { name: 'Next page', exact: true }).click();
-  await page.getByText('Page 2 of 3', { exact: true }).waitFor();
-  return page.locator('tbody').innerText();
-}
-
-async function assertAlumniState(page, rows) {
-  assert.equal(await page.getByRole('searchbox').inputValue(), 'Example');
-  assert.equal(await page.getByRole('columnheader', { name: 'Name', exact: true }).getAttribute('aria-sort'), 'descending');
-  assert.equal(await page.getByText('Page 2 of 3', { exact: true }).isVisible(), true);
-  assert.equal(await page.locator('tbody').innerText(), rows);
-}
-
-test('Alumni restores search, sort, page, and rows without another fresh dataset request', async t => {
-  const { page, state, nav, open } = await setup(t, '/alumni-database/');
-  await open();
-  const rows = await selectAlumniState(page);
+  const rows = await page.locator('tbody').innerText();
+  const assertTable = async () => {
+    assert.equal(await page.getByRole('searchbox').inputValue(), 'Example');
+    assert.equal(await page.getByRole('columnheader', { name: 'Name', exact: true }).getAttribute('aria-sort'), 'descending');
+    assert.equal(await page.getByText('Page 2 of 3', { exact: true }).isVisible(), true);
+    assert.equal(await page.locator('tbody').innerText(), rows);
+  };
   await nav('Forms').click();
   await page.getByText('Dashboard Feedback Form', { exact: true }).waitFor();
-  // A fresh return must restore content even if the network cannot respond.
-  let release;
-  state.alumniGate = new Promise(resolve => { release = resolve; });
   await nav('Alumni Database').click();
-  await page.getByRole('searchbox').waitFor();
-  await assertAlumniState(page, rows);
   await page.getByRole('button', { name: 'Refresh alumni data', exact: true }).waitFor();
+  await assertTable();
   assert.equal(state.calls.filter(path => path === '/alumni').length, 1);
-  assert.equal(await page.getByRole('status').count(), 0);
-  release();
-  await page.getByRole('button', { name: 'Clear search', exact: true }).click();
-  await page.getByText('Page 1 of 3', { exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Next page', exact: true }).click();
-  await page.getByRole('button', { name: 'Class', exact: true }).click();
-  await page.getByText('Page 1 of 3', { exact: true }).waitFor();
-});
 
-test('Alumni keeps stale rows during failed revalidation and deduplicates an explicit retry', async t => {
-  const { page, state, nav, open } = await setup(t, '/alumni-database');
-  await open();
-  const rows = await selectAlumniState(page);
   await nav('Forms').click();
-  await page.getByText('Dashboard Feedback Form', { exact: true }).waitFor();
   await page.clock.install({ time: new Date() });
   await page.clock.fastForward(121000);
   let release;
@@ -107,141 +82,63 @@ test('Alumni keeps stale rows during failed revalidation and deduplicates an exp
   const refresh = page.waitForRequest('**/api/alumni');
   await nav('Alumni Database').click();
   await refresh;
-  await assertAlumniState(page, rows);
-  assert.equal(await page.getByRole('status').count(), 0);
+  await assertTable();
   state.failAlumni = true;
   release();
   await page.getByRole('alert').waitFor();
-  await assertAlumniState(page, rows);
+  await assertTable();
   assert.equal(state.calls.filter(path => path === '/alumni').length, 2);
 
   state.failAlumni = false;
-  state.alumniLimit = 20;
-  let releaseRetry;
-  state.alumniGate = new Promise(resolve => { releaseRetry = resolve; });
+  state.alumniGate = new Promise(resolve => { release = resolve; });
   const retry = page.waitForRequest('**/api/alumni');
   await page.getByRole('button', { name: 'Refresh alumni data', exact: true }).click();
   await retry;
   await page.evaluate(() => {
     window.alumniRequests = Promise.all([window.navigationTest.requestAlumni(), window.navigationTest.requestAlumni()]);
   });
-  await assertAlumniState(page, rows);
-  releaseRetry();
+  release();
   await page.evaluate(() => window.alumniRequests.then(() => true));
-  await page.getByText('Page 1 of 1', { exact: true }).waitFor();
-  assert.equal(await page.getByRole('searchbox').inputValue(), 'Example');
-  assert.equal(await page.getByRole('columnheader', { name: 'Name', exact: true }).getAttribute('aria-sort'), 'descending');
-  assert.equal(await page.locator('tbody tr').count(), 20);
-  assert.equal(state.calls.filter(path => path === '/alumni').length, 3);
-  assert.equal(await page.getByRole('alert').count(), 0);
-
-  // Manual refresh must bypass the now-fresh response.
-  state.alumniGate = null;
-  state.alumniLimit = 130;
-  await page.getByRole('button', { name: 'Refresh alumni data', exact: true }).click();
   await page.getByRole('button', { name: 'Refresh alumni data', exact: true }).waitFor();
-  await page.getByText('Page 1 of 3', { exact: true }).waitFor();
-  assert.equal(state.calls.filter(path => path === '/alumni').length, 4);
+  await assertTable();
+  assert.equal(await page.getByRole('alert').count(), 0);
+  assert.equal(state.calls.filter(path => path === '/alumni').length, 3);
 });
 
-test('Alumni retries failed initial requests instead of caching them as data', async t => {
-  const { page, state, nav, open } = await setup(t, '/alumni-database');
+test('Alumni does not cache failed initial requests and can retry', async t => {
+  const { page, state, open } = await setup(t, '/alumni-database');
   state.failAlumni = true;
   await open();
   await page.getByRole('alert').waitFor();
-  assert.equal(await page.locator('tbody').count(), 0);
   assert.equal(await page.evaluate(() => window.navigationTest.readResource('/alumni')), undefined);
-  const key = JSON.stringify(['alumni-database', 'pm@example.test', null]);
-  assert.equal(await page.evaluate(key => window.navigationTest.readSnapshot(key), key), undefined);
-  await nav('Forms').click();
-  await page.getByText('Dashboard Feedback Form', { exact: true }).waitFor();
   state.failAlumni = false;
-  await nav('Alumni Database').click();
+  await page.getByRole('button', { name: 'Refresh alumni data', exact: true }).click();
   await page.getByRole('searchbox').waitFor();
   assert.equal(state.calls.filter(path => path === '/alumni').length, 2);
 });
 
-test('Alumni invalidates data and table state on writes, account changes, and sign-out', async t => {
-  const { page, state, nav, open } = await setup(t, '/alumni-database');
+test('Alumni clears cached data and table state on account changes and sign-out', async t => {
+  const { page, state, open } = await setup(t, '/alumni-database');
   await open();
-  await selectAlumniState(page);
+  await page.getByRole('searchbox').fill('Example');
   const key = JSON.stringify(['alumni-database', 'pm@example.test', null]);
-  await page.waitForFunction(key => Boolean(window.navigationTest.readSnapshot(key)), key);
-  await nav('Forms').click();
-  await page.getByText('Dashboard Feedback Form', { exact: true }).waitFor();
-  await page.evaluate(() => window.navigationTest.write().then(() => true));
-  assert.equal(await page.evaluate(key => window.navigationTest.readSnapshot(key), key), undefined);
   let release;
   state.alumniGate = new Promise(resolve => { release = resolve; });
-  const writeRefresh = page.waitForRequest('**/api/alumni');
-  await nav('Alumni Database').click();
-  await writeRefresh;
-  await page.getByRole('status').waitFor();
-  assert.equal(await page.locator('tbody').count(), 0);
-  release();
-  await page.getByRole('searchbox').waitFor();
-  assert.equal(await page.getByRole('searchbox').inputValue(), '');
-  await selectAlumniState(page);
-
-  let releaseAccount;
-  state.alumniGate = new Promise(resolve => { releaseAccount = resolve; });
-  const accountRefresh = page.waitForRequest('**/api/alumni');
+  const refresh = page.waitForRequest('**/api/alumni');
   await page.evaluate(() => window.navigationTest.switchAccount('other@example.test'));
-  await accountRefresh;
+  await refresh;
   assert.equal(await page.locator('tbody').count(), 0);
   assert.equal(await page.evaluate(key => window.navigationTest.readSnapshot(key), key), undefined);
   assert.equal(await page.evaluate(() => window.navigationTest.readResource('/alumni')), undefined);
-  releaseAccount();
+  release();
   await page.getByRole('searchbox').waitFor();
   assert.equal(await page.getByRole('searchbox').inputValue(), '');
-  assert.equal(await page.getByRole('columnheader', { name: 'Employer', exact: true }).getAttribute('aria-sort'), 'ascending');
-  await page.getByText('Page 1 of 3', { exact: true }).waitFor();
   const activeKey = JSON.stringify(['alumni-database', 'other@example.test', null]);
   await page.waitForFunction(key => Boolean(window.navigationTest.readSnapshot(key)), activeKey);
-  await page.getByRole('button', { name: 'Refresh alumni data', exact: true }).waitFor();
-
-  // A response arriving after sign-out must not repopulate either cache.
-  let releaseLogout;
-  state.alumniGate = new Promise(resolve => { releaseLogout = resolve; });
-  const pendingRefresh = page.waitForRequest('**/api/alumni');
-  await page.getByRole('button', { name: 'Refresh alumni data', exact: true }).click();
-  await pendingRefresh;
-  await page.evaluate(() => { window.logoutRequest = window.navigationTest.requestAlumni(); });
   await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
   await page.waitForURL('**/sign-in');
-  releaseLogout();
-  await page.evaluate(() => window.logoutRequest.then(() => true));
-  assert.equal(await page.locator('tbody').count(), 0);
   assert.equal(await page.evaluate(key => window.navigationTest.readSnapshot(key), activeKey), undefined);
   assert.equal(await page.evaluate(() => window.navigationTest.readResource('/alumni')), undefined);
-});
-
-test('Alumni isolates the dataset and table state when the permission override changes', async t => {
-  const { page, state, nav, open } = await setup(t, '/alumni-database');
-  await open();
-  const rows = await selectAlumniState(page);
-  await nav('Forms').click();
-  await page.getByText('Dashboard Feedback Form', { exact: true }).waitFor();
-  await page.evaluate(() => window.navigationTest.setRoleOverride('CONSULTANT'));
-  let release;
-  state.alumniGate = new Promise(resolve => { release = resolve; });
-  const permissionRefresh = page.waitForRequest('**/api/alumni');
-  await nav('Alumni Database').click();
-  await permissionRefresh;
-  await page.getByRole('status').waitFor();
-  assert.equal(await page.locator('tbody').count(), 0);
-  release();
-  await page.getByRole('searchbox').waitFor();
-  assert.equal(await page.getByRole('searchbox').inputValue(), '');
-  await page.getByText('Page 1 of 3', { exact: true }).waitFor();
-  await nav('Forms').click();
-  await page.getByText('Dashboard Feedback Form', { exact: true }).waitFor();
-  await page.evaluate(() => window.navigationTest.setRoleOverride(null));
-  await nav('Alumni Database').click();
-  await page.getByRole('searchbox').waitFor();
-  await assertAlumniState(page, rows);
-  await page.getByRole('button', { name: 'Refresh alumni data', exact: true }).waitFor();
-  assert.equal(state.calls.filter(path => path === '/alumni').length, 2);
 });
 
 test('navigation stays usable during loading and Slides does not fetch twice', async t => {

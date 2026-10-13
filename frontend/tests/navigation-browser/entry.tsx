@@ -17,7 +17,6 @@ import { DashboardShell } from '@/components/DashboardShell';
 import { ThemeProvider, themeInitScript } from '@/components/ThemeProvider';
 import { cachedRequest, readResource } from '@/lib/resource-cache';
 import { alumniAPI, api } from '@/lib/api';
-import { setDevRoleOverride } from '@/lib/permissions';
 import { readNavigationSnapshot } from '@/lib/navigation-cache';
 import { usePathname } from 'next/navigation';
 
@@ -55,7 +54,6 @@ function Fixture() {
       navigate: require('./routing.cjs').navigate,
       request: () => cachedRequest('/slow-test', () => api.get('/slow-test')),
       requestAlumni: () => alumniAPI.getDataset(),
-      setRoleOverride: setDevRoleOverride,
     };
   }, []);
   return <MsalContext.Provider value={{ instance, accounts, inProgress }}>
