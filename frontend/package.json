@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "eslint .",
     "lint:prune": "eslint . --prune-suppressions",
-    "test": "node --test \"tests/*.test.cjs\"",
+    "test": "node --test tests/alumni-data.test.cjs tests/permissions.test.cjs",
     "test:roles": "node --test tests/permissions.test.cjs",
     "test:navigation:browser": "node --test tests/navigation-browser.test.cjs",
     "import-alumni": "node scripts/import-alumni.cjs",
