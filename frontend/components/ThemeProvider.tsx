@@ -1,109 +1,67 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore } from 'react';
+import { createContext, useCallback, useContext, useMemo, useSyncExternalStore } from 'react';
 
-export type ThemePreference = 'light' | 'dark' | 'system';
-export type ResolvedTheme = 'light' | 'dark';
+export type Theme = 'light' | 'dark';
 
 interface ThemeContextType {
-  /** What the user picked. `system` means no explicit choice has been saved. */
-  preference: ThemePreference;
-  /** The theme actually applied to the page. */
-  theme: ResolvedTheme;
-  setPreference: (preference: ThemePreference) => void;
+  theme: Theme;
   toggleTheme: () => void;
 }
 
 export const THEME_STORAGE_KEY = 'theme';
 const THEME_CHANGE_EVENT = 'otcr-theme-change';
-const DARK_QUERY = '(prefers-color-scheme: dark)';
 
-/**
- * Runs before React hydrates (see app/layout.tsx) so the first paint already
- * uses the right theme instead of flashing light and then switching.
- */
-export const themeInitScript = `(function(){try{var p=null;try{p=localStorage.getItem('${THEME_STORAGE_KEY}')}catch(e){}var d=p==='dark'||(p!=='light'&&window.matchMedia('${DARK_QUERY}').matches);var r=document.documentElement;r.classList.remove('light','dark');r.classList.add(d?'dark':'light');r.style.colorScheme=d?'dark':'light'}catch(e){}})();`;
+// Apply the saved choice before hydration. Unset and legacy System preferences use Light.
+export const themeInitScript = `(function(){var t='light';try{if(localStorage.getItem('${THEME_STORAGE_KEY}')==='dark')t='dark'}catch(e){}var r=document.documentElement;if(!r.classList.replace(t==='dark'?'light':'dark',t))r.classList.add(t);r.style.colorScheme=t})();`;
 
-// Fallback for browsers where localStorage is unavailable (e.g. blocked storage).
-let memoryPreference: ThemePreference = 'system';
-
-function readPreference(): ThemePreference {
-  try {
-    const stored = localStorage.getItem(THEME_STORAGE_KEY);
-    return stored === 'light' || stored === 'dark' ? stored : 'system';
-  } catch {
-    return memoryPreference;
-  }
+function readTheme(): Theme {
+  return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
 }
 
-function subscribePreference(onChange: () => void) {
-  // `storage` keeps other open tabs in sync; the custom event covers this tab.
-  window.addEventListener('storage', onChange);
+function applyTheme(theme: Theme) {
+  const root = document.documentElement;
+  const previous = theme === 'dark' ? 'light' : 'dark';
+  if (!root.classList.replace(previous, theme)) root.classList.add(theme);
+  root.style.colorScheme = theme;
+}
+
+function subscribeTheme(onChange: () => void) {
+  const onStorage = (event: StorageEvent) => {
+    if (event.key !== THEME_STORAGE_KEY && event.key !== null) return;
+    applyTheme(event.newValue === 'dark' ? 'dark' : 'light');
+    onChange();
+  };
+  window.addEventListener('storage', onStorage);
   window.addEventListener(THEME_CHANGE_EVENT, onChange);
   return () => {
-    window.removeEventListener('storage', onChange);
+    window.removeEventListener('storage', onStorage);
     window.removeEventListener(THEME_CHANGE_EVENT, onChange);
   };
-}
-
-function readSystemTheme(): ResolvedTheme {
-  return window.matchMedia(DARK_QUERY).matches ? 'dark' : 'light';
-}
-
-function subscribeSystemTheme(onChange: () => void) {
-  const media = window.matchMedia(DARK_QUERY);
-  media.addEventListener('change', onChange);
-  return () => media.removeEventListener('change', onChange);
-}
-
-function applyTheme(theme: ResolvedTheme) {
-  const root = document.documentElement;
-  root.classList.remove('light', 'dark');
-  root.classList.add(theme);
-  root.style.colorScheme = theme;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const preference = useSyncExternalStore(subscribePreference, readPreference, () => 'system' as const);
-  const systemTheme = useSyncExternalStore(subscribeSystemTheme, readSystemTheme, () => 'light' as const);
-  const theme: ResolvedTheme = preference === 'system' ? systemTheme : preference;
-
-  useEffect(() => {
-    applyTheme(theme);
-  }, [theme]);
-
-  const setPreference = useCallback((next: ThemePreference) => {
-    memoryPreference = next;
+  // The initialization script owns the first paint; hydration must not overwrite it with Light.
+  const theme = useSyncExternalStore(subscribeTheme, readTheme, () => 'light' as const);
+  const toggleTheme = useCallback(() => {
+    const next = readTheme() === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
     try {
-      if (next === 'system') {
-        localStorage.removeItem(THEME_STORAGE_KEY);
-      } else {
-        localStorage.setItem(THEME_STORAGE_KEY, next);
-      }
+      localStorage.setItem(THEME_STORAGE_KEY, next);
     } catch {
-      // Storage blocked: the in-memory preference still applies for this page view.
+      // The current page still changes theme when browser storage is unavailable.
     }
     window.dispatchEvent(new Event(THEME_CHANGE_EVENT));
   }, []);
-
-  const toggleTheme = useCallback(() => {
-    setPreference(theme === 'dark' ? 'light' : 'dark');
-  }, [setPreference, theme]);
-
-  const value = useMemo(
-    () => ({ preference, theme, setPreference, toggleTheme }),
-    [preference, theme, setPreference, toggleTheme],
-  );
+  const value = useMemo(() => ({ theme, toggleTheme }), [theme, toggleTheme]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {
   const context = useContext(ThemeContext);
-  if (context === undefined) {
-    throw new Error('useTheme must be used within ThemeProvider');
-  }
+  if (context === undefined) throw new Error('useTheme must be used within ThemeProvider');
   return context;
 }

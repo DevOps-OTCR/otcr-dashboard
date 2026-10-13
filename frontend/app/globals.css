@@ -1,7 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@600;800&family=Mulish:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
-/* Theme is chosen by a class on <html> (see components/ThemeProvider.tsx), not only the OS setting. */
+/* Theme is chosen by a class on <html> (see components/ThemeProvider.tsx). */
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
@@ -67,7 +67,15 @@ body {
   color: var(--foreground);
   background: var(--background);
   font-family: 'Space Grotesk', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Google renders its embed in another origin, so theme the frame without reloading it. */
+.google-calendar-embed {
+  color-scheme: light;
+}
+
+.dark .google-calendar-embed {
+  filter: invert(0.9) hue-rotate(180deg);
 }
 
 @layer utilities {

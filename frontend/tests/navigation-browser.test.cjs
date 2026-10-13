@@ -199,3 +199,41 @@ test('Pages trailing-slash routes keep the navbar and overview calendar', async 
   assert.equal(await nav('When2Meet').isVisible(), true);
   assert.match(await nav('When2Meet').getAttribute('class'), /text-\[var\(--primary\)\]/);
 });
+
+test('Light/Dark toggle persists and syncs without replacing icons or reloading the calendar', async t => {
+  const { page, state, open } = await setup(t, '/pm');
+  await open();
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  await page.locator('iframe').waitFor();
+  await page.evaluate(() => {
+    window.themeIcons = Array.from(document.querySelector('button[aria-label="Switch to dark mode"]').querySelectorAll('svg'));
+    window.themeCalendar = document.querySelector('iframe');
+  });
+  await page.getByRole('button', { name: 'Switch to dark mode', exact: true }).click();
+  await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
+  assert.equal(await page.getByRole('button', { name: 'Switch to light mode', exact: true }).getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.getByRole('menu').count(), 0);
+  assert.equal(await page.evaluate(() => {
+    const icons = document.querySelector('button[aria-label="Switch to light mode"]').querySelectorAll('svg');
+    return icons.length === 2 && Array.from(icons).every((icon, index) => icon === window.themeIcons[index])
+      && document.querySelector('iframe') === window.themeCalendar;
+  }), true);
+  assert.equal(state.calendarLoads, 1);
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Switch to light mode', exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => document.documentElement.classList.contains('dark')), true);
+
+  const other = await page.context().newPage();
+  await other.route('**/api/**', route => route.fulfill({ contentType: 'application/json',
+    body: JSON.stringify(responseFor(new URL(route.request().url()).pathname.slice(4), 'PM')) }));
+  await other.goto('http://navigation.test/slides');
+  await other.getByRole('button', { name: 'Switch to light mode', exact: true }).click();
+  await page.waitForFunction(() => document.documentElement.classList.contains('light'));
+
+  // Reads can succeed while writes fail when browser storage is full.
+  await page.evaluate(() => { Storage.prototype.setItem = () => { throw new DOMException('Storage full', 'QuotaExceededError'); }; });
+  await page.getByRole('button', { name: 'Switch to dark mode', exact: true }).click();
+  await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
+  assert.equal(await page.getByRole('button', { name: 'Switch to light mode', exact: true }).isVisible(), true);
+});
