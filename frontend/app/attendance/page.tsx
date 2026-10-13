@@ -812,7 +812,10 @@ export default function AttendancePage() {
               <Badge variant={attendanceEvent.locationType === 'ONLINE' ? 'info' : 'success'}>
                 {attendanceEvent.locationType === 'ONLINE' ? 'Online' : 'In person'}
               </Badge>
-              <Badge variant={attendanceEvent.audienceScope === 'GLOBAL' ? 'warning' : 'default'}>
+              <Badge
+                variant={attendanceEvent.audienceScope === 'GLOBAL' ? 'warning' : 'default'}
+                className="max-w-full whitespace-normal [overflow-wrap:anywhere]"
+              >
                 {attendanceEvent.audienceScope === 'GLOBAL' ? 'Everyone' : attendanceEvent.projectName || 'Team'}
               </Badge>
               <Badge variant="purple">
@@ -847,7 +850,7 @@ export default function AttendancePage() {
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <p className="text-sm font-medium">Created by {attendanceEvent.createdByName}</p>
               {attendanceEvent.attendance?.present ? (
-                <Badge variant="success">
+                <Badge variant="success" className="max-w-full whitespace-normal">
                   Checked in {attendanceEvent.attendance.checkedInAt ? `at ${new Date(attendanceEvent.attendance.checkedInAt).toLocaleTimeString()}` : ''}
                 </Badge>
               ) : (

@@ -28,9 +28,9 @@ interface CardHeaderProps {
 
 export function CardHeader({ children, className, action }: CardHeaderProps) {
   return (
-    <div className={cn('flex items-center justify-between mb-4', className)}>
-      <div>{children}</div>
-      {action && <div>{action}</div>}
+    <div className={cn('flex items-center justify-between gap-3 mb-4', className)}>
+      <div className="min-w-0 flex-1">{children}</div>
+      {action && <div className="max-w-full shrink-0">{action}</div>}
     </div>
   );
 }
