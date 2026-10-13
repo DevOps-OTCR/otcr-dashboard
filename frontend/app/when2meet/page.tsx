@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Be_Vietnam_Pro, Mulish } from 'next/font/google';
 import { AppNavbar } from '@/components/AppNavbar';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
@@ -54,6 +55,7 @@ type ProjectOption = { id: string; name: string };
 
 export default function When2MeetPage() {
   const session = useAuth();
+  const router = useRouter();
   const { isLoggedIn, getToken } = session;
   const email = session.user?.email;
   const { snapshot, saveSnapshot } = useNavigationSnapshot<{
@@ -86,6 +88,14 @@ export default function When2MeetPage() {
   const [slotEnd, setSlotEnd] = useState('17:00');
   const [creating, setCreating] = useState(false);
   const [deletingPoll, setDeletingPoll] = useState(false);
+
+  useEffect(() => {
+    // Once auth init finishes, bounce signed-out users to sign-in instead of
+    // leaving them stuck on the loader (deep links / bookmarks).
+    if (!session.loading && !session.isLoggedIn) {
+      router.replace('/sign-in');
+    }
+  }, [session.loading, session.isLoggedIn, router]);
 
   const canCreatePoll =
     role === 'ADMIN' || role === 'PM' || role === 'PARTNER' || role === 'EXECUTIVE';

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { StickyNote, ExternalLink, Plus } from 'lucide-react';
 import { AppNavbar } from '@/components/AppNavbar';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
@@ -58,6 +59,7 @@ function parseApiError(err: any, fallback: string): string {
 
 export default function ClientNotesPage() {
   const session = useAuth();
+  const router = useRouter();
   const [roleLookupFailed, setRoleLookupFailed] = useState(false);
   const [resolvedRole, setResolvedRole] = useState<AppRole>('CONSULTANT');
 
@@ -69,6 +71,14 @@ export default function ClientNotesPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Once auth init finishes, bounce signed-out users to sign-in instead of
+    // leaving them stuck on the loader (deep links / bookmarks).
+    if (!session.loading && !session.isLoggedIn) {
+      router.replace('/sign-in');
+    }
+  }, [session.loading, session.isLoggedIn, router]);
 
   useEffect(() => {
     const syncRole = async () => {
