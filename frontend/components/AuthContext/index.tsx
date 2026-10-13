@@ -17,7 +17,6 @@ import {
   Fragment,
 } from "react";
 import FullScreenLoader from "./LoadingScreen";
-import { ThemeProvider } from "../ThemeProvider";
 import { clearRoleCache } from "@/lib/permissions";
 import { clearProjectsCache } from "@/lib/api";
 import { setResourceCacheScope } from '@/lib/resource-cache';
@@ -192,9 +191,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       value={contextValue}
     >
       {isLoading ? (
-        <ThemeProvider>
-          <FullScreenLoader />
-        </ThemeProvider>
+        <FullScreenLoader />
       ) : (
         <Fragment key={user?.email ?? 'signed-out'}>{children}</Fragment>
       )}

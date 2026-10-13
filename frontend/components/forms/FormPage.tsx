@@ -200,12 +200,12 @@ export function FormPage({
         )}
 
         {message && (
-          <p className="text-sm rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-emerald-700">
+          <p className="text-sm rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-emerald-700 dark:text-emerald-300">
             {message}
           </p>
         )}
         {error && (
-          <p className="text-sm rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-red-700">
+          <p className="text-sm rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-red-700 dark:text-red-300">
             {error}
           </p>
         )}

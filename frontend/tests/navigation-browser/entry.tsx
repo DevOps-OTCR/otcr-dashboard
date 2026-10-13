@@ -12,6 +12,7 @@ import LCDashboard from '@/app/lc/page';
 import PartnerDashboard from '@/app/partner/page';
 import ConsultantDashboard from '@/app/consultant/page';
 import { DashboardShell } from '@/components/DashboardShell';
+import { ThemeProvider, themeInitScript } from '@/components/ThemeProvider';
 import { cachedRequest, readResource } from '@/lib/resource-cache';
 import { api } from '@/lib/api';
 import { readNavigationSnapshot } from '@/lib/navigation-cache';
@@ -52,7 +53,11 @@ function Fixture() {
     };
   }, []);
   return <MsalContext.Provider value={{ instance, accounts, inProgress }}>
-    <AuthProvider><DashboardShell><Pages /></DashboardShell></AuthProvider>
+    <ThemeProvider><AuthProvider><DashboardShell><Pages /></DashboardShell></AuthProvider></ThemeProvider>
   </MsalContext.Provider>;
 }
+// Match the root layout's theme initialization before mounting the browser fixture.
+const themeScript = document.createElement('script');
+themeScript.textContent = themeInitScript;
+document.head.appendChild(themeScript);
 createRoot(document.getElementById('root')!).render(<Fixture />);

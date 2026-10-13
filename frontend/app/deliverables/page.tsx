@@ -655,7 +655,7 @@ export default function DeliverablesPage() {
               </div>
 
               {loadError && (
-                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-800">
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
                   {loadError}
                 </div>
               )}
@@ -698,7 +698,7 @@ export default function DeliverablesPage() {
                         {new Date(selectedSprint.weekStartDate).toLocaleDateString()} - {new Date(selectedSprint.weekEndDate).toLocaleDateString()}
                       </p>
                     </div>
-                    <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                    <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
                       {selectedSprint.status}
                     </span>
                   </div>
@@ -739,7 +739,7 @@ export default function DeliverablesPage() {
                                 </p>
                               ) : null}
                             </div>
-                            <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] uppercase tracking-wide text-emerald-700">
+                            <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
                               {deliverable.status.replace(/_/g, ' ')}
                             </span>
                           </div>
@@ -834,7 +834,7 @@ export default function DeliverablesPage() {
                                 )}
                               >
                                 {deliverable.completed ? (
-                                  <CheckSquare className="w-4 h-4 text-emerald-600" />
+                                  <CheckSquare className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                                 ) : (
                                   <Square className="w-4 h-4 text-[var(--foreground)]/55" />
                                 )}

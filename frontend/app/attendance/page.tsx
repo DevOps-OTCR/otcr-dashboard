@@ -1005,12 +1005,12 @@ export default function AttendancePage() {
         </section>
 
         {message && (
-          <p className="text-sm rounded-xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-emerald-700">
+          <p className="text-sm rounded-xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-emerald-700 dark:text-emerald-300">
             {message}
           </p>
         )}
         {error && (
-          <p className="text-sm rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-3 text-red-700">
+          <p className="text-sm rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-3 text-red-700 dark:text-red-300">
             {error}
           </p>
         )}
