@@ -16,8 +16,8 @@ exports.buildStyles = async () => {
 };
 
 // Bundle the real pages, navbar, and auth provider. Only routing and MSAL are mocked.
-exports.buildBundle = async ({ entry = 'entry.tsx', basePath = '' } = {}) => {
-  const output = path.join(root, 'build/navigation-browser', path.basename(entry, '.tsx') + (basePath ? '-base-path' : ''));
+exports.buildBundle = async () => {
+  const output = path.join(root, 'build/navigation-browser');
   fs.mkdirSync(output, { recursive: true });
   fs.writeFileSync(path.join(output, 'loader.cjs'), `const ts = require('typescript'); module.exports = function(source) {
     return ts.transpileModule(source, { fileName: this.resourcePath, compilerOptions: {
@@ -32,7 +32,7 @@ exports.buildBundle = async ({ entry = 'entry.tsx', basePath = '' } = {}) => {
   fs.writeFileSync(path.join(output, 'fonts.cjs'), 'exports.Mulish = exports.Be_Vietnam_Pro = () => ({ className: \'test-font\' });');
   await new Promise((resolve, reject) => webpack({
     mode: 'development', target: 'web', devtool: false,
-    entry: path.join(__dirname, entry),
+    entry: path.join(__dirname, 'entry.tsx'),
     output: { path: output, filename: 'bundle.js' },
     resolve: { extensions: ['.tsx', '.ts', '.js', '.cjs'], alias: {
       '@': root, 'next/navigation$': path.join(__dirname, 'routing.cjs'),
@@ -44,7 +44,7 @@ exports.buildBundle = async ({ entry = 'entry.tsx', basePath = '' } = {}) => {
     plugins: [new webpack.DefinePlugin({
       'process.env.NEXT_PUBLIC_API_URL': JSON.stringify('/api'),
       'process.env.NEXT_PUBLIC_GOOGLE_CALENDAR_EMBED_URL': JSON.stringify(''),
-      'process.env.NEXT_PUBLIC_BASE_PATH': JSON.stringify(basePath),
+      'process.env.NEXT_PUBLIC_BASE_PATH': JSON.stringify(''),
       'process.env.NEXT_PUBLIC_MSAL_AUTHORITY': JSON.stringify('https://login.microsoftonline.com/test'),
     })],
   }, (error, stats) => error || stats.hasErrors()

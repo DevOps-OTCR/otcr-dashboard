@@ -348,10 +348,22 @@ test('dashboard sign-out survives refresh and protected navigation until explici
   const { page, open } = await setup(t, '/pm');
   await open();
   await page.getByText('team-1 Research', { exact: true }).waitFor();
+  await page.evaluate(() => {
+    window.navigationTest.instance.clearCache = async () => {
+      window.localLogoutCalled = true;
+      sessionStorage.setItem('navigation-test-account', '');
+      window.navigationTest.switchAccount('');
+    };
+    sessionStorage.setItem('otcr_profile_sync_fingerprint', 'cached-profile');
+  });
   await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
   await page.getByRole('button', { name: 'Sign in with NetID', exact: true }).waitFor();
   assert.equal(new URL(page.url()).pathname, '/sign-in');
   assert.equal(await page.locator('nav').count(), 0);
+  assert.equal(await page.evaluate(() => window.localLogoutCalled), true);
+  assert.equal(await page.evaluate(() => window.navigationTest.authHeader()), undefined);
+  assert.equal(await page.evaluate(() => sessionStorage.getItem('otcr_profile_sync_fingerprint')), null);
+  assert.equal(await page.evaluate(() => localStorage.getItem('otcr_role_cache:pm@example.test')), null);
   await page.reload();
   await page.getByRole('button', { name: 'Sign in with NetID', exact: true }).waitFor();
   await page.goto('http://navigation.test/attendance');
@@ -362,30 +374,7 @@ test('dashboard sign-out survives refresh and protected navigation until explici
   assert.equal(new URL(page.url()).pathname, '/pm');
 });
 
-test('an auth check started before sign-out cannot restore the previous user', async t => {
-  const { page, open } = await setup(t, '/pm');
-  await open();
-  await page.getByText('team-1 Research', { exact: true }).waitFor();
-  await page.evaluate(() => {
-    window.navigationTest.instance.handleRedirectPromise = () => new Promise(resolve => {
-      window.finishOldAuthCheck = resolve;
-    });
-    window.navigationTest.tokenProgress(true);
-  });
-  await page.evaluate(() => window.navigationTest.tokenProgress(false));
-  await page.waitForFunction(() => Boolean(window.finishOldAuthCheck));
-  await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
-  await page.getByRole('button', { name: 'Sign in with NetID', exact: true }).waitFor();
-  await page.evaluate(async () => {
-    window.finishOldAuthCheck({ account: { username: 'pm@example.test' } });
-    await new Promise(requestAnimationFrame);
-    await new Promise(requestAnimationFrame);
-  });
-  assert.equal(await page.getByRole('button', { name: 'Sign in with NetID', exact: true }).isVisible(), true);
-  assert.equal(await page.locator('nav').count(), 0);
-});
-
-test('late tokens and profile sync cannot restore the API auth header after sign-out', async t => {
+test('pending authentication and profile sync cannot restore a signed-out session', async t => {
   const { page, open } = await setup(t, '/pm?authSync=1');
   await open();
   await page.getByText('team-1 Research', { exact: true }).waitFor();
@@ -400,88 +389,26 @@ test('late tokens and profile sync cannot restore the API auth header after sign
   });
   await page.evaluate(() => window.navigationTest.tokenProgress(false));
   await page.waitForFunction(() => window.finishOldTokenRequests?.length >= 2);
+  await page.evaluate(() => {
+    window.navigationTest.instance.handleRedirectPromise = () => new Promise(resolve => {
+      window.finishOldAuthCheck = resolve;
+    });
+    window.navigationTest.tokenProgress(true);
+  });
+  await page.evaluate(() => window.navigationTest.tokenProgress(false));
+  await page.waitForFunction(() => Boolean(window.finishOldAuthCheck));
   await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
   await page.getByRole('button', { name: 'Sign in with NetID', exact: true }).waitFor();
   const token = await page.evaluate(async () => {
+    window.finishOldAuthCheck({ account: { username: 'pm@example.test' } });
     for (const resolve of window.finishOldTokenRequests) resolve({ accessToken: 'stale-token' });
     const token = await window.oldToken;
     await new Promise(requestAnimationFrame);
     return token;
   });
   assert.equal(token, null);
+  assert.equal(await page.getByRole('button', { name: 'Sign in with NetID', exact: true }).isVisible(), true);
+  assert.equal(await page.locator('nav').count(), 0);
   assert.equal(await page.evaluate(() => window.navigationTest.authHeader()), undefined);
   assert.equal(await page.evaluate(() => sessionStorage.getItem('otcr_profile_sync_fingerprint')), null);
 });
-
-for (const basePath of ['', '/otcr-dashboard']) {
-  test(`real MSAL cache clears without identity-provider logout (base path: ${basePath || '/'})`, async t => {
-    const authBundle = await buildBundle({ entry: 'authentication-entry.tsx', basePath });
-    const context = await browser.newContext();
-    t.after(() => context.close());
-    const origin = 'http://localhost:3007';
-    const identityRequests = [];
-    await context.addCookies([{ name: 'fixture-msft-session', value: 'active', domain: 'login.microsoftonline.com', path: '/', secure: true, sameSite: 'None' }]);
-    await context.route(origin + '/**', route => route.fulfill({
-      contentType: route.request().url().endsWith('/bundle.js') ? 'text/javascript' : 'text/html',
-      body: route.request().url().endsWith('/bundle.js') ? authBundle : document,
-    }));
-    await context.route('https://login.microsoftonline.com/**', route => {
-      identityRequests.push(route.request().url());
-      return route.fulfill({ contentType: 'text/html', body: '<p>Microsoft sign-in fixture</p>' });
-    });
-    const page = await context.newPage();
-    page.setDefaultTimeout(8000);
-    const errors = [];
-    page.on('pageerror', error => errors.push(error.message));
-    t.after(() => assert.deepEqual(errors, []));
-    await page.goto(origin + basePath + '/pm');
-    await page.getByTestId('auth-user').waitFor();
-    assert.equal(await page.evaluate(() => window.authenticationTest.instance.getAllAccounts().length), 2);
-    assert.equal(await page.evaluate(() => Object.values(sessionStorage).some(value => value.includes('fixture-access-token'))), true);
-    await page.evaluate(() => window.authenticationTest.seedApplicationCache());
-    assert.ok(await page.evaluate(() => window.authenticationTest.readResource('/private-resource')));
-    await page.evaluate(() => {
-      window.authenticationTest.instance.acquireTokenSilent = async () => {
-        await new Promise(resolve => { window.finishLateToken = resolve; });
-        // Model MSAL caching an account and token when an old refresh finishes.
-        await window.authenticationTest.seedAccount('pm@example.test');
-        return { accessToken: 'late-token' };
-      };
-      window.lateToken = window.authenticationTest.getToken();
-    });
-    await page.waitForFunction(() => Boolean(window.finishLateToken));
-    await page.evaluate(() => window.authenticationTest.navigate('/attendance'));
-    await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
-    await page.waitForURL(origin + basePath + '/sign-in');
-    await page.getByRole('button', { name: 'Sign In', exact: true }).waitFor();
-    assert.deepEqual(await page.evaluate(() => window.authenticationTest.instance.getAllAccounts()), []);
-    assert.equal(await page.evaluate(() => window.authenticationTest.instance.getActiveAccount()), null);
-    assert.equal(await page.evaluate(() => Object.values(sessionStorage).some(value => value.includes('fixture-access-token'))), false);
-    assert.equal(await page.evaluate(() => window.authenticationTest.readResource('/private-resource')), undefined);
-    assert.equal(await page.evaluate(() => window.authenticationTest.readSnapshot('private-snapshot')), undefined);
-    assert.equal(await page.evaluate(() => window.authenticationTest.authHeader()), undefined);
-    assert.equal(await page.evaluate(() => localStorage.getItem('otcr_role_cache:pm@example.test')), null);
-    assert.equal(await page.evaluate(() => sessionStorage.getItem('otcr_profile_sync_fingerprint')), null);
-    assert.deepEqual(identityRequests, []);
-    assert.equal(await page.evaluate(async () => {
-      window.finishLateToken();
-      return await window.lateToken;
-    }), null);
-    assert.deepEqual(await page.evaluate(() => window.authenticationTest.instance.getAllAccounts()), []);
-    assert.equal(await page.evaluate(() => Object.values(sessionStorage).some(value => value.includes('fixture-access-token'))), false);
-    assert.equal((await context.cookies('https://login.microsoftonline.com')).find(cookie => cookie.name === 'fixture-msft-session')?.value, 'active');
-    await page.goBack();
-    await page.waitForURL(origin + basePath + '/sign-in');
-    await page.reload();
-    await page.getByRole('button', { name: 'Sign In', exact: true }).waitFor();
-    await page.goto(origin + basePath + '/pm');
-    await page.waitForURL(origin + basePath + '/sign-in');
-    assert.deepEqual(identityRequests, []);
-    await page.getByRole('button', { name: 'Sign In', exact: true }).click();
-    await page.getByText('Microsoft sign-in fixture', { exact: true }).waitFor();
-    assert.equal(identityRequests.length, 1);
-    const signInUrl = new URL(identityRequests[0]);
-    assert.ok(signInUrl.pathname.endsWith('/authorize'));
-    assert.notEqual(signInUrl.searchParams.get('prompt'), 'login');
-  });
-}

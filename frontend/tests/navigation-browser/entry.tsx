@@ -50,7 +50,10 @@ function Fixture() {
     getActiveAccount: () => accounts[0],
     getAllAccounts: () => accounts,
     acquireTokenSilent: async () => ({ accessToken: 'test-token' }),
-    clearCache: async () => { sessionStorage.setItem('navigation-test-account', ''); setEmail(''); },
+    clearCache: async () => {
+      sessionStorage.setItem('navigation-test-account', '');
+      setEmail('');
+    },
     loginRedirect: async () => {
       sessionStorage.setItem('navigation-test-account', 'pm@example.test');
       location.assign(new URL('/pm', location.origin).href);
