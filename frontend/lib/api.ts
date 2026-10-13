@@ -70,8 +70,8 @@ export const onboardingAPI = {
         Pragma: 'no-cache',
       },
     }),
-  approveRequest: (id: string, notes?: string) =>
-    api.patch(`/onboarding/requests/${id}/approve`, notes ? { notes } : {}),
+  approveRequest: (id: string, notes?: string, grantedRole?: string) =>
+    api.patch(`/onboarding/requests/${id}/approve`, { notes, grantedRole }),
   rejectRequest: (id: string, notes?: string) =>
     api.patch(`/onboarding/requests/${id}/reject`, notes ? { notes } : {}),
 };
@@ -486,4 +486,9 @@ export const slideSubmissionsAPI = {
   approve: (id: string) => api.post(`/slide-submissions/${id}/approve`),
   requestRevision: (id: string, feedback?: string) =>
     api.post(`/slide-submissions/${id}/request-revision`, feedback ? { feedback } : {}),
+};
+
+export const peopleAPI = {
+  list: () => api.get('/people'),
+  changeRole: (id: string, role: string) => api.patch(`/people/${id}/role`, { role }),
 };

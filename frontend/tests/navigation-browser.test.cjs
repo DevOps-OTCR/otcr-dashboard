@@ -16,7 +16,7 @@ before(async () => {
 });
 after(() => browser?.close());
 
-async function setup(t, initialPath) {
+async function setup(t, initialPath, role = 'PM') {
   const context = await browser.newContext();
   t.after(() => context.close());
   await context.route('https://calendar.google.com/**', route => {
@@ -39,7 +39,7 @@ async function setup(t, initialPath) {
     if (state.slowGate && pathname === '/slow-test') await state.slowGate;
     if (state.gate && pathname !== '/auth/role' && pathname !== '/notifications/my') await state.gate;
     if (pathname === '/test-write') state.eventTitle = 'Updated team check-in';
-    const payload = responseFor(pathname, 'PM');
+    const payload = responseFor(pathname, role);
     if (pathname === '/attendance/events') payload.events = payload.events.map(event => ({ ...event, title: state.eventTitle }));
     const failed = state.failSprints && pathname.endsWith('/sprints');
     await route.fulfill({ status: failed ? 503 : 200, contentType: 'application/json',
@@ -343,3 +343,124 @@ for (const reducedMotion of ['no-preference', 'reduce']) {
     assert.equal(await page.evaluate(() => document.documentElement.classList.contains('theme-changing')), false);
   });
 }
+
+for (const role of ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'EXECUTIVE']) {
+  test(`People navigation and route deny ${role}`, async t => {
+    const { page, state, nav, open } = await setup(t, '/people', role);
+    await open();
+    await page.getByText('Only administrators can access People.', { exact: true }).waitFor();
+    assert.equal(await nav('People').count(), 0);
+    assert.equal(state.calls.some(path => path === '/people' || path === '/onboarding/requests'), false);
+  });
+}
+
+async function peopleSetup(t, options = {}) {
+  const fixture = await setup(t, '/people', 'ADMIN');
+  const { page } = fixture;
+  const people = [{ id: 'casey', firstName: 'Casey', lastName: 'Test', email: 'casey@example.test', role: 'CONSULTANT', active: true,
+    teams: [{ id: 'team-1', name: 'Team One', manages: false }] },
+  { id: 'riley', firstName: 'Riley', lastName: 'Test', email: 'riley@example.test', role: 'PM', active: false, teams: [] }];
+  const requests = [{ id: 'request', name: 'Alex Applicant', email: 'alex@example.test', requestedRole: 'CONSULTANT', grantedRole: null,
+    status: 'PENDING', createdAt: '2026-10-12T12:00:00Z', reviewedAt: null, reviewerNotes: null }];
+  const writes = [];
+  let failWrites = false;
+  await page.route('**/api/people**', async route => {
+    if (options.gate) await options.gate;
+    if (route.request().method() === 'PATCH') {
+      const payload = route.request().postDataJSON(); writes.push(payload);
+      if (!failWrites) people[0].role = payload.role;
+      return route.fulfill({ status: failWrites ? 503 : 200, contentType: 'application/json', body: JSON.stringify(failWrites ? { message: 'Role update failed' } : people[0]) });
+    }
+    return route.fulfill({ status: options.fail ? 503 : 200, contentType: 'application/json', body: JSON.stringify(options.fail
+      ? { message: 'Directory unavailable' } : { people: options.empty ? [] : people }) });
+  });
+  await page.route('**/api/onboarding/requests**', route => {
+    if (route.request().method() === 'PATCH') {
+      const payload = route.request().postDataJSON(); writes.push(payload);
+      Object.assign(requests[0], { status: route.request().url().endsWith('/approve') ? 'APPROVED' : 'REJECTED',
+        grantedRole: payload.grantedRole ?? null, reviewerNotes: payload.notes, reviewedAt: '2026-10-13T12:00:00Z',
+        reviewer: { firstName: 'Admin', lastName: 'Reviewer', email: 'admin@example.test' } });
+    }
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ requests: options.empty ? [] : requests }) });
+  });
+  return { ...fixture, writes, failWrites: () => { failWrites = true; } };
+}
+
+test('admin directory filters, confirms role updates, and shows failures', async t => {
+  const { page, nav, open, writes, failWrites } = await peopleSetup(t);
+  await open(); await page.getByRole('heading', { name: 'People directory' }).waitFor();
+  assert.equal(await nav('People').isVisible(), true);
+  await page.getByLabel('Search people', { exact: true }).fill('casey');
+  assert.equal(await page.getByText('riley@example.test', { exact: true }).count(), 0);
+  await page.getByLabel('Role filter', { exact: true }).selectOption('PM');
+  await page.getByText('No people match your filters.', { exact: true }).waitFor();
+  await page.getByLabel('Role filter', { exact: true }).selectOption('');
+  await page.getByLabel('Team filter', { exact: true }).selectOption('team-1');
+  await page.getByLabel('Role for casey@example.test').selectOption('LC');
+  page.once('dialog', dialog => dialog.dismiss());
+  await page.getByRole('button', { name: 'Save role', exact: true }).click();
+  assert.equal(writes.length, 0);
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'Save role', exact: true }).click();
+  await page.getByText('Role updated for Casey Test.', { exact: true }).waitFor();
+  assert.deepEqual(writes, [{ role: 'LC' }]);
+  failWrites();
+  await page.getByLabel('Role for casey@example.test').selectOption('PM');
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'Save role', exact: true }).click();
+  await page.getByText('Role update failed', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('cell', { name: 'Lead Consultant', exact: true }).count(), 1);
+});
+
+test('onboarding defaults requested role, accepts another role, and preserves review history', async t => {
+  const { page, open, writes } = await peopleSetup(t);
+  await open();
+  const request = page.getByRole('article', { name: 'Request from alex@example.test' });
+  await request.waitFor();
+  assert.equal(await request.getByLabel('Grant role').inputValue(), 'CONSULTANT');
+  await request.getByLabel('Grant role').selectOption('PM');
+  await request.getByLabel('Reviewer notes', { exact: true }).fill('Approved for project leadership');
+  page.once('dialog', dialog => dialog.accept());
+  await request.getByRole('button', { name: 'Approve', exact: true }).click();
+  await page.getByText('No pending onboarding requests.', { exact: true }).waitFor();
+  assert.deepEqual(writes, [{ notes: 'Approved for project leadership', grantedRole: 'PM' }]);
+  await page.getByLabel('Request status').selectOption('APPROVED');
+  await request.getByText('Admin Reviewer', { exact: true }).waitFor();
+  assert.equal(await request.getByText('Consultant', { exact: true }).isVisible(), true);
+  assert.equal(await request.getByText('Project Manager', { exact: true }).isVisible(), true);
+  assert.equal(await request.getByText('Approved for project leadership', { exact: true }).isVisible(), true);
+});
+
+test('onboarding rejection preserves notes', async t => {
+  const { page, open, writes } = await peopleSetup(t);
+  await open();
+  const request = page.getByRole('article', { name: 'Request from alex@example.test' });
+  await request.getByLabel('Reviewer notes', { exact: true }).fill('Please contact your PM');
+  page.once('dialog', dialog => dialog.accept());
+  await request.getByRole('button', { name: 'Reject', exact: true }).click();
+  await page.getByText('No pending onboarding requests.', { exact: true }).waitFor();
+  assert.deepEqual(writes, [{ notes: 'Please contact your PM' }]);
+  await page.getByLabel('Request status').selectOption('REJECTED');
+  await request.getByText('Please contact your PM', { exact: true }).waitFor();
+});
+
+test('People has loading, empty, and API error states', async t => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const empty = await peopleSetup(t, { empty: true, gate });
+  await empty.open(); await empty.page.getByRole('status').waitFor(); release();
+  await empty.page.getByText('No CMS users yet.', { exact: true }).waitFor();
+  await empty.page.getByText('No pending onboarding requests.', { exact: true }).waitFor();
+  const failed = await peopleSetup(t, { fail: true });
+  await failed.open(); await failed.page.getByText('Directory unavailable', { exact: true }).waitFor();
+});
+
+test('Slack Settings keeps connection controls without onboarding requests or polling', async t => {
+  const { page, state, open } = await setup(t, '/settings/slack', 'ADMIN');
+  await open();
+  await page.getByRole('heading', { name: /Slack/ }).first().waitFor();
+  await page.clock.install(); await page.clock.fastForward(31000);
+  assert.equal(await page.getByText('Role Onboarding Requests', { exact: true }).count(), 0);
+  assert.equal(state.calls.includes('/onboarding/requests'), false);
+  assert.equal(await page.getByRole('button', { name: /Connect Slack/ }).count(), 1);
+});
