@@ -13,10 +13,12 @@ export function AuthApiSync() {
   const { instance } = useMsal();
 
   useEffect(() => {
+    let cancelled = false;
     const sync = async () => {
       if (session.isLoggedIn) {
         try {
           const token = await session.getToken();
+          if (cancelled) return;
           // Prefer access token; fall back to email so backend legacy auth still works.
           const authValue = token || session.user?.email || null;
           setAuthToken(authValue);
@@ -46,17 +48,18 @@ export function AuthApiSync() {
             name: displayName || undefined,
           });
 
-          if (typeof window !== 'undefined') {
+          if (!cancelled && typeof window !== 'undefined') {
             sessionStorage.setItem(storageKey, syncFingerprint);
           }
         } catch {
-          setAuthToken(session.user?.email || null);
+          if (!cancelled) setAuthToken(session.user?.email || null);
         }
       } else {
         setAuthToken(null);
       }
     };
     void sync();
+    return () => { cancelled = true; };
   }, [instance, session.isLoggedIn, session?.user?.email, session?.user?.name, session]);
 
   return null;
