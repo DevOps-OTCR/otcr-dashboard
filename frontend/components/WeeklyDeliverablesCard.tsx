@@ -1,5 +1,6 @@
 'use client';
 
+import { PageLoading } from './PageLoading';
 import { Activity } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -10,6 +11,7 @@ type WeeklyDeliverablesCardProps = {
   description: string;
   items: DashboardDeliverable[];
   emptyMessage: string;
+  loading?: boolean;
 };
 
 export function WeeklyDeliverablesCard({
@@ -17,6 +19,7 @@ export function WeeklyDeliverablesCard({
   description,
   items,
   emptyMessage,
+  loading = false,
 }: WeeklyDeliverablesCardProps) {
   const now = new Date();
 
@@ -30,7 +33,7 @@ export function WeeklyDeliverablesCard({
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 max-h-[400px] overflow-y-auto">
-        {items.length === 0 ? (
+        {loading ? <PageLoading /> : items.length === 0 ? (
           <div className="p-4 rounded-xl border border-dashed border-[var(--border)] text-sm text-[var(--foreground)]/60">
             {emptyMessage}
           </div>

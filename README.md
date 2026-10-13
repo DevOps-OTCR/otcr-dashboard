@@ -44,7 +44,7 @@ Authenticated users are redirected to role-specific routes instead of a shared `
 ```bash
 cd backend
 npm install
-cp .env.example .env
+cp ../env/env.example .env
 ```
 
 Set at least:
@@ -114,6 +114,20 @@ npm --prefix backend run lint:prune
 ```
 
 CI only runs `lint` and never updates suppressions. Do not regenerate all suppressions to make new errors pass. See [ESLint bulk suppressions](https://eslint.org/docs/latest/use/suppressions).
+
+## Browser navigation tests
+
+Install the browser after installing frontend dependencies, then run the suite:
+
+```bash
+cd frontend
+npx --no-install playwright install chromium
+npm run test:navigation:browser
+```
+
+The suite checks navigation, cached content, and trailing-slash routes in headless Chromium. It uses the real page components with mocked routing, authentication, and API responses; it does not test the deployed GitHub Pages site or real sign-in.
+
+PR Validation installs Chromium and its Linux dependencies, then runs the suite as part of the required frontend check. A browser test failure also blocks the Pages deployment validation. Set `NAVIGATION_BROWSER_CHANNEL=chrome` to use an installed Chrome browser locally.
 
 ## Production Deployment
 
