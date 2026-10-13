@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Users, RefreshCw, FileText } from 'lucide-react';
+import { AssigneeChecklist, projectAssignees, type AssigneeOption } from '@/components/AssigneeChecklist';
 import { AppNavbar } from '@/components/AppNavbar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -139,6 +140,9 @@ export default function WorkstreamPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [draftInput, setDraftInput] = useState('');
+  const [draftAssignees, setDraftAssignees] = useState<Record<number, string[]>>({});
+  const [teamMembers, setTeamMembers] = useState<AssigneeOption[]>([]);
+  const [savingDrafts, setSavingDrafts] = useState(false);
   const [addWhitepaperSubmission, setAddWhitepaperSubmission] = useState(false);
   const [newSprintStartDate, setNewSprintStartDate] = useState(
     new Date().toISOString().slice(0, 10),
@@ -149,6 +153,12 @@ export default function WorkstreamPage() {
   const [updatingSprintDate, setUpdatingSprintDate] = useState(false);
 
   const canManage = role === 'PM' || role === 'LC' || role === 'ADMIN';
+
+  const loadTeamMembers = useCallback(async (projectId: string) => {
+    setTeamMembers([]);
+    const response = await projectsAPI.getById(projectId, { includeMembers: true });
+    if (projectRef.current === projectId) setTeamMembers(projectAssignees(response.data));
+  }, []);
 
   const loadSprints = useCallback(async (projectId: string) => {
     const request = ++sprintRequest.current;
@@ -205,7 +215,7 @@ export default function WorkstreamPage() {
         projectRef.current = firstProjectId;
         setSelectedProjectId(firstProjectId);
         if (firstProjectId) {
-          await loadSprints(firstProjectId);
+          await Promise.all([loadSprints(firstProjectId), loadTeamMembers(firstProjectId)]);
         }
       } catch (error: any) {
         if (cancelled) return;
@@ -221,7 +231,7 @@ export default function WorkstreamPage() {
 
     void init();
     return () => { cancelled = true; sprintRequest.current += 1; };
-  }, [isLoggedIn, email, getToken, loadSprints]);
+  }, [isLoggedIn, email, getToken, loadSprints, loadTeamMembers]);
 
   useEffect(() => {
     if (!loading && !refreshing && !loadError) saveSnapshot({ role, projects, selectedProjectId, sprints, selectedSprintId });
@@ -288,6 +298,8 @@ export default function WorkstreamPage() {
   const handleProjectChange = async (projectId: string) => {
     projectRef.current = projectId;
     setSelectedProjectId(projectId);
+    setDraftAssignees({});
+    setTeamMembers([]);
     setSelectedSprintId('');
     setAddWhitepaperSubmission(false);
     setNewSprintStartDate(new Date().toISOString().slice(0, 10));
@@ -301,7 +313,7 @@ export default function WorkstreamPage() {
     setLoading(!cached);
     setRefreshing(true);
     try {
-      await loadSprints(projectId);
+      await Promise.all([loadSprints(projectId), loadTeamMembers(projectId)]);
     } finally {
       setRefreshing(false);
       setLoading(false);
@@ -362,13 +374,15 @@ export default function WorkstreamPage() {
     if (!selectedProjectId || !selectedSprint) return;
     if (parsedDrafts.length === 0 && !addWhitepaperSubmission) return;
 
+    setSavingDrafts(true);
     try {
-      const requests = parsedDrafts.map((item) =>
+      const requests = parsedDrafts.map((item, index) =>
         deliverablesAPI.create({
           projectId: selectedProjectId,
           sprintId: selectedSprint.id,
           title: item.title,
           description: 'Draft deliverable created from the Workstream page.',
+          assigneeIds: draftAssignees[index] ?? [],
           type: 'OTHER',
           deadline: buildDraftDeliverableDeadline(selectedSprint),
         }),
@@ -419,6 +433,7 @@ export default function WorkstreamPage() {
 
       await Promise.all(requests);
       setDraftInput('');
+      setDraftAssignees({});
       setAddWhitepaperSubmission(false);
       await loadSprints(selectedProjectId);
       setFeedback('Draft deliverables saved');
@@ -428,6 +443,8 @@ export default function WorkstreamPage() {
         error?.message ??
         'Failed to save draft deliverables.';
       setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
+    } finally {
+      setSavingDrafts(false);
     }
   };
 
@@ -760,7 +777,8 @@ export default function WorkstreamPage() {
                         </p>
                         <textarea
                           value={draftInput}
-                          onChange={(e) => setDraftInput(e.target.value)}
+                          onChange={(e) => { setDraftInput(e.target.value); setDraftAssignees({}); }}
+                          disabled={savingDrafts}
                           rows={5}
                           placeholder={'- Add week function\n- Get it hosted\n- Redesign deliverables'}
                           className="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
@@ -786,7 +804,7 @@ export default function WorkstreamPage() {
                             <Button
                               size="sm"
                               onClick={() => void handleSaveDrafts()}
-                              disabled={parsedDrafts.length === 0 && !addWhitepaperSubmission}
+                              disabled={savingDrafts || (parsedDrafts.length === 0 && !addWhitepaperSubmission)}
                             >
                               Save Deliverables
                             </Button>
@@ -812,6 +830,9 @@ export default function WorkstreamPage() {
                                   className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2"
                                 >
                                   <p className="text-sm font-medium text-[var(--foreground)]">{item.title}</p>
+                                  <AssigneeChecklist label={`Assignees for ${item.title}`} options={teamMembers}
+                                    selected={draftAssignees[index] ?? []} disabled={savingDrafts}
+                                    onChange={ids => setDraftAssignees(current => ({ ...current, [index]: ids }))} />
                                   <p className="mt-1 text-[11px] uppercase tracking-wide text-amber-700 dark:text-amber-300">
                                     Draft
                                   </p>

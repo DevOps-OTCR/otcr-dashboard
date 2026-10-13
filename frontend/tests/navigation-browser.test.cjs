@@ -16,7 +16,7 @@ before(async () => {
 });
 after(() => browser?.close());
 
-async function setup(t, initialPath) {
+async function setup(t, initialPath, role = 'PM') {
   const context = await browser.newContext();
   t.after(() => context.close());
   await context.route('https://calendar.google.com/**', route => {
@@ -39,7 +39,7 @@ async function setup(t, initialPath) {
     if (state.slowGate && pathname === '/slow-test') await state.slowGate;
     if (state.gate && pathname !== '/auth/role' && pathname !== '/notifications/my') await state.gate;
     if (pathname === '/test-write') state.eventTitle = 'Updated team check-in';
-    const payload = responseFor(pathname, 'PM');
+    const payload = responseFor(pathname, role);
     if (pathname === '/attendance/events') payload.events = payload.events.map(event => ({ ...event, title: state.eventTitle }));
     const failed = state.failSprints && pathname.endsWith('/sprints');
     await route.fulfill({ status: failed ? 503 : 200, contentType: 'application/json',
@@ -143,6 +143,71 @@ test('writes invalidate other tabs and logout clears cached data', async t => {
   assert.equal(await page.evaluate(key => window.navigationTest.readSnapshot(key), activeKey), undefined);
   assert.equal(await page.evaluate(key => window.navigationTest.readSnapshot(key), key), undefined);
   assert.equal(await page.evaluate(() => window.navigationTest.readResource('/attendance/events')), undefined);
+});
+
+
+test('managers create drafts with separate multi-person assignment sets', async t => {
+  const { page, open } = await setup(t, '/workstream');
+  await page.route('**/api/projects/team-1?*', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+    pm: { id: 'u-1', firstName: 'Test PM' }, members: [{ user: { id: 'u-2', firstName: 'Casey' } }],
+  }) }));
+  const creations = [];
+  await page.route('**/api/deliverables', route => {
+    creations.push(route.request().postDataJSON());
+    return route.fulfill({ contentType: 'application/json', body: '{}' });
+  });
+  await open();
+  await page.getByPlaceholder('- Add week function\n- Get it hosted\n- Redesign deliverables').fill('- Shared work\n- Unassigned work');
+  const shared = page.getByRole('group', { name: 'Assignees for Shared work', exact: true });
+  await shared.getByRole('checkbox', { name: 'Test PM', exact: true }).check();
+  await shared.getByRole('checkbox', { name: 'Casey', exact: true }).check();
+  await page.getByRole('button', { name: 'Save Deliverables', exact: true }).click();
+  await page.getByText('Draft deliverables saved', { exact: true }).waitFor();
+  assert.deepEqual(creations.map(item => [item.title, item.assigneeIds]), [['Shared work', ['u-1', 'u-2']], ['Unassigned work', []]]);
+});
+
+test('assignment editor preselects everyone, saves a complete set, and retains selections after failure', async t => {
+  const { page, open } = await setup(t, '/deliverables');
+  const users = [{ id: 'u-1', firstName: 'Test PM' }, { id: 'u-2', firstName: 'Casey' }, { id: 'u-3', firstName: 'Riley' }];
+  await page.route('**/api/projects/team-1?*', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+    pm: users[0], members: users.slice(1).map(user => ({ user })),
+  }) }));
+  await page.route('**/api/projects/*/sprints', route => {
+    const payload = responseFor('/projects/team-1/sprints', 'PM');
+    payload[0].deliverables[0].assignees = users.slice(0, 2);
+    payload[0].deliverables[0].submissions = [{ id: 's-1', fileUrl: 'https://example.test/submission', submittedAt: '2026-10-12', submitter: users[0] }];
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(payload) });
+  });
+  const saves = [];
+  let fail = false;
+  await page.route('**/api/deliverables/*/assignments', route => {
+    const ids = route.request().postDataJSON().assigneeIds;
+    saves.push(ids);
+    return route.fulfill({ status: fail ? 503 : 200, contentType: 'application/json',
+      body: JSON.stringify(fail ? { message: 'Save failed; try again' } : users.filter(user => ids.includes(user.id))) });
+  });
+  await open();
+  const group = page.getByRole('group', { name: 'Assignees', exact: true });
+  assert.equal(await group.getByRole('checkbox', { name: 'Test PM' }).isChecked(), true);
+  assert.equal(await group.getByRole('checkbox', { name: 'Casey' }).isChecked(), true);
+  await group.getByRole('checkbox', { name: 'Test PM' }).uncheck();
+  await group.getByRole('checkbox', { name: 'Riley' }).check();
+  await page.getByRole('button', { name: 'Save assignees', exact: true }).click();
+  await page.getByText('Assignees saved', { exact: true }).waitFor();
+  assert.deepEqual(saves, [['u-2', 'u-3']]);
+  assert.equal(await page.getByText('Casey, Riley', { exact: true }).isVisible(), true);
+  assert.equal(await page.getByRole('link', { name: /submission/i }).count() > 0, true);
+  fail = true;
+  await group.getByRole('checkbox', { name: 'Casey' }).uncheck();
+  await page.getByRole('button', { name: 'Save assignees', exact: true }).click();
+  await page.getByText('Save failed; try again', { exact: true }).waitFor();
+  assert.equal(await group.getByRole('checkbox', { name: 'Casey' }).isChecked(), false);
+  assert.equal(await page.getByText('Casey, Riley', { exact: true }).isVisible(), true);
+  fail = false;
+  await group.getByRole('checkbox', { name: 'Riley' }).uncheck();
+  await page.getByRole('button', { name: 'Save assignees', exact: true }).click();
+  await page.getByText('Unassigned', { exact: true }).first().waitFor();
+  assert.deepEqual(saves.at(-1), []);
 });
 
 
