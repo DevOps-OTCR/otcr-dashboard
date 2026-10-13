@@ -7,6 +7,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, GraduationC
 import { AppNavbar } from '@/components/AppNavbar';
 import { useAuth } from '@/components/AuthContext';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
+import { PageLoading } from '@/components/PageLoading';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import {
   alumniField,
@@ -19,11 +20,20 @@ import {
   type AlumniSort,
   type AlumniSortKey,
 } from '@/lib/alumni-data';
-import { getActualUserRole, getEffectiveRole, type AppRole } from '@/lib/permissions';
+import { getDevRoleOverride, getEffectiveRole, getUserRole, type AppRole } from '@/lib/permissions';
 import { alumniAPI, setAuthToken } from '@/lib/api';
+import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
 import { cn } from '@/lib/utils';
 
 const PAGE_SIZE = 50;
+
+type AlumniSnapshot = {
+  role: AppRole;
+  dataset: AlumniDataset;
+  search: string;
+  sort: AlumniSort;
+  pageIndex: number;
+};
 
 const COLUMNS: { key: AlumniSortKey; label: string; className: string }[] = [
   { key: 'name', label: 'Name', className: 'pl-4 pr-2' },
@@ -41,13 +51,6 @@ function normalizedEmployer(r: AlumniRecord): string {
 export default function AlumniDatabasePage() {
   const session = useAuth();
   const router = useRouter();
-  const [role, setRole] = useState<AppRole>('CONSULTANT');
-  const [dataset, setDataset] = useState<AlumniDataset | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const [sort, setSort] = useState<AlumniSort>(DEFAULT_ALUMNI_SORT);
-  const [pageIndex, setPageIndex] = useState(0);
 
   useEffect(() => {
     // Once auth init finishes, bounce signed-out users to sign-in instead of
@@ -57,42 +60,64 @@ export default function AlumniDatabasePage() {
     }
   }, [session.loading, session.isLoggedIn, router]);
 
-  useEffect(() => {
+  if (session.loading || !session.isLoggedIn) return <FullScreenLoader />;
+
+  // Reset mounted state when the account or permission override changes.
+  return <AlumniTable key={JSON.stringify([session.user?.email, getDevRoleOverride()])} />;
+}
+
+function AlumniTable() {
+  const { getToken, user } = useAuth();
+  const email = user?.email;
+  const { snapshot, saveSnapshot } = useNavigationSnapshot<AlumniSnapshot>('alumni-database', email);
+  const [role, setRole] = useState<AppRole>(() => snapshot?.role ?? getUserRole(email));
+  const [dataset, setDataset] = useState<AlumniDataset | null>(snapshot?.dataset ?? null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [search, setSearch] = useState(snapshot?.search ?? '');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [sort, setSort] = useState<AlumniSort>(snapshot?.sort ?? DEFAULT_ALUMNI_SORT);
+  const [pageIndex, setPageIndex] = useState(snapshot?.pageIndex ?? 0);
+  const [refreshing, setRefreshing] = useState(true);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+
+  const updateSearch = (value: string) => {
+    setSearch(value);
     setPageIndex(0);
-  }, [search, sort]);
+  };
 
   const clearSearch = () => {
-    setSearch('');
+    updateSearch('');
     searchInputRef.current?.focus();
   };
 
   const toggleSort = (key: AlumniSortKey) => {
+    setPageIndex(0);
     setSort((s) =>
       s.key === key ? { key, direction: s.direction === 'asc' ? 'desc' : 'asc' } : { key, direction: 'asc' },
     );
   };
 
   useEffect(() => {
-    if (!session.isLoggedIn || session.loading) return;
     let cancelled = false;
     const load = async () => {
-      const token = await session.getToken();
-      const email = session.user?.email || '';
-      setAuthToken(token || email || null);
       try {
-        const resolvedRole = await getEffectiveRole(token, email);
-        if (!cancelled) setRole(resolvedRole);
-      } catch {
-        if (!cancelled) setRole(getActualUserRole(email));
-      }
-      try {
-        const { data } = await alumniAPI.getDataset();
+        const token = await getToken();
         if (cancelled) return;
-        setDataset(data as AlumniDataset);
+        setAuthToken(token || email || null);
+        try {
+          const resolvedRole = await getEffectiveRole(token, email);
+          if (cancelled) return;
+          setRole(resolvedRole);
+        } catch {
+          if (cancelled) return;
+          setRole(getUserRole(email));
+        }
+        const { data } = await alumniAPI.getDataset(refreshVersion > 0);
+        if (cancelled) return;
+        setDataset(data);
         setLoadError(null);
       } catch (e: unknown) {
         if (cancelled) return;
-        setDataset(null);
         let message = 'Failed to load alumni data';
         if (axios.isAxiosError(e)) {
           const status = e.response?.status;
@@ -103,13 +128,15 @@ export default function AlumniDatabasePage() {
           else message = e.message || message;
         } else if (e instanceof Error) message = e.message;
         setLoadError(message);
+      } finally {
+        if (!cancelled) setRefreshing(false);
       }
     };
     void load();
     return () => {
       cancelled = true;
     };
-  }, [session.isLoggedIn, session.loading, session]);
+  }, [getToken, email, refreshVersion]);
 
   const filteredSorted = useMemo(() => {
     if (!dataset) return [];
@@ -119,19 +146,16 @@ export default function AlumniDatabasePage() {
   const totalCount = filteredSorted.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
-  useEffect(() => {
-    setPageIndex((p) => Math.min(p, totalPages - 1));
-  }, [totalPages]);
-
   const safePage = Math.min(pageIndex, totalPages - 1);
+  if (pageIndex !== safePage) setPageIndex(safePage);
+
+  useEffect(() => {
+    if (dataset) saveSnapshot({ role, dataset, search, sort, pageIndex: safePage });
+  }, [dataset, role, search, sort, safePage, saveSnapshot]);
   const pageStart = safePage * PAGE_SIZE;
   const pageRows = filteredSorted.slice(pageStart, pageStart + PAGE_SIZE);
   const rangeStart = totalCount === 0 ? 0 : pageStart + 1;
   const rangeEnd = Math.min(pageStart + PAGE_SIZE, totalCount);
-
-  if (session.loading || !session.isLoggedIn) {
-    return <FullScreenLoader />;
-  }
 
   const displayOrDash = (v: string) => (v.trim() ? v : '—');
 
@@ -161,13 +185,26 @@ export default function AlumniDatabasePage() {
           </CardHeader>
 
           <CardContent className="space-y-4">
+            <button
+              type="button"
+              disabled={refreshing}
+              onClick={() => {
+                setRefreshing(true);
+                setLoadError(null);
+                setRefreshVersion((value) => value + 1);
+              }}
+              className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm hover:bg-[var(--accent)] disabled:opacity-50"
+            >
+              {refreshing ? 'Refreshing alumni data...' : 'Refresh alumni data'}
+            </button>
+            {!dataset && refreshing && <PageLoading />}
             {loadError && (
-              <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm">
-                Could not load data: {loadError}
+              <div role="alert" className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm">
+                {dataset ? 'Could not refresh data' : 'Could not load data'}: {loadError}
               </div>
             )}
 
-            {dataset && !loadError && (
+            {dataset && (
               <>
                 <div className="relative max-w-2xl">
                   <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--foreground)]/40" />
@@ -175,9 +212,9 @@ export default function AlumniDatabasePage() {
                     ref={searchInputRef}
                     type="search"
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                    onChange={(e) => updateSearch(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Escape') setSearch('');
+                      if (e.key === 'Escape') clearSearch();
                     }}
                     placeholder="Search by name, employer, or title…"
                     aria-label="Search alumni by name, employer, or title"
@@ -244,7 +281,7 @@ export default function AlumniDatabasePage() {
                         type="button"
                         aria-label="Previous page"
                         disabled={safePage <= 0}
-                        onClick={() => setPageIndex((p) => Math.max(0, p - 1))}
+                        onClick={() => setPageIndex(Math.max(0, safePage - 1))}
                         className={cn(
                           'inline-flex items-center justify-center rounded-xl border px-3 py-2 transition-colors',
                           safePage <= 0
@@ -261,7 +298,7 @@ export default function AlumniDatabasePage() {
                         type="button"
                         aria-label="Next page"
                         disabled={safePage >= totalPages - 1}
-                        onClick={() => setPageIndex((p) => Math.min(totalPages - 1, p + 1))}
+                        onClick={() => setPageIndex(Math.min(totalPages - 1, safePage + 1))}
                         className={cn(
                           'inline-flex items-center justify-center rounded-xl border px-3 py-2 transition-colors',
                           safePage >= totalPages - 1
