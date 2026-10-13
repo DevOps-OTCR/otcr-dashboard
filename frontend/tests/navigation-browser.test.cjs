@@ -103,8 +103,10 @@ test('writes invalidate other tabs and logout clears cached data', async t => {
   await page.getByText('team-1 Draft deck', { exact: true }).waitFor();
   let releaseSlow;
   state.slowGate = new Promise(resolve => { releaseSlow = resolve; });
+  const slowRequest = page.waitForRequest('**/api/slow-test');
   await page.evaluate(() => { window.pendingResource = Promise.all([window.navigationTest.request(), window.navigationTest.request()]); });
-  await page.waitForFunction(() => Boolean(window.pendingResource));
+  // Ensure the shared request is in flight before the write invalidates it.
+  await slowRequest;
   await page.evaluate(() => window.navigationTest.write().then(() => true));
   releaseSlow();
   await page.evaluate(() => window.pendingResource.then(() => true));
@@ -120,11 +122,26 @@ test('writes invalidate other tabs and logout clears cached data', async t => {
   await page.getByText('Updated team check-in', { exact: true }).waitFor();
   const key = JSON.stringify(['attendance', 'pm@example.test', null]);
   await page.waitForFunction(key => Boolean(window.navigationTest.readSnapshot(key)), key);
+  assert.ok(await page.evaluate(() => window.navigationTest.readResource('/attendance/events')));
+  // Hold the new account's refresh so it cannot refill the cache before this check.
+  let releaseAccountRefresh;
+  state.gate = new Promise(resolve => { releaseAccountRefresh = resolve; });
+  const accountRefresh = page.waitForRequest('**/api/attendance/events');
   await page.evaluate(() => window.navigationTest.switchAccount('other@example.test'));
-  await page.waitForFunction(() => !window.navigationTest.readSnapshot(JSON.stringify(['attendance', 'pm@example.test', null])));
-  assert.equal(await page.evaluate(() => window.navigationTest.readResource('/attendance/events')), undefined);
-  await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
+  await accountRefresh;
   assert.equal(await page.evaluate(key => window.navigationTest.readSnapshot(key), key), undefined);
+  assert.equal(await page.evaluate(() => window.navigationTest.readResource('/attendance/events')), undefined);
+  const activeKey = JSON.stringify(['attendance', 'other@example.test', null]);
+  assert.equal(await page.evaluate(key => window.navigationTest.readSnapshot(key), activeKey), undefined);
+  releaseAccountRefresh();
+  await page.getByText('Updated team check-in', { exact: true }).waitFor();
+  await page.waitForFunction(key => Boolean(window.navigationTest.readSnapshot(key)), activeKey);
+  assert.ok(await page.evaluate(() => window.navigationTest.readResource('/attendance/events')));
+  await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
+  await page.getByText('Updated team check-in', { exact: true }).waitFor({ state: 'hidden' });
+  assert.equal(await page.evaluate(key => window.navigationTest.readSnapshot(key), activeKey), undefined);
+  assert.equal(await page.evaluate(key => window.navigationTest.readSnapshot(key), key), undefined);
+  assert.equal(await page.evaluate(() => window.navigationTest.readResource('/attendance/events')), undefined);
 });
 
 
