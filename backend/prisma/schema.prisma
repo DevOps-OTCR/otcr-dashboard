@@ -115,6 +115,7 @@ model User {
   submissionReviews  Submission[]     @relation("SubmissionReviewer")
   timeEntries        TimeEntry[]
   notifications      Notification[]
+  scheduledReminders ScheduledReminder[]
   tasksCreated       Task[]
   assignedDeliverables Deliverable[] @relation("DeliverableAssignee")
   deliverableAssignments DeliverableAssignment[]
@@ -232,6 +233,7 @@ model Project {
   attendanceEvents AttendanceEvent[]
   calendarSetting ProjectCalendarSetting?
   when2MeetPolls When2MeetPoll[]
+  reminderConfig ReminderConfig?
 
   @@index([pmId])
   @@index([status])
@@ -502,6 +504,7 @@ model Deliverable {
   subtasks    DeliverableSubtask[]
   submissions Submission[]
   extensions  Extension[]
+  scheduledReminders ScheduledReminder[]
 
   @@index([projectId])
   @@index([sprintId])
@@ -746,6 +749,59 @@ enum NotificationStatus {
   SENT
   FAILED
   RETRYING
+}
+
+// Project-level configuration for automatic Slack deadline reminders.
+// One row per project; timezone is inherited from Project.sprintTimezone.
+model ReminderConfig {
+  id             String   @id @default(cuid())
+  projectId      String   @unique
+  enabled        Boolean  @default(false)
+  // Minutes before the deadline at which to send a reminder (e.g. 1440 = 24h, 60 = 1h).
+  offsetsMinutes Int[]    @default([1440, 60])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+enum ScheduledReminderStatus {
+  PENDING
+  SENT
+  CANCELLED
+  FAILED
+}
+
+// One row per (deliverable, recipient, offset). Persisting reminder state makes
+// hourly scans and retries idempotent and lets managers see pending/sent/
+// cancelled/failed reminders. fireAt is stored in UTC; timezone only affects
+// display and how the deadline is interpreted.
+model ScheduledReminder {
+  id             String                  @id @default(cuid())
+  deliverableId  String
+  userId         String
+  offsetMinutes  Int
+  fireAt         DateTime
+  status         ScheduledReminderStatus @default(PENDING)
+  jobId          String                  @unique
+  attempts       Int                     @default(0)
+  lastError      String?
+  sentAt         DateTime?
+  cancelledAt    DateTime?
+  notificationId String?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  deliverable Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([deliverableId, userId, offsetMinutes])
+  @@index([deliverableId])
+  @@index([userId])
+  @@index([status])
+  @@index([fireAt])
 }
 
 // ============================================================================
