@@ -5,10 +5,13 @@ const { buildBundle, document } = require('./navigation-browser/bundle.cjs');
 const { responseFor } = require('./navigation-browser/fixtures.cjs');
 let browser, bundle;
 
-// Use a locally installed Playwright package, or the runtime's NODE_PATH.
+// Use Playwright's bundled Chromium unless a browser channel is explicitly selected.
 before(async () => {
   bundle = await buildBundle();
-  browser = await chromium.launch({ channel: process.env.NAVIGATION_BROWSER_CHANNEL || 'chrome', headless: true });
+  browser = await chromium.launch({
+    ...(process.env.NAVIGATION_BROWSER_CHANNEL ? { channel: process.env.NAVIGATION_BROWSER_CHANNEL } : {}),
+    headless: true,
+  });
 });
 after(() => browser?.close());
 
