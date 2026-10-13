@@ -5,10 +5,13 @@ const { buildBundle, document } = require('./navigation-browser/bundle.cjs');
 const { responseFor } = require('./navigation-browser/fixtures.cjs');
 let browser, bundle;
 
-// Use a locally installed Playwright package, or the runtime's NODE_PATH.
+// Use Playwright's bundled Chromium unless a browser channel is explicitly selected.
 before(async () => {
   bundle = await buildBundle();
-  browser = await chromium.launch({ channel: process.env.NAVIGATION_BROWSER_CHANNEL || 'chrome', headless: true });
+  browser = await chromium.launch({
+    ...(process.env.NAVIGATION_BROWSER_CHANNEL ? { channel: process.env.NAVIGATION_BROWSER_CHANNEL } : {}),
+    headless: true,
+  });
 });
 after(() => browser?.close());
 
@@ -100,8 +103,10 @@ test('writes invalidate other tabs and logout clears cached data', async t => {
   await page.getByText('team-1 Draft deck', { exact: true }).waitFor();
   let releaseSlow;
   state.slowGate = new Promise(resolve => { releaseSlow = resolve; });
+  const slowRequest = page.waitForRequest('**/api/slow-test');
   await page.evaluate(() => { window.pendingResource = Promise.all([window.navigationTest.request(), window.navigationTest.request()]); });
-  await page.waitForFunction(() => Boolean(window.pendingResource));
+  // Ensure the shared request is in flight before the write invalidates it.
+  await slowRequest;
   await page.evaluate(() => window.navigationTest.write().then(() => true));
   releaseSlow();
   await page.evaluate(() => window.pendingResource.then(() => true));
@@ -117,11 +122,26 @@ test('writes invalidate other tabs and logout clears cached data', async t => {
   await page.getByText('Updated team check-in', { exact: true }).waitFor();
   const key = JSON.stringify(['attendance', 'pm@example.test', null]);
   await page.waitForFunction(key => Boolean(window.navigationTest.readSnapshot(key)), key);
+  assert.ok(await page.evaluate(() => window.navigationTest.readResource('/attendance/events')));
+  // Hold the new account's refresh so it cannot refill the cache before this check.
+  let releaseAccountRefresh;
+  state.gate = new Promise(resolve => { releaseAccountRefresh = resolve; });
+  const accountRefresh = page.waitForRequest('**/api/attendance/events');
   await page.evaluate(() => window.navigationTest.switchAccount('other@example.test'));
-  await page.waitForFunction(() => !window.navigationTest.readSnapshot(JSON.stringify(['attendance', 'pm@example.test', null])));
-  assert.equal(await page.evaluate(() => window.navigationTest.readResource('/attendance/events')), undefined);
-  await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
+  await accountRefresh;
   assert.equal(await page.evaluate(key => window.navigationTest.readSnapshot(key), key), undefined);
+  assert.equal(await page.evaluate(() => window.navigationTest.readResource('/attendance/events')), undefined);
+  const activeKey = JSON.stringify(['attendance', 'other@example.test', null]);
+  assert.equal(await page.evaluate(key => window.navigationTest.readSnapshot(key), activeKey), undefined);
+  releaseAccountRefresh();
+  await page.getByText('Updated team check-in', { exact: true }).waitFor();
+  await page.waitForFunction(key => Boolean(window.navigationTest.readSnapshot(key)), activeKey);
+  assert.ok(await page.evaluate(() => window.navigationTest.readResource('/attendance/events')));
+  await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
+  await page.getByText('Updated team check-in', { exact: true }).waitFor({ state: 'hidden' });
+  assert.equal(await page.evaluate(key => window.navigationTest.readSnapshot(key), activeKey), undefined);
+  assert.equal(await page.evaluate(key => window.navigationTest.readSnapshot(key), key), undefined);
+  assert.equal(await page.evaluate(() => window.navigationTest.readResource('/attendance/events')), undefined);
 });
 
 
@@ -198,4 +218,42 @@ test('Pages trailing-slash routes keep the navbar and overview calendar', async 
   await page.getByText('Monday', { exact: true }).first().waitFor();
   assert.equal(await nav('When2Meet').isVisible(), true);
   assert.match(await nav('When2Meet').getAttribute('class'), /text-\[var\(--primary\)\]/);
+});
+
+test('Light/Dark toggle persists and syncs without replacing icons or reloading the calendar', async t => {
+  const { page, state, open } = await setup(t, '/pm');
+  await open();
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  await page.locator('iframe').waitFor();
+  await page.evaluate(() => {
+    window.themeIcons = Array.from(document.querySelector('button[aria-label="Switch to dark mode"]').querySelectorAll('svg'));
+    window.themeCalendar = document.querySelector('iframe');
+  });
+  await page.getByRole('button', { name: 'Switch to dark mode', exact: true }).click();
+  await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
+  assert.equal(await page.getByRole('button', { name: 'Switch to light mode', exact: true }).getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.getByRole('menu').count(), 0);
+  assert.equal(await page.evaluate(() => {
+    const icons = document.querySelector('button[aria-label="Switch to light mode"]').querySelectorAll('svg');
+    return icons.length === 2 && Array.from(icons).every((icon, index) => icon === window.themeIcons[index])
+      && document.querySelector('iframe') === window.themeCalendar;
+  }), true);
+  assert.equal(state.calendarLoads, 1);
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Switch to light mode', exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => document.documentElement.classList.contains('dark')), true);
+
+  const other = await page.context().newPage();
+  await other.route('**/api/**', route => route.fulfill({ contentType: 'application/json',
+    body: JSON.stringify(responseFor(new URL(route.request().url()).pathname.slice(4), 'PM')) }));
+  await other.goto('http://navigation.test/slides');
+  await other.getByRole('button', { name: 'Switch to light mode', exact: true }).click();
+  await page.waitForFunction(() => document.documentElement.classList.contains('light'));
+
+  // Reads can succeed while writes fail when browser storage is full.
+  await page.evaluate(() => { Storage.prototype.setItem = () => { throw new DOMException('Storage full', 'QuotaExceededError'); }; });
+  await page.getByRole('button', { name: 'Switch to dark mode', exact: true }).click();
+  await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
+  assert.equal(await page.getByRole('button', { name: 'Switch to light mode', exact: true }).isVisible(), true);
 });

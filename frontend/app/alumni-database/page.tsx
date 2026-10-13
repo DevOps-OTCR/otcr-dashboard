@@ -1,18 +1,37 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { Building2, ChevronLeft, ChevronRight, GraduationCap, Search } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, GraduationCap, Search, X } from 'lucide-react';
 import { AppNavbar } from '@/components/AppNavbar';
 import { useAuth } from '@/components/AuthContext';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
-import { alumniField, type AlumniDataset, type AlumniRecord } from '@/lib/alumni-data';
+import {
+  alumniField,
+  alumniMajors,
+  DEFAULT_ALUMNI_SORT,
+  filterAlumni,
+  sortAlumni,
+  type AlumniDataset,
+  type AlumniRecord,
+  type AlumniSort,
+  type AlumniSortKey,
+} from '@/lib/alumni-data';
 import { getActualUserRole, getEffectiveRole, type AppRole } from '@/lib/permissions';
 import { alumniAPI, setAuthToken } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 const PAGE_SIZE = 50;
+
+const COLUMNS: { key: AlumniSortKey; label: string; className: string }[] = [
+  { key: 'name', label: 'Name', className: 'pl-4 pr-2' },
+  { key: 'graduationYear', label: 'Class', className: 'px-2 w-28' },
+  { key: 'majors', label: 'Major / minor', className: 'px-2 min-w-[140px]' },
+  { key: 'employer', label: 'Employer', className: 'px-2 min-w-[160px]' },
+  { key: 'industry', label: 'Industry', className: 'px-2 min-w-[120px]' },
+  { key: 'jobTitle', label: 'Title', className: 'pr-4 pl-2 min-w-[180px]' },
+];
 
 function normalizedEmployer(r: AlumniRecord): string {
   return alumniField(r, 'employer').trim().toLowerCase();
@@ -23,13 +42,25 @@ export default function AlumniDatabasePage() {
   const [role, setRole] = useState<AppRole>('CONSULTANT');
   const [dataset, setDataset] = useState<AlumniDataset | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [companySearch, setCompanySearch] = useState('');
-  const [personSearch, setPersonSearch] = useState('');
+  const [search, setSearch] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [sort, setSort] = useState<AlumniSort>(DEFAULT_ALUMNI_SORT);
   const [pageIndex, setPageIndex] = useState(0);
 
   useEffect(() => {
     setPageIndex(0);
-  }, [companySearch, personSearch]);
+  }, [search, sort]);
+
+  const clearSearch = () => {
+    setSearch('');
+    searchInputRef.current?.focus();
+  };
+
+  const toggleSort = (key: AlumniSortKey) => {
+    setSort((s) =>
+      s.key === key ? { key, direction: s.direction === 'asc' ? 'desc' : 'asc' } : { key, direction: 'asc' },
+    );
+  };
 
   useEffect(() => {
     if (!session.isLoggedIn || session.loading) return;
@@ -70,60 +101,10 @@ export default function AlumniDatabasePage() {
     };
   }, [session.isLoggedIn, session.loading, session]);
 
-  const employersSorted = useMemo(() => {
-    if (!dataset) return [];
-    const set = new Set<string>();
-    for (const r of dataset.rows) {
-      const e = alumniField(r, 'employer').trim();
-      if (e) set.add(e);
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  }, [dataset]);
-
-  const filterRows = useCallback(
-    (rows: AlumniRecord[]) => {
-      const compQ = companySearch.trim().toLowerCase();
-      const personQ = personSearch.trim().toLowerCase();
-
-      return rows.filter((r) => {
-        const empLower = normalizedEmployer(r);
-        if (compQ) {
-          if (!empLower) return false;
-          if (!empLower.includes(compQ)) return false;
-        }
-
-        if (personQ) {
-          const blob = [
-            alumniField(r, 'name'),
-            alumniField(r, 'jobTitle'),
-            alumniField(r, 'major'),
-            alumniField(r, 'industry'),
-            alumniField(r, 'graduateDegrees'),
-          ]
-            .join(' ')
-            .toLowerCase();
-          if (!blob.includes(personQ)) return false;
-        }
-
-        return true;
-      });
-    },
-    [companySearch, personSearch],
-  );
-
   const filteredSorted = useMemo(() => {
     if (!dataset) return [];
-    const rows = filterRows(dataset.rows);
-    return [...rows].sort((a, b) => {
-      const ea = normalizedEmployer(a) || '\uffff';
-      const eb = normalizedEmployer(b) || '\uffff';
-      const c = ea.localeCompare(eb, undefined, { sensitivity: 'base' });
-      if (c !== 0) return c;
-      return alumniField(a, 'name').localeCompare(alumniField(b, 'name'), undefined, {
-        sensitivity: 'base',
-      });
-    });
-  }, [dataset, filterRows]);
+    return sortAlumni(filterAlumni(dataset.rows, search), sort);
+  }, [dataset, search, sort]);
 
   const totalCount = filteredSorted.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
@@ -156,7 +137,7 @@ export default function AlumniDatabasePage() {
               Alumni Database
             </CardTitle>
             <CardDescription>
-              Browse and filter cohort information by current employer or related text.
+              Search by name, employer, or title, and click a column header to sort.
             </CardDescription>
             {dataset && (
               <p className="text-xs text-[var(--foreground)]/55 pt-1">
@@ -178,52 +159,34 @@ export default function AlumniDatabasePage() {
 
             {dataset && !loadError && (
               <>
-                <div className="flex flex-col lg:flex-row gap-4">
-                  <label className="flex-1 space-y-1.5">
-                    <span className="flex items-center gap-1.5 text-sm font-medium text-[var(--foreground)]/85">
-                      <Building2 className="w-4 h-4 text-[var(--primary)]" />
-                      Search by employer
-                    </span>
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--foreground)]/40" />
-                      <input
-                        type="text"
-                        value={companySearch}
-                        onChange={(e) => setCompanySearch(e.target.value)}
-                        placeholder="Company name…"
-                        className={cn(
-                          'w-full rounded-xl border border-[var(--border)] bg-[var(--background)] py-2.5 pl-9 pr-3 text-sm outline-none ring-2 ring-transparent transition-shadow',
-                          'focus:ring-[var(--primary)]/25 focus:border-[var(--primary)]/40',
-                        )}
-                        list="alumni-employer-suggestions"
-                      />
-                      <datalist id="alumni-employer-suggestions">
-                        {employersSorted.slice(0, 500).map((e) => (
-                          <option key={e} value={e} />
-                        ))}
-                      </datalist>
-                    </div>
-                    <span className="text-xs text-[var(--foreground)]/50">
-                      {employersSorted.length} distinct employers · partial match
-                    </span>
-                  </label>
-
-                  <label className="flex-1 space-y-1.5 lg:max-w-md">
-                    <span className="flex items-center gap-1.5 text-sm font-medium text-[var(--foreground)]/85">
-                      <Search className="w-4 h-4 text-[var(--primary)]" />
-                      Filter by person or role text
-                    </span>
-                    <input
-                      type="text"
-                      value={personSearch}
-                      onChange={(e) => setPersonSearch(e.target.value)}
-                      placeholder="Name, title, major, industry…"
-                      className={cn(
-                        'w-full rounded-xl border border-[var(--border)] bg-[var(--background)] py-2.5 px-3 text-sm outline-none ring-2 ring-transparent transition-shadow',
-                        'focus:ring-[var(--primary)]/25 focus:border-[var(--primary)]/40',
-                      )}
-                    />
-                  </label>
+                <div className="relative max-w-2xl">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--foreground)]/40" />
+                  <input
+                    ref={searchInputRef}
+                    type="search"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') setSearch('');
+                    }}
+                    placeholder="Search by name, employer, or title…"
+                    aria-label="Search alumni by name, employer, or title"
+                    className={cn(
+                      'w-full rounded-xl border border-[var(--border)] bg-[var(--background)] py-2.5 pl-9 pr-10 text-sm outline-none ring-2 ring-transparent transition-shadow',
+                      'focus:ring-[var(--primary)]/25 focus:border-[var(--primary)]/40',
+                      '[&::-webkit-search-cancel-button]:appearance-none',
+                    )}
+                  />
+                  {search && (
+                    <button
+                      type="button"
+                      aria-label="Clear search"
+                      onClick={clearSearch}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1 text-[var(--foreground)]/50 hover:bg-[var(--accent)] hover:text-[var(--foreground)]"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -232,6 +195,18 @@ export default function AlumniDatabasePage() {
                       <>
                         No matching records
                         {dataset.rows.length > 0 ? ` (${dataset.rows.length} total in dataset)` : ''}.
+                        {search && (
+                          <>
+                            {' '}
+                            <button
+                              type="button"
+                              onClick={clearSearch}
+                              className="font-medium text-[var(--primary)] hover:underline"
+                            >
+                              Clear search
+                            </button>
+                          </>
+                        )}
                       </>
                     ) : (
                       <>
@@ -294,24 +269,44 @@ export default function AlumniDatabasePage() {
                   <table className="min-w-[960px] w-full text-sm">
                     <thead>
                       <tr className="bg-[var(--card)] border-b border-[var(--border)] text-left text-xs uppercase tracking-wide text-[var(--foreground)]/55">
-                        <th className="py-3 pl-4 pr-2 font-semibold">Name</th>
-                        <th className="py-3 px-2 font-semibold w-28">Class</th>
-                        <th className="py-3 px-2 font-semibold min-w-[140px]">Major / minor</th>
-                        <th className="py-3 px-2 font-semibold min-w-[160px]">Employer</th>
-                        <th className="py-3 px-2 font-semibold min-w-[120px]">Industry</th>
-                        <th className="py-3 pr-4 pl-2 font-semibold min-w-[180px]">Title</th>
+                        {COLUMNS.map(({ key, label, className }) => {
+                          const active = sort.key === key;
+                          const SortIcon = !active ? ArrowUpDown : sort.direction === 'asc' ? ArrowUp : ArrowDown;
+                          return (
+                            <th
+                              key={key}
+                              scope="col"
+                              aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+                              className={cn('py-1.5 font-semibold', className)}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => toggleSort(key)}
+                                title={`Sort by ${label.toLowerCase()}`}
+                                className={cn(
+                                  'group -mx-1.5 inline-flex items-center gap-1 rounded-md px-1.5 py-1.5 font-semibold uppercase tracking-wide transition-colors',
+                                  'hover:bg-[var(--accent)] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]/40',
+                                  active && 'text-[var(--foreground)]',
+                                )}
+                              >
+                                {label}
+                                <SortIcon
+                                  aria-hidden="true"
+                                  className={cn(
+                                    'w-3.5 h-3.5 shrink-0',
+                                    active
+                                      ? 'text-[var(--primary)]'
+                                      : 'opacity-0 group-hover:opacity-60 group-focus-visible:opacity-60',
+                                  )}
+                                />
+                              </button>
+                            </th>
+                          );
+                        })}
                       </tr>
                     </thead>
                     <tbody>
                       {pageRows.map((r) => {
-                        const majors = [
-                          alumniField(r, 'major'),
-                          alumniField(r, 'minor'),
-                          alumniField(r, 'graduateDegrees'),
-                        ]
-                          .map((x) => x.trim())
-                          .filter(Boolean);
-
                         const rowHue =
                           normalizedEmployer(r) === '' ? 'bg-amber-500/[0.04]' : '';
 
@@ -330,7 +325,7 @@ export default function AlumniDatabasePage() {
                               {displayOrDash(alumniField(r, 'graduationYear'))}
                             </td>
                             <td className="py-3 px-2 text-[var(--foreground)]/80">
-                              {majors.length ? majors.join(' · ') : '—'}
+                              {displayOrDash(alumniMajors(r))}
                             </td>
                             <td className="py-3 px-2 text-[var(--foreground)]">
                               <span className={cn(normalizedEmployer(r) === '' && 'italic text-[var(--foreground)]/50')}>

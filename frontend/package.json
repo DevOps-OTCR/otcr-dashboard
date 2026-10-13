@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint .",
     "lint:prune": "eslint . --prune-suppressions",
+    "test": "node --test tests/alumni-data.test.cjs tests/permissions.test.cjs",
     "test:roles": "node --test tests/permissions.test.cjs",
     "test:navigation:browser": "node --test tests/navigation-browser.test.cjs",
     "import-alumni": "node scripts/import-alumni.cjs",
@@ -50,6 +51,7 @@
     "@tailwindcss/postcss": "^4.1.17",
     "@types/json-schema": "^7.0.15",
     "eslint": "^10.0.1",
-    "eslint-config-next": "^16.4.0"
+    "eslint-config-next": "^16.4.0",
+    "playwright": "1.64.0"
   }
 }
