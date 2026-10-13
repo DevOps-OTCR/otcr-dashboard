@@ -13,11 +13,16 @@ export interface NotificationJob {
   userId: string;
   type: NotificationType;
   channel: NotificationChannel;
+  scheduledReminderId?: string;
   data: {
     deliverableTitle?: string;
     projectName?: string;
     deadline?: Date;
     hoursRemaining?: number;
+    offsetMinutes?: number;
+    remainingMinutes?: number;
+    deepLink?: string;
+    timezone?: string;
     submittedAt?: Date;
     isLate?: boolean;
     lateByMinutes?: number;
@@ -66,6 +71,15 @@ export class NotificationsService {
     } else {
       this.logger.warn('Redis not available, notifications will be saved to database only (no background processing)');
     }
+  }
+
+  /**
+   * Expose the shared notification queue so reminder scheduling can enqueue
+   * idempotent, delayed jobs (jobId dedupe) onto the same worker.
+   * Returns null when Redis is unavailable.
+   */
+  getNotificationQueue(): Queue | null {
+    return this.notificationQueue;
   }
 
   async queueNotification(job: NotificationJob): Promise<void> {
