@@ -42,8 +42,13 @@ jobs:
         run: npm run lint
       - name: Check TypeScript
         run: npx tsc --noEmit
-      - name: Run role tests
-        run: npm run test:roles
+      - name: Run frontend unit tests
+        run: npm test
+      - name: Install Chromium for browser tests
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Run navigation browser tests
+        timeout-minutes: 5
+        run: npm run test:navigation:browser
       - name: Build Pages static export
         env:
           GITHUB_PAGES: 'true'

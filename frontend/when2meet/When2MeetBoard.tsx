@@ -256,7 +256,7 @@ export function When2MeetBoard({
       <h1 className={headlineFontClassName}>{detail.poll.title}</h1>
 
       {saveError ? (
-        <p className="text-center text-red-600 text-sm mt-2">{saveError}</p>
+        <p className="text-center text-red-600 dark:text-red-400 text-sm mt-2">{saveError}</p>
       ) : null}
 
       <div className="w2m-split">

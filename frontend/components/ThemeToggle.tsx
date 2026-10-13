@@ -1,26 +1,27 @@
 'use client';
 
-import { Sun, Moon } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { Moon, Sun } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { useTheme } from './ThemeProvider';
 
-export function ThemeToggle() {
+export function ThemeToggle({ className }: { className?: string }) {
   const { theme, toggleTheme } = useTheme();
+  const label = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
 
   return (
-    <motion.button
+    <button
+      type="button"
       onClick={toggleTheme}
-      whileTap={{ scale: 0.92, rotate: 10 }}
-      className="p-2 hover:bg-[var(--accent)] rounded-lg transition-all duration-300"
-      aria-label="Toggle theme"
+      aria-label={label}
+      aria-pressed={theme === 'dark'}
+      title={label}
+      className={cn(
+        'p-2 rounded-lg hover:bg-[var(--accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]',
+        className,
+      )}
     >
-      <motion.div animate={{ rotate: theme === 'dark' ? 180 : 0 }} transition={{ type: 'spring', stiffness: 200 }}>
-        {theme === 'dark' ? (
-          <Sun className="w-5 h-5 text-yellow-500" />
-        ) : (
-          <Moon className="w-5 h-5 text-indigo-600" />
-        )}
-      </motion.div>
-    </motion.button>
+      <Moon aria-hidden="true" className="w-5 h-5 dark:hidden" />
+      <Sun aria-hidden="true" className="hidden w-5 h-5 dark:block" />
+    </button>
   );
 }

@@ -95,7 +95,7 @@ export default function When2MeetPage() {
     if (!session.loading && !session.isLoggedIn) {
       router.replace('/sign-in');
     }
-  }, [session, router]);
+  }, [session.loading, session.isLoggedIn, router]);
 
   const canCreatePoll =
     role === 'ADMIN' || role === 'PM' || role === 'PARTNER' || role === 'EXECUTIVE';
@@ -407,7 +407,7 @@ export default function When2MeetPage() {
         </Card>
 
         {error ? (
-          <p className="text-sm text-red-600 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
+          <p className="text-sm text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
             {error}
           </p>
         ) : null}

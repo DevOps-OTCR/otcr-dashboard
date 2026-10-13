@@ -25,7 +25,7 @@ export function Button({
     secondary: 'bg-[var(--secondary)] text-[var(--foreground)] hover:bg-[var(--accent)] focus:ring-[var(--ring)]',
     outline: 'border-2 border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--accent)] focus:ring-[var(--ring)]',
     ghost: 'text-[var(--foreground)] hover:bg-[var(--accent)] focus:ring-[var(--ring)]',
-    danger: 'bg-red-500/15 text-red-700 border border-red-500/30 hover:bg-red-500/25 focus:ring-red-500',
+    danger: 'bg-red-500/15 text-red-700 dark:text-red-300 border border-red-500/30 hover:bg-red-500/25 focus:ring-red-500',
   };
 
   const sizes = {

@@ -59,7 +59,7 @@ export default function FormsPage() {
     if (!session.loading && !session.isLoggedIn) {
       router.replace('/sign-in');
     }
-  }, [session, router]);
+  }, [session.loading, session.isLoggedIn, router]);
 
   useEffect(() => {
     const syncRole = async () => {
