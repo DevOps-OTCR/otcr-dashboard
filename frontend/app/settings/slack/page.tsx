@@ -41,7 +41,7 @@ export default function SlackSettingsPage() {
   const [dashboardAccessEmail, setDashboardAccessEmail] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const canGrantDashboardAccess = role === 'ADMIN' || role === 'EXECUTIVE' || role === 'PM';
+  const canGrantDashboardAccess = role === 'ADMIN';
   const hasSlackConnection = slackConnections.length > 0;
   const latestSlackConnection = slackConnections[0] ?? null;
 

@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { PeopleController } from './people.controller';
 import { PeopleService } from './people.service';
 import { OnboardingController } from './onboarding.controller';
+import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
@@ -16,15 +17,16 @@ describe('People and onboarding HTTP authorization', () => {
   const people = { list: jest.fn().mockResolvedValue([]), changeRole: jest.fn().mockResolvedValue({}) };
   const auth = {
     getUserByEmail: async (email: string) => ({ id: email, role: email.split('@')[0] }),
+    addAllowedEmail: jest.fn().mockResolvedValue({}),
     listOnboardingRequests: jest.fn().mockResolvedValue([]), approveOnboardingRequest: jest.fn().mockResolvedValue({}),
     rejectOnboardingRequest: jest.fn().mockResolvedValue({}),
   };
   const routes = [
     ['GET', '/people'], ['PATCH', '/people/person/role'], ['GET', '/onboarding/requests'],
-    ['PATCH', '/onboarding/requests/request/approve'], ['PATCH', '/onboarding/requests/request/reject'],
+    ['PATCH', '/onboarding/requests/request/approve'], ['PATCH', '/onboarding/requests/request/reject'], ['POST', '/auth/allowed-emails'],
   ];
   beforeAll(async () => {
-    const module = await Test.createTestingModule({ controllers: [PeopleController, OnboardingController],
+    const module = await Test.createTestingModule({ controllers: [PeopleController, OnboardingController, AuthController],
       providers: [AuthGuard, { provide: PeopleService, useValue: people }, { provide: AuthService, useValue: auth }],
     }).compile();
     app = module.createNestApplication();
@@ -36,18 +38,18 @@ describe('People and onboarding HTTP authorization', () => {
     for (const [method, path] of routes) {
       const response = await fetch(url + path, { method,
         headers: { ...(role ? { Authorization: `Bearer ${role}` } : {}), 'Content-Type': 'application/json' },
-        ...(method === 'PATCH' ? { body: JSON.stringify({ role: 'ADMIN', grantedRole: 'ADMIN' }) } : {}),
+        ...(method !== 'GET' ? { body: JSON.stringify({ email: 'person@example.test', role: 'ADMIN', grantedRole: 'ADMIN' }) } : {}),
       });
       expect(response.status).toBe(403);
     }
-    for (const fn of [people.list, people.changeRole, auth.listOnboardingRequests, auth.approveOnboardingRequest, auth.rejectOnboardingRequest]) expect(fn).not.toHaveBeenCalled();
+    for (const fn of [people.list, people.changeRole, auth.listOnboardingRequests, auth.approveOnboardingRequest, auth.rejectOnboardingRequest, auth.addAllowedEmail]) expect(fn).not.toHaveBeenCalled();
   });
   test('permits Admin access', async () => {
     for (const [method, path] of routes) {
       const response = await fetch(url + path, { method, headers: { Authorization: 'Bearer ADMIN', 'Content-Type': 'application/json' },
-        ...(method === 'PATCH' ? { body: JSON.stringify({ role: 'PM', grantedRole: 'LC', notes: 'Reviewed' }) } : {}),
+        ...(method !== 'GET' ? { body: JSON.stringify({ email: 'person@example.test', role: 'PM', grantedRole: 'LC', notes: 'Reviewed' }) } : {}),
       });
-      expect(response.status).toBe(200);
+      expect(response.status).toBe(method === 'POST' ? 201 : 200);
     }
     expect(auth.approveOnboardingRequest).toHaveBeenCalledWith('request', 'ADMIN@example.test', 'Reviewed', 'LC');
   });
