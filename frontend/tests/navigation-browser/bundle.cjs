@@ -4,6 +4,17 @@ const { webpack } = require('next/dist/compiled/webpack/webpack');
 const root = path.resolve(__dirname, '../..');
 exports.document = '<!doctype html><html><body><div id="root"></div><script src="/bundle.js"></script></body></html>';
 
+// Theme tests need the production styles, including Tailwind's hover transitions.
+exports.buildStyles = async () => {
+  const from = path.join(root, 'app/globals.css');
+  const source = fs.readFileSync(from, 'utf8').replace(/^@import url\(.*\);/m, '');
+  const result = await require('postcss')([
+    require('@tailwindcss/postcss')({ base: root }),
+    require('autoprefixer')(),
+  ]).process(source, { from });
+  return result.css + '\n' + fs.readFileSync(path.join(root, 'when2meet/when2meet.css'), 'utf8');
+};
+
 // Bundle the real pages, navbar, and auth provider. Only routing and MSAL are mocked.
 exports.buildBundle = async () => {
   const output = path.join(root, 'build/navigation-browser');
