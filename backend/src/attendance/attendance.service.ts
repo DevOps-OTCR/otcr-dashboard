@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { GoogleCalendarService } from '../integrations/google-calendar.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { getDistanceInMeters, isValidCoordinate } from './geofence';
 
 type AttendanceUser = {
   id: string;
@@ -35,7 +36,8 @@ type CreateAttendanceEventInput = {
 
 type CheckInInput = {
   method?: 'GEOFENCE' | 'CODE';
-  geofenceVerified?: boolean;
+  latitude?: number;
+  longitude?: number;
   code?: string;
 };
 
@@ -990,8 +992,26 @@ export class AttendanceService {
         throw new BadRequestException('In-person events require geofence verification');
       }
 
-      if (!body.geofenceVerified) {
-        throw new ForbiddenException('You must be inside the event geofence to check in');
+      // geofenceVerified from the client is untrusted; the distance check below is authoritative.
+      if (event.latitude == null || event.longitude == null) {
+        throw new BadRequestException('This event is missing geofence coordinates');
+      }
+
+      if (!isValidCoordinate(body.latitude, body.longitude)) {
+        throw new BadRequestException('Geofence check-in requires a valid latitude and longitude');
+      }
+
+      const distance = getDistanceInMeters(
+        body.latitude as number,
+        body.longitude as number,
+        event.latitude,
+        event.longitude,
+      );
+
+      if (distance > event.geofenceRadiusMeters) {
+        throw new ForbiddenException(
+          `You are ${Math.round(distance)} meters away. You must be within ${event.geofenceRadiusMeters} meters to check in.`,
+        );
       }
     }
 
