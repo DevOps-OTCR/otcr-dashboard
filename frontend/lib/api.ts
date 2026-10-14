@@ -373,6 +373,26 @@ export const projectsAPI = {
     api.delete(`/projects/${projectId}/sprints/${sprintId}`),
 };
 
+export type ReminderOffsetPreset = { minutes: number; label: string };
+export type ReminderConfig = { enabled: boolean; offsetsMinutes: number[]; timezone: string };
+export type ReminderRecipient = { userId: string; email: string; name: string; slackConnected: boolean };
+export type ReminderRecipientGroup = {
+  deliverableId: string;
+  title: string;
+  deadline: string;
+  unassigned: boolean;
+  recipients: ReminderRecipient[];
+};
+
+export const remindersAPI = {
+  getPresets: (projectId: string) => api.get(`/projects/${projectId}/reminders/presets`),
+  getConfig: (projectId: string) => api.get(`/projects/${projectId}/reminders/config`),
+  updateConfig: (projectId: string, data: { enabled: boolean; offsetsMinutes: number[] }) =>
+    api.patch(`/projects/${projectId}/reminders/config`, data),
+  getRecipients: (projectId: string) => api.get(`/projects/${projectId}/reminders/recipients`),
+  getStatus: (projectId: string) => api.get(`/projects/${projectId}/reminders/status`),
+};
+
 export type TaskAssigneeType = 'PERSON' | 'ALL' | 'ALL_PMS' | 'ALL_TEAM';
 
 export const tasksAPI = {
