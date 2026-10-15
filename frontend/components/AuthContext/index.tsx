@@ -1,8 +1,8 @@
 "use client"
 import {
-  BrowserAuthError,
   InteractionRequiredAuthError,
   InteractionStatus,
+  EventType,
 } from "@azure/msal-browser";
 import { useMsal } from "@azure/msal-react";
 import { useRouter } from 'next/navigation';
@@ -17,6 +17,7 @@ import {
   useRef,
   Fragment,
 } from "react";
+import { CMS_SESSION_KEY, readCmsSession, cmsSessionRevision, beginCmsSignIn, completeCmsSignIn, markCmsSignedOut, withAuthTimeout } from '@/lib/cms-session';
 import FullScreenLoader from "./LoadingScreen";
 import { clearRoleCache } from "@/lib/permissions";
 import { clearProjectsCache, setAuthToken } from "@/lib/api";
@@ -45,6 +46,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const router = useRouter();
   const signedOut = useRef(false);
   const authGeneration = useRef(0);
+  const handledRedirect = useRef(false);
+  const [sessionChange, setSessionChange] = useState(0);
+  const [authError, setAuthError] = useState<string | null>(null);
   
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -61,157 +65,187 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [user?.email]);
 
-  useEffect(() => {
-    if (inProgress !== InteractionStatus.None) return;
-    let cancelled = false;
-    const generation = authGeneration.current;
-
-    const checkAuth = async () => {
-      try {
-        // MSAL v4+ requires this before acquireTokenSilent / redirects; avoids
-        // BrowserAuthError: uninitialized_public_client_application on first navigation.
-        await instance.initialize();
-        if (cancelled || signedOut.current || generation !== authGeneration.current) return;
-
-        await instance.handleRedirectPromise();
-        if (cancelled || signedOut.current || generation !== authGeneration.current) {
-          // A redirect response that finished during sign-out may have populated the cache.
-          if (signedOut.current) await instance.clearCache();
-          return;
-        }
-        // Read the live cache; MSAL React and redirect results can retain old accounts.
-        const account = instance.getActiveAccount() ?? instance.getAllAccounts()[0];
-
-        if (account) {
-          instance.setActiveAccount(account);
-          const claims = account.idTokenClaims as
-            | { name?: string; given_name?: string; family_name?: string }
-            | undefined;
-          const claimName = [claims?.given_name, claims?.family_name]
-            .filter(Boolean)
-            .join(' ')
-            .trim();
-          const nextUser = {
-            email: account.username,
-            name: claimName || claims?.name || account.name || undefined,
-          };
-          setUser(current => current?.email === nextUser.email && current?.name === nextUser.name ? current : nextUser);
-          setIsLoggedIn(true);
-        } else {
-          setIsLoggedIn(false);
-          setUser(null);
-        }
-      } catch (e) {
-        console.error("Auth check failed", e);
-      } finally {
-        if (!cancelled) setIsAuthReady(true);
-      }
-    };
-
-    void checkAuth();
-    const onPageShow = (event: PageTransitionEvent) => {
-      if (event.persisted) void checkAuth();
-    };
-    window.addEventListener('pageshow', onPageShow);
-    return () => {
-      cancelled = true;
-      window.removeEventListener('pageshow', onPageShow);
-    };
-  }, [instance, accounts, inProgress]);
-
-  const login = useCallback(async () => {
-    await instance.initialize();
-    signedOut.current = false;
-    authGeneration.current += 1;
-    await instance.loginRedirect({
-      scopes: ["openid", "profile", "email", "User.Read"],
-    });
-  }, [instance]);
-
-  const logout = useCallback(async () => {
+  const clearAppSession = useCallback(() => {
     signedOut.current = true;
     authGeneration.current += 1;
-    clearRoleCache(user?.email ?? null);
+    clearRoleCache(previousEmail.current ?? null);
     clearProjectsCache();
     clearNavigationSnapshots();
     setResourceCacheScope();
     setAuthToken(null);
     sessionStorage.removeItem('otcr_profile_sync_fingerprint');
-
     setUser(null);
     setIsLoggedIn(false);
+    setIsAuthReady(true);
+    setAuthError(null);
+  }, []);
 
-    // MSAL's local cache API leaves the Microsoft identity-provider session intact.
-    await instance.initialize();
-    instance.setActiveAccount(null);
-    await instance.clearCache();
-    // Next's router applies the configured base path and replaces the protected URL.
+  const requireSignIn = useCallback(() => {
+    clearAppSession();
     router.replace('/sign-in');
-  }, [instance, router, user?.email]);
+  }, [clearAppSession, router]);
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== CMS_SESSION_KEY && event.key !== null) return;
+      if (readCmsSession()?.signedOut) {
+        const revision = cmsSessionRevision();
+        requireSignIn();
+        // Clear this tab's in-memory MSAL cache too, without contacting Microsoft.
+        void instance.initialize().then(async () => {
+          if (cmsSessionRevision() === revision && readCmsSession()?.signedOut) {
+            instance.setActiveAccount(null);
+            await instance.clearCache();
+          }
+        }).catch(() => { /* The durable sign-out marker still blocks restoration. */ });
+      } else {
+        signedOut.current = false;
+        authGeneration.current += 1;
+        // Hide the previous account while the new shared session is validated.
+        setAuthToken(null);
+        setUser(null);
+        setIsLoggedIn(false);
+        setIsAuthReady(false);
+        setAuthError(null);
+        setSessionChange(value => value + 1);
+      }
+    };
+    const onPageShow = () => {
+      if (readCmsSession()?.signedOut) requireSignIn();
+      else setSessionChange(value => value + 1);
+    };
+    // MSAL v5 broadcasts active-account changes; account arrays alone do not
+    // change when switching between two accounts already in the cache.
+    const callbackId = instance.addEventCallback(message => {
+      if (message.eventType === EventType.ACTIVE_ACCOUNT_CHANGED) {
+        setSessionChange(value => value + 1);
+      }
+    });
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('pageshow', onPageShow);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('pageshow', onPageShow);
+      if (callbackId) instance.removeEventCallback(callbackId);
+    };
+  }, [instance, requireSignIn]);
+
+  useEffect(() => {
+    if (isAuthReady) return;
+    const timer = window.setTimeout(() => {
+      setAuthError('Sign-in could not finish. Please retry.');
+    }, 20000);
+    return () => window.clearTimeout(timer);
+  }, [isAuthReady]);
+
+  useEffect(() => {
+    if (inProgress !== InteractionStatus.None) return;
+    let cancelled = false;
+    const generation = authGeneration.current;
+    let revision = cmsSessionRevision();
+    const isCurrent = () => !cancelled && generation === authGeneration.current && revision === cmsSessionRevision();
+    const checkAuth = async () => {
+      try {
+        await withAuthTimeout(instance.initialize());
+        if (!isCurrent()) return;
+        const result = await withAuthTimeout(instance.handleRedirectPromise());
+        if (cancelled || generation !== authGeneration.current) return;
+        if (result?.account && !handledRedirect.current) {
+          handledRedirect.current = true;
+          if (!completeCmsSignIn(result.account.homeAccountId)) {
+            requireSignIn();
+            if (readCmsSession()?.signedOut) await instance.clearCache();
+            return;
+          }
+          signedOut.current = false;
+          revision = cmsSessionRevision();
+        }
+        if (!isCurrent()) return;
+        if (signedOut.current || readCmsSession()?.signedOut) {
+          clearAppSession();
+          return;
+        }
+        const preferred = readCmsSession()?.accountId;
+        const account = preferred
+          ? instance.getAllAccounts().find(account => account.homeAccountId === preferred)
+          : instance.getActiveAccount() ?? instance.getAllAccounts()[0];
+        if (!account) {
+          setUser(null);
+          setIsLoggedIn(false);
+          return;
+        }
+        // A cached account is not proof that its session can still acquire tokens.
+        // Silent renewal does not open a popup or redirect a background tab.
+        await withAuthTimeout(instance.acquireTokenSilent({ account, scopes: ['User.Read'] }));
+        if (!isCurrent() || signedOut.current || readCmsSession()?.signedOut) {
+          if (readCmsSession()?.signedOut) await instance.clearCache();
+          return;
+        }
+        if (instance.getActiveAccount()?.homeAccountId !== account.homeAccountId) instance.setActiveAccount(account);
+        const claims = account.idTokenClaims as { name?: string; given_name?: string; family_name?: string } | undefined;
+        const claimName = [claims?.given_name, claims?.family_name].filter(Boolean).join(' ').trim();
+        const nextUser = { email: account.username, name: claimName || claims?.name || account.name || undefined };
+        setUser(current => current?.email === nextUser.email && current?.name === nextUser.name ? current : nextUser);
+        setIsLoggedIn(true);
+        setAuthError(null);
+      } catch (error) {
+        if (!isCurrent()) return;
+        if (error instanceof InteractionRequiredAuthError) requireSignIn();
+        else setAuthError('We could not restore your sign-in. Please retry.');
+      } finally {
+        if (!cancelled) setIsAuthReady(true);
+      }
+    };
+    void checkAuth();
+    return () => { cancelled = true; };
+  }, [instance, accounts, inProgress, sessionChange, clearAppSession, requireSignIn]);
+
+  const login = useCallback(async () => {
+    await withAuthTimeout(instance.initialize());
+    beginCmsSignIn();
+    signedOut.current = false;
+    authGeneration.current += 1;
+    await instance.loginRedirect({ scopes: ['openid', 'profile', 'email', 'User.Read'] });
+  }, [instance]);
+
+  const logout = useCallback(async () => {
+    clearAppSession();
+    try {
+      try { markCmsSignedOut(); } catch { /* Local cleanup must still run if storage is unavailable. */ }
+      await withAuthTimeout(instance.initialize());
+      instance.setActiveAccount(null);
+      await withAuthTimeout(instance.clearCache());
+    } finally {
+      router.replace('/sign-in');
+    }
+  }, [clearAppSession, instance, router]);
 
   const getToken = useCallback(async () => {
     const generation = authGeneration.current;
-    const isCurrent = () => !signedOut.current && generation === authGeneration.current;
-    const takeToken = async (token: string) => {
-      if (isCurrent()) return token;
-      // MSAL can cache a refresh response that arrives after local sign-out.
-      if (signedOut.current) await instance.clearCache();
-      return null;
-    };
+    const revision = cmsSessionRevision();
+    const isCurrent = () => !signedOut.current && !readCmsSession()?.signedOut &&
+      generation === authGeneration.current && revision === cmsSessionRevision();
     if (!isCurrent()) return null;
-    await instance.initialize();
+    await withAuthTimeout(instance.initialize());
     if (!isCurrent()) return null;
-
     const account = instance.getActiveAccount();
     if (!account) return null;
-
-    const tokenRequest = {
-      account,
-      scopes: ["User.Read"],
-      authority: process.env.NEXT_PUBLIC_MSAL_AUTHORITY,
-      forceRefresh: false,
-    };
-
+    const preferredAccount = readCmsSession()?.accountId;
+    if (preferredAccount && preferredAccount !== account.homeAccountId) return null;
     try {
-      const res = await instance.acquireTokenSilent(tokenRequest);
-      return await takeToken(res.accessToken);
-    } catch (err) {
-      if (!isCurrent()) return null;
-      if (err instanceof BrowserAuthError && err.errorCode === "timed_out") {
-        try {
-          const forceRefreshRes = await instance.acquireTokenSilent({
-            ...tokenRequest,
-            forceRefresh: true,
-          });
-          return await takeToken(forceRefreshRes.accessToken);
-        } catch (refreshError) {
-          console.error("MSAL force-refresh token acquisition failed:", refreshError);
-          return null;
-        }
-      }
-
-      if (err instanceof InteractionRequiredAuthError) {
-        try {
-          const res = await instance.acquireTokenPopup(tokenRequest);
-          return await takeToken(res.accessToken);
-        } catch (popupError) {
-          if (
-            popupError instanceof BrowserAuthError &&
-            (popupError.errorCode === "popup_window_error" ||
-              popupError.errorCode === "timed_out")
-          ) {
-            alert(
-              "Token refresh requires a popup, but it was blocked or timed out. Allow popups for this site and try again."
-            );
-          }
-          console.error("MSAL popup token acquisition failed:", popupError);
-          return null;
-        }
-      }
-      console.error("MSAL silent token acquisition failed:", err);
+      const result = await withAuthTimeout(instance.acquireTokenSilent({
+        account, scopes: ['User.Read'], authority: process.env.NEXT_PUBLIC_MSAL_AUTHORITY,
+      }));
+      if (isCurrent()) return result.accessToken;
+      if (readCmsSession()?.signedOut) await instance.clearCache();
       return null;
+    } catch (error) {
+      if (!isCurrent()) return null;
+      if (error instanceof InteractionRequiredAuthError) requireSignIn();
+      // Let callers stop their requests instead of falling back to stale identity.
+      throw error;
     }
-  }, [instance]);
+  }, [instance, requireSignIn]);
 
   // Later token operations must not unmount the current page.
   const isLoading = !isAuthReady;
@@ -223,7 +257,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     <AuthContext.Provider
       value={contextValue}
     >
-      {isLoading ? (
+      {authError ? (
+        <main className="min-h-screen flex items-center justify-center p-6">
+          <section role="alert" className="max-w-md text-center">
+            <h1 className="text-xl font-semibold">Unable to finish sign-in</h1>
+            <p className="my-4">{authError}</p>
+            <button type="button" onClick={() => window.location.reload()} className="rounded bg-[#003360] px-5 py-2 text-white">Retry sign-in</button>
+          </section>
+        </main>
+      ) : isLoading ? (
         <FullScreenLoader />
       ) : (
         <Fragment key={user?.email ?? 'signed-out'}>{children}</Fragment>
