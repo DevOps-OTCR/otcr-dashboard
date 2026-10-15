@@ -45,6 +45,8 @@ exports.buildBundle = async (options = {}) => {
       'process.env.NEXT_PUBLIC_API_URL': JSON.stringify('/api'),
       'process.env.NEXT_PUBLIC_GOOGLE_CALENDAR_EMBED_URL': JSON.stringify(''),
       'process.env.NEXT_PUBLIC_BASE_PATH': JSON.stringify(''),
+      'process.env.NEXT_PUBLIC_MSAL_CLIENT_ID': JSON.stringify('00000000-0000-4000-8000-000000000001'),
+      'process.env.NEXT_PUBLIC_MSAL_REDIRECT_URI': JSON.stringify(''),
       'process.env.NEXT_PUBLIC_MSAL_AUTHORITY': JSON.stringify(options.realMsal
         ? 'https://login.microsoftonline.com/00000000-0000-4000-8000-000000000002'
         : 'https://login.microsoftonline.com/test'),
