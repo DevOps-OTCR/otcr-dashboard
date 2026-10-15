@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   CalendarDays,
   Clock3,
@@ -225,6 +226,7 @@ function getAvailabilityHeatColor(availableCount: number, teamSize: number, isSe
 
 export default function AttendancePage() {
   const session = useAuth();
+  const router = useRouter();
   const { isLoggedIn, getToken } = session;
   const email = session.user?.email;
   const { snapshot, saveSnapshot } = useNavigationSnapshot<{
@@ -243,6 +245,14 @@ export default function AttendancePage() {
   const [form, setForm] = useState<CreateFormState>(DEFAULT_FORM);
   const [resolvedLocation, setResolvedLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationResolvedFor, setLocationResolvedFor] = useState('');
+
+  useEffect(() => {
+    // Once auth init finishes, bounce signed-out users to sign-in instead of
+    // leaving them stuck on the loader (deep links / bookmarks).
+    if (!session.loading && !session.isLoggedIn) {
+      router.replace('/sign-in');
+    }
+  }, [session.loading, session.isLoggedIn, router]);
   const [resolvingLocation, setResolvingLocation] = useState(false);
   const [locationSuggestions, setLocationSuggestions] = useState<LocationSuggestion[]>([]);
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
@@ -1005,12 +1015,12 @@ export default function AttendancePage() {
         </section>
 
         {message && (
-          <p className="text-sm rounded-xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-emerald-700">
+          <p className="text-sm rounded-xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-emerald-700 dark:text-emerald-300">
             {message}
           </p>
         )}
         {error && (
-          <p className="text-sm rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-3 text-red-700">
+          <p className="text-sm rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-3 text-red-700 dark:text-red-300">
             {error}
           </p>
         )}

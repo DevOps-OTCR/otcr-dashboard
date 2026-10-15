@@ -277,7 +277,7 @@ export default function ConsultantDashboard() {
                   className={cn(
                     'px-3 py-1.5 rounded-full text-xs border transition',
                     selectedWeek === 'All Weeks'
-                      ? 'bg-[var(--primary)] text-white border-[var(--primary)]'
+                      ? 'bg-[var(--primary)] text-[var(--primary-foreground)] border-[var(--primary)]'
                       : 'border-[var(--border)] text-[var(--foreground)]/70 hover:border-[var(--primary)]/50',
                   )}
                 >
@@ -291,7 +291,7 @@ export default function ConsultantDashboard() {
                     className={cn(
                       'px-3 py-1.5 rounded-full text-xs border transition',
                       selectedWeek === week
-                        ? 'bg-[var(--primary)] text-white border-[var(--primary)]'
+                        ? 'bg-[var(--primary)] text-[var(--primary-foreground)] border-[var(--primary)]'
                         : 'border-[var(--border)] text-[var(--foreground)]/70 hover:border-[var(--primary)]/50',
                     )}
                   >
@@ -321,7 +321,7 @@ export default function ConsultantDashboard() {
                       className={cn(
                         'p-4 rounded-2xl border flex items-start gap-3 cursor-pointer transition hover:border-[var(--primary)]/60',
                         isOverdue
-                          ? 'border-red-400/70 bg-red-50'
+                          ? 'border-red-400/70 bg-red-50 dark:bg-red-500/10'
                           : 'border-[var(--border)] bg-[var(--secondary)]/80',
                       )}
                     >

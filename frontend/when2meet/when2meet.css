@@ -15,6 +15,13 @@
   min-height: 0;
 }
 
+.dark .w2mRoot {
+  --w2m-text: rgb(229, 231, 235);
+  --w2m-pink: rgb(92, 52, 60);
+  --w2m-gray: rgb(156, 163, 175);
+  --w2m-light-gray: rgb(45, 59, 82);
+}
+
 .w2mRoot ::selection {
   background: var(--w2m-gray);
   color: white;
@@ -203,7 +210,7 @@
 .w2mRoot .w2m-available-overlay {
   position: absolute;
   z-index: 100;
-  background: white;
+  background: var(--card, white);
   left: 50%;
   transform: translateX(-50%);
   top: 80px;

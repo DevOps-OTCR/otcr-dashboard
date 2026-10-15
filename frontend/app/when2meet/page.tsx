@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Be_Vietnam_Pro, Mulish } from 'next/font/google';
 import { AppNavbar } from '@/components/AppNavbar';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
@@ -54,6 +55,7 @@ type ProjectOption = { id: string; name: string };
 
 export default function When2MeetPage() {
   const session = useAuth();
+  const router = useRouter();
   const { isLoggedIn, getToken } = session;
   const email = session.user?.email;
   const { snapshot, saveSnapshot } = useNavigationSnapshot<{
@@ -86,6 +88,14 @@ export default function When2MeetPage() {
   const [slotEnd, setSlotEnd] = useState('17:00');
   const [creating, setCreating] = useState(false);
   const [deletingPoll, setDeletingPoll] = useState(false);
+
+  useEffect(() => {
+    // Once auth init finishes, bounce signed-out users to sign-in instead of
+    // leaving them stuck on the loader (deep links / bookmarks).
+    if (!session.loading && !session.isLoggedIn) {
+      router.replace('/sign-in');
+    }
+  }, [session.loading, session.isLoggedIn, router]);
 
   const canCreatePoll =
     role === 'ADMIN' || role === 'PM' || role === 'PARTNER' || role === 'EXECUTIVE';
@@ -332,11 +342,11 @@ export default function When2MeetPage() {
               Coordinate weekly availability with your team.
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
-            <label className="flex flex-col gap-1 text-sm min-w-[200px]">
+          <CardContent className="flex flex-col gap-4 space-y-0 sm:flex-row sm:flex-wrap sm:items-end">
+            <label className="flex w-full flex-col gap-1 text-sm sm:w-60">
               <span className="font-medium text-[var(--foreground)]">Team</span>
               <select
-                className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                className="h-10 w-full min-w-0 truncate rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 text-sm"
                 value={projectId}
                 onChange={(e) => handleProjectChange(e.target.value)}
               >
@@ -352,10 +362,10 @@ export default function When2MeetPage() {
               </select>
             </label>
 
-            <label className="flex flex-col gap-1 text-sm min-w-[220px]">
+            <label className="flex w-full flex-col gap-1 text-sm sm:w-60">
               <span className="font-medium text-[var(--foreground)]">Poll</span>
               <select
-                className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                className="h-10 w-full min-w-0 truncate rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 text-sm"
                 value={selectedPollId ?? ''}
                 onChange={(e) => { setPollDetail(null); setSelectedPollId(e.target.value || null); }}
                 disabled={!polls.length}
@@ -373,7 +383,7 @@ export default function When2MeetPage() {
             </label>
 
             {canCreatePoll ? (
-              <Button type="button" onClick={() => setCreateOpen(true)} disabled={!projectId}>
+              <Button type="button" className="h-10" onClick={() => setCreateOpen(true)} disabled={!projectId}>
                 New When2Meet
               </Button>
             ) : null}
@@ -382,6 +392,7 @@ export default function When2MeetPage() {
               <Button
                 type="button"
                 variant="danger"
+                className="h-10"
                 onClick={() => void handleDeletePoll()}
                 disabled={deletingPoll || detailLoading}
                 loading={deletingPoll}
@@ -391,13 +402,13 @@ export default function When2MeetPage() {
             ) : null}
 
             {detailLoading ? (
-              <span className="text-sm text-[var(--foreground)]/60">Refreshing poll…</span>
+              <span className="text-sm text-[var(--foreground)]/60 sm:leading-10">Refreshing poll…</span>
             ) : null}
           </CardContent>
         </Card>
 
         {error ? (
-          <p className="text-sm text-red-600 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
+          <p className="text-sm text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
             {error}
           </p>
         ) : null}

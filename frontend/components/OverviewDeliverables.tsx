@@ -52,6 +52,6 @@ export function OverviewDeliverables({ role, path }: { role: AppRole; path: '/pm
       items={getDashboardDeliverables(projects)} loading={loading}
       emptyMessage={error ? 'Could not load deliverables. Return to Overview to retry.' : 'No deliverables found for the current week.'}
     />
-    {error && projects.length > 0 && <p role="alert" className="mt-3 text-sm text-red-600">Could not refresh deliverables. Showing previously loaded data.</p>}
+    {error && projects.length > 0 && <p role="alert" className="mt-3 text-sm text-red-600 dark:text-red-400">Could not refresh deliverables. Showing previously loaded data.</p>}
   </>;
 }

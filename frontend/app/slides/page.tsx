@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Layers, Upload } from 'lucide-react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { AppNavbar } from '@/components/AppNavbar';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -112,6 +112,7 @@ function getSubmissionStatusMeta(status: string): {
 
 export default function SlidesPage() {
   const session = useAuth();
+  const router = useRouter();
   const { isLoggedIn, getToken } = session;
   const email = session.user?.email;
   const { snapshot, saveSnapshot } = useNavigationSnapshot<{
@@ -133,6 +134,14 @@ export default function SlidesPage() {
   const [loading, setLoading] = useState(!snapshot);
   const [refreshing, setRefreshing] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Once auth init finishes, bounce signed-out users to sign-in instead of
+    // leaving them stuck on the loader (deep links / bookmarks).
+    if (!session.loading && !session.isLoggedIn) {
+      router.replace('/sign-in');
+    }
+  }, [session.loading, session.isLoggedIn, router]);
 
   const canSeeAllSubmissions =
     resolvedRole === 'PM' ||
@@ -364,7 +373,7 @@ export default function SlidesPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               {error && (
-                <div className="rounded-lg bg-rose-500/15 border border-rose-500/40 text-rose-700 px-3 py-2 text-sm">
+                <div className="rounded-lg bg-rose-500/15 border border-rose-500/40 text-rose-700 dark:text-rose-300 px-3 py-2 text-sm">
                   {error}
                 </div>
               )}

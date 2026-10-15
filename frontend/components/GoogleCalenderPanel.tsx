@@ -230,7 +230,7 @@ export function GoogleCalendarPanel({
           {calendarUrl ? <iframe
             title="OTCR Google Calendar"
             src={calendarUrl}
-            className="w-full h-full"
+            className="google-calendar-embed w-full h-full"
             frameBorder="0"
             scrolling="no"
           /> : <PageLoading />}

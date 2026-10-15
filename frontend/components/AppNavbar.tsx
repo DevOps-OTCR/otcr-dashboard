@@ -23,6 +23,7 @@ import {
 import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/utils';
 import { AdminRoleSwitcher } from '@/components/AdminRoleSwitcher';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/components/AuthContext';
 import { getDefaultDashboardPath, hasAccess, canShowNavItem, ROLE_FULL_LABELS, type AppRole } from '@/lib/permissions';
 import { notificationsAPI, setAuthToken } from '@/lib/api';
@@ -300,7 +301,15 @@ export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotif
                 alt="OTCR"
                 width={100}
                 height={36}
-                className="h-9 w-auto"
+                className="h-9 w-auto dark:hidden"
+                priority
+              />
+              <Image
+                src={withBasePath('/otcr-logo-white.webp')}
+                alt="OTCR"
+                width={100}
+                height={36}
+                className="hidden h-9 w-auto dark:block"
                 priority
               />
             </Link>
@@ -318,7 +327,7 @@ export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotif
               >
                 <Bell className="w-5 h-5" />
                 {effectiveUnreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-100 border border-red-500/50 text-red-800 text-xs rounded-full flex items-center justify-center font-bold">
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-100 dark:bg-red-950 border border-red-500/50 text-red-800 dark:text-red-200 text-xs rounded-full flex items-center justify-center font-bold">
                     {effectiveUnreadCount}
                   </span>
                 )}
@@ -383,6 +392,7 @@ export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotif
                 </div>
               )}
             </div>
+            <ThemeToggle />
             <Link href="/settings/slack" className="p-2 hover:bg-[var(--accent)] rounded-lg transition-colors" aria-label="Slack settings">
               <Settings className="w-5 h-5" />
             </Link>

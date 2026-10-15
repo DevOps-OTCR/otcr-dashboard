@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Slack, UserPlus } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -31,6 +32,7 @@ type SlackConnection = {
 
 export default function SlackSettingsPage() {
   const session = useAuth();
+  const router = useRouter();
   const [role, setRole] = useState<AppRole>('CONSULTANT');
   const [isConnectingSlack, setIsConnectingSlack] = useState(false);
   const [loadingSlackConnections, setLoadingSlackConnections] = useState(false);
@@ -99,6 +101,14 @@ export default function SlackSettingsPage() {
 
     setError('Slack finished OAuth, but your OTCR account is still not linked. Try connecting again.');
   };
+
+  useEffect(() => {
+    // Once auth init finishes, bounce signed-out users to sign-in instead of
+    // leaving them stuck on the loader (deep links / bookmarks).
+    if (!session.loading && !session.isLoggedIn) {
+      router.replace('/sign-in');
+    }
+  }, [session.loading, session.isLoggedIn, router]);
 
   useEffect(() => {
     const syncRole = async () => {
@@ -391,12 +401,12 @@ export default function SlackSettingsPage() {
         )}
 
         {message && (
-          <p className="text-sm rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-emerald-700">
+          <p className="text-sm rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-emerald-700 dark:text-emerald-300">
             {message}
           </p>
         )}
         {error && (
-          <p className="text-sm rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-red-700">
+          <p className="text-sm rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-red-700 dark:text-red-300">
             {error}
           </p>
         )}

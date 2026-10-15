@@ -1,58 +1,75 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useMemo, useSyncExternalStore } from 'react';
 
-type Theme = 'light' | 'dark';
+export type Theme = 'light' | 'dark';
 
 interface ThemeContextType {
   theme: Theme;
   toggleTheme: () => void;
 }
 
+export const THEME_STORAGE_KEY = 'theme';
+const THEME_CHANGE_EVENT = 'otcr-theme-change';
+
+// Apply the saved choice before hydration. Unset and legacy System preferences use Light.
+export const themeInitScript = `(function(){var t='light';try{if(localStorage.getItem('${THEME_STORAGE_KEY}')==='dark')t='dark'}catch(e){}var r=document.documentElement;if(!r.classList.replace(t==='dark'?'light':'dark',t))r.classList.add(t);r.style.colorScheme=t})();`;
+
+function readTheme(): Theme {
+  return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+}
+
+function applyTheme(theme: Theme) {
+  const root = document.documentElement;
+  if (readTheme() === theme) return;
+
+  // Cancel hover transitions before changing the palette, including pseudo-elements.
+  root.classList.add('theme-changing');
+  void getComputedStyle(document.body).color;
+  const previous = theme === 'dark' ? 'light' : 'dark';
+  if (!root.classList.replace(previous, theme)) root.classList.add(theme);
+  root.style.colorScheme = theme;
+  // Commit the new colors while transitions are disabled, then restore hover behavior.
+  void getComputedStyle(document.body).color;
+  root.classList.remove('theme-changing');
+}
+
+function subscribeTheme(onChange: () => void) {
+  const onStorage = (event: StorageEvent) => {
+    if (event.key !== THEME_STORAGE_KEY && event.key !== null) return;
+    applyTheme(event.newValue === 'dark' ? 'dark' : 'light');
+    onChange();
+  };
+  window.addEventListener('storage', onStorage);
+  window.addEventListener(THEME_CHANGE_EVENT, onChange);
+  return () => {
+    window.removeEventListener('storage', onStorage);
+    window.removeEventListener(THEME_CHANGE_EVENT, onChange);
+  };
+}
+
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>('light');
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    const stored = localStorage.getItem('theme') as Theme;
-    if (stored) {
-      setTheme(stored);
-    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      setTheme('dark');
+  // The initialization script owns the first paint; hydration must not overwrite it with Light.
+  const theme = useSyncExternalStore(subscribeTheme, readTheme, () => 'light' as const);
+  const toggleTheme = useCallback(() => {
+    const next = readTheme() === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, next);
+    } catch {
+      // The current page still changes theme when browser storage is unavailable.
     }
+    window.dispatchEvent(new Event(THEME_CHANGE_EVENT));
   }, []);
+  const value = useMemo(() => ({ theme, toggleTheme }), [theme, toggleTheme]);
 
-  useEffect(() => {
-    if (mounted) {
-      const root = document.documentElement;
-      root.classList.remove('light', 'dark');
-      root.classList.add(theme);
-      localStorage.setItem('theme', theme);
-    }
-  }, [theme, mounted]);
-
-  const toggleTheme = () => {
-    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
-  };
-
-  if (!mounted) {
-    return <>{children}</>;
-  }
-
-  return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>
-      {children}
-    </ThemeContext.Provider>
-  );
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {
   const context = useContext(ThemeContext);
-  if (context === undefined) {
-    throw new Error('useTheme must be used within ThemeProvider');
-  }
+  if (context === undefined) throw new Error('useTheme must be used within ThemeProvider');
   return context;
 }
