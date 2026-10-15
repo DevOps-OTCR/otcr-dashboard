@@ -4,12 +4,14 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useId,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import './when2meet.css';
 import type { When2MeetGridSpec, When2MeetPollDetail } from '@/lib/api';
+import { pollAvailability } from './availability';
 
 function rowBorderModifiers(
   rowIndex: number,
@@ -85,13 +87,15 @@ export function When2MeetBoard({
 
   const [hoveredGroupSlot, setHoveredGroupSlot] = useState<number | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const popupId = useId();
+  const availability = useMemo(() => pollAvailability(detail), [detail]);
 
-  const teamSize = Math.max(detail.teamSize, 1);
+  const teamSize = availability.members.length;
 
   const colorScale = useMemo(() => {
     const items: string[] = [];
     for (let k = 0; k <= teamSize; k += 1) {
-      items.push(`rgba(48, 147, 56, ${k / teamSize})`);
+      items.push(`rgba(48, 147, 56, ${k / Math.max(teamSize, 1)})`);
     }
     return items;
   }, [teamSize]);
@@ -206,8 +210,12 @@ export function When2MeetBoard({
     [endDragAndSave],
   );
 
-  const hoveredNames = hoveredGroupSlot != null ? availabilityBySlot.get(hoveredGroupSlot) ?? [] : [];
-  const hoveredCount = hoveredNames.length;
+  const hovered = availability.forSlot(hoveredGroupSlot ?? -1);
+  const hoveredLabel = hoveredGroupSlot == null ? '' :
+    `${columnLabels[Math.floor(hoveredGroupSlot / numRows)]}, ${rowStartLabels[hoveredGroupSlot % numRows]}`;
+  const repeatedNames = new Set(availability.members.filter((member, index, members) =>
+    members.some((other, otherIndex) => otherIndex !== index && other.displayName === member.displayName))
+    .map(member => member.displayName));
 
   const userCells: React.ReactNode[] = [];
   const groupCells: React.ReactNode[] = [];
@@ -231,19 +239,25 @@ export function When2MeetBoard({
       );
 
       const namesHere = availabilityBySlot.get(slotIdx) ?? [];
-      const countHere = namesHere.length;
+      const countHere = availability.hasIdentityData ? availability.bySlot.get(slotIdx)?.size ?? 0 : namesHere.length;
       const bg = colorScale[Math.min(countHere, colorScale.length - 1)] ?? 'transparent';
 
       groupCells.push(
-        <div
+        <button
           key={`g-${slotIdx}`}
-          role="presentation"
+          type="button"
+          aria-label={`${columnLabels[col]}, ${rowStartLabels[row]}: ${countHere} of ${teamSize} available`}
+          aria-describedby={hoveredGroupSlot === slotIdx ? popupId : undefined}
+          data-group-slot={slotIdx}
           className={`w2m-time-block${rowBd}`}
           style={{
             gridColumn: col + 1,
             backgroundColor: bg,
           }}
           onMouseEnter={() => setHoveredGroupSlot(slotIdx)}
+          onFocus={() => setHoveredGroupSlot(slotIdx)}
+          onClick={() => setHoveredGroupSlot(slotIdx)}
+          onKeyDown={event => { if (event.key === 'Escape') setHoveredGroupSlot(null); }}
         />,
       );
     }
@@ -259,15 +273,33 @@ export function When2MeetBoard({
         <p className="text-center text-red-600 dark:text-red-400 text-sm mt-2">{saveError}</p>
       ) : null}
 
-      <div className="w2m-split">
+      <div className="w2m-split" onMouseLeave={() => setHoveredGroupSlot(null)}>
         <div className="w2m-left">
-          <div className={`w2m-available-overlay${hideLeftCal ? '' : ' w2m-hide'}`}>
-            <h5>{`${hoveredCount}/${teamSize} Available`}</h5>
-            <div className="w2m-avail-list">
-              {hoveredNames.map((name, i) => (
-                <p key={`${name}-${i}`}>{name}</p>
-              ))}
-            </div>
+          <div id={popupId} role="region" aria-label="Time slot availability" aria-hidden={!hideLeftCal}
+            className={`w2m-available-overlay${hideLeftCal ? '' : ' w2m-hide'}`}>
+            <p className="w2m-slot-label">{hoveredLabel}</p>
+            {availability.hasIdentityData ? <>
+              <div className="w2m-availability-columns">
+                {(['available', 'unavailable'] as const).map(kind => <section key={kind} aria-label={kind === 'available' ? 'Available' : 'Unavailable'}>
+                  <h5>{kind === 'available' ? 'Available' : 'Unavailable'} ({hovered[kind].length})</h5>
+                  <ul className="w2m-avail-list">
+                    {hovered[kind].map(member => <li key={member.id}>
+                      {member.displayName}{repeatedNames.has(member.displayName) ? <small>{member.email}</small> : null}
+                    </li>)}
+                  </ul>
+                  {hovered[kind].length === 0 ? <p className="w2m-empty">No one {kind}.</p> : null}
+                </section>)}
+              </div>
+              {hovered.unrecorded.length > 0 ? <section className="w2m-unrecorded" aria-label="No availability recorded">
+                <h5>No availability recorded ({hovered.unrecorded.length})</h5>
+                <p className="w2m-empty">No slots saved. They may not have responded or may be unavailable for the entire poll.</p>
+                <ul className="w2m-avail-list">
+                  {hovered.unrecorded.map(member => <li key={member.id}>
+                    {member.displayName}{repeatedNames.has(member.displayName) ? <small>{member.email}</small> : null}
+                  </li>)}
+                </ul>
+              </section> : null}
+            </> : <p>Refresh the page to load full availability details.</p>}
           </div>
 
           <div className={`w2m-left-cal${hideLeftCal ? ' w2m-hide-left' : ''}`}>
@@ -324,10 +356,9 @@ export function When2MeetBoard({
             </div>
             <p>{`${teamSize}/${teamSize} available`}</p>
           </div>
-          <p className="w2m-emphasis">Mouseover the Calendar to See Who Is Available</p>
+          <p className="w2m-emphasis">Hover, focus, or tap a time to compare availability</p>
           <div
             className="w2m-schedule"
-            onMouseLeave={() => setHoveredGroupSlot(null)}
           >
             <div className="w2m-times">
               {rowStartLabels.map((label, i) => (
