@@ -33,8 +33,13 @@ async function setup(t, members, slots, width = 1440) {
   await page.goto('http://when2meet.test/when2meet');
   await page.locator('[data-group-slot="0"]').waitFor();
   await page.addStyleTag({ content: styles });
-  return { page, writes, popup: page.getByRole('region', { name: 'Time slot availability' }),
-    hover: slot => page.locator(`[data-group-slot="${slot}"]`).hover() };
+  const popup = page.getByRole('region', { name: 'Time slot availability' });
+  return { page, writes, popup,
+    hover: async slot => {
+      await page.locator(`[data-group-slot="${slot}"]`).hover();
+      await page.waitForFunction(slot => document.querySelector(`[data-group-slot="${slot}"]`)?.hasAttribute('aria-describedby'), slot);
+      await popup.waitFor({ state: 'visible' });
+    } };
 }
 const member = (id, displayName) => ({ id, displayName, email: `${id}@example.test` });
 const alex = member('alex', 'Alex Lee'), otherAlex = member('other-alex', 'Alex Lee'), casey = member('casey', 'Casey Morgan');
@@ -72,10 +77,10 @@ test('everyone available and no one available have correct counts and empty stat
   ]);
   await hover(0);
   assert.equal(await popup.getByText('Available (2)', { exact: true }).isVisible(), true);
-  assert.equal(await popup.getByText('No one unavailable.', { exact: true }).isVisible(), true);
+  await popup.getByText('No one unavailable.', { exact: true }).waitFor({ state: 'visible' });
   await hover(1);
   assert.equal(await popup.getByText('Unavailable (2)', { exact: true }).isVisible(), true);
-  assert.equal(await popup.getByText('No one available.', { exact: true }).isVisible(), true);
+  await popup.getByText('No one available.', { exact: true }).waitFor({ state: 'visible' });
   assert.equal(await popup.getByText(/No availability recorded/).count(), 0);
 });
 
@@ -83,6 +88,7 @@ test('no saved slots are reported as unrecorded, including an empty team', async
   for (const members of [[casey], []]) {
     const { page, popup } = await setup(t, members, []);
     await page.locator('[data-group-slot="0"]').focus();
+    await popup.waitFor({ state: 'visible' });
     assert.equal(await popup.getByText('Available (0)', { exact: true }).isVisible(), true);
     assert.equal(await popup.getByText('Unavailable (0)', { exact: true }).isVisible(), true);
     assert.equal(await popup.getByRole('region', { name: 'No availability recorded' }).count(), members.length ? 1 : 0);
@@ -120,6 +126,6 @@ for (const width of [375, 768, 1024, 1440]) {
 test('older names-only cached responses do not invent unavailable identities', async t => {
   const { popup, hover } = await setup(t, [alex, otherAlex], [{ slotIndex: 0, names: ['Alex Lee'] }]);
   await hover(0);
-  assert.equal(await popup.getByText('Refresh the page to load full availability details.').isVisible(), true);
+  await popup.getByText('Refresh the page to load full availability details.').waitFor({ state: 'visible' });
   assert.equal(await popup.locator('li').count(), 0);
 });
