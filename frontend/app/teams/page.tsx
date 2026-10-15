@@ -1063,7 +1063,7 @@ export default function TeamsPage() {
                                 Automatic deadline reminders
                               </p>
                               <p className="text-xs text-[var(--foreground)]/60 mt-1">
-                                Send Slack reminders to each deliverable's active assignees before the deadline.
+                                Send Slack reminders to each deliverable&apos;s active assignees before the deadline.
                                 {reminderConfig?.timezone
                                   ? ` Times are shown in ${reminderConfig.timezone}.`
                                   : ' Times default to America/Chicago.'}
@@ -1125,7 +1125,7 @@ export default function TeamsPage() {
                                       return (
                                         <p className="text-xs text-[var(--foreground)]/60">
                                           No active assignees on pending deliverables yet. Reminders go to each
-                                          deliverable's active assignees only.
+                                          deliverable&apos;s active assignees only.
                                         </p>
                                       );
                                     }
