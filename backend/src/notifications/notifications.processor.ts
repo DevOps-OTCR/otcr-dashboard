@@ -6,6 +6,9 @@ import { SlackService } from '../integrations/slack.service';
 import { createRedisConnection } from '../common/redis.config';
 import { NotificationJob } from './notifications.service';
 
+// Bounded Slack retry for scheduled reminders (matches the queue's attempts).
+const REMINDER_MAX_ATTEMPTS = 3;
+
 @Injectable()
 export class NotificationsProcessor implements OnModuleInit {
   private readonly logger = new Logger(NotificationsProcessor.name);
@@ -57,7 +60,7 @@ export class NotificationsProcessor implements OnModuleInit {
   }
 
   private async processNotification(job: Job<NotificationJob>): Promise<void> {
-    const { userId, type, channel, data } = job.data;
+    const { userId, type, channel, data, scheduledReminderId } = job.data;
 
     this.logger.log(`Processing notification for user ${userId}, type: ${type}`);
 
@@ -70,35 +73,149 @@ export class NotificationsProcessor implements OnModuleInit {
       throw new Error(`User ${userId} not found`);
     }
 
+    // For scheduled reminders, recheck eligibility so deadline/assignment changes
+    // and extensions don't produce stale reminders. If the reminder is no longer
+    // valid (cancelled, already sent, or deliverable finalized), skip sending.
+    if (scheduledReminderId) {
+      const stillValid = await this.reminderStillValid(scheduledReminderId);
+      if (!stillValid) {
+        this.logger.log(`Skipping reminder ${scheduledReminderId}: no longer valid`);
+        return;
+      }
+    }
+
     const userName = this.getDisplayName(user.firstName, user.lastName, user.email);
 
     let slackSuccess = true;
+    let slackError: string | undefined;
 
     // Send based on channel preference
     if (channel === 'SLACK' || channel === 'BOTH' || channel === 'EMAIL') {
-      slackSuccess = await this.sendSlackNotification(
-        type,
-        user.id,
-        userName,
-        data,
-      );
+      try {
+        slackSuccess = await this.sendSlackNotification(type, user.id, userName, data);
+      } catch (error: any) {
+        slackSuccess = false;
+        slackError = error?.message ?? String(error);
+      }
     }
 
-    // Update notification status in database
-    const status = slackSuccess ? 'SENT' : 'FAILED';
+    if (scheduledReminderId) {
+      if (slackSuccess) {
+        // Delivered: create the in-app record and mark the reminder SENT.
+        await this.prisma.notification.create({
+          data: {
+            userId,
+            type: type as any,
+            channel,
+            title: this.buildNotificationTitle(type, data),
+            message: this.buildNotificationMessage(type, data),
+            status: 'SENT',
+            sentAt: new Date(),
+            metadata: { ...(data as any), scheduledReminderId },
+          },
+        });
+        await this.prisma.scheduledReminder.updateMany({
+          where: { id: scheduledReminderId, status: 'PENDING' },
+          data: { status: 'SENT', sentAt: new Date(), attempts: { increment: 1 } },
+        });
+        return;
+      }
 
-    await this.prisma.notification.updateMany({
-      where: {
-        userId,
-        type,
-        status: 'PENDING',
-      },
-      data: {
-        status,
-        sentAt: new Date(),
+      // Slack failed. Retry transient failures via BullMQ up to the bounded
+      // attempt limit; do not create the in-app record until we stop retrying
+      // (avoids duplicates on each retry).
+      await this.prisma.scheduledReminder.updateMany({
+        where: { id: scheduledReminderId, status: 'PENDING' },
+        data: { attempts: { increment: 1 }, lastError: slackError ?? 'Slack delivery failed' },
+      });
+
+      const attemptsMade = job.attemptsMade ?? 1;
+      if (attemptsMade < REMINDER_MAX_ATTEMPTS) {
+        // Let BullMQ re-run this job with its exponential backoff.
+        throw new Error(slackError ?? 'Slack delivery failed');
+      }
+
+      // Final attempt failed: preserve the in-app notification (marked FAILED)
+      // and record the terminal failure state for the manager status view.
+      await this.prisma.notification.create({
+        data: {
+          userId,
+          type: type as any,
+          channel,
+          title: this.buildNotificationTitle(type, data),
+          message: this.buildNotificationMessage(type, data),
+          status: 'FAILED',
+          sentAt: new Date(),
+          metadata: {
+            ...(data as any),
+            slackError: slackError ?? 'Slack delivery failed',
+            scheduledReminderId,
+          },
+        },
+      });
+      await this.prisma.scheduledReminder.updateMany({
+        where: { id: scheduledReminderId, status: 'PENDING' },
+        data: { status: 'FAILED', lastError: slackError ?? 'Slack delivery failed' },
+      });
+    } else {
+      // Non-reminder notifications were pre-created as PENDING by
+      // queueNotification; flip them to their final state.
+      await this.prisma.notification.updateMany({
+        where: { userId, type, status: 'PENDING' },
+        data: {
+          status: slackSuccess ? 'SENT' : 'FAILED',
+          sentAt: new Date(),
+        },
+      });
+    }
+  }
+
+  /**
+   * A scheduled reminder is still valid if its row is PENDING and the underlying
+   * deliverable has not been finalized (submitted/approved). This prevents stale
+   * reminders after extensions or assignment changes.
+   */
+  private async reminderStillValid(scheduledReminderId: string): Promise<boolean> {
+    const reminder = await this.prisma.scheduledReminder.findUnique({
+      where: { id: scheduledReminderId },
+      select: {
+        status: true,
+        deliverable: { select: { status: true } },
       },
     });
+    if (!reminder || reminder.status !== 'PENDING') {
+      return false;
+    }
+    if (['SUBMITTED', 'APPROVED'].includes(reminder.deliverable.status)) {
+      return false;
+    }
+    return true;
   }
+
+  private buildNotificationTitle(type: string, data: any): string {
+    switch (type) {
+      case 'DEADLINE_1H':
+        return 'Deadline in 1 hour';
+      case 'DEADLINE_24H':
+        return 'Deadline in 24 hours';
+      case 'DEADLINE_REMINDER':
+        return 'Upcoming deadline reminder';
+      default:
+        return (data?.deliverableTitle as string) || 'Notification';
+    }
+  }
+
+  private buildNotificationMessage(type: string, data: any): string {
+    const parts: string[] = [];
+    if (data?.deliverableTitle) parts.push(`${data.deliverableTitle}`);
+    if (data?.projectName) parts.push(`Project: ${data.projectName}`);
+    if (data?.deadline) parts.push(`Due: ${new Date(data.deadline).toISOString()}`);
+    if (typeof data?.remainingMinutes === 'number') {
+      parts.push(`Reminder ${data.remainingMinutes} minutes before deadline`);
+    }
+    return parts.join(' · ') || 'You have a new notification.';
+  }
+
 
   private async sendSlackNotification(
     type: string,
@@ -118,6 +235,11 @@ export class NotificationsProcessor implements OnModuleInit {
             data.deadline,
             userName,
             data.hoursRemaining,
+            {
+              deepLink: data.deepLink,
+              timezone: data.timezone,
+              remainingMinutes: data.remainingMinutes,
+            },
           );
 
         case 'EXTENSION_REQUEST':

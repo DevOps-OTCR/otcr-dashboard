@@ -368,12 +368,41 @@ export class SlackService {
     deadline: Date,
     consultantName: string,
     hoursRemaining: number,
+    options?: { deepLink?: string; timezone?: string; remainingMinutes?: number },
   ): Promise<boolean> {
+    const timezone = options?.timezone || 'America/Chicago';
+    let dueText: string;
+    try {
+      dueText = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(new Date(deadline));
+    } catch {
+      dueText = new Date(deadline).toLocaleString();
+    }
+
+    const remaining =
+      typeof options?.remainingMinutes === 'number'
+        ? this.formatRemaining(options.remainingMinutes)
+        : `${hoursRemaining} hour(s)`;
+
+    const linkPart = options?.deepLink ? ` View it: ${options.deepLink}` : '';
+
     return this.sendDirectMessageToUser(userId, {
       text:
-        `Deadline reminder for ${consultantName}: ${deliverableTitle} is due in ${hoursRemaining} hour(s). ` +
-        `Project: ${projectName}. Deadline: ${deadline.toLocaleString()}.`,
+        `Deadline reminder for ${consultantName}: "${deliverableTitle}" is due in ${remaining}. ` +
+        `Project: ${projectName}. Due: ${dueText} (${timezone}).${linkPart}`,
     });
+  }
+
+  private formatRemaining(totalMinutes: number): string {
+    const minutes = Math.max(0, Math.floor(totalMinutes));
+    const days = Math.floor(minutes / (60 * 24));
+    const hours = Math.floor((minutes % (60 * 24)) / 60);
+    if (days > 0) return `${days}d ${hours}h`;
+    if (hours > 0) return `${hours}h`;
+    return `${minutes}m`;
   }
 
   async sendExtensionRequest(

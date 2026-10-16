@@ -14,6 +14,7 @@ import {
   CalendarDays,
   RefreshCw,
   FileText,
+  Bell,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -24,11 +25,18 @@ import { getEffectiveRole, getUserRole, type AppRole } from '@/lib/permissions';
 import { AppNavbar } from '@/components/AppNavbar';
 import { getLastDashboard } from '@/lib/dashboard-context';
 import { useRouter } from 'next/navigation';
-import { projectsAPI, authAPI, attendanceAPI, deliverablesAPI, setAuthToken, type AttendanceEventCategory } from '@/lib/api';
+import { projectsAPI, authAPI, attendanceAPI, deliverablesAPI, remindersAPI, setAuthToken, type AttendanceEventCategory } from '@/lib/api';
+import {
+  canConfigureReminders,
+  summarizeReminderRecipients,
+  validateReminderOffsets,
+  type ReminderRecipientGroup,
+} from '@/lib/reminders-config';
 import { useAuth } from '@/components/AuthContext';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { parseDashPrefixedDeliverables } from '@/lib/deliverables-parser';
 import { buildSprintDeadlineInChicago } from '@/lib/sprint-deadlines';
+import { DeliveryReminderOverrides } from './DeliveryReminderOverrides';
 
 type ProjectMember = { user: { id: string; email: string; firstName?: string; lastName?: string; role?: string } };
 type ProjectFromApi = {
@@ -50,6 +58,9 @@ type SprintConfig = {
   autoGenerateSprints: boolean;
   updatedAt?: string;
 };
+
+type ReminderOffsetPreset = { minutes: number; label: string };
+type ReminderConfig = { enabled: boolean; offsetsMinutes: number[]; timezone: string };
 
 type SprintDeliverable = {
   id: string;
@@ -246,6 +257,16 @@ export default function TeamsPage() {
   const [memberHistory, setMemberHistory] = useState<MemberAttendanceHistory | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{ message: string; tone: 'success' | 'warning' | 'info' } | null>(null);
 
+  const [reminderPresets, setReminderPresets] = useState<ReminderOffsetPreset[]>([]);
+  const [reminderConfig, setReminderConfig] = useState<ReminderConfig | null>(null);
+  const [reminderDraft, setReminderDraft] = useState<{ enabled: boolean; offsetsMinutes: number[] }>({
+    enabled: false,
+    offsetsMinutes: [],
+  });
+  const [reminderRecipients, setReminderRecipients] = useState<ReminderRecipientGroup[]>([]);
+  const [reminderLoading, setReminderLoading] = useState(false);
+  const [reminderSaving, setReminderSaving] = useState(false);
+
   const fetchProjects = useCallback(async () => {
     try {
       const token = await session.getToken();
@@ -332,6 +353,7 @@ export default function TeamsPage() {
     resolvedRole === 'PM' ||
     resolvedRole === 'LC' ||
     resolvedRole === 'ADMIN';
+  const canConfigureRemindersForTeam = canManageTeams && canConfigureReminders(resolvedRole);
   const canEditTeamCalendar = resolvedRole === 'PM' || resolvedRole === 'ADMIN';
   const canInspectMemberAttendance =
     resolvedRole === 'PM' || resolvedRole === 'PARTNER' || resolvedRole === 'EXECUTIVE' || resolvedRole === 'ADMIN';
@@ -413,6 +435,102 @@ export default function TeamsPage() {
 
     void loadSelectedTeamSprintData(selectedTeamId);
   }, [session.loading, session.isLoggedIn, selectedTeamId, canManageTeams, loadSelectedTeamSprintData]);
+
+  const loadReminderData = useCallback(
+    async (projectId: string) => {
+      setReminderLoading(true);
+      try {
+        const token = await session.getToken();
+        if (token) {
+          setAuthToken(token);
+        }
+        const [presetsRes, configRes, recipientsRes] = await Promise.all([
+          remindersAPI.getPresets(projectId),
+          remindersAPI.getConfig(projectId),
+          remindersAPI.getRecipients(projectId),
+        ]);
+        const presets = (presetsRes.data?.presets ?? []) as ReminderOffsetPreset[];
+        const config = configRes.data as ReminderConfig;
+        setReminderPresets(presets);
+        setReminderConfig(config);
+        setReminderDraft({
+          enabled: Boolean(config?.enabled),
+          offsetsMinutes: Array.isArray(config?.offsetsMinutes) ? config.offsetsMinutes : [],
+        });
+        setReminderRecipients((recipientsRes.data ?? []) as ReminderRecipientGroup[]);
+      } catch (err) {
+        setActionFeedback({
+          message: parseApiError(err, 'Failed to load reminder settings'),
+          tone: 'warning',
+        });
+      } finally {
+        setReminderLoading(false);
+      }
+    },
+    [session],
+  );
+
+  useEffect(() => {
+    if (session.loading || !session.isLoggedIn) return;
+    if (!selectedTeamId || !canConfigureRemindersForTeam) {
+      setReminderConfig(null);
+      setReminderPresets([]);
+      setReminderRecipients([]);
+      return;
+    }
+    void loadReminderData(selectedTeamId);
+  }, [session.loading, session.isLoggedIn, selectedTeamId, canConfigureRemindersForTeam, loadReminderData]);
+
+  const handleToggleReminderOffset = (minutes: number) => {
+    setReminderDraft((prev) => {
+      const has = prev.offsetsMinutes.includes(minutes);
+      return {
+        ...prev,
+        offsetsMinutes: has
+          ? prev.offsetsMinutes.filter((m) => m !== minutes)
+          : [...prev.offsetsMinutes, minutes],
+      };
+    });
+  };
+
+  const handleSaveReminderConfig = async () => {
+    if (!selectedTeam) return;
+
+    // Client-side validation: enabling requires at least one timing, and the
+    // selection must survive preset validation (mirrors the backend rules).
+    const { offsets } = validateReminderOffsets(reminderDraft.offsetsMinutes, reminderPresets);
+    if (reminderDraft.enabled && offsets.length === 0) {
+      setActionFeedback({
+        message: 'Select at least one reminder time before enabling reminders.',
+        tone: 'warning',
+      });
+      return;
+    }
+
+    setReminderSaving(true);
+    try {
+      const res = await remindersAPI.updateConfig(selectedTeam.id, {
+        enabled: reminderDraft.enabled,
+        offsetsMinutes: offsets,
+      });
+      const saved = res.data as ReminderConfig;
+      setReminderConfig(saved);
+      setReminderDraft({
+        enabled: Boolean(saved?.enabled),
+        offsetsMinutes: Array.isArray(saved?.offsetsMinutes) ? saved.offsetsMinutes : [],
+      });
+      // Refresh recipients so the preview reflects the saved state.
+      await loadReminderData(selectedTeam.id);
+      setActionFeedback({ message: 'Deadline reminders saved', tone: 'success' });
+    } catch (err) {
+      setActionFeedback({
+        message: parseApiError(err, 'Failed to save reminder settings'),
+        tone: 'warning',
+      });
+    } finally {
+      setReminderSaving(false);
+    }
+  };
 
   const filterEmailsBySearch = (emails: string[], query: string) => {
     if (!query.trim()) return emails;
@@ -786,7 +904,8 @@ export default function TeamsPage() {
                         )}
                       </div>
                       {canManageTeams && (
-                        <div className="mb-4 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] space-y-4">
+                        <>
+                          <div className="mb-4 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] space-y-4">
 
                           <div className="flex items-start justify-between gap-4">
                             <div>
@@ -936,7 +1055,180 @@ export default function TeamsPage() {
                             </>
                           )}
                         </div>
+
+                        {canConfigureRemindersForTeam && (
+                          <div className="mb-4 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] space-y-4">
+                            <div>
+                              <p className="text-sm font-semibold flex items-center gap-2">
+                                <Bell className="w-4 h-4 text-[var(--primary)]" />
+                                Automatic deadline reminders
+                              </p>
+                              <p className="text-xs text-[var(--foreground)]/60 mt-1">
+                                Send Slack reminders to each deliverable&apos;s active assignees before the deadline.
+                                {reminderConfig?.timezone
+                                  ? ` Times are shown in ${reminderConfig.timezone}.`
+                                  : ' Times default to America/Chicago.'}
+                              </p>
+                            </div>
+
+                            {reminderLoading ? (
+                              <div className="text-sm text-[var(--foreground)]/60">Loading reminder settings...</div>
+                            ) : (
+                              <>
+                                <label className="flex items-center gap-2 text-sm text-[var(--foreground)]">
+                                  <input
+                                    type="checkbox"
+                                    checked={reminderDraft.enabled}
+                                    onChange={(e) =>
+                                      setReminderDraft((prev) => ({ ...prev, enabled: e.target.checked }))
+                                    }
+                                    className="rounded border-[var(--border)]"
+                                  />
+                                  Enable automatic deadline reminders for this team
+                                </label>
+
+                                <div className="space-y-2">
+                                  <span className="text-sm font-medium text-[var(--foreground)]">Reminder timing</span>
+                                  <div className="grid gap-2 sm:grid-cols-2">
+                                    {reminderPresets.map((preset) => {
+                                      const checked = reminderDraft.offsetsMinutes.includes(preset.minutes);
+                                      return (
+                                        <label
+                                          key={preset.minutes}
+                                          className="flex items-center gap-2 text-sm text-[var(--foreground)]"
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={checked}
+                                            onChange={() => handleToggleReminderOffset(preset.minutes)}
+                                            disabled={!reminderDraft.enabled}
+                                            className="rounded border-[var(--border)]"
+                                          />
+                                          {preset.label}
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                  {reminderDraft.enabled && reminderDraft.offsetsMinutes.length === 0 && (
+                                    <p className="text-xs text-amber-600">
+                                      Select at least one reminder time, or reminders will not be scheduled.
+                                    </p>
+                                  )}
+                                </div>
+                                {/* RECIPIENTS_AND_SAVE */}
+                                <div className="space-y-2">
+                                  <span className="text-sm font-medium text-[var(--foreground)]">
+                                    Who will be reminded
+                                  </span>
+                                  {(() => {
+                                    const summary = summarizeReminderRecipients(reminderRecipients);
+                                    if (summary.totalRecipients === 0) {
+                                      return (
+                                        <p className="text-xs text-[var(--foreground)]/60">
+                                          No active assignees on pending deliverables yet. Reminders go to each
+                                          deliverable&apos;s active assignees only.
+                                        </p>
+                                      );
+                                    }
+                                    return (
+                                      <div className="space-y-2">
+                                        <p className="text-xs text-[var(--foreground)]/60">
+                                          {summary.totalRecipients} {summary.totalRecipients === 1 ? 'person' : 'people'} across pending deliverables.
+                                        </p>
+                                        {summary.unassignedDeliverables.length > 0 && (
+                                          <p className="text-xs text-[var(--foreground)]/60">
+                                            Unassigned (no reminders sent): {summary.unassignedDeliverables.join(', ')}.
+                                          </p>
+                                        )}
+                                        {summary.missingSlack.length > 0 && (
+                                          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-300">
+                                            Slack not connected for {summary.missingSlack.length === 1 ? 'this person' : 'these people'}:{' '}
+                                            {summary.missingSlack.map((r) => r.name).join(', ')}. They will not receive
+                                            Slack reminders until they connect.
+                                          </div>
+                                        )}
+                                        <ul className="space-y-1">
+                                          {reminderRecipients
+                                            .filter((group) => !group.unassigned && group.recipients.length > 0)
+                                            .map((group) => (
+                                              <li key={group.deliverableId} className="text-xs text-[var(--foreground)]/70">
+                                                <span className="font-medium">{group.title}:</span>{' '}
+                                                {group.recipients.map((r) => (
+                                                  <span key={r.userId} className="mr-2">
+                                                    {r.name}{' '}
+                                                    {r.slackConnected ? (
+                                                      <Badge variant="success" size="sm">Slack</Badge>
+                                                    ) : (
+                                                      <Badge variant="warning" size="sm">No Slack</Badge>
+                                                    )}
+                                                  </span>
+                                                ))}
+                                              </li>
+                                            ))}
+                                        </ul>
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-3">
+                                  <Button size="sm" onClick={handleSaveReminderConfig} disabled={reminderSaving}>
+                                    {reminderSaving ? 'Saving...' : 'Save reminder settings'}
+                                  </Button>
+                                  <p className="text-xs text-[var(--foreground)]/60">
+                                    {reminderDraft.enabled
+                                      ? `Enabled${
+                                          reminderDraft.offsetsMinutes.length > 0
+                                            ? ` at ${
+                                                reminderPresets
+                                                  .filter((p) => reminderDraft.offsetsMinutes.includes(p.minutes))
+                                                  .map((p) => p.label)
+                                                  .join(', ')
+                                              }`
+                                            : ' (no timing selected)'
+                                        }.`
+                                      : 'Disabled. No reminders will be sent.'}
+                                  </p>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
+                        </>
                       )}
+                      <DeliveryReminderOverrides
+                        projectId={selectedTeamId ?? ''}
+                        projectTimezone={sprintConfigDraft.sprintTimezone}
+                        projectDefaults={{
+                          enabled: Boolean(reminderConfig?.enabled),
+                          offsetMinutes: Array.isArray(reminderConfig?.offsetsMinutes)
+                            ? reminderConfig.offsetsMinutes
+                            : [],
+                          timezone: reminderConfig?.timezone ?? 'America/Chicago',
+                        }}
+                        deliverables={teamSprints.flatMap(
+                          (s) => s.deliverables ?? [],
+                        ).map((d) => ({
+                          id: d.id,
+                          title: d.title,
+                          deadline: d.deadline,
+                          status: d.status ?? 'PENDING',
+                          projectId: selectedTeamId ?? '',
+                          reminderOverride: null,
+                        }))}
+                        members={(selectedTeam?.members ?? []).map((m) => ({
+                          id: m.user.id,
+                          email: m.user.email,
+                          firstName: m.user.firstName,
+                          lastName: m.user.lastName,
+                          active: true,
+                          slackConnected: false,
+                        }))}
+                        canConfigure={canConfigureRemindersForTeam}
+                        onConfigChange={() => {
+                          void loadReminderData(selectedTeamId ?? '');
+                        }}
+                      />
                       <div className="mb-4 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] space-y-4">
                         <div className="flex items-start justify-between gap-4">
                           <div>

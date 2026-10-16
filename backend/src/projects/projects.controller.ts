@@ -18,6 +18,8 @@ import { AuthService } from '../auth/auth.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../common/roles.decorator';
 import { GetUser } from '../common/get-user.decorator';
+import { DeadlineRemindersService } from '../jobs/deadline-reminders.service';
+import { ScheduledReminderStatus } from '@prisma/client';
 //TODO Implement GETUSER IN PARAMS?
 //TODO IMPLEMENT AUTHGUARD IN ALL ROUTES WITH PROPER ROLES AND TEST
 @Controller('projects')
@@ -26,7 +28,8 @@ export class ProjectsController {
   constructor(
     private readonly projectsService: ProjectsService,
     private readonly authService: AuthService,
-    private readonly authGuard: AuthGuard
+    private readonly authGuard: AuthGuard,
+    private readonly deadlineReminders: DeadlineRemindersService,
   ) {}
 
   @Post()
@@ -136,6 +139,90 @@ export class ProjectsController {
     }
 
     return this.projectsService.updateSprintConfig(id, body);
+  }
+
+  @Get(':id/reminders/config')
+  @Roles('ADMIN', 'PM', 'LC')
+  async getReminderConfig(@Param('id') id: string, @GetUser() user: any) {
+    const project = await this.projectsService.findOne(id);
+    await this.ensureProjectAccess(project, user);
+    return this.deadlineReminders.getConfig(id);
+  }
+
+  @Patch(':id/reminders/config')
+  @Roles('ADMIN', 'PM', 'LC')
+  async updateReminderConfig(
+    @Param('id') id: string,
+    @GetUser() user: any,
+    @Body() body: { enabled: boolean; offsetsMinutes: number[] },
+  ) {
+    const project = await this.projectsService.findOne(id);
+    await this.ensureProjectAccess(project, user);
+    return this.deadlineReminders.updateConfig(id, {
+      enabled: Boolean(body.enabled),
+      offsetsMinutes: body.offsetsMinutes,
+    });
+  }
+
+  @Get(':id/reminders/recipients')
+  @Roles('ADMIN', 'PM', 'LC')
+  async getReminderRecipients(@Param('id') id: string, @GetUser() user: any) {
+    const project = await this.projectsService.findOne(id);
+    await this.ensureProjectAccess(project, user);
+    return this.deadlineReminders.getRecipientPreview(id);
+  }
+
+  @Get(':id/reminders/status')
+  @Roles('ADMIN', 'PM', 'LC')
+  async getReminderStatus(
+    @Param('id') id: string,
+    @GetUser() user: any,
+    @Query('status') status?: string,
+  ) {
+    const project = await this.projectsService.findOne(id);
+    await this.ensureProjectAccess(project, user);
+    return this.deadlineReminders.getProjectReminderStatus(
+      id,
+      status as ScheduledReminderStatus | undefined,
+    );
+  }
+
+  @Get(':id/reminders/presets')
+  @Roles('ADMIN', 'PM', 'LC')
+  async getReminderPresets() {
+    return { presets: this.deadlineReminders.getOffsetPresets() };
+  }
+
+  // Deliverable-level reminder configuration overrides
+  @Get('deliverables/:id/reminders/config')
+  @Roles('ADMIN', 'PM', 'LC')
+  async getDeliverableReminderConfig(
+    @Param('id') id: string,
+    @GetUser() user: any,
+  ) {
+    const deliverable = await this.projectsService.findDeliverable(id);
+    await this.ensureProjectAccess(deliverable.project, user);
+    return this.deadlineReminders.getDeliverableReminderConfig(id);
+  }
+
+  @Patch('deliverables/:id/reminders/config')
+  @Roles('ADMIN', 'PM', 'LC')
+  async updateDeliverableReminderConfig(
+    @Param('id') id: string,
+    @GetUser() user: any,
+    @Body() body: {
+      enabled?: boolean;
+      offsetMinutes?: number[];
+      explicitRecipientUserIds?: string[];
+    },
+  ) {
+    const deliverable = await this.projectsService.findDeliverable(id);
+    await this.ensureProjectAccess(deliverable.project, user);
+    return this.deadlineReminders.updateDeliverableReminderConfig(id, {
+      enabled: body.enabled,
+      offsetMinutes: body.offsetMinutes,
+      explicitRecipientUserIds: body.explicitRecipientUserIds,
+    });
   }
 
   @Get(':id/sprints')

@@ -13,11 +13,16 @@ export interface NotificationJob {
   userId: string;
   type: NotificationType;
   channel: NotificationChannel;
+  scheduledReminderId?: string;
   data: {
     deliverableTitle?: string;
     projectName?: string;
     deadline?: Date;
     hoursRemaining?: number;
+    offsetMinutes?: number;
+    remainingMinutes?: number;
+    deepLink?: string;
+    timezone?: string;
     submittedAt?: Date;
     isLate?: boolean;
     lateByMinutes?: number;
@@ -66,6 +71,15 @@ export class NotificationsService {
     } else {
       this.logger.warn('Redis not available, notifications will be saved to database only (no background processing)');
     }
+  }
+
+  /**
+   * Expose the shared notification queue so reminder scheduling can enqueue
+   * idempotent, delayed jobs (jobId dedupe) onto the same worker.
+   * Returns null when Redis is unavailable.
+   */
+  getNotificationQueue(): Queue | null {
+    return this.notificationQueue;
   }
 
   async queueNotification(job: NotificationJob): Promise<void> {
@@ -143,86 +157,6 @@ export class NotificationsService {
         customTitle: input.title,
       } as any,
     });
-  }
-
-  async scheduleDeadlineReminder(
-    deliverableId: string,
-    hoursBeforeDeadline: number,
-  ): Promise<void> {
-    const deliverable = await this.prisma.deliverable.findUnique({
-      where: { id: deliverableId },
-      include: {
-        assignments: {
-          include: {
-            user: true,
-          },
-        },
-        project: {
-          include: {
-            members: {
-              include: {
-                user: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!deliverable) {
-      this.logger.warn(`Deliverable ${deliverableId} not found`);
-      return;
-    }
-
-    const reminderTime = new Date(deliverable.deadline);
-    reminderTime.setHours(reminderTime.getHours() - hoursBeforeDeadline);
-
-    const delay = Math.max(0, reminderTime.getTime() - Date.now());
-
-    const reminderRecipients =
-      deliverable.assignments.length > 0
-        ? deliverable.assignments.map((assignment) => ({
-            userId: assignment.userId,
-            user: assignment.user,
-          }))
-        : deliverable.project.members.map((member) => ({
-            userId: member.userId,
-            user: member.user,
-          }));
-
-    // Schedule reminder for each consultant on the project
-    if (this.notificationQueue) {
-      for (const recipient of reminderRecipients) {
-        try {
-          await this.notificationQueue.add(
-            'send-notification',
-            {
-              userId: recipient.user.id,
-              type: hoursBeforeDeadline === 1 ? 'DEADLINE_1H' : 'DEADLINE_24H',
-              channel: 'BOTH',
-              data: {
-                deliverableTitle: deliverable.title,
-                projectName: deliverable.project.name,
-                deadline: deliverable.deadline,
-                hoursRemaining: hoursBeforeDeadline,
-              },
-            } as NotificationJob,
-            {
-              delay,
-              jobId: `reminder-${deliverableId}-${recipient.userId}-${hoursBeforeDeadline}h`,
-            },
-          );
-        } catch (error) {
-          this.logger.warn(`Failed to schedule reminder: ${error.message}`);
-        }
-      }
-    } else {
-      this.logger.warn('Cannot schedule deadline reminders: Redis not available');
-    }
-
-    this.logger.log(
-      `Scheduled ${hoursBeforeDeadline}h reminder for deliverable ${deliverableId}`,
-    );
   }
 
   async sendExtensionRequest(extensionId: string): Promise<void> {
