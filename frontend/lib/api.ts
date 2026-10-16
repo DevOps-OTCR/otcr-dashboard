@@ -390,7 +390,18 @@ export const remindersAPI = {
   updateConfig: (projectId: string, data: { enabled: boolean; offsetsMinutes: number[] }) =>
     api.patch(`/projects/${projectId}/reminders/config`, data),
   getRecipients: (projectId: string) => api.get(`/projects/${projectId}/reminders/recipients`),
-  getStatus: (projectId: string) => api.get(`/projects/${projectId}/reminders/status`),
+  getStatus: (projectId: string, status?: string) =>
+    api.get(`/projects/${projectId}/reminders/status`, { params: status ? { status } : {} }),
+  getDeliverableConfig: (deliverableId: string) =>
+    api.get(`/deliverables/${deliverableId}/reminders/config`),
+  updateDeliverableConfig: (
+    deliverableId: string,
+    data: {
+      enabled?: boolean;
+      offsetMinutes?: number[];
+      explicitRecipientUserIds?: string[];
+    },
+  ) => api.patch(`/deliverables/${deliverableId}/reminders/config`, data),
 };
 
 export type TaskAssigneeType = 'PERSON' | 'ALL' | 'ALL_PMS' | 'ALL_TEAM';

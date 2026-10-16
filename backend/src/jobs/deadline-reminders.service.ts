@@ -1,6 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { ScheduledReminderStatus } from '@prisma/client';
 import { NotificationJob, NotificationsService } from '../notifications/notifications.service';
 
 const DEFAULT_TIMEZONE = 'America/Chicago';
@@ -159,6 +160,7 @@ export class DeadlineRemindersService {
         projectId: true,
         project: { select: { name: true, sprintTimezone: true } },
         assignments: { select: { userId: true } },
+        reminderOverride: true,
       },
     });
 
@@ -172,19 +174,28 @@ export class DeadlineRemindersService {
       return;
     }
 
-    const config = await this.getConfig(deliverable.projectId);
+    const config = await this.getDeliverableReminderConfig(deliverableId);
     if (!config.enabled) {
+      await this.cancelRemindersForDeliverable(deliverableId, 'Reminders disabled by deliverable override');
       return;
     }
 
-    // Active assignees who still belong to the project.
-    const assignedUserIds = deliverable.assignments.map((a) => a.userId);
+    // Resolve recipient set: explicit override users, else active assignees.
+    let recipientUserIds: string[];
+    if (
+      deliverable.reminderOverride?.explicitRecipientUserIds?.length
+    ) {
+      recipientUserIds = [...deliverable.reminderOverride.explicitRecipientUserIds];
+    } else {
+      recipientUserIds = deliverable.assignments.map((a) => a.userId).filter(Boolean);
+    }
+
     const activeRecipients =
-      assignedUserIds.length === 0
+      recipientUserIds.length === 0
         ? []
         : await this.prisma.user.findMany({
             where: {
-              id: { in: assignedUserIds },
+              id: { in: recipientUserIds },
               active: true,
               projectAssignments: { some: { projectId: deliverable.projectId } },
             },
@@ -193,7 +204,7 @@ export class DeadlineRemindersService {
 
     if (activeRecipients.length === 0) {
       // No explicit eligible recipients: do not silently notify the whole team.
-      await this.cancelRemindersForDeliverable(deliverableId, 'No active assignees');
+      await this.cancelRemindersForDeliverable(deliverableId, 'No active recipients');
       return;
     }
 
@@ -312,9 +323,14 @@ export class DeadlineRemindersService {
   }
 
   /** Project-scoped reminder status view for authorized managers. */
-  async getProjectReminderStatus(projectId: string) {
+  async getProjectReminderStatus(
+    projectId: string,
+    status?: ScheduledReminderStatus,
+  ) {
     return this.prisma.scheduledReminder.findMany({
-      where: { deliverable: { projectId } },
+      where: status
+        ? { deliverable: { projectId }, status }
+        : { deliverable: { projectId } },
       select: {
         id: true,
         offsetMinutes: true,
@@ -330,6 +346,85 @@ export class DeadlineRemindersService {
       },
       orderBy: { fireAt: 'asc' },
     });
+  }
+
+  /**
+   * Resolve the effective reminder config for a specific deliverable:
+   * deliverable-level override if present, otherwise project defaults.
+   * Null override fields mean "inherit from project".
+   */
+  async getDeliverableReminderConfig(deliverableId: string): Promise<ResolvedReminderConfig> {
+    const deliverable = await this.prisma.deliverable.findUnique({
+      where: { id: deliverableId },
+      select: {
+        projectId: true,
+        reminderOverride: true,
+      },
+    });
+
+    if (!deliverable) {
+      throw new BadRequestException('Deliverable not found');
+    }
+
+    const projectConfig = await this.getConfig(deliverable.projectId);
+
+    // Inherit everything from project unless override specifies otherwise.
+    const enabled = deliverable.reminderOverride?.enabled ?? projectConfig.enabled;
+    const overrideOffsets = deliverable.reminderOverride?.offsetMinutes;
+    const offsetsMinutes =
+      overrideOffsets?.length > 0 ? overrideOffsets : projectConfig.offsetsMinutes;
+
+    return {
+      enabled,
+      offsetsMinutes,
+      timezone: projectConfig.timezone,
+    };
+  }
+
+  /**
+   * Upsert a deliverable-level reminder override. Null fields mean inherit.
+   * After saving, reschedule the deliverable so the new config takes effect.
+   */
+  async updateDeliverableReminderConfig(
+    deliverableId: string,
+    input: {
+      enabled?: boolean;
+      offsetMinutes?: number[];
+      explicitRecipientUserIds?: string[];
+    },
+  ): Promise<ResolvedReminderConfig> {
+    const deliverable = await this.prisma.deliverable.findUnique({
+      where: { id: deliverableId },
+      select: { id: true, projectId: true },
+    });
+    if (!deliverable) {
+      throw new BadRequestException('Deliverable not found');
+    }
+
+    const offsets = input.offsetMinutes
+      ? this.validateOffsets(input.offsetMinutes)
+      : undefined;
+
+    await this.prisma.deliverableReminderOverride.upsert({
+      where: { deliverableId },
+      create: {
+        deliverableId,
+        enabled: input.enabled ?? null,
+        offsetMinutes: offsets ?? [],
+        explicitRecipientUserIds: input.explicitRecipientUserIds ?? [],
+      },
+      update: {
+        enabled: input.enabled !== undefined ? input.enabled : null,
+        offsetMinutes: offsets ?? [],
+        explicitRecipientUserIds:
+          input.explicitRecipientUserIds !== undefined
+            ? input.explicitRecipientUserIds
+            : [],
+      },
+    });
+
+    await this.rescheduleDeliverable(deliverableId);
+    return this.getDeliverableReminderConfig(deliverableId);
   }
 
   private validateOffsets(offsets: number[]): number[] {

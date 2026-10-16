@@ -505,12 +505,28 @@ model Deliverable {
   submissions Submission[]
   extensions  Extension[]
   scheduledReminders ScheduledReminder[]
+  reminderOverride DeliverableReminderOverride?
 
   @@index([projectId])
   @@index([sprintId])
   @@index([assigneeId])
   @@index([deadline])
   @@index([status])
+}
+
+// Deliverable-level reminder overrides. Null fields mean "inherit from project defaults."
+model DeliverableReminderOverride {
+  id                   String   @id @default(cuid())
+  deliverableId        String   @unique
+  enabled              Boolean? // null = inherit project default
+  offsetMinutes        Int[]    // empty = inherit project defaults
+  explicitRecipientUserIds String[] // empty = use deliverable assignees
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  deliverable Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+
+  @@index([deliverableId])
 }
 
 model DeliverableSubtask {

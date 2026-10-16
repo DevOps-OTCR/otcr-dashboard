@@ -36,6 +36,7 @@ import { useAuth } from '@/components/AuthContext';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { parseDashPrefixedDeliverables } from '@/lib/deliverables-parser';
 import { buildSprintDeadlineInChicago } from '@/lib/sprint-deadlines';
+import { DeliveryReminderOverrides } from './DeliveryReminderOverrides';
 
 type ProjectMember = { user: { id: string; email: string; firstName?: string; lastName?: string; role?: string } };
 type ProjectFromApi = {
@@ -1195,6 +1196,39 @@ export default function TeamsPage() {
                         )}
                         </>
                       )}
+                      <DeliveryReminderOverrides
+                        projectId={selectedTeamId ?? ''}
+                        projectTimezone={sprintConfigDraft.sprintTimezone}
+                        projectDefaults={{
+                          enabled: Boolean(reminderConfig?.enabled),
+                          offsetMinutes: Array.isArray(reminderConfig?.offsetsMinutes)
+                            ? reminderConfig.offsetsMinutes
+                            : [],
+                          timezone: reminderConfig?.timezone ?? 'America/Chicago',
+                        }}
+                        deliverables={teamSprints.flatMap(
+                          (s) => s.deliverables ?? [],
+                        ).map((d) => ({
+                          id: d.id,
+                          title: d.title,
+                          deadline: d.deadline,
+                          status: d.status ?? 'PENDING',
+                          projectId: selectedTeamId ?? '',
+                          reminderOverride: null,
+                        }))}
+                        members={(selectedTeam?.members ?? []).map((m) => ({
+                          id: m.user.id,
+                          email: m.user.email,
+                          firstName: m.user.firstName,
+                          lastName: m.user.lastName,
+                          active: true,
+                          slackConnected: false,
+                        }))}
+                        canConfigure={canConfigureRemindersForTeam}
+                        onConfigChange={() => {
+                          void loadReminderData(selectedTeamId ?? '');
+                        }}
+                      />
                       <div className="mb-4 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] space-y-4">
                         <div className="flex items-start justify-between gap-4">
                           <div>

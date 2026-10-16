@@ -602,6 +602,17 @@ export class ProjectsService {
     return this.attachProjectCalendarSetting(project);
   }
 
+  async findDeliverable(id: string) {
+    const deliverable = await this.prisma.deliverable.findUnique({
+      where: { id },
+      include: { project: true },
+    });
+    if (!deliverable) {
+      throw new NotFoundException('Deliverable not found');
+    }
+    return deliverable;
+  }
+
   async update(
     id: string,
     data: {
