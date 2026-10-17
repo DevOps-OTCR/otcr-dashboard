@@ -375,7 +375,7 @@ test('dashboard sign-out survives refresh and protected navigation until explici
 });
 
 test('pending authentication and profile sync cannot restore a signed-out session', async t => {
-  const { page, open } = await setup(t, '/pm?authSync=1');
+  const { page, state, open } = await setup(t, '/pm?authSync=1');
   await open();
   await page.getByText('team-1 Research', { exact: true }).waitFor();
   await page.waitForFunction(() => Boolean(sessionStorage.getItem('otcr_profile_sync_fingerprint')));
@@ -389,6 +389,9 @@ test('pending authentication and profile sync cannot restore a signed-out sessio
   });
   await page.evaluate(() => window.navigationTest.tokenProgress(false));
   await page.waitForFunction(() => window.finishOldTokenRequests?.length >= 2);
+  const pendingTokens = await page.evaluate(() => window.finishOldTokenRequests.length);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.waitForFunction(count => window.finishOldTokenRequests.length > count, pendingTokens);
   await page.evaluate(() => {
     window.navigationTest.instance.handleRedirectPromise = () => new Promise(resolve => {
       window.finishOldAuthCheck = resolve;
@@ -399,10 +402,12 @@ test('pending authentication and profile sync cannot restore a signed-out sessio
   await page.waitForFunction(() => Boolean(window.finishOldAuthCheck));
   await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
   await page.getByRole('button', { name: 'Sign in with NetID', exact: true }).waitFor();
+  const notificationRequests = state.calls.filter(path => path === '/notifications/my').length;
   const token = await page.evaluate(async () => {
     window.finishOldAuthCheck({ account: { username: 'pm@example.test' } });
     for (const resolve of window.finishOldTokenRequests) resolve({ accessToken: 'stale-token' });
     const token = await window.oldToken;
+    await new Promise(requestAnimationFrame);
     await new Promise(requestAnimationFrame);
     return token;
   });
@@ -410,5 +415,6 @@ test('pending authentication and profile sync cannot restore a signed-out sessio
   assert.equal(await page.getByRole('button', { name: 'Sign in with NetID', exact: true }).isVisible(), true);
   assert.equal(await page.locator('nav').count(), 0);
   assert.equal(await page.evaluate(() => window.navigationTest.authHeader()), undefined);
+  assert.equal(state.calls.filter(path => path === '/notifications/my').length, notificationRequests);
   assert.equal(await page.evaluate(() => sessionStorage.getItem('otcr_profile_sync_fingerprint')), null);
 });
