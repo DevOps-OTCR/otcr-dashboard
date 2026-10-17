@@ -72,7 +72,6 @@ const testApi = {
   seed,
   interactiveLogins: () => interactiveLogins,
   accounts: () => instance.getAllAccounts().map(account => account.username),
-  cacheLocation: () => config.cache?.cacheLocation,
   authHeader: () => api.defaults.headers.common.Authorization ?? null,
   getToken: async (): Promise<string | null> => null,
   holdToken: () => {

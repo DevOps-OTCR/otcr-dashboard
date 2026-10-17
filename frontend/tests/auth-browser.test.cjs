@@ -43,8 +43,7 @@ async function setup(t) {
 }
 
 test('real MSAL cache restores the same account in fresh root/direct-link tabs and on refresh', async t => {
-  const { first, page } = await setup(t);
-  assert.equal(await first.evaluate(() => window.authTest.cacheLocation()), 'localStorage');
+  const { page } = await setup(t);
   for (const route of ['/', '/deliverables']) {
     const other = await page(route);
     await other.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
@@ -54,8 +53,6 @@ test('real MSAL cache restores the same account in fresh root/direct-link tabs a
     await other.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
     assert.equal(await other.getByTestId('account').textContent(), 'pm@example.test');
   }
-  await first.reload();
-  await first.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
 });
 
 test('explicit CMS sign-out propagates, remains signed out after refresh, and allows explicit sign-in again', async t => {

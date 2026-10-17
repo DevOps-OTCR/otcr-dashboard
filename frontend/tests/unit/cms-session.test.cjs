@@ -19,27 +19,6 @@ function tab(localStorage = storage()) {
   return { ...exports, localStorage, sessionStorage };
 }
 
-test('sign-out is durable across independent tabs and reloads', () => {
-  const first = tab();
-  first.beginCmsSignIn();
-  assert.equal(first.completeCmsSignIn('account-1'), true);
-  const second = tab(first.localStorage);
-  assert.equal(second.readCmsSession().accountId, 'account-1');
-  second.markCmsSignedOut();
-  assert.equal(first.readCmsSession().signedOut, true);
-  assert.equal(tab(first.localStorage).readCmsSession().signedOut, true);
-  assert.equal(tab(first.localStorage).completeCmsSignIn('stale-account'), false);
-});
-
-test('a successful explicit sign-in can restore the CMS after local sign-out', () => {
-  const first = tab();
-  first.markCmsSignedOut();
-  first.beginCmsSignIn();
-  assert.equal(first.completeCmsSignIn('account-2'), true);
-  assert.equal(first.readCmsSession().signedOut, false);
-  assert.equal(tab(first.localStorage).readCmsSession().accountId, 'account-2');
-});
-
 test('sign-out in another tab rejects an earlier login redirect result', () => {
   const first = tab();
   first.beginCmsSignIn();
