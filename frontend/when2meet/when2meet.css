@@ -260,6 +260,11 @@
   text-align: left;
 }
 
+.w2mRoot .w2m-availability-columns .w2m-avail-list,
+.w2mRoot .w2m-availability-columns .w2m-empty {
+  text-align: center;
+}
+
 .w2mRoot .w2m-avail-list p {
   margin-bottom: 0;
 }
