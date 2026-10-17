@@ -98,7 +98,8 @@ export class AttendanceController {
     @Body()
     body: {
       method?: 'GEOFENCE' | 'CODE';
-      geofenceVerified?: boolean;
+      latitude?: number;
+      longitude?: number;
       code?: string;
     },
     @GetUser() user: any,

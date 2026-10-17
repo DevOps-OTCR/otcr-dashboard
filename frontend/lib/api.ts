@@ -70,8 +70,8 @@ export const onboardingAPI = {
         Pragma: 'no-cache',
       },
     }),
-  approveRequest: (id: string, notes?: string) =>
-    api.patch(`/onboarding/requests/${id}/approve`, notes ? { notes } : {}),
+  approveRequest: (id: string, notes?: string, grantedRole?: string) =>
+    api.patch(`/onboarding/requests/${id}/approve`, { notes, grantedRole }),
   rejectRequest: (id: string, notes?: string) =>
     api.patch(`/onboarding/requests/${id}/reject`, notes ? { notes } : {}),
 };
@@ -202,7 +202,8 @@ export const attendanceAPI = {
   deleteEvent: (eventId: string) => api.delete(`/attendance/events/${eventId}`),
   checkIn: (eventId: string, data: {
     method: AttendanceVerificationMethod;
-    geofenceVerified?: boolean;
+    latitude?: number;
+    longitude?: number;
     code?: string;
   }) => api.post(`/attendance/events/${eventId}/check-in`, data),
   listAttendances: (eventId: string) => api.get(`/attendance/events/${eventId}/attendances`),
@@ -420,6 +421,8 @@ export const deliverablesAPI = {
   updateDeadline: (id: string, deadline: string) => api.patch(`/deliverables/${id}/deadline`, { deadline }),
   updateAssignment: (id: string, assigned: boolean, assigneeId?: string) =>
     api.patch(`/deliverables/${id}/assignment`, { assigned, assigneeId }),
+  setAssignments: (id: string, assigneeIds: string[]) =>
+    api.patch(`/deliverables/${id}/assignments`, { assigneeIds }),
   updateCompletion: (id: string, completed: boolean) =>
     api.patch(`/deliverables/${id}/completion`, { completed }),
   createSubtask: (
@@ -486,4 +489,9 @@ export const slideSubmissionsAPI = {
   approve: (id: string) => api.post(`/slide-submissions/${id}/approve`),
   requestRevision: (id: string, feedback?: string) =>
     api.post(`/slide-submissions/${id}/request-revision`, feedback ? { feedback } : {}),
+};
+
+export const peopleAPI = {
+  list: () => api.get('/people'),
+  changeRole: (id: string, role: string) => api.patch(`/people/${id}/role`, { role }),
 };
