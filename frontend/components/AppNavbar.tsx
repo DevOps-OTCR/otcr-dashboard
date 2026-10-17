@@ -55,6 +55,7 @@ export type AppNavPath =
   | '/attendance'
   | '/when2meet'
   | '/alumni-database'
+  | '/people'
   | '/settings/slack';
 
 export interface AppNavbarProps {
@@ -274,6 +275,7 @@ export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotif
       href: '/teams',
       canAccess: (r) => canShowNavItem('team', r),
     },
+    { id: 'people', label: 'People', icon: Users, href: '/people', canAccess: role => role === 'ADMIN' },
     {
       id: 'forms',
       label: 'Forms',

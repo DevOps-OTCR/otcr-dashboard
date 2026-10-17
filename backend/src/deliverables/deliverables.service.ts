@@ -45,10 +45,16 @@ export class DeliverablesService {
       deadline: string;
       templateKind?: string;
       assignProjectMembers?: boolean;
+      assigneeIds?: string[];
     },
     actorUserId?: string,
   ) {
+    if (data.assigneeIds !== undefined && data.assignProjectMembers) {
+      throw new BadRequestException('Choose explicit assignees or all project members, not both');
+    }
     const created = await this.prisma.$transaction(async (tx) => {
+      const assigneeIds = data.assigneeIds === undefined
+        ? [] : await this.validateAssignees(tx, projectId, data.assigneeIds);
       const deliverable = await tx.deliverable.create({
         data: {
           projectId,
@@ -92,6 +98,12 @@ export class DeliverablesService {
           },
         },
       } as any);
+
+      if (assigneeIds.length > 0) {
+        await tx.deliverableAssignment.createMany({
+          data: assigneeIds.map((userId) => ({ deliverableId: deliverable.id, userId })),
+        });
+      }
 
       if (data.assignProjectMembers) {
         const projectMembers = await tx.projectMember.findMany({
@@ -416,6 +428,49 @@ export class DeliverablesService {
         },
       },
     });
+  }
+
+  private async validateAssignees(tx: Prisma.TransactionClient, projectId: string, value: unknown) {
+    if (!Array.isArray(value) || value.some((id) => typeof id !== 'string' || !id.trim())) {
+      throw new BadRequestException('assigneeIds must be an array of user IDs');
+    }
+    const ids = [...new Set(value as string[])];
+    if (!ids.length) return ids;
+    const eligible = await tx.user.findMany({
+      where: {
+        id: { in: ids }, active: true,
+        OR: [
+          { pmProjects: { some: { id: projectId } } },
+          { projectAssignments: { some: { projectId, leftAt: null } } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (eligible.length !== ids.length) {
+      throw new BadRequestException('Assignees must be active users who manage or belong to this project');
+    }
+    return ids;
+  }
+
+  async setAssignments(id: string, projectId: string, value: unknown) {
+    return this.prisma.$transaction(async (tx) => {
+      const ids = await this.validateAssignees(tx, projectId, value);
+      // Keep retained assignments (and their assignedAt timestamps) intact.
+      // Submissions belong to users independently and are never removed here.
+      await tx.deliverableAssignment.deleteMany({
+        where: { deliverableId: id, userId: { notIn: ids } },
+      });
+      if (ids.length) {
+        await tx.deliverableAssignment.createMany({
+          data: ids.map((userId) => ({ deliverableId: id, userId })), skipDuplicates: true,
+        });
+      }
+      const assignments = await tx.deliverableAssignment.findMany({
+        where: { deliverableId: id }, orderBy: { assignedAt: 'asc' },
+        select: { user: { select: { id: true, email: true, firstName: true, lastName: true } } },
+      });
+      return assignments.map(({ user }) => user);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   async updateAssignment(id: string, userId: string, assigned: boolean) {
