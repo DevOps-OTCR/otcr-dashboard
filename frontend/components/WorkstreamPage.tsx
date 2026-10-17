@@ -855,7 +855,9 @@ export default function WorkstreamPage() {
                                   key={item.id}
                                   className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2"
                                 >
-                                  <p className="text-sm font-medium text-[var(--foreground)]">{item.title}</p>
+                                  {teamMembersStatus !== 'ready' && (
+                                    <p className="text-sm font-semibold text-[var(--foreground)]">Assignees for {item.title}</p>
+                                  )}
                                   {teamMembersStatus === 'ready' && (
                                     <AssigneeChecklist label={`Assignees for ${item.title}`} options={teamMembers}
                                       selected={item.assigneeIds} disabled={savingDrafts}
