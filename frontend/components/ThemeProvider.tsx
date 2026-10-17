@@ -21,9 +21,17 @@ function readTheme(): Theme {
 
 function applyTheme(theme: Theme) {
   const root = document.documentElement;
+  if (readTheme() === theme) return;
+
+  // Cancel hover transitions before changing the palette, including pseudo-elements.
+  root.classList.add('theme-changing');
+  void getComputedStyle(document.body).color;
   const previous = theme === 'dark' ? 'light' : 'dark';
   if (!root.classList.replace(previous, theme)) root.classList.add(theme);
   root.style.colorScheme = theme;
+  // Commit the new colors while transitions are disabled, then restore hover behavior.
+  void getComputedStyle(document.body).color;
+  root.classList.remove('theme-changing');
 }
 
 function subscribeTheme(onChange: () => void) {

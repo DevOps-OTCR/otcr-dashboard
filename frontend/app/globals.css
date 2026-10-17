@@ -56,6 +56,16 @@
   border-color: var(--border);
 }
 
+/* Apply each theme in one update. This also avoids motion for reduced-motion users. */
+html.theme-changing,
+html.theme-changing *,
+html.theme-changing::before,
+html.theme-changing::after,
+html.theme-changing *::before,
+html.theme-changing *::after {
+  transition: none !important;
+}
+
 @layer base {
   :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
     outline: 2px solid var(--ring);

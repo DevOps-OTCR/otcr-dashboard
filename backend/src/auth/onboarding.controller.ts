@@ -8,6 +8,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { Roles } from '../common/roles.decorator';
 import { AuthGuard } from './auth.guard';
 import { AuthService } from './auth.service';
 import { GetUser } from '../common/get-user.decorator';
@@ -51,9 +52,10 @@ export class OnboardingController {
 
   @Get('requests')
   @UseGuards(AuthGuard)
+  @Roles('ADMIN')
   async listRequests(@GetUser() user: any) {
-    if (!['ADMIN', 'PARTNER', 'EXECUTIVE', 'PM'].includes(user.role)) {
-      throw new ForbiddenException('Only Partner, Executive, PM, or Admin can review onboarding requests');
+    if (user.role !== 'ADMIN') {
+      throw new ForbiddenException('Only Admin can review onboarding requests');
     }
 
     const requests = await this.authService.listOnboardingRequests();
@@ -62,28 +64,30 @@ export class OnboardingController {
 
   @Patch('requests/:id/approve')
   @UseGuards(AuthGuard)
+  @Roles('ADMIN')
   async approveRequest(
     @Param('id') id: string,
-    @Body() body: { notes?: string },
+    @Body() body: { notes?: string; grantedRole?: unknown },
     @GetUser() user: any,
   ) {
-    if (!['ADMIN', 'PARTNER', 'EXECUTIVE', 'PM'].includes(user.role)) {
-      throw new ForbiddenException('Only Partner, Executive, PM, or Admin can approve onboarding requests');
+    if (user.role !== 'ADMIN') {
+      throw new ForbiddenException('Only Admin can approve onboarding requests');
     }
 
-    const request = await this.authService.approveOnboardingRequest(id, user.id, body?.notes);
+    const request = await this.authService.approveOnboardingRequest(id, user.id, body?.notes, body?.grantedRole);
     return { success: true, request };
   }
 
   @Patch('requests/:id/reject')
   @UseGuards(AuthGuard)
+  @Roles('ADMIN')
   async rejectRequest(
     @Param('id') id: string,
     @Body() body: { notes?: string },
     @GetUser() user: any,
   ) {
-    if (!['ADMIN', 'PARTNER', 'EXECUTIVE', 'PM'].includes(user.role)) {
-      throw new ForbiddenException('Only Partner, Executive, PM, or Admin can reject onboarding requests');
+    if (user.role !== 'ADMIN') {
+      throw new ForbiddenException('Only Admin can reject onboarding requests');
     }
 
     const request = await this.authService.rejectOnboardingRequest(id, user.id, body?.notes);

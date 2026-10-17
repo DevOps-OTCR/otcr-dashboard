@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Be_Vietnam_Pro, Mulish } from 'next/font/google';
 import { AppNavbar } from '@/components/AppNavbar';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
@@ -54,6 +55,7 @@ type ProjectOption = { id: string; name: string };
 
 export default function When2MeetPage() {
   const session = useAuth();
+  const router = useRouter();
   const { isLoggedIn, getToken } = session;
   const email = session.user?.email;
   const { snapshot, saveSnapshot } = useNavigationSnapshot<{
@@ -71,6 +73,12 @@ export default function When2MeetPage() {
   const [selectedPollId, setSelectedPollId] = useState<string | null>(snapshot?.selectedPollId ?? null);
   const [pollDetail, setPollDetail] = useState<When2MeetPollDetail | null>(snapshot?.pollDetail ?? null);
   const projectRef = useRef(projectId);
+
+  // True while the page is in its initial load, or while a team/poll refresh is in flight
+  // (e.g. changing the team). During these windows the Team/Poll controls must stay hidden.
+  const pageLoading = loading || (pollsLoading && !pollsReady);
+
+
   const pollRef = useRef(selectedPollId);
   useEffect(() => {
     projectRef.current = projectId;
@@ -86,6 +94,14 @@ export default function When2MeetPage() {
   const [slotEnd, setSlotEnd] = useState('17:00');
   const [creating, setCreating] = useState(false);
   const [deletingPoll, setDeletingPoll] = useState(false);
+
+  useEffect(() => {
+    // Once auth init finishes, bounce signed-out users to sign-in instead of
+    // leaving them stuck on the loader (deep links / bookmarks).
+    if (!session.loading && !session.isLoggedIn) {
+      router.replace('/sign-in');
+    }
+  }, [session.loading, session.isLoggedIn, router]);
 
   const canCreatePoll =
     role === 'ADMIN' || role === 'PM' || role === 'PARTNER' || role === 'EXECUTIVE';
@@ -324,8 +340,8 @@ export default function When2MeetPage() {
       <AppNavbar role={role} currentPath="/when2meet" />
 
       <main className="max-w-[2000px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        {(loading || (pollsLoading && !pollsReady)) && <PageLoading />}
-        <Card>
+        {pageLoading ? <PageLoading /> : <>
+          <Card>
           <CardHeader>
             <CardTitle>When2Meet</CardTitle>
             <CardDescription>
@@ -396,6 +412,7 @@ export default function When2MeetPage() {
             ) : null}
           </CardContent>
         </Card>
+        </>}
 
         {error ? (
           <p className="text-sm text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
