@@ -125,8 +125,7 @@ export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotif
 
     try {
       const token = await getToken();
-      if (!token) return;
-      setAuthToken(token);
+      setAuthToken(token || user.email || null);
       const response = await notificationsAPI.getMy(50);
       const items = Array.isArray(response.data) ? response.data : [];
       const readIds = loadReadIds(user.email);

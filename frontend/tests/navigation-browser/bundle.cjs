@@ -16,8 +16,8 @@ exports.buildStyles = async () => {
 };
 
 // Bundle the real pages, navbar, and auth provider. Only routing and MSAL are mocked.
-exports.buildBundle = async (options = {}) => {
-  const output = path.join(root, 'build', options.outputName ?? 'navigation-browser');
+exports.buildBundle = async () => {
+  const output = path.join(root, 'build/navigation-browser');
   fs.mkdirSync(output, { recursive: true });
   fs.writeFileSync(path.join(output, 'loader.cjs'), `const ts = require('typescript'); module.exports = function(source) {
     return ts.transpileModule(source, { fileName: this.resourcePath, compilerOptions: {
@@ -33,25 +33,21 @@ exports.buildBundle = async (options = {}) => {
   fs.writeFileSync(path.join(output, 'local-font.cjs'), 'module.exports = () => ({ className: \'test-font\' });');
   await new Promise((resolve, reject) => webpack({
     mode: 'development', target: 'web', devtool: false,
-    entry: options.entry ?? path.join(__dirname, 'entry.tsx'),
+    entry: path.join(__dirname, 'entry.tsx'),
     output: { path: output, filename: 'bundle.js' },
     resolve: { extensions: ['.tsx', '.ts', '.js', '.cjs'], alias: {
       '@': root, 'next/navigation$': path.join(__dirname, 'routing.cjs'),
       'next/link$': path.join(output, 'link.cjs'), 'next/image$': path.join(output, 'image.cjs'),
       'next/font/google$': path.join(output, 'fonts.cjs'),
       'next/font/local$': path.join(output, 'local-font.cjs'),
-      ...(!options.realMsal ? { '@azure/msal-react$': path.join(__dirname, 'routing.cjs') } : {}),
+      '@azure/msal-react$': path.join(__dirname, 'routing.cjs'),
     } },
     module: { rules: [{ test: /\.css$/, use: path.join(output, 'empty.cjs') }, { test: /\.tsx?$/, exclude: /node_modules/, use: path.join(output, 'loader.cjs') }] },
     plugins: [new webpack.DefinePlugin({
       'process.env.NEXT_PUBLIC_API_URL': JSON.stringify('/api'),
       'process.env.NEXT_PUBLIC_GOOGLE_CALENDAR_EMBED_URL': JSON.stringify(''),
       'process.env.NEXT_PUBLIC_BASE_PATH': JSON.stringify(''),
-      'process.env.NEXT_PUBLIC_MSAL_CLIENT_ID': JSON.stringify('00000000-0000-4000-8000-000000000001'),
-      'process.env.NEXT_PUBLIC_MSAL_REDIRECT_URI': JSON.stringify(''),
-      'process.env.NEXT_PUBLIC_MSAL_AUTHORITY': JSON.stringify(options.realMsal
-        ? 'https://login.microsoftonline.com/00000000-0000-4000-8000-000000000002'
-        : 'https://login.microsoftonline.com/test'),
+      'process.env.NEXT_PUBLIC_MSAL_AUTHORITY': JSON.stringify('https://login.microsoftonline.com/test'),
     })],
   }, (error, stats) => error || stats.hasErrors()
     ? reject(error || new Error(stats.toString({ all: false, errors: true }))) : resolve()));
