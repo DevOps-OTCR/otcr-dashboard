@@ -235,7 +235,7 @@ export type When2MeetPollDetail = {
   grid: When2MeetGridSpec;
   teamSize: number;
   members: Array<{ id: string; email: string; displayName: string }>;
-  slots: Array<{ slotIndex: number; names: string[] }>;
+  slots: Array<{ slotIndex: number; names: string[]; userIds?: string[] }>;
   mySlots: number[];
 };
 
