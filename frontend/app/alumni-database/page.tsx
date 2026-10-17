@@ -78,7 +78,6 @@ function AlumniTable() {
   const [sort, setSort] = useState<AlumniSort>(snapshot?.sort ?? DEFAULT_ALUMNI_SORT);
   const [pageIndex, setPageIndex] = useState(snapshot?.pageIndex ?? 0);
   const [refreshing, setRefreshing] = useState(true);
-  const [refreshVersion, setRefreshVersion] = useState(0);
 
   const updateSearch = (value: string) => {
     setSearch(value);
@@ -112,7 +111,7 @@ function AlumniTable() {
           if (cancelled) return;
           setRole(getUserRole(email));
         }
-        const { data } = await alumniAPI.getDataset(refreshVersion > 0);
+        const { data } = await alumniAPI.getDataset();
         if (cancelled) return;
         setDataset(data);
         setLoadError(null);
@@ -136,7 +135,7 @@ function AlumniTable() {
     return () => {
       cancelled = true;
     };
-  }, [getToken, email, refreshVersion]);
+  }, [getToken, email]);
 
   const filteredSorted = useMemo(() => {
     if (!dataset) return [];
@@ -181,18 +180,6 @@ function AlumniTable() {
           </CardHeader>
 
           <CardContent className="space-y-4">
-            <button
-              type="button"
-              disabled={refreshing}
-              onClick={() => {
-                setRefreshing(true);
-                setLoadError(null);
-                setRefreshVersion((value) => value + 1);
-              }}
-              className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm hover:bg-[var(--accent)] disabled:opacity-50"
-            >
-              {refreshing ? 'Refreshing alumni data...' : 'Refresh alumni data'}
-            </button>
             {!dataset && refreshing && <PageLoading />}
             {loadError && (
               <div role="alert" className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm">
