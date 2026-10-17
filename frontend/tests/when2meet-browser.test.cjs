@@ -12,10 +12,12 @@ before(async () => {
 });
 after(() => browser?.close());
 
-async function setup(t, members, slots, width = 1440) {
-  const context = await browser.newContext({ viewport: { width, height: 1000 } });
+async function setup(t, members, slots, width = 1440, options = {}) {
+  const context = await browser.newContext({ viewport: { width, height: options.height ?? 1000 },
+    hasTouch: options.touch ?? false, isMobile: options.touch ?? false });
   t.after(() => context.close());
   const detail = { ...responseFor('/when2meet/polls/poll-1', 'PM'), members, slots, teamSize: members.length };
+  if (options.grid) detail.grid = options.grid;
   const writes = [];
   await context.route('http://when2meet.test/**', route => {
     const path = new URL(route.request().url()).pathname;
@@ -24,7 +26,8 @@ async function setup(t, members, slots, width = 1440) {
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify(
         path.startsWith('/api/when2meet/polls/poll-1') ? detail : responseFor(path.slice(4), 'PM')) });
     }
-    return route.fulfill({ contentType: path === '/bundle.js' ? 'text/javascript' : 'text/html', body: path === '/bundle.js' ? bundle : document });
+    return route.fulfill({ contentType: path === '/bundle.js' ? 'text/javascript' : 'text/html', body: path === '/bundle.js' ? bundle :
+      document.replace('<html>', '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>') });
   });
   const page = await context.newPage();
   const errors = [];
@@ -43,6 +46,32 @@ async function setup(t, members, slots, width = 1440) {
 }
 const member = (id, displayName) => ({ id, displayName, email: `${id}@example.test` });
 const alex = member('alex', 'Alex Lee'), otherAlex = member('other-alex', 'Alex Lee'), casey = member('casey', 'Casey Morgan');
+
+test('touch selection in a full-day poll keeps details on screen and can be closed', async t => {
+  const grid = { ...responseFor('/when2meet/polls/poll-1', 'PM').grid,
+    numRows: 32, totalSlots: 32, slotEndMinute: 1020,
+    rowStartLabels: Array.from({ length: 32 }, (_, i) => `${9 + Math.floor(i / 4)}:${String(i % 4 * 15).padStart(2, '0')}`) };
+  const { page, popup } = await setup(t, [alex, casey], [
+    { slotIndex: 31, names: ['Alex Lee'], userIds: ['alex'] },
+    { slotIndex: 0, names: ['Casey Morgan'], userIds: ['casey'] },
+  ], 375, { height: 667, touch: true, grid });
+  const lastSlot = page.locator('[data-group-slot="31"]');
+  await lastSlot.tap();
+  await popup.waitFor({ state: 'visible' });
+  const bounds = await popup.boundingBox();
+  assert.ok(bounds.y >= 0 && bounds.y + bounds.height <= 667, 'selected slot details must be inside the viewport');
+  assert.match(await popup.locator('.w2m-slot-label').textContent(), /16:45/);
+  assert.deepEqual(await popup.getByRole('region', { name: 'Available', exact: true }).locator('li').allTextContents(), ['Alex Lee']);
+  assert.deepEqual(await popup.getByRole('region', { name: 'Unavailable', exact: true }).locator('li').allTextContents(), ['Casey Morgan']);
+  await popup.getByRole('button', { name: 'Close availability details' }).tap();
+  await popup.waitFor({ state: 'hidden' });
+  assert.equal(await lastSlot.evaluate(element => element === document.activeElement), true);
+  await page.locator('.w2m-left-cal').waitFor({ state: 'visible' });
+  await Promise.all([
+    page.waitForResponse(response => response.request().method() === 'PUT'),
+    page.locator('.w2m-left-cal [data-slot="1"]').tap(),
+  ]);
+});
 
 test('hover moves both lists together, separates missing records, and distinguishes duplicate names by email', async t => {
   const { page, popup, hover, writes } = await setup(t, [alex, otherAlex, casey, alex], [
@@ -109,15 +138,26 @@ for (const width of [375, 768, 1024, 1440]) {
     const layout = await popup.evaluate(element => {
       const sections = [...element.querySelector('.w2m-availability-columns').children].map(child => child.getBoundingClientRect().toJSON());
       const bounds = element.getBoundingClientRect();
+      const body = element.querySelector('.w2m-availability-body');
       return { sections, left: bounds.left, right: bounds.right, horizontalOverflow: element.scrollWidth > element.clientWidth,
-        scrolls: element.scrollHeight > element.clientHeight };
+        scrolls: body.scrollHeight > body.clientHeight };
     });
     assert.ok(layout.left >= 0 && layout.right <= width);
     assert.equal(layout.horizontalOverflow, false);
     assert.equal(layout.scrolls, true);
     assert.equal(Math.abs(layout.sections[0].top - layout.sections[1].top) < 2, width > 480);
-    await popup.hover();
-    await popup.evaluate(element => { element.scrollTop = element.scrollHeight; });
+    // Enter the visible top; centering a tall popup can scroll the page and dismiss it first.
+    await popup.hover({ position: { x: 12, y: 12 } });
+    const headerBefore = await popup.locator('.w2m-availability-header').evaluate(element => element.getBoundingClientRect().toJSON());
+    await popup.locator('.w2m-availability-body').evaluate(element => { element.scrollTop = element.scrollHeight; });
+    const headerAfter = await popup.locator('.w2m-availability-header').evaluate(element => element.getBoundingClientRect().toJSON());
+    assert.equal(headerAfter.top, headerBefore.top, 'the header must stay outside the scrolling list');
+    assert.equal(await popup.evaluate(element => {
+      const header = element.querySelector('.w2m-availability-header');
+      const bounds = header.getBoundingClientRect();
+      return [1, bounds.height / 2, bounds.height - 1].every(offset =>
+        header.contains(document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + offset)));
+    }), true, 'list text must not cover any part of the header');
     assert.equal(await popup.locator('li').last().isVisible(), true);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   });

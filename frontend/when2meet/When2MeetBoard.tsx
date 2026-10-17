@@ -71,6 +71,7 @@ export function When2MeetBoard({
     detail.grid satisfies When2MeetGridSpec;
 
   const userGridRef = useRef<HTMLDivElement>(null);
+  const groupGridRef = useRef<HTMLDivElement>(null);
 
   const selectedRef = useRef<boolean[]>(new Array(totalSlots).fill(false));
   const dragActiveRef = useRef(false);
@@ -89,6 +90,13 @@ export function When2MeetBoard({
   const [saveError, setSaveError] = useState<string | null>(null);
   const popupId = useId();
   const availability = useMemo(() => pollAvailability(detail), [detail]);
+
+  const closeAvailability = () => {
+    // Restore focus before clearing the selection so onFocus does not reopen it.
+    groupGridRef.current?.querySelector<HTMLButtonElement>(`[data-group-slot="${hoveredGroupSlot}"]`)
+      ?.focus({ preventScroll: true });
+    setHoveredGroupSlot(null);
+  };
 
   const teamSize = availability.members.length;
 
@@ -257,7 +265,6 @@ export function When2MeetBoard({
           onMouseEnter={() => setHoveredGroupSlot(slotIdx)}
           onFocus={() => setHoveredGroupSlot(slotIdx)}
           onClick={() => setHoveredGroupSlot(slotIdx)}
-          onKeyDown={event => { if (event.key === 'Escape') setHoveredGroupSlot(null); }}
         />,
       );
     }
@@ -273,11 +280,17 @@ export function When2MeetBoard({
         <p className="text-center text-red-600 dark:text-red-400 text-sm mt-2">{saveError}</p>
       ) : null}
 
-      <div className="w2m-split" onMouseLeave={() => setHoveredGroupSlot(null)}>
+      <div className="w2m-split" onMouseLeave={() => setHoveredGroupSlot(null)}
+        onKeyDown={event => { if (event.key === 'Escape') closeAvailability(); }}>
         <div className="w2m-left">
           <div id={popupId} role="region" aria-label="Time slot availability" aria-hidden={!hideLeftCal}
             className={`w2m-available-overlay${hideLeftCal ? '' : ' w2m-hide'}`}>
-            <p className="w2m-slot-label">{hoveredLabel}</p>
+            <div className="w2m-availability-header">
+              <p className="w2m-slot-label">{hoveredLabel}</p>
+              <button type="button" className="w2m-availability-close" aria-label="Close availability details"
+                onClick={closeAvailability}>Close</button>
+            </div>
+            <div className="w2m-availability-body">
             {availability.hasIdentityData ? <>
               <div className="w2m-availability-columns">
                 {(['available', 'unavailable'] as const).map(kind => <section key={kind} aria-label={kind === 'available' ? 'Available' : 'Unavailable'}>
@@ -300,6 +313,7 @@ export function When2MeetBoard({
                 </ul>
               </section> : null}
             </> : <p>Refresh the page to load full availability details.</p>}
+            </div>
           </div>
 
           <div className={`w2m-left-cal${hideLeftCal ? ' w2m-hide-left' : ''}`}>
@@ -373,7 +387,7 @@ export function When2MeetBoard({
                   <p key={`day-r-${i}`}>{d}</p>
                 ))}
               </div>
-              <div className="w2m-grid" style={gridTpl}>
+              <div ref={groupGridRef} className="w2m-grid" style={gridTpl}>
                 {groupCells}
               </div>
             </div>
