@@ -51,6 +51,40 @@ async function setup(t, initialPath) {
   };
 }
 
+// Cover mobile, the two-column breakpoint, and the capped desktop card width.
+for (const width of [375, 768, 1440]) {
+  test(`subtask creation and editing stay inside the card at ${width}px`, async t => {
+    const { page, open } = await setup(t, '/deliverables');
+    await page.setViewportSize({ width, height: 1000 });
+    await page.route('**/api/projects/*/sprints', route => {
+      const payload = responseFor('/projects/team-1/sprints', 'PM');
+      payload[0].deliverables[0].subtasks = [{ id: 'subtask-1', title: 'Existing subtask',
+        assigneeId: 'u-1', dueDate: '2026-10-18T23:00:00Z', completed: false }];
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(payload) });
+    });
+    await open();
+    await page.getByLabel('Subtask title', { exact: true }).waitFor();
+    await page.addStyleTag({ content: styles });
+    await page.getByLabel('New subtask title', { exact: true }).fill('New subtask');
+    for (const label of ['Subtask title', 'New subtask title']) {
+      const form = page.getByLabel(label, { exact: true }).locator('..');
+      const overflow = await form.evaluate(element => {
+        const bounds = element.getBoundingClientRect();
+        return Array.from(element.querySelectorAll('input, select, button')).filter(control => {
+          const rect = control.getBoundingClientRect();
+          return rect.left < bounds.left - 1 || rect.right > bounds.right + 1 || rect.width < 12;
+        }).map(control => control.getAttribute('aria-label') || control.textContent);
+      });
+      assert.deepEqual(overflow, []);
+    }
+    for (const name of ['Add Subtask', 'Save', 'Delete']) {
+      const button = page.getByRole('button', { name, exact: true });
+      await button.focus();
+      assert.equal(await button.evaluate(element => element === document.activeElement), true);
+    }
+  });
+}
+
 test('navigation stays usable during loading and Slides does not fetch twice', async t => {
   const { page, state, nav, open } = await setup(t, '/deliverables');
   let release;
