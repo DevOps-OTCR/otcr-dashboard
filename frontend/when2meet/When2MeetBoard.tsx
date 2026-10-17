@@ -262,7 +262,7 @@ export function When2MeetBoard({
             gridColumn: col + 1,
             backgroundColor: bg,
           }}
-          onMouseEnter={() => setHoveredGroupSlot(slotIdx)}
+          onPointerEnter={event => { if (event.pointerType === 'mouse') setHoveredGroupSlot(slotIdx); }}
           onFocus={() => setHoveredGroupSlot(slotIdx)}
           onClick={() => setHoveredGroupSlot(slotIdx)}
         />,
@@ -280,7 +280,7 @@ export function When2MeetBoard({
         <p className="text-center text-red-600 dark:text-red-400 text-sm mt-2">{saveError}</p>
       ) : null}
 
-      <div className="w2m-split" onMouseLeave={() => setHoveredGroupSlot(null)}
+      <div className="w2m-split" onPointerLeave={event => { if (event.pointerType === 'mouse') setHoveredGroupSlot(null); }}
         onKeyDown={event => { if (event.key === 'Escape') closeAvailability(); }}>
         <div className="w2m-left">
           <div id={popupId} role="region" aria-label="Time slot availability" aria-hidden={!hideLeftCal}
