@@ -45,7 +45,13 @@ function Fixture() {
   const accounts = useMemo(() => email ? [{ username: email, name: email, homeAccountId: email }] : [], [email]);
   const instance = useMemo(() => ({
     initialize: async () => {},
-    handleRedirectPromise: async () => null,
+    handleRedirectPromise: async () => {
+      if (!sessionStorage.getItem('navigation-test-login-result')) return null;
+      sessionStorage.removeItem('navigation-test-login-result');
+      return { account: accounts[0] };
+    },
+    addEventCallback: () => 'test-callback',
+    removeEventCallback: () => {},
     setActiveAccount: () => {},
     getActiveAccount: () => accounts[0],
     getAllAccounts: () => accounts,
@@ -56,6 +62,7 @@ function Fixture() {
     },
     loginRedirect: async () => {
       sessionStorage.setItem('navigation-test-account', 'pm@example.test');
+      sessionStorage.setItem('navigation-test-login-result', 'true');
       location.assign(new URL('/pm', location.origin).href);
     },
     logoutRedirect: async () => { throw new Error('Dashboard sign-out must not call Microsoft logout'); },

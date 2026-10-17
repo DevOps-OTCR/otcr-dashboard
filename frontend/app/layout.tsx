@@ -8,26 +8,16 @@ import { MsalProvider } from "@azure/msal-react";
 import { AuthProvider } from "../components/AuthContext";
 import { ThemeProvider, themeInitScript } from "../components/ThemeProvider";
 import { ReactNode, useMemo } from "react";
+import { msalConfig } from '@/lib/msal-config';
 
 export default function MsalWrapper({ children }: { children: ReactNode }) {
   const origin =
     typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
   const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/\/+$/, "");
-  const withBasePath = (path: string) => `${origin}${basePath}${path}`;
 
   // We initialize the PCA inside useMemo so it only creates one instance 
   // and only runs in the browser.
-  const pca = useMemo(() => new PublicClientApplication({
-    auth: {
-      clientId: process.env.NEXT_PUBLIC_MSAL_CLIENT_ID || "294bcae4-d5c3-44e2-9e06-06cc230a9bfd",
-      authority: process.env.NEXT_PUBLIC_MSAL_AUTHORITY || "https://login.microsoftonline.com/44467e6f-462c-4ea2-823f-7800de5434e3",
-      redirectUri: process.env.NEXT_PUBLIC_MSAL_REDIRECT_URI || withBasePath("/auth/callback"),
-      postLogoutRedirectUri: withBasePath("/sign-in"),
-    },
-    cache: {
-      cacheLocation: "sessionStorage",
-    },
-  }), [basePath, origin]);
+  const pca = useMemo(() => new PublicClientApplication(msalConfig(origin, basePath)), [basePath, origin]);
 
   return (
     // The theme script sets the class/color-scheme on <html> before hydration.
