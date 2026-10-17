@@ -81,6 +81,7 @@ export default function When2MeetPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [gridFirstDate, setGridFirstDate] = useState('');
   const [gridLastDate, setGridLastDate] = useState('');
@@ -133,6 +134,7 @@ export default function When2MeetPage() {
 
   useEffect(() => {
     if (!createOpen) return;
+    setCreateError(null);
     const today = localCalendarDateISO();
     setGridFirstDate(today);
     setGridLastDate(today);
@@ -244,11 +246,11 @@ export default function When2MeetPage() {
     ev.preventDefault();
     if (!projectId || !newTitle.trim()) return;
     if (!gridFirstDate || !gridLastDate) {
-      setError('Choose both the first and last day for this poll.');
+      setCreateError('Choose both the first and last day for this poll.');
       return;
     }
     if (gridLastDate < gridFirstDate) {
-      setError('The last day must be on or after the first day.');
+      setCreateError('The last day must be on or after the first day.');
       return;
     }
 
@@ -266,12 +268,12 @@ export default function When2MeetPage() {
       startM % 15 !== 0 ||
       endM % 15 !== 0
     ) {
-      setError('Pick a valid time window in fifteen‑minute steps (start before end).');
+      setCreateError('Pick a valid time window in fifteen‑minute steps (start before end).');
       return;
     }
 
     setCreating(true);
-    setError(null);
+    setCreateError(null);
     try {
       const res = await when2meetAPI.createPoll({
         projectId,
@@ -289,7 +291,7 @@ export default function When2MeetPage() {
       setCreateOpen(false);
       await loadPolls(createdId ? { selectPollId: createdId } : undefined);
     } catch (err) {
-      setError(parseApiError(err, 'Could not create poll.'));
+      setCreateError(parseApiError(err, 'Could not create poll.'));
     } finally {
       setCreating(false);
     }
@@ -434,6 +436,11 @@ export default function When2MeetPage() {
           title="Create When2Meet"
         >
           <form id="when2meet-create-form" className="space-y-4" onSubmit={handleCreatePoll}>
+            {createError ? (
+              <p role="alert" className="text-sm text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
+                {createError}
+              </p>
+            ) : null}
             <label className="flex flex-col gap-1 text-sm">
               <span className="font-medium">Title</span>
               <input
