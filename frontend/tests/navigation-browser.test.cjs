@@ -543,6 +543,7 @@ for (const role of ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'EXECUTIVE']) {
     await open();
     await page.getByText('Only administrators can access People.', { exact: true }).waitFor();
     assert.equal(await nav('People').count(), 0);
+    assert.equal(await page.locator('nav').getByText('People', { exact: true }).count(), 0);
     assert.equal(state.calls.some(path => path === '/people' || path === '/onboarding/requests'), false);
   });
 }
