@@ -202,7 +202,8 @@ export const attendanceAPI = {
   deleteEvent: (eventId: string) => api.delete(`/attendance/events/${eventId}`),
   checkIn: (eventId: string, data: {
     method: AttendanceVerificationMethod;
-    geofenceVerified?: boolean;
+    latitude?: number;
+    longitude?: number;
     code?: string;
   }) => api.post(`/attendance/events/${eventId}/check-in`, data),
   listAttendances: (eventId: string) => api.get(`/attendance/events/${eventId}/attendances`),
@@ -420,6 +421,8 @@ export const deliverablesAPI = {
   updateDeadline: (id: string, deadline: string) => api.patch(`/deliverables/${id}/deadline`, { deadline }),
   updateAssignment: (id: string, assigned: boolean, assigneeId?: string) =>
     api.patch(`/deliverables/${id}/assignment`, { assigned, assigneeId }),
+  setAssignments: (id: string, assigneeIds: string[]) =>
+    api.patch(`/deliverables/${id}/assignments`, { assigneeIds }),
   updateCompletion: (id: string, completed: boolean) =>
     api.patch(`/deliverables/${id}/completion`, { completed }),
   createSubtask: (
