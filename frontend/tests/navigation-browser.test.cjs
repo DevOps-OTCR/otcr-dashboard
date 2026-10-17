@@ -580,6 +580,23 @@ async function peopleSetup(t, options = {}) {
   return { ...fixture, writes, failWrites: () => { failWrites = true; } };
 }
 
+test('admin navbar retains People on Overview and fits without horizontal scrolling', async t => {
+  const { page, nav, open } = await peopleSetup(t);
+  await open();
+  await page.getByRole('heading', { name: 'People directory' }).waitFor();
+  await page.addStyleTag({ content: styles });
+  await nav('Overview').click();
+  await page.waitForURL('**/pm');
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  await nav('People').waitFor();
+  for (const width of [1440, 375]) {
+    await page.setViewportSize({ width, height: 1000 });
+    assert.equal(await page.locator('nav').evaluate(element => element.scrollWidth <= element.clientWidth), true);
+  }
+  await nav('People').click();
+  await page.getByRole('heading', { name: 'People directory' }).waitFor();
+});
+
 test('admin directory filters, confirms role updates, and shows failures', async t => {
   const { page, nav, open, writes, failWrites } = await peopleSetup(t);
   await open(); await page.getByRole('heading', { name: 'People directory' }).waitFor();
