@@ -4,6 +4,8 @@ import { InteractionStatus } from '@azure/msal-browser';
 import { AuthProvider, useAuth } from '@/components/AuthContext';
 import { AuthApiSync } from '@/components/AuthApiSync';
 import SignInPage from '@/app/sign-in/page';
+import PeoplePage from '@/app/people/page';
+import SlackSettingsPage from '@/app/settings/slack/page';
 import DeliverablesPage from '@/app/deliverables/page';
 import SlidesPage from '@/app/slides/page';
 import AttendancePage from '@/app/attendance/page';
@@ -25,7 +27,8 @@ function Pages() {
   const path = usePathname() ?? '/deliverables';
   const pages: Record<string, typeof DeliverablesPage> = { '/slides': SlidesPage, '/attendance': AttendancePage,
     '/workstream': WorkstreamPage, '/when2meet': When2MeetPage, '/pm': PMDashboard, '/lc': LCDashboard,
-    '/partner': PartnerDashboard, '/consultant': ConsultantDashboard, '/sign-in': SignInPage };
+    '/partner': PartnerDashboard, '/consultant': ConsultantDashboard, '/sign-in': SignInPage,
+    '/people': PeoplePage, '/settings/slack': SlackSettingsPage };
   const route = path.split('?')[0].replace(/\/+$/, '');
   const Page = pages[route] ?? DeliverablesPage;
   return <Page key={route} />;

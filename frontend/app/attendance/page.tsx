@@ -687,7 +687,8 @@ export default function AttendancePage() {
 
       const response = await attendanceAPI.checkIn(attendanceEvent.id, {
         method: 'GEOFENCE',
-        geofenceVerified: true,
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
       });
       const attendance = response.data?.attendance;
       setEvents((current) =>

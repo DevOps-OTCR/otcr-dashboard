@@ -486,45 +486,41 @@ export class When2MeetService {
       },
     });
 
-    const memberUsers = (projectWithPm?.members ?? []).map((m) => m.user);
-    const rosterIds = new Set(memberUsers.map((u) => u.id));
-    if (projectWithPm?.pm && !rosterIds.has(projectWithPm.pm.id)) {
-      memberUsers.push(projectWithPm.pm);
-    }
+    const roster = new Map((projectWithPm?.members ?? []).map((m) => [m.user.id, m.user]));
+    if (projectWithPm?.pm) roster.set(projectWithPm.pm.id, projectWithPm.pm);
+    const memberUsers = [...roster.values()];
 
-    /** Prefer roster spelling of first/last for members; fallback to persisted row.user. */
+    /** Use the current roster's display name for every availability entry. */
     const namesByUserId = new Map(
       memberUsers.map((u) => [u.id, formatFirstNameLastName(u)] as const),
     );
 
-    const slotToNames = new Map<number, string[]>();
-    const mySlots: number[] = [];
+    const slotToUserIds = new Map<number, Set<string>>();
+    const mySlotSet = new Set<number>();
 
     for (const row of poll.availabilities) {
-      if (row.slotIndex < 0 || row.slotIndex > maxSlot) {
+      if (!Number.isInteger(row.slotIndex) || row.slotIndex < 0 || row.slotIndex > maxSlot) {
         continue;
       }
-      const name =
-        namesByUserId.get(row.userId) ?? formatFirstNameLastName(row.user);
-      const list = slotToNames.get(row.slotIndex) ?? [];
-      list.push(name);
-      slotToNames.set(row.slotIndex, list);
       if (row.userId === user.id) {
-        mySlots.push(row.slotIndex);
+        mySlotSet.add(row.slotIndex);
       }
+      // Only current team members (including the PM) contribute to the group grid.
+      if (!roster.has(row.userId)) continue;
+      const ids = slotToUserIds.get(row.slotIndex) ?? new Set<string>();
+      ids.add(row.userId);
+      slotToUserIds.set(row.slotIndex, ids);
     }
 
-    for (const [slot, list] of slotToNames) {
-      list.sort((a, b) => a.localeCompare(b));
-      slotToNames.set(slot, list);
-    }
-
-    mySlots.sort((a, b) => a - b);
+    const mySlots = [...mySlotSet].sort((a, b) => a - b);
 
     const teamSize = memberUsers.length;
-    const slots: Array<{ slotIndex: number; names: string[] }> = [];
-    for (const [slotIndex, names] of [...slotToNames.entries()].sort((a, b) => a[0] - b[0])) {
-      slots.push({ slotIndex, names });
+    const slots: Array<{ slotIndex: number; userIds: string[]; names: string[] }> = [];
+    for (const [slotIndex, ids] of [...slotToUserIds.entries()].sort((a, b) => a[0] - b[0])) {
+      const userIds = [...ids].sort((a, b) =>
+        namesByUserId.get(a)!.localeCompare(namesByUserId.get(b)!) || a.localeCompare(b));
+      // Keep names for older clients; IDs distinguish consultants with identical names.
+      slots.push({ slotIndex, userIds, names: userIds.map(id => namesByUserId.get(id)!) });
     }
 
     return {

@@ -149,7 +149,7 @@ export default function AlumniDatabasePage() {
               Alumni Database
             </CardTitle>
             <CardDescription>
-              Search by name, employer, or title, and click a column header to sort.
+              Search by name, class year, employer, or title, and click a column header to sort.
             </CardDescription>
             {dataset && (
               <p className="text-xs text-[var(--foreground)]/55 pt-1">
@@ -181,8 +181,8 @@ export default function AlumniDatabasePage() {
                     onKeyDown={(e) => {
                       if (e.key === 'Escape') setSearch('');
                     }}
-                    placeholder="Search by name, employer, or title…"
-                    aria-label="Search alumni by name, employer, or title"
+                    placeholder="Search by name, class year, employer, or title…"
+                    aria-label="Search alumni by name, class year, employer, or title"
                     className={cn(
                       'w-full rounded-xl border border-[var(--border)] bg-[var(--background)] py-2.5 pl-9 pr-10 text-sm outline-none ring-2 ring-transparent transition-shadow',
                       'focus:ring-[var(--primary)]/25 focus:border-[var(--primary)]/40',

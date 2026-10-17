@@ -41,6 +41,7 @@ export class DeliverablesController {
       deadline: string;
       templateKind?: string;
       assignProjectMembers?: boolean;
+      assigneeIds?: string[];
     },
     @GetUser() user: any,
   ) {
@@ -143,6 +144,22 @@ export class DeliverablesController {
     }
 
     return this.deliverablesService.updateDeadline(id, body.deadline);
+  }
+
+  @Patch(':id/assignments')
+  @Roles('ADMIN', 'PM', 'LC')
+  async setAssignments(
+    @Param('id') id: string,
+    @Body() body: { assigneeIds: string[] },
+    @GetUser() user: { id: string; role: string },
+  ) {
+    const deliverable = await this.deliverablesService.findOne(id);
+    if (!deliverable) throw new NotFoundException('Deliverable not found');
+    const project = await this.projectsService.findOne(deliverable.projectId);
+    if (!['ADMIN', 'LC'].includes(user.role) && !(user.role === 'PM' && project?.pmId === user.id)) {
+      throw new ForbiddenException('Only PM, LC, or Admin can manage assignments');
+    }
+    return this.deliverablesService.setAssignments(id, deliverable.projectId, body?.assigneeIds);
   }
 
   @Patch(':id/assignment')

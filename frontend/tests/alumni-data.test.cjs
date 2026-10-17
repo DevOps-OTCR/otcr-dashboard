@@ -38,6 +38,18 @@ test('search is case-insensitive across name, employer, and title', () => {
   assert.deepEqual(names(filterAlumni(rows, '  mckinsey ')), ['Dana Lee']);
 });
 
+test('search matches class year, including "Class of" values (#79)', () => {
+  const classOf = row({ name: 'Fay Wu', graduationyear: 'Class of 2017', currentemployer: 'Deloitte' });
+  const plain = row({ name: 'Gus Hale', graduationyear: '2017' });
+  const noYear = row({ name: 'Hana Ito', currentemployer: 'Accenture' });
+  const list = [...rows, classOf, plain, noYear];
+  assert.deepEqual(names(filterAlumni(list, '2017')), ['Fay Wu', 'Gus Hale']);
+  assert.deepEqual(names(filterAlumni(list, ' class of 2017 ')), ['Fay Wu']);
+  assert.deepEqual(names(filterAlumni(list, '2019')), ['alex Kim']);
+  assert.deepEqual(filterAlumni(list, '2030'), []);
+  assert.deepEqual(names(filterAlumni(list, 'accenture')), ['Hana Ito']);
+});
+
 test('a match in any field includes the record', () => {
   const extra = row({ name: 'Bain Fan', currentemployer: 'Deloitte' });
   assert.deepEqual(names(filterAlumni([...rows, extra], 'bain')), ['Bea Cruz', 'Bain Fan']);
