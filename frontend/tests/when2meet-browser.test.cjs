@@ -47,6 +47,21 @@ async function setup(t, members, slots, width = 1440, options = {}) {
 const member = (id, displayName) => ({ id, displayName, email: `${id}@example.test` });
 const alex = member('alex', 'Alex Lee'), otherAlex = member('other-alex', 'Alex Lee'), casey = member('casey', 'Casey Morgan');
 
+test('slot details and accessible labels include quarter-hour times when axis labels are blank', async t => {
+  const grid = { ...responseFor('/when2meet/polls/poll-1', 'PM').grid,
+    numCols: 2, numRows: 8, totalSlots: 16, slotStartMinute: 720, slotEndMinute: 840,
+    gridFirstDate: '2026-10-11', gridLastDate: '2026-10-12', columnLabels: ['Sun, 10/11', 'Mon, 10/12'],
+    rowStartLabels: ['12:00 PM', '', '', '', '1:00 PM', '', '', ''] };
+  const { page, popup, hover } = await setup(t, [alex], [], 1440, { grid });
+  for (const [slot, label] of [[0, 'Sun, 10/11, 12:00 PM'], [1, 'Sun, 10/11, 12:15 PM'],
+    [2, 'Sun, 10/11, 12:30 PM'], [3, 'Sun, 10/11, 12:45 PM'], [6, 'Sun, 10/11, 1:30 PM'],
+    [10, 'Mon, 10/12, 12:30 PM']]) {
+    await hover(slot);
+    assert.equal(await popup.locator('.w2m-slot-label').textContent(), label);
+    assert.equal(await page.locator(`[data-group-slot="${slot}"]`).getAttribute('aria-label'), `${label}: 0 of 1 available`);
+  }
+});
+
 test('touch selection in a full-day poll keeps details on screen and can be closed', async t => {
   const grid = { ...responseFor('/when2meet/polls/poll-1', 'PM').grid,
     numRows: 32, totalSlots: 32, slotEndMinute: 1020,
