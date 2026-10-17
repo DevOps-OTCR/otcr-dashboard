@@ -70,9 +70,9 @@ export function PeopleDirectory({ people, busy, onChangeRole }: {
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead><tr>{columns.map(column => <th key={column.key} scope="col" className="px-3 py-2">{column.label}</th>)}<th scope="col" className="px-3 py-2">Change role</th></tr></thead>
-          <tbody>{visible.map(person => <tr key={person.id} className="border-t border-[var(--border)] align-top">
+          <tbody>{visible.map(person => <tr key={person.id} className="border-t border-[var(--border)] align-middle">
             {columns.map(column => <td key={column.key} className="px-3 py-3">{column.render(person)}</td>)}
-            <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
+            <td className="px-3 py-3"><div className="flex min-w-max items-center gap-2">
               <select aria-label={`Role for ${person.email}`} className={fieldClass} disabled={busy}
                 value={roles[person.id] ?? person.role} onChange={e => setRoles(current => ({ ...current, [person.id]: e.target.value as AppRole }))}>
                 {CMS_ROLES.map(item => <option key={item} value={item}>{ROLE_FULL_LABELS[item]}</option>)}

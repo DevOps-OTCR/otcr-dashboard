@@ -26,10 +26,10 @@ export default function PeoplePage() {
 
   const load = useCallback(async (isCurrent: () => boolean = () => true) => {
     if (!isCurrent() || !isLoggedIn || !email) return;
+    setBusy(true);
     try {
       const token = await getToken();
       if (!isCurrent()) return;
-      setLoading(true);
       setError(null);
       setAuthToken(token || email);
       // Fresh server role: never use the development role override to authorize People.
@@ -50,7 +50,7 @@ export default function PeoplePage() {
       setRequests([]);
       setError(apiError(error, 'Failed to load People'));
     } finally {
-      if (isCurrent()) setLoading(false);
+      if (isCurrent()) { setLoading(false); setBusy(false); }
     }
   }, [isLoggedIn, email, getToken]);
 
@@ -60,7 +60,11 @@ export default function PeoplePage() {
   useEffect(() => {
     let current = true;
     // Defer until after mount so Strict Mode cleanup can cancel the first load.
-    void Promise.resolve().then(() => load(() => current));
+    void Promise.resolve().then(() => {
+      if (!current) return;
+      setLoading(true);
+      return load(() => current);
+    });
     return () => { current = false; };
   }, [load]);
 
@@ -68,6 +72,9 @@ export default function PeoplePage() {
     if (!window.confirm(`Change ${personName(person)} (${person.email}) from ${ROLE_FULL_LABELS[person.role]} to ${ROLE_FULL_LABELS[nextRole]}?`)) return;
     setBusy(true); setError(null); setMessage(null);
     try {
+      const token = await getToken();
+      if (!token) throw new Error('Unable to refresh your session. Sign in again.');
+      setAuthToken(token);
       await peopleAPI.changeRole(person.id, nextRole);
       setPeople(current => current.map(item => item.id === person.id ? { ...item, role: nextRole } : item));
       clearRoleCache(person.email);
@@ -84,6 +91,9 @@ export default function PeoplePage() {
     if (!window.confirm(confirmation)) return;
     setBusy(true); setError(null); setMessage(null);
     try {
+      const token = await getToken();
+      if (!token) throw new Error('Unable to refresh your session. Sign in again.');
+      setAuthToken(token);
       if (action === 'approve') await onboardingAPI.approveRequest(request.id, notes, grantedRole);
       else await onboardingAPI.rejectRequest(request.id, notes);
       setMessage(action === 'approve' ? 'Onboarding request approved.' : 'Onboarding request rejected.');
