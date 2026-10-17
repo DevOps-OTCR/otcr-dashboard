@@ -1008,6 +1008,10 @@ export class AttendanceService {
         event.longitude,
       );
 
+      if (!Number.isFinite(distance)) {
+        throw new ForbiddenException('Unable to verify the check-in distance');
+      }
+
       if (distance > event.geofenceRadiusMeters) {
         throw new ForbiddenException(
           `You are ${Math.round(distance)} meters away. You must be within ${event.geofenceRadiusMeters} meters to check in.`,

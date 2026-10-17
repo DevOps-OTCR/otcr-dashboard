@@ -69,6 +69,18 @@ describe('AttendanceService.checkIn geofence (#29)', () => {
     expect(upsert).not.toHaveBeenCalled();
   });
 
+  it('rejects nearly antipodal coordinates without recording attendance', async () => {
+    const { service, upsert } = setup();
+    await expect(
+      service.checkIn('event-1', consultant, {
+        method: 'GEOFENCE',
+        latitude: -40.10200098999999,
+        longitude: 91.7728,
+      }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['strings', { latitude: '40.1', longitude: '-88.2' }],
     ['NaN', { latitude: NaN, longitude: EVENT_LON }],

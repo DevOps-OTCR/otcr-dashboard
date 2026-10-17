@@ -12,7 +12,9 @@ export function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lo
       Math.cos(toRadians(lat2)) *
       Math.sin(dLon / 2) *
       Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  // Floating-point rounding can put nearly antipodal coordinates outside [0, 1].
+  const clampedA = Math.max(0, Math.min(1, a));
+  const c = 2 * Math.atan2(Math.sqrt(clampedA), Math.sqrt(1 - clampedA));
   return earthRadiusMeters * c;
 }
 
