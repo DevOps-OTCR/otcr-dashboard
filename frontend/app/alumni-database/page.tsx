@@ -8,7 +8,7 @@ import { AppNavbar } from '@/components/AppNavbar';
 import { useAuth } from '@/components/AuthContext';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { PageLoading } from '@/components/PageLoading';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import {
   alumniField,
   alumniMajors,
@@ -170,16 +170,12 @@ function AlumniTable() {
               <GraduationCap className="w-6 h-6 text-[var(--primary)]" />
               Alumni Database
             </CardTitle>
-            <CardDescription>
-              Search by name, class year, employer, or title, and click a column header to sort.
-            </CardDescription>
             {dataset && (
               <p className="text-xs text-[var(--foreground)]/55 pt-1">
                 Last imported {new Date(dataset.generatedAt).toLocaleString(undefined, {
                   dateStyle: 'medium',
                   timeStyle: 'short',
-                })}{' '}
-                · {dataset.rows.length} entries · sheet &ldquo;{dataset.sheet}&rdquo;
+                })}
               </p>
             )}
           </CardHeader>
@@ -216,7 +212,7 @@ function AlumniTable() {
                     onKeyDown={(e) => {
                       if (e.key === 'Escape') clearSearch();
                     }}
-                    placeholder="Search by name, class year, employer, or title…"
+                    placeholder="Search by name, class year, employer, or title"
                     aria-label="Search alumni by name, class year, employer, or title"
                     className={cn(
                       'w-full rounded-xl border border-[var(--border)] bg-[var(--background)] py-2.5 pl-9 pr-10 text-sm outline-none ring-2 ring-transparent transition-shadow',
@@ -239,38 +235,14 @@ function AlumniTable() {
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <p className="text-sm text-[var(--foreground)]/65">
                     {totalCount === 0 ? (
-                      <>
-                        No matching records
-                        {dataset.rows.length > 0 ? ` (${dataset.rows.length} total in dataset)` : ''}.
-                        {search && (
-                          <>
-                            {' '}
-                            <button
-                              type="button"
-                              onClick={clearSearch}
-                              className="font-medium text-[var(--primary)] hover:underline"
-                            >
-                              Clear search
-                            </button>
-                          </>
-                        )}
-                      </>
+                      'No matching records.'
                     ) : (
                       <>
                         Showing{' '}
                         <strong className="text-[var(--foreground)]">
                           {rangeStart}–{rangeEnd}
                         </strong>{' '}
-                        of <strong className="text-[var(--foreground)]">{totalCount}</strong>
-                        {totalCount !== dataset.rows.length ? (
-                          <>
-                            {' '}
-                            filtered (<strong className="text-[var(--foreground)]">{dataset.rows.length}</strong> total)
-                          </>
-                        ) : (
-                          ' records'
-                        )}
-                        .
+                        of <strong className="text-[var(--foreground)]">{totalCount}</strong> records.
                       </>
                     )}
                   </p>
