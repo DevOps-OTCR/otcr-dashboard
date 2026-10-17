@@ -418,9 +418,9 @@ export default function SlidesPage() {
                     title: string,
                     deliverables: DeliverableItem[],
                   ) => (
-                    <div className="rounded-xl border border-[var(--border)] bg-[var(--secondary)]/70 p-4 space-y-3">
+                    <div className="min-w-0 break-words rounded-xl border border-[var(--border)] bg-[var(--secondary)]/70 p-4 space-y-3">
                       <div className="flex items-center justify-between gap-2">
-                        <h3 className="font-semibold">{title}</h3>
+                        <h3 className="min-w-0 flex-1 font-semibold">{title}</h3>
                         <Badge variant="info" size="sm">
                           {deliverables.length}
                         </Badge>
@@ -453,7 +453,7 @@ export default function SlidesPage() {
                               }`}
                             >
                               <div className="flex items-center justify-between gap-2 flex-wrap">
-                                <div>
+                                <div className="min-w-0 max-w-full">
                                   <p className="font-semibold">{deliverable.title}</p>
                                   <p className="text-xs text-[var(--foreground)]/70">
                                     Due {new Date(deliverable.deadline).toLocaleString()}

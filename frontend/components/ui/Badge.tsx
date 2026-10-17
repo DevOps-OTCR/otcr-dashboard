@@ -26,7 +26,7 @@ export function Badge({ children, variant = 'default', size = 'md', className }:
   return (
     <span
       className={cn(
-        'inline-flex items-center justify-center font-semibold rounded-full',
+        'inline-flex shrink-0 items-center justify-center whitespace-nowrap font-semibold rounded-full',
         variants[variant],
         sizes[size],
         className
