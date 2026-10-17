@@ -225,22 +225,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const revision = cmsSessionRevision();
     const isCurrent = () => !signedOut.current && !readCmsSession()?.signedOut &&
       generation === authGeneration.current && revision === cmsSessionRevision();
-    if (!isCurrent()) return null;
+    // Reject cancelled work so callers cannot turn a null token into an email credential.
+    const cancelledRequest = () => new DOMException('Authentication session changed', 'AbortError');
+    if (!isCurrent()) throw cancelledRequest();
     await withAuthTimeout(instance.initialize());
-    if (!isCurrent()) return null;
+    if (!isCurrent()) throw cancelledRequest();
     const account = instance.getActiveAccount();
     if (!account) return null;
     const preferredAccount = readCmsSession()?.accountId;
-    if (preferredAccount && preferredAccount !== account.homeAccountId) return null;
+    if (preferredAccount && preferredAccount !== account.homeAccountId) throw cancelledRequest();
     try {
       const result = await withAuthTimeout(instance.acquireTokenSilent({
         account, scopes: ['User.Read'], authority: process.env.NEXT_PUBLIC_MSAL_AUTHORITY,
       }));
       if (isCurrent()) return result.accessToken;
       if (readCmsSession()?.signedOut) await instance.clearCache();
-      return null;
+      throw cancelledRequest();
     } catch (error) {
-      if (!isCurrent()) return null;
+      if (!isCurrent()) throw cancelledRequest();
       if (error instanceof InteractionRequiredAuthError) requireSignIn();
       // Let callers stop their requests instead of falling back to stale identity.
       throw error;

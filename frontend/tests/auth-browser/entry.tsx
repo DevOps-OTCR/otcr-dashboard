@@ -83,7 +83,7 @@ const testApi = {
         resolve(result);
       };
     });
-    sessionToken = testApi.getToken();
+    sessionToken = testApi.getToken().catch(error => error.name);
   },
   tokenIsPending: () => Boolean(releaseToken),
   finishToken: async () => { await releaseToken?.(); const result = await sessionToken; instance.acquireTokenSilent = actualAcquire; return result; },

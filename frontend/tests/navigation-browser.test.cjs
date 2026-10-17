@@ -383,7 +383,7 @@ test('pending authentication and profile sync cannot restore a signed-out sessio
     window.navigationTest.instance.acquireTokenSilent = () => new Promise(resolve => {
       (window.finishOldTokenRequests ??= []).push(resolve);
     });
-    window.oldToken = window.navigationTest.getToken();
+    window.oldToken = window.navigationTest.getToken().catch(error => error.name);
     window.navigationTest.instance.getActiveAccount().name = 'Updated profile';
     window.navigationTest.tokenProgress(true);
   });
@@ -411,10 +411,33 @@ test('pending authentication and profile sync cannot restore a signed-out sessio
     await new Promise(requestAnimationFrame);
     return token;
   });
-  assert.equal(token, null);
+  assert.equal(token, 'AbortError');
   assert.equal(await page.getByRole('button', { name: 'Sign in with NetID', exact: true }).isVisible(), true);
   assert.equal(await page.locator('nav').count(), 0);
   assert.equal(await page.evaluate(() => window.navigationTest.authHeader()), undefined);
   assert.equal(state.calls.filter(path => path === '/notifications/my').length, notificationRequests);
   assert.equal(await page.evaluate(() => sessionStorage.getItem('otcr_profile_sync_fingerprint')), null);
+});
+
+test('a Consultant page token request finishing after sign-out cannot send API requests', async t => {
+  const { page, state, open } = await setup(t, '/deliverables');
+  await open();
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  await page.evaluate(() => {
+    window.navigationTest.instance.acquireTokenSilent = () => new Promise(resolve => {
+      (window.finishPageTokens ??= []).push(resolve);
+    });
+    window.navigationTest.navigate('/consultant');
+  });
+  await page.waitForFunction(() => window.finishPageTokens?.length > 0);
+  await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in with NetID', exact: true }).waitFor();
+  const requests = state.calls.length;
+  await page.evaluate(async () => {
+    window.finishPageTokens.forEach(resolve => resolve({ accessToken: 'stale-token' }));
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+  });
+  assert.equal(await page.evaluate(() => window.navigationTest.authHeader()), undefined);
+  assert.equal(state.calls.length, requests);
 });

@@ -82,7 +82,7 @@ test('a late token response in another tab cannot restore the signed-out session
   await second.waitForFunction(() => window.authTest.tokenIsPending());
   await first.getByRole('button', { name: 'Sign Out' }).click();
   await second.getByRole('heading', { name: 'CMS sign-in' }).waitFor();
-  assert.equal(await second.evaluate(() => window.authTest.finishToken()), null);
+  assert.equal(await second.evaluate(() => window.authTest.finishToken()), 'AbortError');
   const third = await page('/deliverables');
   await third.getByRole('heading', { name: 'CMS sign-in' }).waitFor();
   assert.deepEqual(await third.evaluate(() => window.authTest.accounts()), []);
