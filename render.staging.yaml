@@ -7,6 +7,12 @@ services:
     region: oregon
     plan: free
     rootDir: backend
+    buildFilter:
+      paths:
+        - backend/**
+        - frontend/**
+        - .github/workflows/**
+        - render.staging.yaml
     autoDeployTrigger: checksPass
     buildCommand: npm ci --include=dev && npm run prisma:generate && npm run build
     startCommand: npm run start:prod
@@ -35,12 +41,19 @@ services:
     runtime: static
     branch: staging
     rootDir: frontend
+    buildFilter:
+      paths:
+        - backend/**
+        - frontend/**
+        - .github/workflows/**
+        - render.staging.yaml
     autoDeployTrigger: checksPass
     buildCommand: >-
       npm ci --include=dev &&
       NEXT_PUBLIC_APP_URL="$RENDER_EXTERNAL_URL"
       NEXT_PUBLIC_MSAL_REDIRECT_URI="$RENDER_EXTERNAL_URL/auth/callback"
-      npm run build
+      npm run build &&
+      node -e "require('node:fs').writeFileSync('out/__build.json', JSON.stringify({gitCommit:process.env.RENDER_GIT_COMMIT}))"
     staticPublishPath: out
     envVars:
       - key: NODE_VERSION
