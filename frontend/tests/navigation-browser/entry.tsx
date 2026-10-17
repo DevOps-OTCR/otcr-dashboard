@@ -15,10 +15,12 @@ import PMDashboard from '@/app/pm/page';
 import LCDashboard from '@/app/lc/page';
 import PartnerDashboard from '@/app/partner/page';
 import ConsultantDashboard from '@/app/consultant/page';
+import AlumniDatabasePage from '@/app/alumni-database/page';
+import FormsPage from '@/app/forms/page';
 import { DashboardShell } from '@/components/DashboardShell';
 import { ThemeProvider, themeInitScript } from '@/components/ThemeProvider';
 import { cachedRequest, readResource } from '@/lib/resource-cache';
-import { api } from '@/lib/api';
+import { alumniAPI, api } from '@/lib/api';
 import { readNavigationSnapshot } from '@/lib/navigation-cache';
 import { usePathname } from 'next/navigation';
 
@@ -28,6 +30,7 @@ function Pages() {
   const pages: Record<string, typeof DeliverablesPage> = { '/slides': SlidesPage, '/attendance': AttendancePage,
     '/workstream': WorkstreamPage, '/when2meet': When2MeetPage, '/pm': PMDashboard, '/lc': LCDashboard,
     '/partner': PartnerDashboard, '/consultant': ConsultantDashboard, '/sign-in': SignInPage,
+    '/alumni-database': AlumniDatabasePage, '/forms': FormsPage,
     '/people': PeoplePage, '/settings/slack': SlackSettingsPage };
   const route = path.split('?')[0].replace(/\/+$/, '');
   const Page = pages[route] ?? DeliverablesPage;
@@ -79,6 +82,7 @@ function Fixture() {
       switchAccount: setEmail,
       navigate: require('./routing.cjs').navigate,
       request: () => cachedRequest('/slow-test', () => api.get('/slow-test')),
+      requestAlumni: () => alumniAPI.getDataset(),
       instance,
       authHeader: () => api.defaults.headers.common.Authorization,
     });

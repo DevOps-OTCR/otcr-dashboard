@@ -1,9 +1,4 @@
 {
-  "app/alumni-database/page.tsx": {
-    "react-hooks/set-state-in-effect": {
-      "count": 2
-    }
-  },
   "app/attendance/page.tsx": {
     "react-hooks/purity": {
       "count": 1

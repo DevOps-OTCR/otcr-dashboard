@@ -13,6 +13,11 @@ import './when2meet.css';
 import type { When2MeetGridSpec, When2MeetPollDetail } from '@/lib/api';
 import { pollAvailability } from './availability';
 
+function formatSlotTime(minute: number): string {
+  const hour = Math.floor(minute / 60);
+  return `${hour % 12 || 12}:${String(minute % 60).padStart(2, '0')} ${hour >= 12 ? 'PM' : 'AM'}`;
+}
+
 function rowBorderModifiers(
   rowIndex: number,
   slotStartMinute: number,
@@ -219,8 +224,10 @@ export function When2MeetBoard({
   );
 
   const hovered = availability.forSlot(hoveredGroupSlot ?? -1);
+  const slotTimeLabels = Array.from({ length: numRows }, (_, row) =>
+    formatSlotTime(slotStartMinute + row * 15));
   const hoveredLabel = hoveredGroupSlot == null ? '' :
-    `${columnLabels[Math.floor(hoveredGroupSlot / numRows)]}, ${rowStartLabels[hoveredGroupSlot % numRows]}`;
+    `${columnLabels[Math.floor(hoveredGroupSlot / numRows)]}, ${slotTimeLabels[hoveredGroupSlot % numRows]}`;
   const repeatedNames = new Set(availability.members.filter((member, index, members) =>
     members.some((other, otherIndex) => otherIndex !== index && other.displayName === member.displayName))
     .map(member => member.displayName));
@@ -254,7 +261,7 @@ export function When2MeetBoard({
         <button
           key={`g-${slotIdx}`}
           type="button"
-          aria-label={`${columnLabels[col]}, ${rowStartLabels[row]}: ${countHere} of ${teamSize} available`}
+          aria-label={`${columnLabels[col]}, ${slotTimeLabels[row]}: ${countHere} of ${teamSize} available`}
           aria-describedby={hoveredGroupSlot === slotIdx ? popupId : undefined}
           data-group-slot={slotIdx}
           className={`w2m-time-block${rowBd}`}
@@ -305,7 +312,6 @@ export function When2MeetBoard({
               </div>
               {hovered.unrecorded.length > 0 ? <section className="w2m-unrecorded" aria-label="No availability recorded">
                 <h5>No availability recorded ({hovered.unrecorded.length})</h5>
-                <p className="w2m-empty">No slots saved. They may not have responded or may be unavailable for the entire poll.</p>
                 <ul className="w2m-avail-list">
                   {hovered.unrecorded.map(member => <li key={member.id}>
                     {member.displayName}{repeatedNames.has(member.displayName) ? <small>{member.email}</small> : null}

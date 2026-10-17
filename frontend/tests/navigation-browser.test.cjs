@@ -32,16 +32,18 @@ async function setup(t, initialPath, role = 'PM') {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   t.after(() => assert.deepEqual(errors, []));
-  const state = { calls: [], gate: null, failSprints: false, slowGate: null, calendarLoads: 0, eventTitle: 'Team weekly check-in' };
+  const state = { calls: [], gate: null, failSprints: false, slowGate: null, calendarLoads: 0, eventTitle: 'Team weekly check-in',
+    alumniGate: null, failAlumni: false };
   await page.route('**/api/**', async route => {
     const pathname = new URL(route.request().url()).pathname.slice(4);
     state.calls.push(pathname);
     if (state.slowGate && pathname === '/slow-test') await state.slowGate;
     if (state.gate && pathname !== '/auth/role' && pathname !== '/notifications/my') await state.gate;
+    if (state.alumniGate && pathname === '/alumni') await state.alumniGate;
     if (pathname === '/test-write') state.eventTitle = 'Updated team check-in';
     const payload = responseFor(pathname, role);
     if (pathname === '/attendance/events') payload.events = payload.events.map(event => ({ ...event, title: state.eventTitle }));
-    const failed = state.failSprints && pathname.endsWith('/sprints');
+    const failed = (state.failSprints && pathname.endsWith('/sprints')) || (state.failAlumni && pathname === '/alumni');
     await route.fulfill({ status: failed ? 503 : 200, contentType: 'application/json',
       body: JSON.stringify(failed ? { message: 'Temporary outage' } : payload) });
   });
@@ -50,6 +52,94 @@ async function setup(t, initialPath, role = 'PM') {
     open: () => page.goto('http://navigation.test' + initialPath),
   };
 }
+
+test('Alumni restores table state, reuses fresh data, and retains rows during failed refreshes', async t => {
+  const { page, state, nav, open } = await setup(t, '/alumni-database/');
+  await open();
+  await page.getByRole('searchbox').fill('Example');
+  await page.getByRole('button', { name: 'Name', exact: true }).click();
+  await page.getByRole('button', { name: 'Name', exact: true }).click();
+  await page.getByRole('button', { name: 'Next page', exact: true }).click();
+  const rows = await page.locator('tbody').innerText();
+  const assertTable = async () => {
+    assert.equal(await page.getByRole('searchbox').inputValue(), 'Example');
+    assert.equal(await page.getByRole('columnheader', { name: 'Name', exact: true }).getAttribute('aria-sort'), 'descending');
+    assert.equal(await page.getByText('Page 2 of 3', { exact: true }).isVisible(), true);
+    assert.equal(await page.locator('tbody').innerText(), rows);
+  };
+  await nav('Forms').click();
+  await page.getByText('Dashboard Feedback Form', { exact: true }).waitFor();
+  await nav('Alumni Database').click();
+  await page.getByRole('button', { name: 'Refresh alumni data', exact: true }).waitFor();
+  await assertTable();
+  assert.equal(state.calls.filter(path => path === '/alumni').length, 1);
+
+  await nav('Forms').click();
+  await page.clock.install({ time: new Date() });
+  await page.clock.fastForward(121000);
+  let release;
+  state.alumniGate = new Promise(resolve => { release = resolve; });
+  const refresh = page.waitForRequest('**/api/alumni');
+  await nav('Alumni Database').click();
+  await refresh;
+  await assertTable();
+  state.failAlumni = true;
+  release();
+  await page.getByRole('alert').waitFor();
+  await assertTable();
+  assert.equal(state.calls.filter(path => path === '/alumni').length, 2);
+
+  state.failAlumni = false;
+  state.alumniGate = new Promise(resolve => { release = resolve; });
+  const retry = page.waitForRequest('**/api/alumni');
+  await page.getByRole('button', { name: 'Refresh alumni data', exact: true }).click();
+  await retry;
+  await page.evaluate(() => {
+    window.alumniRequests = Promise.all([window.navigationTest.requestAlumni(), window.navigationTest.requestAlumni()]);
+  });
+  release();
+  await page.evaluate(() => window.alumniRequests.then(() => true));
+  await page.getByRole('button', { name: 'Refresh alumni data', exact: true }).waitFor();
+  await assertTable();
+  assert.equal(await page.getByRole('alert').count(), 0);
+  assert.equal(state.calls.filter(path => path === '/alumni').length, 3);
+});
+
+test('Alumni does not cache failed initial requests and can retry', async t => {
+  const { page, state, open } = await setup(t, '/alumni-database');
+  state.failAlumni = true;
+  await open();
+  await page.getByRole('alert').waitFor();
+  assert.equal(await page.evaluate(() => window.navigationTest.readResource('/alumni')), undefined);
+  state.failAlumni = false;
+  await page.getByRole('button', { name: 'Refresh alumni data', exact: true }).click();
+  await page.getByRole('searchbox').waitFor();
+  assert.equal(state.calls.filter(path => path === '/alumni').length, 2);
+});
+
+test('Alumni clears cached data and table state on account changes and sign-out', async t => {
+  const { page, state, open } = await setup(t, '/alumni-database');
+  await open();
+  await page.getByRole('searchbox').fill('Example');
+  const key = JSON.stringify(['alumni-database', 'pm@example.test', null]);
+  let release;
+  state.alumniGate = new Promise(resolve => { release = resolve; });
+  const refresh = page.waitForRequest('**/api/alumni');
+  await page.evaluate(() => window.navigationTest.switchAccount('other@example.test'));
+  await refresh;
+  assert.equal(await page.locator('tbody').count(), 0);
+  assert.equal(await page.evaluate(key => window.navigationTest.readSnapshot(key), key), undefined);
+  assert.equal(await page.evaluate(() => window.navigationTest.readResource('/alumni')), undefined);
+  release();
+  await page.getByRole('searchbox').waitFor();
+  assert.equal(await page.getByRole('searchbox').inputValue(), '');
+  const activeKey = JSON.stringify(['alumni-database', 'other@example.test', null]);
+  await page.waitForFunction(key => Boolean(window.navigationTest.readSnapshot(key)), activeKey);
+  await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
+  await page.waitForURL('**/sign-in');
+  assert.equal(await page.evaluate(key => window.navigationTest.readSnapshot(key), activeKey), undefined);
+  assert.equal(await page.evaluate(() => window.navigationTest.readResource('/alumni')), undefined);
+});
 
 // Cover mobile, the two-column breakpoint, and the capped desktop card width.
 for (const width of [375, 768, 1440]) {

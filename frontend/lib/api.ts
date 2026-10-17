@@ -1,4 +1,5 @@
 import axios, { type AxiosRequestConfig } from 'axios';
+import type { AlumniDataset } from './alumni-data';
 import { clearNavigationSnapshots } from './navigation-cache';
 import { cachedRequest, clearResourceCache } from './resource-cache';
 
@@ -53,7 +54,8 @@ export const authAPI = {
 };
 
 export const alumniAPI = {
-  getDataset: () => api.get('/alumni'),
+  // Reuse data for two minutes; explicit refresh bypasses freshness but shares pending requests.
+  getDataset: (refresh = false) => cachedRequest('/alumni', () => api.get<AlumniDataset>('/alumni'), refresh ? 0 : 120000),
 };
 
 export const onboardingAPI = {

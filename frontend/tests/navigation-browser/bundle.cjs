@@ -30,6 +30,7 @@ exports.buildBundle = async (options = {}) => {
   }
   fs.writeFileSync(path.join(output, 'empty.cjs'), 'module.exports = () => \'\';');
   fs.writeFileSync(path.join(output, 'fonts.cjs'), 'exports.Mulish = exports.Be_Vietnam_Pro = () => ({ className: \'test-font\' });');
+  fs.writeFileSync(path.join(output, 'local-font.cjs'), 'module.exports = () => ({ className: \'test-font\' });');
   await new Promise((resolve, reject) => webpack({
     mode: 'development', target: 'web', devtool: false,
     entry: options.entry ?? path.join(__dirname, 'entry.tsx'),
@@ -38,6 +39,7 @@ exports.buildBundle = async (options = {}) => {
       '@': root, 'next/navigation$': path.join(__dirname, 'routing.cjs'),
       'next/link$': path.join(output, 'link.cjs'), 'next/image$': path.join(output, 'image.cjs'),
       'next/font/google$': path.join(output, 'fonts.cjs'),
+      'next/font/local$': path.join(output, 'local-font.cjs'),
       ...(!options.realMsal ? { '@azure/msal-react$': path.join(__dirname, 'routing.cjs') } : {}),
     } },
     module: { rules: [{ test: /\.css$/, use: path.join(output, 'empty.cjs') }, { test: /\.tsx?$/, exclude: /node_modules/, use: path.join(output, 'loader.cjs') }] },
