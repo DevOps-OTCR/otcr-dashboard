@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckSquare, Square, Users, Link as LinkIcon } from 'lucide-react';
+import { AssigneeChecklist, projectAssignees } from '@/components/AssigneeChecklist';
 import { AppNavbar } from '@/components/AppNavbar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -163,7 +164,7 @@ export default function DeliverablesPage() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [busyDeliverableId, setBusyDeliverableId] = useState<string | null>(null);
   const [submitLinks, setSubmitLinks] = useState<Record<string, string>>({});
-  const [assignmentTargets, setAssignmentTargets] = useState<Record<string, string>>({});
+  const [assignmentTargets, setAssignmentTargets] = useState<Record<string, string[]>>({});
   const [deadlineInputs, setDeadlineInputs] = useState<Record<string, string>>({});
   const [subtaskEdits, setSubtaskEdits] = useState<
     Record<string, { title: string; dueDate: string; assigneeId: string; completed: boolean }>
@@ -205,19 +206,7 @@ export default function DeliverablesPage() {
         members?: Array<{ user?: TeamMemberOption | null }>;
       };
 
-      const nextMembers = new Map<string, TeamMemberOption>();
-
-      if (project.pm?.id) {
-        nextMembers.set(project.pm.id, project.pm);
-      }
-
-      (project.members ?? []).forEach((member) => {
-        if (member.user?.id) {
-          nextMembers.set(member.user.id, member.user);
-        }
-      });
-
-      setTeamMembers(Array.from(nextMembers.values()));
+      setTeamMembers(projectAssignees(project));
       setAssignmentTargets({});
     } catch {
       setTeamMembers([]);
@@ -420,34 +409,22 @@ export default function DeliverablesPage() {
   };
 
   const handleManagerAssignment = async (deliverable: DeliverableItem) => {
-    const assigneeId = assignmentTargets[deliverable.id];
-
-    if (!selectedProjectId || !assigneeId) return;
-
+    const assigneeIds = assignmentTargets[deliverable.id];
+    if (!selectedProjectId || !assigneeIds) return;
     setBusyDeliverableId(deliverable.id);
+    setLoadError(null);
     try {
-      const assigneeAlreadyAssigned = Boolean(
-        deliverable.assignees?.some((assignee) => assignee.id === assigneeId),
-      );
-
-      await deliverablesAPI.updateAssignment(
-        deliverable.id,
-        !assigneeAlreadyAssigned,
-        assigneeId,
-      );
-      await loadSprints(selectedProjectId);
-      setAssignmentTargets((current) => ({
-        ...current,
-        [deliverable.id]: '',
-      }));
-
-      const target = teamMembers.find((member) => member.id === assigneeId);
-      const targetLabel = target ? formatPerson(target) : 'Team member';
-      setFeedback(
-        assigneeAlreadyAssigned
-          ? `${targetLabel} unassigned`
-          : `${targetLabel} assigned`,
-      );
+      const response = await deliverablesAPI.setAssignments(deliverable.id, assigneeIds);
+      setSprints(current => current.map(sprint => ({ ...sprint,
+        deliverables: sprint.deliverables?.map(item => item.id === deliverable.id
+          ? { ...item, assignees: response.data } : item),
+      })));
+      setAssignmentTargets(current => {
+        const next = { ...current };
+        delete next[deliverable.id];
+        return next;
+      });
+      setFeedback('Assignees saved');
     } catch (error: any) {
       const message =
         error?.response?.data?.message ??
@@ -750,6 +727,22 @@ export default function DeliverablesPage() {
                               <p className="text-sm text-[var(--foreground)]">{formatAssignees(deliverable.assignees)}</p>
                             </div>
 
+                            {canManage && (
+                              <div className="space-y-2">
+                                <AssigneeChecklist
+                                  options={Array.from(new Map([...(deliverable.assignees ?? []), ...teamMembers].map(person => [person.id, person])).values())}
+                                  selected={assignmentTargets[deliverable.id] ?? (deliverable.assignees ?? []).map(person => person.id)}
+                                  onChange={ids => setAssignmentTargets(current => ({ ...current, [deliverable.id]: ids }))}
+                                  disabled={busyDeliverableId === deliverable.id}
+                                />
+                                <Button size="sm" variant="outline"
+                                  disabled={busyDeliverableId === deliverable.id || !assignmentTargets[deliverable.id]}
+                                  onClick={() => void handleManagerAssignment(deliverable)}>
+                                  Save assignees
+                                </Button>
+                              </div>
+                            )}
+
                             <div className="flex flex-wrap items-center gap-2">
                               {canManage && (
                                 <>
@@ -778,42 +771,7 @@ export default function DeliverablesPage() {
                                   </Button>
                                 </>
                               )}
-                              {canManage && teamMembers.length > 0 && (
-                                <>
-                                  <select
-                                    value={assignmentTargets[deliverable.id] ?? ''}
-                                    onChange={(e) =>
-                                      setAssignmentTargets((current) => ({
-                                        ...current,
-                                        [deliverable.id]: e.target.value,
-                                      }))
-                                    }
-                                    className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
-                                  >
-                                    <option value="">Assign to team member</option>
-                                    {teamMembers.map((member) => (
-                                      <option key={member.id} value={member.id}>
-                                        {formatPerson(member)}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={
-                                      busyDeliverableId === deliverable.id ||
-                                      !(assignmentTargets[deliverable.id] ?? '')
-                                    }
-                                    onClick={() => void handleManagerAssignment(deliverable)}
-                                  >
-                                    {deliverable.assignees?.some(
-                                      (assignee) => assignee.id === assignmentTargets[deliverable.id],
-                                    )
-                                      ? 'Remove Person'
-                                      : 'Assign Person'}
-                                  </Button>
-                                </>
-                              )}
+
                               <Button
                                 size="sm"
                                 variant={assignedToCurrentUser ? 'outline' : 'primary'}
