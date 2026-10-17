@@ -26,7 +26,6 @@ export function AssigneeChecklist({ options, selected, onChange, disabled = fals
 }) {
   return <fieldset disabled={disabled} className="min-w-0 rounded-lg border border-[var(--border)] p-3">
     <legend className="px-1 text-sm font-semibold">{label}</legend>
-    <p className="mb-2 text-xs text-[var(--foreground)]/65">Select team members, or leave all unchecked for unassigned.</p>
     <div className="max-h-48 space-y-2 overflow-y-auto">
       {options.map(person => <label key={person.id} className="flex items-start gap-2 break-words text-sm">
         <input type="checkbox" className="mt-1 shrink-0" checked={selected.includes(person.id)}

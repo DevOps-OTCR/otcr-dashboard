@@ -166,6 +166,99 @@ test('managers create drafts with separate multi-person assignment sets', async 
   assert.deepEqual(creations.map(item => [item.title, item.assigneeIds]), [['Shared work', ['u-1', 'u-2']], ['Unassigned work', []]]);
 });
 
+test('draft assignments survive title edits, inserts, moves, and deletions', async t => {
+  const { page, open } = await setup(t, '/workstream');
+  await page.route('**/api/projects/team-1?*', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+    pm: { id: 'u-1', firstName: 'Test PM' }, members: [{ user: { id: 'u-2', firstName: 'Casey' } }],
+  }) }));
+  const creations = [];
+  await page.route('**/api/deliverables', route => {
+    creations.push(route.request().postDataJSON());
+    return route.fulfill({ contentType: 'application/json', body: '{}' });
+  });
+  await open();
+  const input = page.getByPlaceholder('- Add week function\n- Get it hosted\n- Redesign deliverables');
+  const group = title => page.getByRole('group', { name: `Assignees for ${title}`, exact: true });
+  await input.fill('- Research\n- Slides');
+  await group('Research').getByRole('checkbox', { name: 'Test PM', exact: true }).check();
+  await group('Slides').getByRole('checkbox', { name: 'Casey', exact: true }).check();
+  await input.fill('- Research\n- Slides\n- New task');
+  assert.equal(await group('Research').getByRole('checkbox', { name: 'Test PM', exact: true }).isChecked(), true);
+  await input.fill('- Research revised\n- Slides\n- New task');
+  assert.equal(await group('Research revised').getByRole('checkbox', { name: 'Test PM', exact: true }).isChecked(), true);
+  await input.fill('- New task\n- Slides\n- Research revised');
+  assert.equal(await group('Slides').getByRole('checkbox', { name: 'Casey', exact: true }).isChecked(), true);
+  await input.fill('- New task\n- Research revised');
+  assert.equal(await group('New task').getByRole('checkbox', { name: 'Casey', exact: true }).isChecked(), false);
+  await page.getByRole('button', { name: 'Save Deliverables', exact: true }).click();
+  await page.getByText('Draft deliverables saved', { exact: true }).waitFor();
+  assert.deepEqual(creations.map(item => [item.title, item.assigneeIds]), [['New task', []], ['Research revised', ['u-1']]]);
+});
+
+for (const initialFailure of [true, false]) {
+  test(`member lookup failure is visible and retryable on ${initialFailure ? 'initial load' : 'project change'}`, async t => {
+    const { page, open } = await setup(t, '/workstream');
+    const target = initialFailure ? 'team-1' : 'team-2';
+    let fail = true;
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    await page.route(`**/api/projects/${target}?*`, async route => {
+      if (!fail) await gate;
+      return route.fulfill({ status: fail ? 503 : 200, contentType: 'application/json', body: JSON.stringify(fail
+        ? { message: 'Member lookup failed' }
+        : { pm: { id: 'u-1', firstName: 'Test PM' }, members: [] }) });
+    });
+    await open();
+    if (!initialFailure) {
+      await page.getByText('team-1 Research', { exact: true }).waitFor();
+      await page.locator('main select').first().selectOption(target);
+    }
+    await page.getByRole('alert').getByText('Could not load team members.', { exact: true }).waitFor();
+    await page.getByPlaceholder('- Add week function\n- Get it hosted\n- Redesign deliverables').fill('- Research');
+    const save = page.getByRole('button', { name: 'Save Deliverables', exact: true });
+    assert.equal(await save.isDisabled(), true);
+    assert.equal(await page.getByText('No eligible team members.', { exact: true }).count(), 0);
+    fail = false;
+    await page.getByRole('button', { name: 'Retry team members', exact: true }).click();
+    await page.getByRole('status').getByText('Loading team members...', { exact: true }).waitFor();
+    assert.equal(await save.isDisabled(), true);
+    release();
+    await page.getByRole('checkbox', { name: 'Test PM', exact: true }).waitFor();
+    assert.equal(await save.isEnabled(), true);
+    assert.equal(await page.getByRole('alert').count(), 0);
+    await page.getByRole('checkbox', { name: 'Test PM', exact: true }).check();
+  });
+}
+
+test('member responses from a previous project do not replace the current team', async t => {
+  const { page, open } = await setup(t, '/workstream');
+  let release, started;
+  let attempts = 0;
+  const gate = new Promise(resolve => { release = resolve; });
+  const requestStarted = new Promise(resolve => { started = resolve; });
+  await page.route('**/api/projects/team-2?*', async route => {
+    if (attempts++ === 0) return route.fulfill({ status: 503, contentType: 'application/json', body: '{}' });
+    started();
+    await gate;
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+      pm: { id: 'u-2', firstName: 'Wrong team' }, members: [],
+    }) });
+  });
+  await open();
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  await page.locator('main select').first().selectOption('team-2');
+  await page.getByRole('button', { name: 'Retry team members', exact: true }).click();
+  await requestStarted;
+  await page.locator('main select').first().selectOption('team-1');
+  await page.getByPlaceholder('- Add week function\n- Get it hosted\n- Redesign deliverables').fill('- Research');
+  await page.getByRole('checkbox', { name: 'Test', exact: true }).waitFor();
+  const response = page.waitForResponse('**/api/projects/team-2?*');
+  release();
+  await response;
+  assert.equal(await page.getByRole('checkbox', { name: 'Wrong team', exact: true }).count(), 0);
+  assert.equal(await page.getByRole('checkbox', { name: 'Test', exact: true }).isVisible(), true);
+});
+
 test('assignment editor preselects everyone, saves a complete set, and retains selections after failure', async t => {
   const { page, open } = await setup(t, '/deliverables');
   const users = [{ id: 'u-1', firstName: 'Test PM' }, { id: 'u-2', firstName: 'Casey' }, { id: 'u-3', firstName: 'Riley' }];
@@ -228,7 +321,8 @@ test('Workstream and W2M restore selected content while expired resources refres
   await nav('Workstream').click();
   await page.getByText('team-2 Research', { exact: true }).waitFor();
   assert.equal(await page.locator('main select').first().inputValue(), 'team-2');
-  assert.equal(await page.getByRole('status').count(), 0);
+  assert.equal(await page.getByText('Loading page...', { exact: true }).count(), 0);
+  await page.getByRole('status').getByText('Loading team members...', { exact: true }).waitFor();
   await nav('When2Meet').click();
   await page.getByText('Monday', { exact: true }).first().waitFor();
   assert.equal(await page.locator('main select').nth(1).inputValue(), 'poll-1');

@@ -15,7 +15,7 @@ import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
 import { readResource } from '@/lib/resource-cache';
 import { deliverablesAPI, projectsAPI, setAuthToken } from '@/lib/api';
 import { getEffectiveRole, type AppRole } from '@/lib/permissions';
-import { parseDashPrefixedDeliverables } from '@/lib/deliverables-parser';
+import { reconcileDraftDeliverables, type DraftDeliverable } from '@/lib/deliverables-parser';
 import { dispatchNotificationsRefresh } from '@/lib/notification-events';
 import { buildSprintDeadlineInChicago } from '@/lib/sprint-deadlines';
 
@@ -131,6 +131,7 @@ export default function WorkstreamPage() {
   const [selectedProjectId, setSelectedProjectId] = useState(snapshot?.selectedProjectId ?? '');
   const projectRef = useRef(selectedProjectId);
   const sprintRequest = useRef(0);
+  const teamMembersRequest = useRef(0);
   const [sprints, setSprints] = useState<SprintItem[]>(snapshot?.sprints ?? []);
   const [selectedSprintId, setSelectedSprintId] = useState(snapshot?.selectedSprintId ?? '');
   const [loading, setLoading] = useState(!snapshot);
@@ -140,8 +141,9 @@ export default function WorkstreamPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [draftInput, setDraftInput] = useState('');
-  const [draftAssignees, setDraftAssignees] = useState<Record<number, string[]>>({});
+  const [parsedDrafts, setParsedDrafts] = useState<DraftDeliverable[]>([]);
   const [teamMembers, setTeamMembers] = useState<AssigneeOption[]>([]);
+  const [teamMembersStatus, setTeamMembersStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [savingDrafts, setSavingDrafts] = useState(false);
   const [addWhitepaperSubmission, setAddWhitepaperSubmission] = useState(false);
   const [newSprintStartDate, setNewSprintStartDate] = useState(
@@ -155,9 +157,18 @@ export default function WorkstreamPage() {
   const canManage = role === 'PM' || role === 'LC' || role === 'ADMIN';
 
   const loadTeamMembers = useCallback(async (projectId: string) => {
+    const request = ++teamMembersRequest.current;
     setTeamMembers([]);
-    const response = await projectsAPI.getById(projectId, { includeMembers: true });
-    if (projectRef.current === projectId) setTeamMembers(projectAssignees(response.data));
+    setTeamMembersStatus('loading');
+    try {
+      const response = await projectsAPI.getById(projectId, { includeMembers: true });
+      if (request !== teamMembersRequest.current || projectRef.current !== projectId) return;
+      setTeamMembers(projectAssignees(response.data));
+      setTeamMembersStatus('ready');
+    } catch {
+      if (request !== teamMembersRequest.current || projectRef.current !== projectId) return;
+      setTeamMembersStatus('error');
+    }
   }, []);
 
   const loadSprints = useCallback(async (projectId: string) => {
@@ -230,7 +241,7 @@ export default function WorkstreamPage() {
     };
 
     void init();
-    return () => { cancelled = true; sprintRequest.current += 1; };
+    return () => { cancelled = true; sprintRequest.current += 1; teamMembersRequest.current += 1; };
   }, [isLoggedIn, email, getToken, loadSprints, loadTeamMembers]);
 
   useEffect(() => {
@@ -265,7 +276,6 @@ export default function WorkstreamPage() {
   }, [selectedSprint]);
 
   
-  const parsedDrafts = useMemo(() => parseDashPrefixedDeliverables(draftInput), [draftInput]);
   const sprintIndex = useMemo(
     () => sprints.findIndex((item) => item.id === selectedSprintId),
     [selectedSprintId, sprints],
@@ -298,8 +308,10 @@ export default function WorkstreamPage() {
   const handleProjectChange = async (projectId: string) => {
     projectRef.current = projectId;
     setSelectedProjectId(projectId);
-    setDraftAssignees({});
+    setParsedDrafts(current => current.map(draft => ({ ...draft, assigneeIds: [] })));
     setTeamMembers([]);
+    setTeamMembersStatus('loading');
+    teamMembersRequest.current += 1;
     setSelectedSprintId('');
     setAddWhitepaperSubmission(false);
     setNewSprintStartDate(new Date().toISOString().slice(0, 10));
@@ -315,8 +327,10 @@ export default function WorkstreamPage() {
     try {
       await Promise.all([loadSprints(projectId), loadTeamMembers(projectId)]);
     } finally {
-      setRefreshing(false);
-      setLoading(false);
+      if (projectRef.current === projectId) {
+        setRefreshing(false);
+        setLoading(false);
+      }
     }
   };
 
@@ -371,18 +385,18 @@ export default function WorkstreamPage() {
   };
 
   const handleSaveDrafts = async () => {
-    if (!selectedProjectId || !selectedSprint) return;
+    if (!selectedProjectId || !selectedSprint || teamMembersStatus !== 'ready' || savingDrafts) return;
     if (parsedDrafts.length === 0 && !addWhitepaperSubmission) return;
 
     setSavingDrafts(true);
     try {
-      const requests = parsedDrafts.map((item, index) =>
+      const requests = parsedDrafts.map((item) =>
         deliverablesAPI.create({
           projectId: selectedProjectId,
           sprintId: selectedSprint.id,
           title: item.title,
           description: 'Draft deliverable created from the Workstream page.',
-          assigneeIds: draftAssignees[index] ?? [],
+          assigneeIds: item.assigneeIds,
           type: 'OTHER',
           deadline: buildDraftDeliverableDeadline(selectedSprint),
         }),
@@ -433,7 +447,7 @@ export default function WorkstreamPage() {
 
       await Promise.all(requests);
       setDraftInput('');
-      setDraftAssignees({});
+      setParsedDrafts([]);
       setAddWhitepaperSubmission(false);
       await loadSprints(selectedProjectId);
       setFeedback('Draft deliverables saved');
@@ -777,12 +791,27 @@ export default function WorkstreamPage() {
                         </p>
                         <textarea
                           value={draftInput}
-                          onChange={(e) => { setDraftInput(e.target.value); setDraftAssignees({}); }}
+                          onChange={(e) => {
+                            const input = e.target.value;
+                            setDraftInput(input);
+                            setParsedDrafts(current => reconcileDraftDeliverables(current, input));
+                          }}
                           disabled={savingDrafts}
                           rows={5}
                           placeholder={'- Add week function\n- Get it hosted\n- Redesign deliverables'}
                           className="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
                         />
+                        {teamMembersStatus === 'loading' && (
+                          <p role="status" className="mt-3 text-sm">Loading team members...</p>
+                        )}
+                        {teamMembersStatus === 'error' && (
+                          <div className="mt-3 flex items-center gap-3">
+                            <p role="alert" className="text-sm">Could not load team members.</p>
+                            <Button size="sm" variant="outline" onClick={() => void loadTeamMembers(selectedProjectId)}>
+                              Retry team members
+                            </Button>
+                          </div>
+                        )}
                         <label className="mt-3 flex items-center gap-2 text-sm text-[var(--foreground)]">
                           <input
                             type="checkbox"
@@ -804,7 +833,7 @@ export default function WorkstreamPage() {
                             <Button
                               size="sm"
                               onClick={() => void handleSaveDrafts()}
-                              disabled={savingDrafts || (parsedDrafts.length === 0 && !addWhitepaperSubmission)}
+                              disabled={savingDrafts || teamMembersStatus !== 'ready' || (parsedDrafts.length === 0 && !addWhitepaperSubmission)}
                             >
                               Save Deliverables
                             </Button>
@@ -814,9 +843,6 @@ export default function WorkstreamPage() {
 
                       <div className="rounded-xl border border-[var(--border)] bg-[var(--secondary)]/60 p-4">
                         <p className="text-sm font-semibold text-[var(--foreground)]">Parsed Deliverables</p>
-                        <p className="mt-1 text-xs text-[var(--foreground)]/60">
-                          This is the UI preview of what will be saved into the selected week.
-                        </p>
                         <div className="mt-3 space-y-2">
                           {parsedDrafts.length === 0 && whitepaperPreviewItems.length === 0 ? (
                             <div className="rounded-xl border border-dashed border-[var(--border)] p-3 text-sm text-[var(--foreground)]/60">
@@ -824,15 +850,18 @@ export default function WorkstreamPage() {
                             </div>
                           ) : (
                             <>
-                              {parsedDrafts.map((item, index) => (
+                              {parsedDrafts.map((item) => (
                                 <div
-                                  key={`${item.title}-${index}`}
+                                  key={item.id}
                                   className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2"
                                 >
                                   <p className="text-sm font-medium text-[var(--foreground)]">{item.title}</p>
-                                  <AssigneeChecklist label={`Assignees for ${item.title}`} options={teamMembers}
-                                    selected={draftAssignees[index] ?? []} disabled={savingDrafts}
-                                    onChange={ids => setDraftAssignees(current => ({ ...current, [index]: ids }))} />
+                                  {teamMembersStatus === 'ready' && (
+                                    <AssigneeChecklist label={`Assignees for ${item.title}`} options={teamMembers}
+                                      selected={item.assigneeIds} disabled={savingDrafts}
+                                      onChange={ids => setParsedDrafts(current => current.map(draft =>
+                                        draft.id === item.id ? { ...draft, assigneeIds: ids } : draft))} />
+                                  )}
                                   <p className="mt-1 text-[11px] uppercase tracking-wide text-amber-700 dark:text-amber-300">
                                     Draft
                                   </p>
