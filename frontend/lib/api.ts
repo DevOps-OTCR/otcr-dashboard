@@ -1,4 +1,5 @@
 import axios, { type AxiosRequestConfig } from 'axios';
+import type { AlumniDataset } from './alumni-data';
 import { clearNavigationSnapshots } from './navigation-cache';
 import { cachedRequest, clearResourceCache } from './resource-cache';
 
@@ -53,7 +54,8 @@ export const authAPI = {
 };
 
 export const alumniAPI = {
-  getDataset: () => api.get('/alumni'),
+  // Reuse data for two minutes; explicit refresh bypasses freshness but shares pending requests.
+  getDataset: (refresh = false) => cachedRequest('/alumni', () => api.get<AlumniDataset>('/alumni'), refresh ? 0 : 120000),
 };
 
 export const onboardingAPI = {
@@ -70,8 +72,8 @@ export const onboardingAPI = {
         Pragma: 'no-cache',
       },
     }),
-  approveRequest: (id: string, notes?: string) =>
-    api.patch(`/onboarding/requests/${id}/approve`, notes ? { notes } : {}),
+  approveRequest: (id: string, notes?: string, grantedRole?: string) =>
+    api.patch(`/onboarding/requests/${id}/approve`, { notes, grantedRole }),
   rejectRequest: (id: string, notes?: string) =>
     api.patch(`/onboarding/requests/${id}/reject`, notes ? { notes } : {}),
 };
@@ -202,7 +204,8 @@ export const attendanceAPI = {
   deleteEvent: (eventId: string) => api.delete(`/attendance/events/${eventId}`),
   checkIn: (eventId: string, data: {
     method: AttendanceVerificationMethod;
-    geofenceVerified?: boolean;
+    latitude?: number;
+    longitude?: number;
     code?: string;
   }) => api.post(`/attendance/events/${eventId}/check-in`, data),
   listAttendances: (eventId: string) => api.get(`/attendance/events/${eventId}/attendances`),
@@ -234,7 +237,7 @@ export type When2MeetPollDetail = {
   grid: When2MeetGridSpec;
   teamSize: number;
   members: Array<{ id: string; email: string; displayName: string }>;
-  slots: Array<{ slotIndex: number; names: string[] }>;
+  slots: Array<{ slotIndex: number; names: string[]; userIds?: string[] }>;
   mySlots: number[];
 };
 
@@ -420,6 +423,8 @@ export const deliverablesAPI = {
   updateDeadline: (id: string, deadline: string) => api.patch(`/deliverables/${id}/deadline`, { deadline }),
   updateAssignment: (id: string, assigned: boolean, assigneeId?: string) =>
     api.patch(`/deliverables/${id}/assignment`, { assigned, assigneeId }),
+  setAssignments: (id: string, assigneeIds: string[]) =>
+    api.patch(`/deliverables/${id}/assignments`, { assigneeIds }),
   updateCompletion: (id: string, completed: boolean) =>
     api.patch(`/deliverables/${id}/completion`, { completed }),
   createSubtask: (
@@ -486,4 +491,9 @@ export const slideSubmissionsAPI = {
   approve: (id: string) => api.post(`/slide-submissions/${id}/approve`),
   requestRevision: (id: string, feedback?: string) =>
     api.post(`/slide-submissions/${id}/request-revision`, feedback ? { feedback } : {}),
+};
+
+export const peopleAPI = {
+  list: () => api.get('/people'),
+  changeRole: (id: string, role: string) => api.patch(`/people/${id}/role`, { role }),
 };

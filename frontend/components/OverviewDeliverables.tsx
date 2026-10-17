@@ -9,10 +9,11 @@ import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
 import { getDashboardDeliverables, type ProjectSprintSummary, type SprintSummary } from '@/lib/dashboard-deliverables';
 import { setLastDashboard } from '@/lib/dashboard-context';
 import { useRouter } from 'next/navigation';
-import type { AppRole } from '@/lib/permissions';
+import { getEffectiveRole, getUserRole } from '@/lib/permissions';
 
-export function OverviewDeliverables({ role, path }: { role: AppRole; path: '/pm' | '/lc' | '/partner' }) {
+export function OverviewDeliverables({ path }: { path: '/pm' | '/lc' | '/partner' }) {
   const { isLoggedIn, user, getToken } = useAuth();
+  const [role, setRole] = useState(() => getUserRole(user?.email));
   const router = useRouter();
   const { snapshot, saveSnapshot } = useNavigationSnapshot<ProjectSprintSummary[]>('overview', user?.email);
   const [projects, setProjects] = useState(snapshot ?? []);
@@ -27,6 +28,9 @@ export function OverviewDeliverables({ role, path }: { role: AppRole; path: '/pm
         const token = await getToken();
         if (cancelled) return;
         setAuthToken(token || user?.email || null);
+        const resolvedRole = await getEffectiveRole(token, user?.email);
+        if (cancelled) return;
+        setRole(resolvedRole);
         const res = await projectsAPI.getAll({ limit: 100 });
         const next = await Promise.all((res.data?.projects ?? []).map(async (project: { id: string; name: string }) => {
           const sprints = await projectsAPI.getSprints(project.id);
