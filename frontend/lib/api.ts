@@ -420,6 +420,8 @@ export const deliverablesAPI = {
   updateDeadline: (id: string, deadline: string) => api.patch(`/deliverables/${id}/deadline`, { deadline }),
   updateAssignment: (id: string, assigned: boolean, assigneeId?: string) =>
     api.patch(`/deliverables/${id}/assignment`, { assigned, assigneeId }),
+  setAssignments: (id: string, assigneeIds: string[]) =>
+    api.patch(`/deliverables/${id}/assignments`, { assigneeIds }),
   updateCompletion: (id: string, completed: boolean) =>
     api.patch(`/deliverables/${id}/completion`, { completed }),
   createSubtask: (
