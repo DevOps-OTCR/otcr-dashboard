@@ -131,6 +131,8 @@ PR Validation installs Chromium and its Linux dependencies, then runs the suite 
 
 ## Production Deployment
 
+For the shared staging branch and Render environment, see [Staging deployment](docs/staging.md).
+
 Deploy frontend and backend as separate services.
 
 ### Render backend service
