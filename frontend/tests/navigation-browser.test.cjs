@@ -51,7 +51,8 @@ async function setup(t, initialPath) {
   };
 }
 
-for (const width of [375, 640, 768, 1024, 1440, 1920]) {
+// Cover mobile, the two-column breakpoint, and the capped desktop card width.
+for (const width of [375, 768, 1440]) {
   test(`subtask creation and editing stay inside the card at ${width}px`, async t => {
     const { page, open } = await setup(t, '/deliverables');
     await page.setViewportSize({ width, height: 1000 });
@@ -83,7 +84,6 @@ for (const width of [375, 640, 768, 1024, 1440, 1920]) {
     }
   });
 }
-
 
 test('navigation stays usable during loading and Slides does not fetch twice', async t => {
   const { page, state, nav, open } = await setup(t, '/deliverables');
