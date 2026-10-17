@@ -202,7 +202,8 @@ export const attendanceAPI = {
   deleteEvent: (eventId: string) => api.delete(`/attendance/events/${eventId}`),
   checkIn: (eventId: string, data: {
     method: AttendanceVerificationMethod;
-    geofenceVerified?: boolean;
+    latitude?: number;
+    longitude?: number;
     code?: string;
   }) => api.post(`/attendance/events/${eventId}/check-in`, data),
   listAttendances: (eventId: string) => api.get(`/attendance/events/${eventId}/attendances`),
