@@ -11,9 +11,18 @@ before(async () => {
 });
 after(() => browser?.close());
 
-async function setup(t) {
+async function setup(t, delayCacheUpdates = false) {
   const context = await browser.newContext();
   t.after(() => context.close());
+  if (delayCacheUpdates) await context.addInitScript(() => {
+    const addListener = BroadcastChannel.prototype.addEventListener;
+    BroadcastChannel.prototype.addEventListener = function (type, listener, options) {
+      if (this.name === 'msal.broadcast.cache' && type === 'message') {
+        return addListener.call(this, type, event => setTimeout(() => listener.call(this, event), 200), options);
+      }
+      return addListener.call(this, type, listener, options);
+    };
+  });
   const externalRequests = [];
   await context.route('**/*', route => {
     const url = new URL(route.request().url());
@@ -56,7 +65,7 @@ test('real MSAL cache restores the same account in fresh root/direct-link tabs a
 });
 
 test('explicit CMS sign-out propagates, remains signed out after refresh, and allows explicit sign-in again', async t => {
-  const { first, page } = await setup(t);
+  const { first, page } = await setup(t, true);
   const second = await page('/deliverables');
   await second.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
   await first.getByRole('button', { name: 'Sign Out' }).click();
@@ -94,7 +103,7 @@ test('protected links wait for SDK initialization instead of redirecting early',
 });
 
 test('a newly selected account replaces the previous account across tabs', async t => {
-  const { first, page } = await setup(t);
+  const { first, page } = await setup(t, true);
   const second = await page('/deliverables');
   await second.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
   await first.evaluate(() => window.authTest.seed('consultant@example.test'));

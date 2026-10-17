@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import { PublicClientApplication, InteractionRequiredAuthError, type AuthenticationResult } from '@azure/msal-browser';
+import { PublicClientApplication, InteractionRequiredAuthError, EventType, InteractionType, type AuthenticationResult } from '@azure/msal-browser';
 import { MsalProvider } from '@azure/msal-react';
 import { AuthProvider, useAuth } from '@/components/AuthContext';
 import { AuthApiSync } from '@/components/AuthApiSync';
@@ -52,6 +52,10 @@ async function seed(email = 'pm@example.test') {
   beginCmsSignIn();
   const result = resultFor(email);
   await instance.hydrateCache(result, { scopes: ['User.Read'], account: result.account });
+  const events = new BroadcastChannel('msal.broadcast.event');
+  events.postMessage({ eventType: EventType.LOGIN_SUCCESS, interactionType: InteractionType.Redirect,
+    payload: result, error: null, correlationId: result.correlationId, timestamp: Date.now() });
+  events.close();
   completeCmsSignIn(result.account.homeAccountId);
   instance.setActiveAccount(result.account);
   window.dispatchEvent(new StorageEvent('storage', { key: CMS_SESSION_KEY }));
