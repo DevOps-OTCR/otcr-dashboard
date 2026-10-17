@@ -15,9 +15,11 @@ Create a Blueprint from `DevOps-OTCR/otcr-dashboard` using the connected GitHub 
 - Database: `otcr-dashboard-staging-db`, a separate Postgres instance
 - Queue: `otcr-dashboard-staging-redis`, a separate Key Value instance
 
+The backend, database, and queue use Oregon. PostgreSQL 18 matches production. Production uses a paid Basic-256mb database; staging uses a separate free database for now.
+
 Both application services use **After CI Checks Pass** auto-deploys. Render requires a connected GitHub account for automatic deploys. Select the repository through that integration instead of importing its public Git URL.
 
-The Blueprint selects free plans. Free web services spin down when idle, free Postgres expires after 30 days, and free Key Value loses queued jobs when restarted. Render allows one free Postgres and one free Key Value instance per workspace. Review the plans before creating resources; use paid plans for persistent staging when needed. See [Render free service limits](https://render.com/docs/free).
+The backend, database, and Key Value queue use free plans. The backend spins down when idle, the staging database expires after 30 days, and Key Value loses queued jobs when restarted. Render allows one free Postgres and one free Key Value instance per workspace. See [Render free service limits](https://render.com/docs/free). The static frontend does not require a compute plan. The database expiration does not apply to production's paid database.
 
 ## Configuration
 

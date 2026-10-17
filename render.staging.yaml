@@ -4,7 +4,7 @@ services:
     name: otcr-dashboard-staging-api
     runtime: node
     branch: staging
-    region: ohio
+    region: oregon
     plan: free
     rootDir: backend
     autoDeployTrigger: checksPass
@@ -64,15 +64,15 @@ services:
 
   - type: keyvalue
     name: otcr-dashboard-staging-redis
-    region: ohio
+    region: oregon
     plan: free
     maxmemoryPolicy: noeviction
     ipAllowList: []
 
 databases:
   - name: otcr-dashboard-staging-db
-    region: ohio
+    region: oregon
     plan: free
-    postgresMajorVersion: "17"
+    postgresMajorVersion: "18"
     databaseName: otcr_staging
     ipAllowList: []
