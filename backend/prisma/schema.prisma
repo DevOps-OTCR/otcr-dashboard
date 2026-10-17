@@ -140,6 +140,7 @@ model OnboardingRequest {
   name           String
   email          String                  @unique
   requestedRole  Role
+  grantedRole    Role?
   status         OnboardingRequestStatus @default(PENDING)
   reviewedById   String?
   reviewedAt     DateTime?
