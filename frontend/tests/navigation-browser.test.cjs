@@ -53,6 +53,32 @@ async function setup(t, initialPath, role = 'PM') {
   };
 }
 
+test('When2Meet creation errors remain inside the dialog and preserve entered values', async t => {
+  const { page, open } = await setup(t, '/when2meet');
+  await open();
+  await page.getByRole('button', { name: 'New When2Meet', exact: true }).waitFor();
+  await page.addStyleTag({ content: styles });
+  await page.route('**/api/when2meet/polls', route => route.fulfill({
+    status: 503, contentType: 'application/json', body: JSON.stringify({ message: 'Could not create test poll.' }),
+  }));
+  await page.getByRole('button', { name: 'New When2Meet', exact: true }).click();
+  const form = page.locator('#when2meet-create-form');
+  await form.getByPlaceholder('e.g. Sprint planning sync').fill('Planning test');
+  await form.locator('input[type="date"]').nth(0).fill('2026-10-20');
+  await form.locator('input[type="date"]').nth(1).fill('2026-10-21');
+  await form.getByRole('button', { name: 'Create', exact: true }).click();
+  const error = form.getByRole('alert');
+  await error.waitFor();
+  assert.equal(await error.textContent(), 'Could not create test poll.');
+  assert.equal(await error.evaluate(element => {
+    const rect = element.getBoundingClientRect();
+    return element.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+  }), true);
+  assert.equal(await form.getByPlaceholder('e.g. Sprint planning sync').inputValue(), 'Planning test');
+  assert.deepEqual(await form.locator('input[type="date"]').evaluateAll(inputs => inputs.map(input => input.value)),
+    ['2026-10-20', '2026-10-21']);
+});
+
 test('Alumni restores table state, reuses fresh data, and retains rows during failed refreshes', async t => {
   const { page, state, nav, open } = await setup(t, '/alumni-database/');
   await open();
