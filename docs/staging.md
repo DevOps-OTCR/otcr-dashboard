@@ -13,13 +13,14 @@ Create a Blueprint from `DevOps-OTCR/otcr-dashboard` using the connected GitHub 
 - Frontend: `otcr-dashboard-staging`, a static export using the same build mode as production Pages
 - Backend: `otcr-dashboard-staging-api`, a Node web service
 - Database: `otcr-dashboard-staging-db`, a separate Postgres instance
-- Queue: `otcr-dashboard-staging-redis`, a separate Key Value instance
 
-The backend, database, and queue use Oregon. PostgreSQL 18 matches production. Production uses a paid Basic-256mb database; staging uses a separate free database for now.
+The backend and database use Oregon. PostgreSQL 18 matches production. Production uses a paid Basic-256mb database; staging uses a separate free database for now.
 
 Both application services use **After CI Checks Pass** auto-deploys. Render requires a connected GitHub account for automatic deploys. Select the repository through that integration instead of importing its public Git URL.
 
-The backend, database, and Key Value queue use free plans. The backend spins down when idle, the staging database expires after 30 days, and Key Value loses queued jobs when restarted. Render allows one free Postgres and one free Key Value instance per workspace. See [Render free service limits](https://render.com/docs/free). The static frontend does not require a compute plan. The database expiration does not apply to production's paid database.
+The backend and database use free plans. The backend spins down when idle, and the staging database expires after 30 days. See [Render free service limits](https://render.com/docs/free). The static frontend does not require a compute plan. The database expiration does not apply to production's paid database.
+
+Staging sets `REDIS_ENABLED=false` and does not create a Key Value instance because the workspace's single free Key Value slot is already occupied. The notification queue and worker stay disabled. Immediate notifications use the existing inline delivery path; delayed deadline reminders cannot be tested. To enable queue testing later, provision a separate staging Redis instance, set `REDIS_URL`, and remove or change `REDIS_ENABLED`. Production keeps Redis enabled by default.
 
 ## Configuration
 
@@ -37,7 +38,7 @@ After Render assigns the service URLs:
 2. Register `https://<frontend-host>/auth/callback` as a **Single-page application** redirect URI in the Microsoft Entra application used for staging.
 3. Open the frontend and complete sign-in with a test account. Initialize only the intended testers in the staging database's `AllowedEmail` table, with the roles needed for testing. Do not run the existing seed script against staging; it includes a fixed directory of user emails and sample records.
 
-The frontend build derives its app URL and redirect URI from Render's assigned URL. Its API URL references the staging backend. Both database connection variables reference the staging database, and Redis references the staging queue. The backend start command applies committed Prisma migrations before starting. Its unauthenticated `/__meta` route is the Render health check; `/auth/health` requires authentication.
+The frontend build derives its app URL and redirect URI from Render's assigned URL. Its API URL references the staging backend. Both database connection variables reference the staging database. The backend start command applies committed Prisma migrations before starting. Its unauthenticated `/__meta` route is the Render health check; `/auth/health` requires authentication.
 
 Keep production database, Redis, Slack, email, calendar, and alumni data out of this environment. Optional integrations start unconfigured. To test them, add staging-only credentials in Render and use a test Slack workspace and calendar.
 

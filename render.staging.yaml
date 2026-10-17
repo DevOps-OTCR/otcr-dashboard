@@ -24,11 +24,8 @@ services:
         fromDatabase:
           name: otcr-dashboard-staging-db
           property: connectionString
-      - key: REDIS_URL
-        fromService:
-          name: otcr-dashboard-staging-redis
-          type: keyvalue
-          property: connectionString
+      - key: REDIS_ENABLED
+        value: "false"
       # Set to the staging site's assigned HTTPS URL for CORS and deep links.
       - key: FRONTEND_URL
         sync: false
@@ -61,13 +58,6 @@ services:
         sync: false
       - key: NEXT_PUBLIC_MSAL_AUTHORITY
         sync: false
-
-  - type: keyvalue
-    name: otcr-dashboard-staging-redis
-    region: oregon
-    plan: free
-    maxmemoryPolicy: noeviction
-    ipAllowList: []
 
 databases:
   - name: otcr-dashboard-staging-db
