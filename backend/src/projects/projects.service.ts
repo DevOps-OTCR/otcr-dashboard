@@ -561,6 +561,7 @@ export class ProjectsService {
           firstName: true,
           lastName: true,
           role: true,
+          active: true,
         },
       },
       _count: {
@@ -582,6 +583,7 @@ export class ProjectsService {
               firstName: true,
               lastName: true,
               role: true,
+          active: true,
             },
           },
         },

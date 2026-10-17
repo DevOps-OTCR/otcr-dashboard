@@ -55,6 +55,7 @@ export type AppNavPath =
   | '/attendance'
   | '/when2meet'
   | '/alumni-database'
+  | '/people'
   | '/settings/slack';
 
 export interface AppNavbarProps {
@@ -274,6 +275,7 @@ export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotif
       href: '/teams',
       canAccess: (r) => canShowNavItem('team', r),
     },
+    { id: 'people', label: 'People', icon: Users, href: '/people', canAccess: role => role === 'ADMIN' },
     {
       id: 'forms',
       label: 'Forms',
@@ -404,17 +406,18 @@ export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotif
             </button>
           </div>
         </div>
-        <nav className="flex items-center gap-1 border-t border-[var(--border)] py-2 overflow-x-auto scrollbar-hide">
+        <nav className="flex flex-wrap items-center gap-1 border-t border-[var(--border)] py-2">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentPath === item.href;
             const enabled = item.canAccess(role);
+            if (item.id === 'people' && !enabled) return null;
 
             if (!enabled) {
               return (
                 <span
                   key={item.id}
-                  className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm transition-colors whitespace-nowrap text-[var(--foreground)]/35 cursor-not-allowed"
+                  className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs lg:text-sm transition-colors whitespace-nowrap text-[var(--foreground)]/35 cursor-not-allowed"
                   title="You do not have access to this page"
                 >
                   <Icon className="w-4 h-4 text-[var(--foreground)]/35" />
@@ -428,7 +431,7 @@ export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotif
                 key={item.id}
                 href={item.href}
                 className={cn(
-                  'flex items-center gap-2 rounded-lg px-4 py-2 text-sm transition-colors whitespace-nowrap',
+                  'flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs lg:text-sm transition-colors whitespace-nowrap',
                   isActive
                     ? 'bg-[var(--primary)]/15 text-[var(--primary)]'
                     : 'text-[var(--foreground)]/75 hover:bg-[var(--accent)] hover:text-[var(--foreground)]'

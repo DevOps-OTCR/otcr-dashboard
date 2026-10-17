@@ -1,4 +1,5 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { parseRole, updateAllowedEmailRole } from './access-role';
+import { Injectable, UnauthorizedException, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -195,26 +196,15 @@ export class AuthService {
     role: 'ADMIN' | 'PM' | 'LC' | 'PARTNER' | 'EXECUTIVE' | 'CONSULTANT' = 'CONSULTANT',
   ) {
     const normalized = email.toLowerCase().trim();
-    const allowedEmail = await this.prisma.allowedEmail.upsert({
-      where: { email: normalized },
-      update: {
-        role: role as any,
-        active: true,
-      },
-      create: {
-        email: normalized,
-        role: role as any,
-        active: true,
-      },
+    const selectedRole = parseRole(role);
+    return this.prisma.$transaction(async tx => {
+      const allowedEmail = await updateAllowedEmailRole(tx, normalized, selectedRole, { mode: 'activate' });
+      await tx.user.updateMany({
+        where: { email: { equals: normalized, mode: 'insensitive' } },
+        data: { role: selectedRole },
+      });
+      return allowedEmail;
     });
-
-    // Keep existing synced users aligned with updated allowed-email role.
-    await this.prisma.user.updateMany({
-      where: { email: normalized },
-      data: { role: role as any },
-    });
-
-    return allowedEmail;
   }
 
   async submitOnboardingRequest(
@@ -230,6 +220,7 @@ export class AuthService {
       update: {
         name: normalizedName,
         requestedRole: requestedRole as any,
+        grantedRole: null,
         status: 'PENDING' as any,
         reviewedById: null,
         reviewedAt: null,
@@ -239,6 +230,7 @@ export class AuthService {
         name: normalizedName,
         email: normalizedEmail,
         requestedRole: requestedRole as any,
+        grantedRole: null,
         status: 'PENDING' as any,
       },
     });
@@ -268,51 +260,44 @@ export class AuthService {
     requestId: string,
     reviewerId: string,
     notes?: string,
+    grantedRole?: unknown,
   ) {
-    const request = await (this.prisma as any).onboardingRequest.findUnique({
-      where: { id: requestId },
-    });
-
-    if (!request) {
-      throw new UnauthorizedException('Onboarding request not found');
-    }
-
-    await this.addAllowedEmail(request.email, request.requestedRole as any);
-    const parsed = this.splitNameParts(request.name);
-    if (parsed.firstName || parsed.lastName) {
-      await this.prisma.user.updateMany({
-        where: { email: request.email },
-        data: {
-          firstName: parsed.firstName,
-          lastName: parsed.lastName,
-        },
+    if (notes !== undefined && typeof notes !== 'string') throw new BadRequestException('Notes must be text');
+    const selectedRole = grantedRole === undefined ? undefined : parseRole(grantedRole);
+    return this.prisma.$transaction(async tx => {
+      const request = await tx.onboardingRequest.findUnique({ where: { id: requestId } });
+      if (!request) throw new NotFoundException('Onboarding request not found');
+      const role = selectedRole ?? request.requestedRole;
+      const reviewed = await tx.onboardingRequest.updateMany({
+        where: { id: requestId, status: 'PENDING' },
+        data: { status: 'APPROVED', grantedRole: role, reviewedById: reviewerId,
+          reviewedAt: new Date(), reviewerNotes: notes?.trim() || null },
       });
-    }
-
-    return (this.prisma as any).onboardingRequest.update({
-      where: { id: requestId },
-      data: {
-        status: 'APPROVED' as any,
-        reviewedById: reviewerId,
-        reviewedAt: new Date(),
-        reviewerNotes: notes?.trim() || null,
-      },
+      if (!reviewed.count) throw new ConflictException('This request has already been reviewed');
+      const email = request.email.toLowerCase().trim();
+      await updateAllowedEmailRole(tx, email, role, { mode: 'activate' });
+      const name = this.splitNameParts(request.name);
+      await tx.user.upsert({
+        where: { email },
+        create: { email, ...name, role, active: true },
+        update: { ...name, role, active: true },
+      });
+      return tx.onboardingRequest.findUnique({ where: { id: requestId } });
     });
   }
 
-  async rejectOnboardingRequest(
-    requestId: string,
-    reviewerId: string,
-    notes?: string,
-  ) {
-    return (this.prisma as any).onboardingRequest.update({
-      where: { id: requestId },
-      data: {
-        status: 'REJECTED' as any,
-        reviewedById: reviewerId,
-        reviewedAt: new Date(),
-        reviewerNotes: notes?.trim() || null,
-      },
+  async rejectOnboardingRequest(requestId: string, reviewerId: string, notes?: string) {
+    if (notes !== undefined && typeof notes !== 'string') throw new BadRequestException('Notes must be text');
+    return this.prisma.$transaction(async tx => {
+      const request = await tx.onboardingRequest.findUnique({ where: { id: requestId } });
+      if (!request) throw new NotFoundException('Onboarding request not found');
+      const reviewed = await tx.onboardingRequest.updateMany({
+        where: { id: requestId, status: 'PENDING' },
+        data: { status: 'REJECTED', grantedRole: null, reviewedById: reviewerId,
+          reviewedAt: new Date(), reviewerNotes: notes?.trim() || null },
+      });
+      if (!reviewed.count) throw new ConflictException('This request has already been reviewed');
+      return tx.onboardingRequest.findUnique({ where: { id: requestId } });
     });
   }
 
