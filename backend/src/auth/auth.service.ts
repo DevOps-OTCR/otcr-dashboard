@@ -1,4 +1,4 @@
-import { parseRole } from './people.service';
+import { parseRole, updateAllowedEmailRole } from './access-role';
 import { Injectable, UnauthorizedException, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -196,26 +196,15 @@ export class AuthService {
     role: 'ADMIN' | 'PM' | 'LC' | 'PARTNER' | 'EXECUTIVE' | 'CONSULTANT' = 'CONSULTANT',
   ) {
     const normalized = email.toLowerCase().trim();
-    const allowedEmail = await this.prisma.allowedEmail.upsert({
-      where: { email: normalized },
-      update: {
-        role: role as any,
-        active: true,
-      },
-      create: {
-        email: normalized,
-        role: role as any,
-        active: true,
-      },
+    const selectedRole = parseRole(role);
+    return this.prisma.$transaction(async tx => {
+      const allowedEmail = await updateAllowedEmailRole(tx, normalized, selectedRole, { mode: 'activate' });
+      await tx.user.updateMany({
+        where: { email: { equals: normalized, mode: 'insensitive' } },
+        data: { role: selectedRole },
+      });
+      return allowedEmail;
     });
-
-    // Keep existing synced users aligned with updated allowed-email role.
-    await this.prisma.user.updateMany({
-      where: { email: normalized },
-      data: { role: role as any },
-    });
-
-    return allowedEmail;
   }
 
   async submitOnboardingRequest(
@@ -286,10 +275,7 @@ export class AuthService {
       });
       if (!reviewed.count) throw new ConflictException('This request has already been reviewed');
       const email = request.email.toLowerCase().trim();
-      const updated = await tx.allowedEmail.updateMany({
-        where: { email: { equals: email, mode: 'insensitive' } }, data: { role, active: true },
-      });
-      if (!updated.count) await tx.allowedEmail.create({ data: { email, role, active: true } });
+      await updateAllowedEmailRole(tx, email, role, { mode: 'activate' });
       const name = this.splitNameParts(request.name);
       await tx.user.upsert({
         where: { email },

@@ -66,6 +66,7 @@ function statefulFixture() {
   const allowedEmail = {
     updateMany: jest.fn().mockImplementation(async ({ data }) => { access = { ...access, ...data }; return { count: 1 }; }),
     create: jest.fn().mockResolvedValue({}), findFirst: jest.fn().mockImplementation(async () => access),
+    findFirstOrThrow: jest.fn().mockImplementation(async () => access),
   };
   const request = { id: 'request', email: person.email, name: 'Casey Test', requestedRole: 'CONSULTANT', status: 'PENDING' };
   const onboardingRequest = { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn().mockResolvedValue(request),
@@ -106,11 +107,31 @@ describe('People directory and persistent role changes', () => {
     await expect(f.people.changeRole('person', 'PM')).rejects.toThrow('write failed');
     expect(f.prisma.$transaction).toHaveBeenCalledTimes(1);
   });
+  test('changing roles preserves revoked access', async () => {
+    const f = statefulFixture();
+    await f.tx.allowedEmail.updateMany({ data: { active: false } });
+    await f.people.changeRole('person', 'PM');
+    expect(await f.tx.allowedEmail.findFirst()).toEqual(expect.objectContaining({ role: 'PM', active: false }));
+  });
+  test('legacy grants normalize email and sync user roles in one transaction', async () => {
+    const f = statefulFixture();
+    expect(await f.auth.addAllowedEmail(' PERSON@example.test ', 'LC')).toEqual(expect.objectContaining({ role: 'LC', active: true }));
+    expect(f.tx.user.updateMany).toHaveBeenCalledWith({
+      where: { email: { equals: 'person@example.test', mode: 'insensitive' } }, data: { role: 'LC' },
+    });
+    expect(f.prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+  test('legacy grants propagate user write failures out of the transaction', async () => {
+    const f = statefulFixture();
+    f.tx.user.updateMany.mockRejectedValue(new Error('write failed'));
+    await expect(f.auth.addAllowedEmail('person@example.test', 'PM')).rejects.toThrow('write failed');
+  });
 });
 
 describe('onboarding review', () => {
   test.each([undefined, 'PM', 'ADMIN'])('preserves requested role while granting %s', async selectedRole => {
     const f = statefulFixture();
+    await f.tx.allowedEmail.updateMany({ data: { active: false } });
     await f.auth.approveOnboardingRequest('request', 'reviewer', '  Checked  ', selectedRole);
     const role = selectedRole ?? 'CONSULTANT';
     expect(f.tx.onboardingRequest.updateMany).toHaveBeenCalledWith({ where: { id: 'request', status: 'PENDING' },
@@ -118,6 +139,7 @@ describe('onboarding review', () => {
     expect(f.request.requestedRole).toBe('CONSULTANT');
     expect(f.tx.allowedEmail.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { role, active: true } }));
     expect(f.tx.user.upsert).toHaveBeenCalledWith(expect.objectContaining({ update: expect.objectContaining({ role }) }));
+    expect(await f.tx.allowedEmail.findFirst()).toEqual(expect.objectContaining({ role, active: true }));
   });
   test('rejects an invalid granted role before any database changes', async () => {
     const f = statefulFixture();

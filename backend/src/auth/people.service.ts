@@ -1,13 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-
-export function parseRole(value: unknown): Role {
-  if (typeof value !== 'string' || !Object.values(Role).includes(value as Role)) {
-    throw new BadRequestException('Select a valid CMS role');
-  }
-  return value as Role;
-}
+import { parseRole, updateAllowedEmailRole } from './access-role';
 
 export interface PersonSummary {
   id: string;
@@ -44,13 +38,7 @@ export class PeopleService {
     return this.prisma.$transaction(async tx => {
       const user = await tx.user.findUnique({ where: { id } });
       if (!user) throw new NotFoundException('User not found');
-      // Sign-in resolves roles case-insensitively from AllowedEmail. Update every
-      // matching entry without reactivating access that was previously revoked.
-      const email = user.email.toLowerCase().trim();
-      const updated = await tx.allowedEmail.updateMany({
-        where: { email: { equals: email, mode: 'insensitive' } }, data: { role },
-      });
-      if (!updated.count) await tx.allowedEmail.create({ data: { email, role, active: user.active } });
+      await updateAllowedEmailRole(tx, user.email, role, { mode: 'preserve', activeOnCreate: user.active });
       return tx.user.update({ where: { id }, data: { role },
         select: { id: true, email: true, role: true } });
     });
