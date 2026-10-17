@@ -723,7 +723,7 @@ export default function DeliverablesPage() {
                       return (
                         <div
                           key={deliverable.id}
-                          className="rounded-xl border border-[var(--border)] bg-[var(--secondary)]/70 p-4"
+                          className="min-w-0 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/70 p-4"
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div>
@@ -950,11 +950,12 @@ export default function DeliverablesPage() {
                                   return (
                                     <div
                                       key={subtask.id}
-                                      className="rounded-lg border border-[var(--border)] bg-[var(--secondary)]/60 p-3"
+                                      className="min-w-0 max-w-full rounded-lg border border-[var(--border)] bg-[var(--secondary)]/60 p-3"
                                     >
                                       {canManage ? (
-                                        <div className="grid gap-2 md:grid-cols-[minmax(0,2fr)_180px_180px_auto_auto]">
+                                        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-2 [&>*]:min-w-0">
                                           <input
+                                            aria-label="Subtask title"
                                             value={edit.title}
                                             onChange={(e) =>
                                               setSubtaskEdits((current) => ({
@@ -962,9 +963,10 @@ export default function DeliverablesPage() {
                                                 [subtask.id]: { ...edit, title: e.target.value },
                                               }))
                                             }
-                                            className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                                            className="min-w-0 max-w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
                                           />
                                           <select
+                                            aria-label="Subtask assignee"
                                             value={edit.assigneeId}
                                             onChange={(e) =>
                                               setSubtaskEdits((current) => ({
@@ -972,7 +974,7 @@ export default function DeliverablesPage() {
                                                 [subtask.id]: { ...edit, assigneeId: e.target.value },
                                               }))
                                             }
-                                            className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                                            className="min-w-0 max-w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
                                           >
                                             <option value="">Unassigned</option>
                                             {teamMembers.map((member) => (
@@ -983,6 +985,7 @@ export default function DeliverablesPage() {
                                           </select>
                                           <input
                                             type="datetime-local"
+                                            aria-label="Subtask due date"
                                             value={edit.dueDate}
                                             onChange={(e) =>
                                               setSubtaskEdits((current) => ({
@@ -990,7 +993,7 @@ export default function DeliverablesPage() {
                                                 [subtask.id]: { ...edit, dueDate: e.target.value },
                                               }))
                                             }
-                                            className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                                            className="min-w-0 max-w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
                                           />
                                           <label className="flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm">
                                             <input
@@ -1005,7 +1008,7 @@ export default function DeliverablesPage() {
                                             />
                                             Done
                                           </label>
-                                          <div className="flex gap-2">
+                                          <div className="flex flex-wrap gap-2">
                                             <Button
                                               size="sm"
                                               variant="outline"
@@ -1056,9 +1059,10 @@ export default function DeliverablesPage() {
                                 })}
 
                                 {canManage && (
-                                  <div className="rounded-lg border border-dashed border-[var(--border)] p-3">
-                                    <div className="grid gap-2 md:grid-cols-[minmax(0,2fr)_180px_180px_auto]">
+                                  <div className="min-w-0 max-w-full rounded-lg border border-dashed border-[var(--border)] p-3">
+                                    <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-2 [&>*]:min-w-0">
                                       <input
+                                        aria-label="New subtask title"
                                         value={newSubtasks[deliverable.id]?.title ?? ''}
                                         onChange={(e) =>
                                           setNewSubtasks((current) => ({
@@ -1070,9 +1074,10 @@ export default function DeliverablesPage() {
                                           }))
                                         }
                                         placeholder="Add a subtask"
-                                        className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                                        className="min-w-0 max-w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
                                       />
                                       <select
+                                        aria-label="New subtask assignee"
                                         value={newSubtasks[deliverable.id]?.assigneeId ?? ''}
                                         onChange={(e) =>
                                           setNewSubtasks((current) => ({
@@ -1083,7 +1088,7 @@ export default function DeliverablesPage() {
                                             },
                                           }))
                                         }
-                                        className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                                        className="min-w-0 max-w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
                                       >
                                         <option value="">Assign later</option>
                                         {teamMembers.map((member) => (
@@ -1094,6 +1099,7 @@ export default function DeliverablesPage() {
                                       </select>
                                       <input
                                         type="datetime-local"
+                                        aria-label="New subtask due date"
                                         value={newSubtasks[deliverable.id]?.dueDate ?? ''}
                                         onChange={(e) =>
                                           setNewSubtasks((current) => ({
@@ -1104,7 +1110,7 @@ export default function DeliverablesPage() {
                                             },
                                           }))
                                         }
-                                        className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                                        className="min-w-0 max-w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
                                       />
                                       <Button
                                         size="sm"
