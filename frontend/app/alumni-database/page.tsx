@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, GraduationCap, Search, X } from 'lucide-react';
 import { AppNavbar } from '@/components/AppNavbar';
@@ -39,6 +40,7 @@ function normalizedEmployer(r: AlumniRecord): string {
 
 export default function AlumniDatabasePage() {
   const session = useAuth();
+  const router = useRouter();
   const [role, setRole] = useState<AppRole>('CONSULTANT');
   const [dataset, setDataset] = useState<AlumniDataset | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -46,6 +48,14 @@ export default function AlumniDatabasePage() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [sort, setSort] = useState<AlumniSort>(DEFAULT_ALUMNI_SORT);
   const [pageIndex, setPageIndex] = useState(0);
+
+  useEffect(() => {
+    // Once auth init finishes, bounce signed-out users to sign-in instead of
+    // leaving them stuck on the loader (deep links / bookmarks).
+    if (!session.loading && !session.isLoggedIn) {
+      router.replace('/sign-in');
+    }
+  }, [session.loading, session.isLoggedIn, router]);
 
   useEffect(() => {
     setPageIndex(0);
@@ -165,8 +175,8 @@ export default function AlumniDatabasePage() {
                     onKeyDown={(e) => {
                       if (e.key === 'Escape') setSearch('');
                     }}
-                    placeholder="Search by name, employer, or title"
-                    aria-label="Search alumni by name, employer, or title"
+                    placeholder="Search by name, class year, employer, or title"
+                    aria-label="Search alumni by name, class year, employer, or title"
                     className={cn(
                       'w-full rounded-xl border border-[var(--border)] bg-[var(--background)] py-2.5 pl-9 pr-10 text-sm outline-none ring-2 ring-transparent transition-shadow',
                       'focus:ring-[var(--primary)]/25 focus:border-[var(--primary)]/40',

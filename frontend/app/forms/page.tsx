@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState, type ComponentType } from 'react';
 import { ClipboardList, MessageSquare, ShieldAlert, TriangleAlert } from 'lucide-react';
 import { AppNavbar } from '@/components/AppNavbar';
@@ -48,8 +49,17 @@ const forms: FormCard[] = [
 
 export default function FormsPage() {
   const session = useAuth();
+  const router = useRouter();
   const [roleLookupFailed, setRoleLookupFailed] = useState(false);
   const [role, setRole] = useState<AppRole>('CONSULTANT');
+
+  useEffect(() => {
+    // Once auth init finishes, bounce signed-out users to sign-in instead of
+    // leaving them stuck on the loader (deep links / bookmarks).
+    if (!session.loading && !session.isLoggedIn) {
+      router.replace('/sign-in');
+    }
+  }, [session.loading, session.isLoggedIn, router]);
 
   useEffect(() => {
     const syncRole = async () => {

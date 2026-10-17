@@ -46,7 +46,7 @@ export function alumniMajors(record: AlumniRecord): string {
     .join(' · ');
 }
 
-const SEARCH_KEYS = ['name', 'employer', 'jobTitle', 'major', 'minor', 'graduateDegrees', 'industry'] as const;
+const SEARCH_KEYS = ['name', 'graduationYear', 'employer', 'jobTitle', 'major', 'minor', 'graduateDegrees', 'industry'] as const;
 
 /** Case-insensitive substring match; a hit in any searchable field includes the record. */
 export function filterAlumni(rows: AlumniRecord[], query: string): AlumniRecord[] {

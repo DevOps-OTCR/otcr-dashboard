@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   CalendarDays,
   Clock3,
@@ -225,6 +226,7 @@ function getAvailabilityHeatColor(availableCount: number, teamSize: number, isSe
 
 export default function AttendancePage() {
   const session = useAuth();
+  const router = useRouter();
   const { isLoggedIn, getToken } = session;
   const email = session.user?.email;
   const { snapshot, saveSnapshot } = useNavigationSnapshot<{
@@ -243,6 +245,14 @@ export default function AttendancePage() {
   const [form, setForm] = useState<CreateFormState>(DEFAULT_FORM);
   const [resolvedLocation, setResolvedLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationResolvedFor, setLocationResolvedFor] = useState('');
+
+  useEffect(() => {
+    // Once auth init finishes, bounce signed-out users to sign-in instead of
+    // leaving them stuck on the loader (deep links / bookmarks).
+    if (!session.loading && !session.isLoggedIn) {
+      router.replace('/sign-in');
+    }
+  }, [session.loading, session.isLoggedIn, router]);
   const [resolvingLocation, setResolvingLocation] = useState(false);
   const [locationSuggestions, setLocationSuggestions] = useState<LocationSuggestion[]>([]);
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
@@ -677,7 +687,8 @@ export default function AttendancePage() {
 
       const response = await attendanceAPI.checkIn(attendanceEvent.id, {
         method: 'GEOFENCE',
-        geofenceVerified: true,
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
       });
       const attendance = response.data?.attendance;
       setEvents((current) =>

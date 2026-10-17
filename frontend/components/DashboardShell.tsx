@@ -12,7 +12,7 @@ import { NavbarRegistration } from './navbar-registration';
 const overviewPaths = ['/pm', '/lc', '/partner', '/consultant'];
 const dashboardPaths = [...overviewPaths, '/dashboard', '/deliverables', '/slides', '/attendance',
   '/workstream', '/workstream-docs', '/when2meet', '/teams', '/forms', '/client-notes',
-  '/feedback', '/feedback/anonymous', '/feedback/prc', '/alumni-database', '/settings/slack'];
+  '/feedback', '/feedback/anonymous', '/feedback/prc', '/alumni-database', '/people', '/settings/slack'];
 
 export function DashboardShell({ children }: { children: ReactNode }) {
   const { isLoggedIn, user } = useAuth();
