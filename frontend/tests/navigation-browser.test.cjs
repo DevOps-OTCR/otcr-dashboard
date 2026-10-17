@@ -653,6 +653,87 @@ for (const reducedMotion of ['no-preference', 'reduce']) {
   });
 }
 
+test('navbar sign-out clears dashboard credentials and profile state', async t => {
+  const { page, open } = await setup(t, '/pm');
+  await open();
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  await page.evaluate(() => sessionStorage.setItem('otcr_profile_sync_fingerprint', 'cached-profile'));
+  await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in with NetID', exact: true }).waitFor();
+  assert.equal(await page.locator('nav').count(), 0);
+  assert.equal(await page.evaluate(() => window.navigationTest.authHeader()), undefined);
+  assert.equal(await page.evaluate(() => sessionStorage.getItem('otcr_profile_sync_fingerprint')), null);
+  assert.equal(await page.evaluate(() => localStorage.getItem('otcr_role_cache:pm@example.test')), null);
+});
+
+test('pending authentication and profile sync cannot restore a signed-out session', async t => {
+  const { page, state, open } = await setup(t, '/pm?authSync=1');
+  await open();
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  await page.waitForFunction(() => Boolean(sessionStorage.getItem('otcr_profile_sync_fingerprint')));
+  await page.evaluate(() => {
+    window.navigationTest.instance.acquireTokenSilent = () => new Promise(resolve => {
+      (window.finishOldTokenRequests ??= []).push(resolve);
+    });
+    window.oldToken = window.navigationTest.getToken().catch(error => error.name);
+    window.navigationTest.instance.getActiveAccount().name = 'Updated profile';
+    window.navigationTest.tokenProgress(true);
+  });
+  await page.evaluate(() => window.navigationTest.tokenProgress(false));
+  await page.waitForFunction(() => window.finishOldTokenRequests?.length >= 2);
+  const pendingTokens = await page.evaluate(() => window.finishOldTokenRequests.length);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.waitForFunction(count => window.finishOldTokenRequests.length > count, pendingTokens);
+  await page.evaluate(() => {
+    window.navigationTest.instance.handleRedirectPromise = () => new Promise(resolve => {
+      window.finishOldAuthCheck = resolve;
+    });
+    window.navigationTest.tokenProgress(true);
+  });
+  await page.evaluate(() => window.navigationTest.tokenProgress(false));
+  await page.waitForFunction(() => Boolean(window.finishOldAuthCheck));
+  await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in with NetID', exact: true }).waitFor();
+  const notificationRequests = state.calls.filter(path => path === '/notifications/my').length;
+  const token = await page.evaluate(async () => {
+    window.finishOldAuthCheck({ account: { username: 'pm@example.test' } });
+    for (const resolve of window.finishOldTokenRequests) resolve({ accessToken: 'stale-token' });
+    const token = await window.oldToken;
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+    return token;
+  });
+  assert.equal(token, 'AbortError');
+  assert.equal(await page.getByRole('button', { name: 'Sign in with NetID', exact: true }).isVisible(), true);
+  assert.equal(await page.locator('nav').count(), 0);
+  assert.equal(await page.evaluate(() => window.navigationTest.authHeader()), undefined);
+  assert.equal(state.calls.filter(path => path === '/notifications/my').length, notificationRequests);
+  assert.equal(await page.evaluate(() => sessionStorage.getItem('otcr_profile_sync_fingerprint')), null);
+});
+
+test('a Consultant page token request finishing after sign-out cannot send API requests', async t => {
+  const { page, state, open } = await setup(t, '/deliverables');
+  await open();
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  await page.evaluate(() => {
+    window.navigationTest.instance.acquireTokenSilent = () => new Promise(resolve => {
+      (window.finishPageTokens ??= []).push(resolve);
+    });
+    window.navigationTest.navigate('/consultant');
+  });
+  await page.waitForFunction(() => window.finishPageTokens?.length > 0);
+  await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in with NetID', exact: true }).waitFor();
+  const requests = state.calls.length;
+  await page.evaluate(async () => {
+    window.finishPageTokens.forEach(resolve => resolve({ accessToken: 'stale-token' }));
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+  });
+  assert.equal(await page.evaluate(() => window.navigationTest.authHeader()), undefined);
+  assert.equal(state.calls.length, requests);
+});
+
 for (const role of ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'EXECUTIVE']) {
   test(`People navigation and route deny ${role}`, async t => {
     const { page, state, nav, open } = await setup(t, '/people', role);
