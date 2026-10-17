@@ -37,7 +37,7 @@ exports.responseFor = (pathname, role) => {
     grid: { numCols: 1, numRows: 2, totalSlots: 2, slotStartMinute: 540, slotEndMinute: 570,
       gridFirstDate: '2026-10-12', gridLastDate: '2026-10-12', columnLabels: ['Monday'], rowStartLabels: ['9:00', '9:15'] },
     teamSize: 1, members: [{ id: 'u-1', email: 'pm@example.test', displayName: 'PM' }],
-    slots: [{ slotIndex: 0, names: ['PM'] }], mySlots: [0] };
+    slots: [{ slotIndex: 0, names: ['PM'], userIds: ['u-1'] }], mySlots: [0] };
 
   return [];
 };

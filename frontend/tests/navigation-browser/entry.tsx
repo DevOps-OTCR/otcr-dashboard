@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { InteractionStatus } from '@azure/msal-browser';
 import { AuthProvider } from '@/components/AuthContext';
+import PeoplePage from '@/app/people/page';
+import SlackSettingsPage from '@/app/settings/slack/page';
 import DeliverablesPage from '@/app/deliverables/page';
 import SlidesPage from '@/app/slides/page';
 import AttendancePage from '@/app/attendance/page';
@@ -26,7 +28,8 @@ function Pages() {
   const pages: Record<string, typeof DeliverablesPage> = { '/slides': SlidesPage, '/attendance': AttendancePage,
     '/workstream': WorkstreamPage, '/when2meet': When2MeetPage, '/pm': PMDashboard, '/lc': LCDashboard,
     '/partner': PartnerDashboard, '/consultant': ConsultantDashboard,
-    '/alumni-database': AlumniDatabasePage, '/forms': FormsPage };
+    '/alumni-database': AlumniDatabasePage, '/forms': FormsPage,
+    '/people': PeoplePage, '/settings/slack': SlackSettingsPage };
   const route = path.split('?')[0].replace(/\/+$/, '');
   const Page = pages[route] ?? DeliverablesPage;
   return <Page key={route} />;
