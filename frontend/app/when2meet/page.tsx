@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Be_Vietnam_Pro, Mulish } from 'next/font/google';
+import { Be_Vietnam_Pro } from 'next/font/google';
+import localFont from 'next/font/local';
 import { AppNavbar } from '@/components/AppNavbar';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { PageLoading } from '@/components/PageLoading';
@@ -21,9 +22,10 @@ import {
 import { getEffectiveRole, type AppRole } from '@/lib/permissions';
 import { When2MeetBoard } from '@/when2meet/When2MeetBoard';
 
-const mulish = Mulish({
-  subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700', '800'],
+const mulish = localFont({
+  src: './fonts/Mulish.ttf',
+  weight: '300 800',
+  display: 'swap',
 });
 
 const beVietnam = Be_Vietnam_Pro({
