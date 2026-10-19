@@ -49,14 +49,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const previousEmail = useRef<string | undefined>(undefined);
 
+  // Isolate cached page data per account. This runs before the new account renders, so a
+  // remounted page cannot read the previous account's responses.
+  const scopeCaches = useCallback((email: string | undefined) => {
+    if (previousEmail.current === email) return;
+    clearProjectsCache();
+    setResourceCacheScope(email);
+    clearNavigationSnapshots();
+    previousEmail.current = email;
+  }, []);
+
   useEffect(() => {
-    if (previousEmail.current !== user?.email) {
-      clearProjectsCache();
-      setResourceCacheScope(user?.email);
-      clearNavigationSnapshots();
-      previousEmail.current = user?.email;
-    }
-  }, [user?.email]);
+    scopeCaches(user?.email);
+  }, [scopeCaches, user?.email]);
 
   useEffect(() => {
     if (inProgress !== InteractionStatus.None) return;
@@ -83,9 +88,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             email: account.username,
             name: claimName || claims?.name || account.name || undefined,
           };
+          scopeCaches(nextUser.email);
           setUser(current => current?.email === nextUser.email && current?.name === nextUser.name ? current : nextUser);
           setIsLoggedIn(true);
         } else {
+          scopeCaches(undefined);
           setIsLoggedIn(false);
           setUser(null);
         }
@@ -97,7 +104,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
 
     checkAuth();
-  }, [instance, accounts, inProgress]);
+  }, [instance, accounts, inProgress, scopeCaches]);
 
   const login = useCallback(async () => {
     await instance.initialize();

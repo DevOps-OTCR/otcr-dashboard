@@ -4,6 +4,8 @@
  */
 
 import { authAPI } from "./api";
+import { clearNavigationSnapshots } from "./navigation-cache";
+import { clearResourceCache } from "./resource-cache";
 
 export type AppRole = 'CONSULTANT' | 'LC' | 'PM' | 'PARTNER' | 'EXECUTIVE' | 'ADMIN';
 
@@ -35,6 +37,19 @@ export function setDevRoleOverride(role: AppRole | null): void {
     localStorage.setItem(DEV_ROLE_OVERRIDE_KEY, role);
   } else {
     localStorage.removeItem(DEV_ROLE_OVERRIDE_KEY);
+  }
+}
+
+// Roles the API confirmed during this page load. A different role later means page data
+// cached under the previous permissions must not be shown again.
+const confirmedRoles = new Map<string, AppRole>();
+
+function confirmRole(email: string, role: AppRole): void {
+  const previous = confirmedRoles.get(email);
+  confirmedRoles.set(email, role);
+  if (previous && previous !== role) {
+    clearResourceCache();
+    clearNavigationSnapshots();
   }
 }
 
@@ -130,6 +145,7 @@ export async function getEffectiveRole(
     throw new Error('The role response did not contain a valid role');
   }
   writeCachedRole(normalizedEmail, role);
+  confirmRole(normalizedEmail, role);
   return role;
 }
 
