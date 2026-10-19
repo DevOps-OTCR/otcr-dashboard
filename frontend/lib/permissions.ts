@@ -135,7 +135,10 @@ export async function getEffectiveRole(
   }
   const normalizedEmail = email.toLowerCase();
   const cachedRole = readCachedRole(normalizedEmail);
-  if (cachedRole) return cachedRole;
+  if (cachedRole) {
+    confirmRole(normalizedEmail, cachedRole);
+    return cachedRole;
+  }
 
   const response = await authAPI.getRole({
     headers: { Authorization: `Bearer ${token}` },

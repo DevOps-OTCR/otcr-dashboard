@@ -102,6 +102,17 @@ test('a changed API role clears page data cached under the previous permissions'
   assert.equal(snapshots.readNavigationSnapshot('overview'), undefined);
 });
 
+test('a role that changes after the stored role expires clears cached page data', async () => {
+  const context = setup([{ role: 'CONSULTANT' }]);
+  const resources = context.cacheModules['./resource-cache'];
+  context.cache.set('otcr_role_cache:user@example.test', JSON.stringify({ role: 'PM', cachedAt: Date.now(), source: 'api' }));
+  assert.equal(await context.getEffectiveRole('test-token', 'user@example.test'), 'PM');
+  await resources.cachedRequest('/projects', async () => ({ data: 'pm projects' }));
+  context.cache.clear();
+  assert.equal(await context.getEffectiveRole('test-token', 'user@example.test'), 'CONSULTANT');
+  assert.equal(resources.readResource('/projects'), undefined);
+});
+
 test('confirming the same role keeps cached page data', async () => {
   const context = setup([{ role: 'PM' }, { role: 'PM' }]);
   const resources = context.cacheModules['./resource-cache'];
