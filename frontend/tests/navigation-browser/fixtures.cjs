@@ -31,6 +31,9 @@ exports.responseFor = (pathname, role) => {
   if (sprintMatch) return sprints(sprintMatch[1]);
   if (pathname.startsWith('/projects/')) return { pm: { id: 'u-1', firstName: 'Test', email: 'pm@example.test' }, members: [] };
   if (pathname === '/attendance/events') return { events };
+  if (pathname === '/deliverables') return [{ id: 'note-1', title: 'Client kickoff notes', type: 'REPORT',
+    description: '[[CLIENT_NOTE_LINK:https://example.test/notes]]', createdAt: '2026-10-12T12:00:00Z',
+    project: { id: 'team-1', name: 'Team One' } }];
   const poll = { id: 'poll-1', projectId: 'team-1', title: 'Planning poll', createdAt: '2026-10-10' };
   if (pathname === '/when2meet/polls') return { polls: [poll] };
   if (pathname === '/when2meet/polls/poll-1') return { poll,

@@ -249,6 +249,75 @@ test('returning to a tab restores its project and content during a failed refres
   assert.equal(await page.getByText('team-2 Draft deck', { exact: true }).isVisible(), true);
 });
 
+test('Teams first visit keeps the navbar visible and return visits restore the selected team without requests', async t => {
+  const { page, state, nav, open } = await setup(t, '/teams');
+  let release;
+  state.gate = new Promise(resolve => { release = resolve; });
+  await open();
+  await page.getByText('Loading teams...', { exact: true }).waitFor();
+  assert.equal(await nav('Attendance').isVisible(), true);
+  release();
+  await page.getByRole('button', { name: /Team Two/ }).click();
+  await page.getByRole('heading', { name: 'Team Two', exact: true }).waitFor();
+  await page.waitForFunction(() => window.navigationTest.readSnapshot(JSON.stringify(['teams', 'pm@example.test', null]))?.selectedTeamId === 'team-2');
+  const requests = state.calls.length;
+  await nav('Attendance').click();
+  await page.getByText('Team weekly check-in', { exact: true }).waitFor();
+  const afterAttendance = state.calls.length;
+  await nav('Teams').click();
+  assert.equal(await page.getByRole('heading', { name: 'Team Two', exact: true }).isVisible(), true);
+  assert.equal(await page.getByText('Loading teams...', { exact: true }).count(), 0);
+  await page.getByRole('button', { name: 'Back to teams', exact: true }).waitFor();
+  // Only the role and notification checks may run while cached team data is fresh.
+  assert.deepEqual(state.calls.slice(afterAttendance).filter(path => path !== '/auth/role' && path !== '/notifications/my'), []);
+  assert.ok(requests > 0);
+});
+
+test('Deliverables and Client Notes keep restored content when an expired refresh fails', async t => {
+  const { page, state, nav, open } = await setup(t, '/deliverables');
+  let failNotes = false;
+  await page.route(url => url.pathname === '/api/deliverables', route => route.fulfill({ status: failNotes ? 503 : 200,
+    contentType: 'application/json', body: JSON.stringify(failNotes ? { message: 'Temporary outage' } : responseFor('/deliverables', 'PM')) }));
+  await open();
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  await nav('Client Call Notes').click();
+  await page.getByText('Client kickoff notes', { exact: true }).waitFor();
+  await nav('Attendance').click();
+  await page.getByText('Team weekly check-in', { exact: true }).waitFor();
+  await page.clock.install({ time: new Date() });
+  await page.clock.fastForward(121000);
+  state.failSprints = true;
+  failNotes = true;
+  await nav('Deliverables').click();
+  assert.equal(await page.getByText('team-1 Research', { exact: true }).isVisible(), true);
+  await page.getByText('Temporary outage', { exact: true }).waitFor();
+  assert.equal(await page.getByText('team-1 Research', { exact: true }).isVisible(), true);
+  await nav('Client Call Notes').click();
+  assert.equal(await page.getByText('Client kickoff notes', { exact: true }).isVisible(), true);
+  await page.getByRole('alert').getByText('Could not refresh client notes. Showing previously loaded notes.', { exact: true }).waitFor();
+  assert.equal(await page.getByText('Client kickoff notes', { exact: true }).isVisible(), true);
+  assert.equal(await page.getByRole('status').count(), 0);
+});
+
+test('navbar refresh bypasses fresh cached data while restored content stays visible', async t => {
+  const { page, state, open } = await setup(t, '/alumni-database');
+  await open();
+  await page.getByRole('searchbox').fill('Example');
+  const rows = await page.locator('tbody').innerText();
+  let release;
+  state.alumniGate = new Promise(resolve => { release = resolve; });
+  const refresh = page.waitForRequest('**/api/alumni');
+  await page.getByRole('button', { name: 'Refresh page data', exact: true }).click();
+  await refresh;
+  assert.equal(await page.getByRole('searchbox').inputValue(), 'Example');
+  assert.equal(await page.locator('tbody').innerText(), rows);
+  assert.equal(await page.getByRole('status').count(), 0);
+  release();
+  await page.waitForFunction(() => window.navigationTest.readResource('/alumni'));
+  assert.equal(state.calls.filter(path => path === '/alumni').length, 2);
+  assert.equal(await page.getByRole('searchbox').inputValue(), 'Example');
+});
+
 test('writes invalidate other tabs and logout clears cached data', async t => {
   const { page, state, nav, open } = await setup(t, '/attendance');
   await open();
