@@ -14,6 +14,14 @@ export type OnboardingRequest = {
 };
 export const personName = (person: Pick<Person, 'firstName' | 'lastName' | 'email'>) =>
   [person.firstName, person.lastName].filter(Boolean).join(' ') || person.email;
+export function safePersonName(person: Person): string {
+  const name = personName(person);
+  // If name is just an email-like value (starts with something@), show the email instead
+  if (name.includes('@')) return person.email;
+  // If name is suspiciously long (likely an encoded JWT), truncate with tooltip
+  if (name.length > 40) return `${name.slice(0, 37)}...`;
+  return name;
+}
 export function apiError(error: unknown, fallback: string) {
   const value = error as { response?: { data?: { message?: string | string[] } }; message?: string };
   const message = value?.response?.data?.message ?? value?.message ?? fallback;
