@@ -18,7 +18,7 @@ import {
 } from "react";
 import FullScreenLoader from "./LoadingScreen";
 import { clearRoleCache } from "@/lib/permissions";
-import { clearProjectsCache } from "@/lib/api";
+import { authAPI, clearProjectsCache } from "@/lib/api";
 import { setResourceCacheScope } from '@/lib/resource-cache';
 import { clearNavigationSnapshots } from "@/lib/navigation-cache";
 
@@ -30,7 +30,8 @@ type AuthUser = {
 interface AuthContextType {
   isLoggedIn: boolean;
   user: AuthUser | null;
-  loading: boolean; 
+  loading: boolean;
+  accessStatus: "approved" | "pending" | "denied";
   login: () => Promise<void>;
   logout: () => Promise<void>;
   getToken: () => Promise<string | null>;
@@ -44,6 +45,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/\/+$/, "");
   
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [accessStatus, setAccessStatus] = useState<'approved' | 'pending' | 'denied'>('pending');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -85,6 +87,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           };
           setUser(current => current?.email === nextUser.email && current?.name === nextUser.name ? current : nextUser);
           setIsLoggedIn(true);
+          // Check access status after MSAL init
+          try {
+            const roleResponse = await authAPI.getRole();
+            if (roleResponse.data?.role === 'ADMIN') {
+              setAccessStatus('approved');
+            } else {
+              setAccessStatus('denied');
+            }
+          } catch {
+            setAccessStatus('pending');
+          }
         } else {
           setIsLoggedIn(false);
           setUser(null);
@@ -183,8 +196,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // Later token operations must not unmount the current page.
   const isLoading = !isAuthReady;
   const contextValue = useMemo(() => ({
-    isLoggedIn, user, loading: isLoading, login, logout, getToken,
-  }), [isLoggedIn, user, isLoading, login, logout, getToken]);
+    isLoggedIn, user, loading: isLoading, accessStatus, login, logout, getToken,
+  }), [isLoggedIn, user, isLoading, accessStatus, login, logout, getToken]);
 
   return (
     <AuthContext.Provider
