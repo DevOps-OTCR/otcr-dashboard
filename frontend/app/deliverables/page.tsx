@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CheckSquare, Square, Users, Link as LinkIcon } from 'lucide-react';
+import { CheckSquare, ChevronDown, Square, Users, Link as LinkIcon } from 'lucide-react';
 import { AssigneeChecklist, projectAssignees } from '@/components/AssigneeChecklist';
 import { AppNavbar } from '@/components/AppNavbar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -174,6 +174,7 @@ export default function DeliverablesPage() {
   >({});
   const [busySubtaskId, setBusySubtaskId] = useState<string | null>(null);
   const [creatingSubtaskFor, setCreatingSubtaskFor] = useState<string | null>(null);
+  const [expandedSubtasks, setExpandedSubtasks] = useState<Record<string, boolean>>({});
 
   const canManage = role === 'PM' || role === 'LC' || role === 'ADMIN';
   const currentEmail = (session.user?.email ?? '').toLowerCase();
@@ -696,6 +697,8 @@ export default function DeliverablesPage() {
                       const nonSubmittingAssignees = (deliverable.assignees ?? []).filter(
                         (assignee) => !submittedUserIds.has(assignee.id),
                       );
+                      const subtasksExpanded = Boolean(expandedSubtasks[deliverable.id]);
+                      const subtasksPanelId = `deliverable-${deliverable.id}-subtasks`;
 
                       return (
                         <div
@@ -874,20 +877,39 @@ export default function DeliverablesPage() {
                             </div>
 
                             <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-3">
-                              <div className="flex items-center justify-between gap-3">
-                                <div>
-                                  <p className="text-sm font-medium text-[var(--foreground)]">Subtasks</p>
-                                  <p className="text-xs text-[var(--foreground)]/60">
-                                    Split the deliverable into smaller assigned steps.
-                                  </p>
-                                </div>
-                                <span className="text-xs text-[var(--foreground)]/55">
-                                  {(deliverable.subtasks ?? []).filter((subtask) => subtask.completed).length}/
-                                  {(deliverable.subtasks ?? []).length} done
+                              <button
+                                type="button"
+                                aria-expanded={subtasksExpanded}
+                                aria-controls={subtasksPanelId}
+                                onClick={() =>
+                                  setExpandedSubtasks((current) => ({
+                                    ...current,
+                                    [deliverable.id]: !current[deliverable.id],
+                                  }))
+                                }
+                                className="flex w-full min-w-0 items-center justify-between gap-3 rounded-lg text-left"
+                              >
+                                <span className="min-w-0 text-sm font-medium text-[var(--foreground)]">
+                                  Subtasks
+                                  <span className="font-normal text-[var(--foreground)]/55">
+                                    {' · '}
+                                    {(deliverable.subtasks ?? []).filter((subtask) => subtask.completed).length}/
+                                    {(deliverable.subtasks ?? []).length} done
+                                  </span>
                                 </span>
-                              </div>
+                                <ChevronDown
+                                  aria-hidden="true"
+                                  className={cn(
+                                    'h-4 w-4 shrink-0 text-[var(--foreground)]/60 transition-transform',
+                                    subtasksExpanded && 'rotate-180',
+                                  )}
+                                />
+                              </button>
 
-                              <div className="mt-3 space-y-3">
+                              <div id={subtasksPanelId} hidden={!subtasksExpanded} className="mt-3 space-y-3">
+                                <p className="text-xs text-[var(--foreground)]/60">
+                                  Split the deliverable into smaller assigned steps.
+                                </p>
                                 {(deliverable.subtasks ?? []).length === 0 && (
                                   <div className="rounded-lg border border-dashed border-[var(--border)] p-3 text-xs text-[var(--foreground)]/60">
                                     No subtasks yet.

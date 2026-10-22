@@ -24,7 +24,7 @@ async function setup(t, initialPath, role = 'PM') {
     return route.fulfill({ contentType: 'text/html', body: '<p>Calendar fixture</p>' });
   });
   await context.route('http://navigation.test/**', route => route.fulfill({
-    contentType: route.request().url().endsWith('/bundle.js') ? 'text/javascript' : 'text/html',
+    contentType: route.request().url().endsWith('/bundle.js') ? 'text/javascript; charset=utf-8' : 'text/html',
     body: route.request().url().endsWith('/bundle.js') ? bundle : document,
   }));
   const page = await context.newPage();
@@ -182,6 +182,7 @@ for (const width of [375, 768, 1440]) {
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify(payload) });
     });
     await open();
+    await page.getByRole('button', { name: 'Subtasks · 0/1 done', exact: true }).click();
     await page.getByLabel('Subtask title', { exact: true }).waitFor();
     await page.addStyleTag({ content: styles });
     await page.getByLabel('New subtask title', { exact: true }).fill('New subtask');
@@ -203,6 +204,47 @@ for (const width of [375, 768, 1440]) {
     }
   });
 }
+
+test('deliverable subtasks start collapsed, toggle independently, and keep unsaved input', async t => {
+  const { page, open } = await setup(t, '/deliverables');
+  await page.route('**/api/projects/*/sprints', route => {
+    const payload = responseFor('/projects/team-1/sprints', 'PM');
+    payload[0].deliverables.push({ id: 'team-1-analysis', title: 'team-1 Analysis', status: 'IN_PROGRESS',
+      deadline: '2026-10-18T23:00:00Z', assignees: [], subtasks: [
+        { id: 'subtask-1', title: 'Gather data', assigneeId: 'u-1', dueDate: null, completed: true },
+        { id: 'subtask-2', title: 'Build model', assigneeId: null, dueDate: null, completed: false },
+      ] });
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(payload) });
+  });
+  await open();
+  const toggles = page.getByRole('button', { name: /^Subtasks · \d+\/\d+ done$/ });
+  await toggles.first().waitFor();
+  assert.deepEqual(await toggles.allTextContents(), ['Subtasks · 0/0 done', 'Subtasks · 1/2 done']);
+  for (const toggle of await toggles.all()) {
+    assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+    const panel = page.locator(`[id="${await toggle.getAttribute('aria-controls')}"]`);
+    assert.equal(await panel.isHidden(), true);
+  }
+  assert.equal(await page.getByText('No subtasks yet.').first().isVisible(), false);
+  assert.equal(await page.getByLabel('New subtask title', { exact: true }).first().isVisible(), false);
+  assert.equal(await page.getByLabel('Subtask title', { exact: true }).first().isVisible(), false);
+
+  const [first, second] = await toggles.all();
+  await first.focus();
+  await page.keyboard.press('Enter');
+  assert.equal(await first.getAttribute('aria-expanded'), 'true');
+  assert.equal(await second.getAttribute('aria-expanded'), 'false');
+  const firstPanel = page.locator(`[id="${await first.getAttribute('aria-controls')}"]`);
+  await firstPanel.getByText('No subtasks yet.').waitFor();
+  await firstPanel.getByLabel('New subtask title', { exact: true }).fill('Draft subtask');
+
+  await first.focus();
+  await page.keyboard.press('Space');
+  assert.equal(await first.getAttribute('aria-expanded'), 'false');
+  assert.equal(await firstPanel.isHidden(), true);
+  await first.click();
+  assert.equal(await firstPanel.getByLabel('New subtask title', { exact: true }).inputValue(), 'Draft subtask');
+});
 
 test('navigation stays usable during loading and Slides does not fetch twice', async t => {
   const { page, state, nav, open } = await setup(t, '/deliverables');
