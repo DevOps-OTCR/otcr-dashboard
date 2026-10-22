@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { readAccess, normalizeEmail } from '../auth/access-policy';
 import { NotificationsService } from '../notifications/notifications.service';
 
 const CHICAGO_TIMEZONE = 'America/Chicago';
@@ -221,13 +222,13 @@ export class ProjectsService {
       throw new BadRequestException('startDate must be a valid date');
     }
 
-    // Verify PM exists and has PM or ADMIN role
+    // Verify the PM's canonical approval and role below.
     const pm = await this.prisma.user.findUnique({
       where: { id: pmId || userId },
     });
 
-    if (!pm || (pm.role !== 'PM' && pm.role !== 'ADMIN')) {
-      throw new BadRequestException('PM must have PM or ADMIN role');
+    if (!pm) {
+      throw new BadRequestException('PM not found');
     }
 
     const normalizedMemberIds = Array.from(
@@ -237,70 +238,16 @@ export class ProjectsService {
       new Set((memberEmails ?? []).map((email) => email.trim().toLowerCase()).filter(Boolean)),
     );
 
-    let resolvedMemberIds = normalizedMemberIds;
-
-    if (normalizedMemberEmails.length > 0) {
-      let usersByEmail = await this.prisma.user.findMany({
-        where: {
-          email: { in: normalizedMemberEmails },
-        },
-        select: { id: true, email: true },
-      });
-
-      let foundEmailSet = new Set(usersByEmail.map((user) => user.email.toLowerCase()));
-      const missingEmails = normalizedMemberEmails.filter((email) => !foundEmailSet.has(email));
-
-      if (missingEmails.length > 0) {
-        const allowedEntries = await this.prisma.allowedEmail.findMany({
-          where: {
-            email: { in: missingEmails },
-            active: true,
-          },
-          select: { email: true, role: true },
-        });
-
-        const allowedByEmail = new Map(
-          allowedEntries.map((entry) => [entry.email.toLowerCase(), entry]),
-        );
-        const disallowedEmails = missingEmails.filter((email) => !allowedByEmail.has(email));
-
-        if (disallowedEmails.length > 0) {
-          throw new BadRequestException(
-            `Users not found for emails: ${disallowedEmails.join(', ')}`,
-          );
-        }
-
-        const onboardingEntries = await (this.prisma as any).onboardingRequest.findMany({
-          where: { email: { in: missingEmails } },
-          select: { email: true, name: true },
-        });
-        const onboardingNameByEmail = new Map<string, string>(
-          onboardingEntries.map((entry: { email: string; name?: string | null }) => [
-            String(entry.email).toLowerCase(),
-            entry.name || '',
-          ]),
-        );
-
-        await this.prisma.user.createMany({
-          data: missingEmails.map((email) => ({
-            email,
-            ...this.splitNameParts(onboardingNameByEmail.get(email) || null),
-            role: (allowedByEmail.get(email)?.role ?? 'CONSULTANT') as any,
-          })),
-          skipDuplicates: true,
-        });
-
-        usersByEmail = await this.prisma.user.findMany({
-          where: {
-            email: { in: normalizedMemberEmails },
-          },
-          select: { id: true, email: true },
-        });
-        foundEmailSet = new Set(usersByEmail.map((user) => user.email.toLowerCase()));
-      }
-
-      resolvedMemberIds = Array.from(new Set([...normalizedMemberIds, ...usersByEmail.map((u) => u.id)]));
+    const pmAccess = await readAccess(this.prisma, pm.email);
+    if (!pmAccess.access.hasCmsAccess || !['PM', 'ADMIN'].includes(pmAccess.access.role)) {
+      throw new BadRequestException('PM must have active approved CMS access and PM or ADMIN role');
     }
+    // Validate every entry, including existing User IDs; merely having a profile
+    // must not bypass the same approval policy used by the team picker.
+    const members = [];
+    for (const id of normalizedMemberIds) members.push(await this.resolveEligibleMember({ userId: id }));
+    for (const email of normalizedMemberEmails) members.push(await this.resolveEligibleMember({ email }));
+    const resolvedMemberIds = [...new Set<string>(members.map(member => member.id))];
 
     // Create project with members
     const project = await this.prisma.project.create({
@@ -748,6 +695,23 @@ export class ProjectsService {
     }
   }
 
+  private async resolveEligibleMember(input: { userId?: string; email?: string }) {
+    return this.prisma.$transaction(async tx => {
+      const existing = input.userId ? await tx.user.findUnique({ where: { id: input.userId } }) : null;
+      if (input.userId && !existing) throw new BadRequestException('User not found');
+      const email = normalizeEmail(existing?.email ?? input.email);
+      const { user, request, access } = await readAccess(tx, email);
+      if (!access.hasCmsAccess) throw new BadRequestException('Team members must have active approved CMS access');
+      if (user) return user;
+      // Legacy approved emails may predate User provisioning. This is an
+      // authorized manager assignment, never self-approval by an applicant.
+      return tx.user.create({ data: {
+        email, role: access.role, active: true,
+        ...this.splitNameParts(request?.status === 'APPROVED' ? request.name : null),
+      } });
+    });
+  }
+
   async addMember(projectId: string, input: { userId?: string; email?: string }) {
     const userId = input.userId?.trim();
     const email = input.email?.trim().toLowerCase();
@@ -756,37 +720,7 @@ export class ProjectsService {
       throw new BadRequestException('Provide userId or email');
     }
 
-    // Check if user exists
-    const user = userId
-      ? await this.prisma.user.findUnique({
-          where: { id: userId },
-        })
-      : await this.prisma.user.findUnique({
-          where: { email: email! },
-        });
-
-    if (!user) {
-      throw new BadRequestException('User not found');
-    }
-
-    if (!user.firstName && !user.lastName && user.email) {
-      const onboarding = await (this.prisma as any).onboardingRequest.findUnique({
-        where: { email: user.email.toLowerCase() },
-        select: { name: true },
-      });
-      const parsed = this.splitNameParts(onboarding?.name ?? null);
-      if (parsed.firstName || parsed.lastName) {
-        await this.prisma.user.update({
-          where: { id: user.id },
-          data: {
-            firstName: parsed.firstName,
-            lastName: parsed.lastName,
-          },
-        });
-        user.firstName = parsed.firstName;
-        user.lastName = parsed.lastName;
-      }
-    }
+    const user = await this.resolveEligibleMember({ userId, email });
 
     // Check if already an active member
     const existingActiveMember = await this.prisma.projectMember.findFirst({

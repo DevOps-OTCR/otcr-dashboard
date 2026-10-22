@@ -5,13 +5,11 @@ import {
   Body,
   Param,
   Headers,
-  UnauthorizedException,
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
 import { SlideSubmissionsService } from './slide-submissions.service';
 import { AuthService } from '../auth/auth.service';
-import { getVerifiedUser } from '../common/utils/verify';
 
 @Controller('slide-submissions')
 export class SlideSubmissionsController {
@@ -21,22 +19,7 @@ export class SlideSubmissionsController {
   ) {}
 
   private async getUserFromHeader(authorization: string) {
-    if (!authorization) {
-      throw new UnauthorizedException('No authorization header');
-    }
-
-    const raw = authorization.replace(/^Bearer\s+/i, '').trim();
-    if (!raw) {
-      throw new UnauthorizedException('No user identifier in authorization');
-    }
-    const email = raw.includes('@') ? raw : await getVerifiedUser(raw);
-
-    const user = await this.authService.getUserByEmail(email);
-    if (!user) {
-      throw new UnauthorizedException('User not found');
-    }
-
-    return user;
+    return this.authService.getUserFromAuthorization(authorization);
   }
 
   @Post()

@@ -1,3 +1,4 @@
+import { createHttpTestClient, HttpTestClient } from '../common/testing/http-test-client';
 import { ForbiddenException, INestApplication, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { User } from '@prisma/client';
@@ -255,7 +256,7 @@ describe('task creation and reassignment', () => {
 
 describe('guarded tasks HTTP routes', () => {
   let app: INestApplication;
-  let baseUrl: string;
+  let http: HttpTestClient;
   const f = fixtures();
 
   beforeAll(async () => {
@@ -269,13 +270,12 @@ describe('guarded tasks HTTP routes', () => {
       ],
     }).compile();
     app = module.createNestApplication();
-    await app.listen(0, '127.0.0.1');
-    baseUrl = await app.getUrl();
+    http = await createHttpTestClient(app);
   });
   afterAll(async () => { await app?.close(); });
 
   test.each(['GET', 'PATCH', 'DELETE'])('%s returns 403 across teams and preserves side effects', async method => {
-    const response = await fetch(`${baseUrl}/tasks/task-a`, {
+    const response = await http.fetch(`${http.baseUrl}/tasks/task-a`, {
       method,
       headers: { Authorization: 'Bearer synthetic-consultant-token', 'Content-Type': 'application/json' },
       ...(method === 'PATCH' ? { body: JSON.stringify({ completed: true }) } : {}),
@@ -286,8 +286,8 @@ describe('guarded tasks HTTP routes', () => {
 
   test.each(['GET', 'POST', 'PATCH', 'DELETE'])('%s rejects unauthenticated callers', async method => {
     const path = method === 'POST' ? '/tasks' : '/tasks/task-a';
-    const response = await fetch(`${baseUrl}${path}`, { method });
-    expect(response.status).toBe(403);
+    const response = await http.fetch(`${http.baseUrl}${path}`, { method });
+    expect(response.status).toBe(401);
     f.assertNoWrites();
   });
 });

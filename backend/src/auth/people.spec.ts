@@ -1,3 +1,4 @@
+import { createHttpTestClient, HttpTestClient } from '../common/testing/http-test-client';
 import { BadRequestException, ConflictException, INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PeopleController } from './people.controller';
@@ -13,10 +14,10 @@ jest.mock('../common/utils/verify', () => ({ getVerifiedUser: async (token: stri
 
 describe('People and onboarding HTTP authorization', () => {
   let app: INestApplication;
-  let url: string;
+  let http: HttpTestClient;
   const people = { list: jest.fn().mockResolvedValue([]), changeRole: jest.fn().mockResolvedValue({}) };
   const auth = {
-    getUserByEmail: async (email: string) => ({ id: email, role: email.split('@')[0] }),
+    getUserByEmail: async (email: string) => ({ id: email, role: email.split('@')[0].toUpperCase() }),
     addAllowedEmail: jest.fn().mockResolvedValue({}),
     listOnboardingRequests: jest.fn().mockResolvedValue([]), approveOnboardingRequest: jest.fn().mockResolvedValue({}),
     rejectOnboardingRequest: jest.fn().mockResolvedValue({}),
@@ -30,28 +31,28 @@ describe('People and onboarding HTTP authorization', () => {
       providers: [AuthGuard, { provide: PeopleService, useValue: people }, { provide: AuthService, useValue: auth }],
     }).compile();
     app = module.createNestApplication();
-    await app.listen(0, '127.0.0.1'); url = await app.getUrl();
+    http = await createHttpTestClient(app);
   });
   afterAll(async () => { await app?.close(); });
   test.each(['CONSULTANT', 'LC', 'PM', 'PARTNER', 'EXECUTIVE', ''])('denies all management routes for %s', async role => {
     jest.clearAllMocks();
     for (const [method, path] of routes) {
-      const response = await fetch(url + path, { method,
+      const response = await http.fetch(http.baseUrl + path, { method,
         headers: { ...(role ? { Authorization: `Bearer ${role}` } : {}), 'Content-Type': 'application/json' },
         ...(method !== 'GET' ? { body: JSON.stringify({ email: 'person@example.test', role: 'ADMIN', grantedRole: 'ADMIN' }) } : {}),
       });
-      expect(response.status).toBe(403);
+      expect(response.status).toBe(role ? 403 : 401);
     }
     for (const fn of [people.list, people.changeRole, auth.listOnboardingRequests, auth.approveOnboardingRequest, auth.rejectOnboardingRequest, auth.addAllowedEmail]) expect(fn).not.toHaveBeenCalled();
   });
   test('permits Admin access', async () => {
     for (const [method, path] of routes) {
-      const response = await fetch(url + path, { method, headers: { Authorization: 'Bearer ADMIN', 'Content-Type': 'application/json' },
+      const response = await http.fetch(http.baseUrl + path, { method, headers: { Authorization: 'Bearer ADMIN', 'Content-Type': 'application/json' },
         ...(method !== 'GET' ? { body: JSON.stringify({ email: 'person@example.test', role: 'PM', grantedRole: 'LC', notes: 'Reviewed' }) } : {}),
       });
       expect(response.status).toBe(method === 'POST' ? 201 : 200);
     }
-    expect(auth.approveOnboardingRequest).toHaveBeenCalledWith('request', 'ADMIN@example.test', 'Reviewed', 'LC');
+    expect(auth.approveOnboardingRequest).toHaveBeenCalledWith('request', 'admin@example.test', 'Reviewed', 'LC');
   });
 });
 
@@ -60,16 +61,19 @@ function statefulFixture() {
   let access = { email: person.email, role: 'CONSULTANT' as Role, active: true };
   const user = {
     findUnique: jest.fn().mockImplementation(async () => ({ ...person })),
+    findMany: jest.fn().mockImplementation(async () => [{ ...person }]),
     update: jest.fn().mockImplementation(async ({ data }) => { person = { ...person, ...data }; return { ...person }; }),
     updateMany: jest.fn().mockResolvedValue({ count: 1 }), upsert: jest.fn().mockResolvedValue({}),
   };
   const allowedEmail = {
     updateMany: jest.fn().mockImplementation(async ({ data }) => { access = { ...access, ...data }; return { count: 1 }; }),
     create: jest.fn().mockResolvedValue({}), findFirst: jest.fn().mockImplementation(async () => access),
+    findMany: jest.fn().mockImplementation(async () => [access]),
     findFirstOrThrow: jest.fn().mockImplementation(async () => access),
   };
   const request = { id: 'request', email: person.email, name: 'Casey Test', requestedRole: 'CONSULTANT', status: 'PENDING' };
   const onboardingRequest = { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn().mockResolvedValue(request),
+    findFirst: jest.fn().mockResolvedValue(request),
     updateMany: jest.fn().mockResolvedValue({ count: 1 }) };
   const tx = { user, allowedEmail, onboardingRequest };
   const prisma = { ...tx, $transaction: jest.fn().mockImplementation(action => action(tx)) };
@@ -78,7 +82,7 @@ function statefulFixture() {
 
 describe('People directory and persistent role changes', () => {
   test('includes inactive users and deduplicates managed projects and active memberships', async () => {
-    const prisma = { user: { findMany: jest.fn().mockResolvedValue([{ id: 'p', active: false, role: 'PM',
+    const prisma = { allowedEmail: { findMany: jest.fn().mockResolvedValue([]) }, onboardingRequest: { findMany: jest.fn().mockResolvedValue([]) }, user: { findMany: jest.fn().mockResolvedValue([{ id: 'p', email: 'p@example.test', active: false, role: 'PM',
       projectAssignments: [{ project: { id: 'a', name: 'Alpha' } }],
       pmProjects: [{ id: 'a', name: 'Alpha' }, { id: 'b', name: 'Beta' }],
     }]) } };
@@ -116,14 +120,14 @@ describe('People directory and persistent role changes', () => {
   test('legacy grants normalize email and sync user roles in one transaction', async () => {
     const f = statefulFixture();
     expect(await f.auth.addAllowedEmail(' PERSON@example.test ', 'LC')).toEqual(expect.objectContaining({ role: 'LC', active: true }));
-    expect(f.tx.user.updateMany).toHaveBeenCalledWith({
-      where: { email: { equals: 'person@example.test', mode: 'insensitive' } }, data: { role: 'LC' },
+    expect(f.tx.user.update).toHaveBeenCalledWith({
+      where: { id: 'person' }, data: { role: 'LC', active: true },
     });
     expect(f.prisma.$transaction).toHaveBeenCalledTimes(1);
   });
   test('legacy grants propagate user write failures out of the transaction', async () => {
     const f = statefulFixture();
-    f.tx.user.updateMany.mockRejectedValue(new Error('write failed'));
+    f.tx.user.update.mockRejectedValue(new Error('write failed'));
     await expect(f.auth.addAllowedEmail('person@example.test', 'PM')).rejects.toThrow('write failed');
   });
 });
@@ -138,7 +142,7 @@ describe('onboarding review', () => {
       data: { status: 'APPROVED', grantedRole: role, reviewedById: 'reviewer', reviewedAt: expect.any(Date), reviewerNotes: 'Checked' } });
     expect(f.request.requestedRole).toBe('CONSULTANT');
     expect(f.tx.allowedEmail.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { role, active: true } }));
-    expect(f.tx.user.upsert).toHaveBeenCalledWith(expect.objectContaining({ update: expect.objectContaining({ role }) }));
+    expect(f.tx.user.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ role, active: true }) }));
     expect(await f.tx.allowedEmail.findFirst()).toEqual(expect.objectContaining({ role, active: true }));
   });
   test('rejects an invalid granted role before any database changes', async () => {

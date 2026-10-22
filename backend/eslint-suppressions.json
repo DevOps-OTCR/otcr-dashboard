@@ -14,27 +14,6 @@
       "count": 21
     }
   },
-  "src/auth/auth.controller.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    }
-  },
-  "src/auth/auth.guard.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
-  "src/auth/auth.service.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 14
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
   "src/auth/onboarding.controller.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 3
@@ -123,7 +102,7 @@
   },
   "src/projects/projects.service.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 25
+      "count": 22
     }
   },
   "src/slide-submissions/slide-submissions.service.ts": {
