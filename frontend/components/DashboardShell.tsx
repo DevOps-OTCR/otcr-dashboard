@@ -9,14 +9,14 @@ import { getUserRole } from '@/lib/permissions';
 import { NavbarRegistration } from './navbar-registration';
 
 // Pages register their resolved permissions. The layout owns the navbar instance.
-const overviewPaths = ['/pm', '/lc', '/partner', '/consultant'];
+const overviewPaths = ['/overview', '/consultant'];
 const dashboardPaths = [...overviewPaths, '/dashboard', '/deliverables', '/slides', '/attendance',
   '/workstream', '/workstream-docs', '/when2meet', '/teams', '/forms', '/client-notes',
   '/feedback', '/feedback/anonymous', '/feedback/prc', '/alumni-database', '/people', '/settings/slack'];
 
 export function DashboardShell({ children }: { children: ReactNode }) {
   const { isLoggedIn, user } = useAuth();
-  // Pages builds use trailingSlash, so usePathname() returns '/pm/' rather than '/pm'.
+  // Pages builds use trailingSlash, so usePathname() returns '/overview/' rather than '/overview'.
   const path = (usePathname() ?? '').replace(/\/+$/, '') || '/';
   const overview = overviewPaths.includes(path);
   const [navbar, setNavbar] = useState<AppNavbarProps>({ role: getUserRole(user?.email) });

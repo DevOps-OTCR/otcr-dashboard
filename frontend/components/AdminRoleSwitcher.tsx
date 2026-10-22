@@ -55,7 +55,8 @@ export function AdminRoleSwitcher({ className }: { className?: string }) {
   if (!isAdmin) return null;
 
   const effectiveRole: AppRole = getDevRoleOverride() ?? actualRole;
-  const currentPath = pathname ?? '';
+  // Pages builds use trailingSlash, so compare '/overview/' as '/overview'.
+  const currentPath = (pathname ?? '').replace(/\/+$/, '') || '/';
 
   const handleSelect = (role: AppRole) => {
     setDevRoleOverride(role);
