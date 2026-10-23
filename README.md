@@ -133,6 +133,12 @@ PR Validation installs Chromium and its Linux dependencies, then runs the suite 
 
 Deploy frontend and backend as separate services.
 
+### GitHub Pages frontend
+
+PR Validation is the single entry point for validation and Pages deployment. Pull requests run the required frontend and backend checks once. Successful pushes to `main` then call the reusable Pages workflow, which checks out the same commit that passed validation and builds with production configuration.
+
+To redeploy manually, run **PR Validation** from the Actions tab with the `main` branch selected. Validation must succeed before deployment starts. Manual runs on other branches validate without deploying. Every successful push to `main` can deploy, including backend-only changes.
+
 ### Render backend service
 
 - Root directory: `backend`
