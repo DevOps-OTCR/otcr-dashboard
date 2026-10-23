@@ -289,13 +289,15 @@
   }
   .w2mRoot .w2m-available-overlay {
     position: fixed;
-    z-index: 60;
+    /* Below the sticky navbar (z-50) so navigation is never covered. */
+    z-index: 40;
     left: 12px;
     right: 12px;
     top: auto;
     bottom: max(12px, env(safe-area-inset-bottom));
     width: auto;
-    max-height: 60dvh;
+    /* --w2m-navbar-bottom is measured in When2MeetBoard while the details are open. */
+    max-height: min(60dvh, calc(100dvh - var(--w2m-navbar-bottom, 0px) - 24px));
     transform: none;
     overscroll-behavior: contain;
   }
