@@ -20,6 +20,10 @@ jobs:
     name: Frontend typecheck and tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    container:
+      # Keep this version aligned with frontend/package-lock.json.
+      image: mcr.microsoft.com/playwright:v1.64.0-noble
+      options: --init --ipc=host
     defaults:
       run:
         working-directory: frontend
@@ -35,7 +39,19 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Install locked dependencies
+        timeout-minutes: 3
         run: npm ci --ignore-scripts
+      - name: Verify preinstalled Chromium
+        timeout-minutes: 1
+        run: |
+          node <<'NODE'
+          const { chromium } = require('playwright');
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            console.log(`Preinstalled Chromium ${browser.version()}`);
+            await browser.close();
+          })().catch(error => { console.error(error); process.exit(1); });
+          NODE
       - name: Generate Prisma client
         run: npm run prisma:generate
       - name: Lint frontend
@@ -44,8 +60,6 @@ jobs:
         run: npx tsc --noEmit
       - name: Run frontend unit tests
         run: npm test
-      - name: Install Chromium for browser tests
-        run: npx --no-install playwright install --with-deps chromium
       - name: Run navigation browser tests
         timeout-minutes: 5
         run: npm run test:navigation:browser
