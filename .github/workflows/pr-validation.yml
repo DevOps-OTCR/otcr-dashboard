@@ -2,9 +2,9 @@ name: PR Validation
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, staging]
   push:
-    branches: [main]
+    branches: [main, staging]
   workflow_dispatch:
   workflow_call:
 
@@ -16,10 +16,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  infrastructure:
+    name: Infrastructure validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.1'
+          cache: false
+      - name: Check GitHub workflows
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          actionlint
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check Render Blueprint
+        run: |
+          python -m pip install check-jsonschema==0.38.2
+          check-jsonschema --schemafile https://render.com/schema/render.yaml.json render.staging.yaml
+
   frontend:
     name: Frontend typecheck and tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    container:
+      # Keep this version aligned with frontend/package-lock.json.
+      image: mcr.microsoft.com/playwright:v1.64.0-noble
+      options: --init --ipc=host
     defaults:
       run:
         working-directory: frontend
@@ -35,7 +63,19 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Install locked dependencies
+        timeout-minutes: 3
         run: npm ci --ignore-scripts
+      - name: Verify preinstalled Chromium
+        timeout-minutes: 1
+        run: |
+          node <<'NODE'
+          const { chromium } = require('playwright');
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            console.log(`Preinstalled Chromium ${browser.version()}`);
+            await browser.close();
+          })().catch(error => { console.error(error); process.exit(1); });
+          NODE
       - name: Generate Prisma client
         run: npm run prisma:generate
       - name: Lint frontend
@@ -44,8 +84,6 @@ jobs:
         run: npx tsc --noEmit
       - name: Run frontend unit tests
         run: npm test
-      - name: Install Chromium for browser tests
-        run: npx --no-install playwright install --with-deps chromium
       - name: Run navigation browser tests
         timeout-minutes: 5
         run: npm run test:navigation:browser
@@ -66,6 +104,20 @@ jobs:
     name: Backend typecheck, tests and build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: backend
@@ -84,6 +136,8 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Generate Prisma client
         run: npm run prisma:generate
+      - name: Apply database migrations
+        run: npx --no-install prisma migrate deploy
       - name: Lint backend
         run: npm run lint
       - name: Check TypeScript
@@ -92,3 +146,23 @@ jobs:
         run: npm test -- --runInBand
       - name: Build backend
         run: npm run build
+
+  pages:
+    name: Deploy validated frontend
+    needs: [frontend, backend]
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    uses: ./.github/workflows/deploy-github-pages.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    secrets:
+      NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+      NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+      NEXT_PUBLIC_GEOAPIFY_API_KEY: ${{ secrets.NEXT_PUBLIC_GEOAPIFY_API_KEY }}
+      NEXT_PUBLIC_GOOGLE_CALENDAR_EMBED_URL: ${{ secrets.NEXT_PUBLIC_GOOGLE_CALENDAR_EMBED_URL }}
+      NEXT_PUBLIC_MSAL_AUTHORITY: ${{ secrets.NEXT_PUBLIC_MSAL_AUTHORITY }}
+      NEXT_PUBLIC_MSAL_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_MSAL_CLIENT_ID }}
+      NEXT_PUBLIC_MSAL_REDIRECT_URI: ${{ secrets.NEXT_PUBLIC_MSAL_REDIRECT_URI }}

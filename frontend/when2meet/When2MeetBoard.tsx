@@ -77,6 +77,7 @@ export function When2MeetBoard({
 
   const userGridRef = useRef<HTMLDivElement>(null);
   const groupGridRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
 
   const selectedRef = useRef<boolean[]>(new Array(totalSlots).fill(false));
   const dragActiveRef = useRef(false);
@@ -183,6 +184,29 @@ export function When2MeetBoard({
     };
   }, [endDragAndSave]);
 
+  const availabilityOpen = hoveredGroupSlot != null;
+
+  useEffect(() => {
+    // Narrow layouts dock the details to the viewport bottom; cap their height so they stay
+    // below the sticky navbar, which grows as its links wrap.
+    const overlay = overlayRef.current;
+    const navbar = document.querySelector('header');
+    if (!availabilityOpen || !overlay || !navbar) return;
+    const updateNavbarBottom = () => {
+      overlay.style.setProperty('--w2m-navbar-bottom', `${Math.max(0, navbar.getBoundingClientRect().bottom)}px`);
+    };
+    updateNavbarBottom();
+    const observer = new ResizeObserver(updateNavbarBottom);
+    observer.observe(navbar);
+    window.addEventListener('resize', updateNavbarBottom);
+    window.addEventListener('scroll', updateNavbarBottom, { passive: true });
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateNavbarBottom);
+      window.removeEventListener('scroll', updateNavbarBottom);
+    };
+  }, [availabilityOpen]);
+
   const findUnder = useCallback((clientX: number, clientY: number) => {
     return findSlotIndexUnderPointer(userGridRef.current, clientX, clientY);
   }, []);
@@ -277,7 +301,7 @@ export function When2MeetBoard({
     }
   }
 
-  const hideLeftCal = hoveredGroupSlot != null;
+  const hideLeftCal = availabilityOpen;
 
   return (
     <div className="w2mRoot">
@@ -290,7 +314,7 @@ export function When2MeetBoard({
       <div className="w2m-split" onPointerLeave={event => { if (event.pointerType === 'mouse') setHoveredGroupSlot(null); }}
         onKeyDown={event => { if (event.key === 'Escape') closeAvailability(); }}>
         <div className="w2m-left">
-          <div id={popupId} role="region" aria-label="Time slot availability" aria-hidden={!hideLeftCal}
+          <div ref={overlayRef} id={popupId} role="region" aria-label="Time slot availability" aria-hidden={!hideLeftCal}
             className={`w2m-available-overlay${hideLeftCal ? '' : ' w2m-hide'}`}>
             <div className="w2m-availability-header">
               <p className="w2m-slot-label">{hoveredLabel}</p>

@@ -127,11 +127,17 @@ npm run test:navigation:browser
 
 The suite checks navigation, cached content, and trailing-slash routes in headless Chromium. It uses the real page components with mocked routing, authentication, and API responses; it does not test the deployed GitHub Pages site or real sign-in.
 
-PR Validation installs Chromium and its Linux dependencies, then runs the suite as part of the required frontend check. A browser test failure also blocks the Pages deployment validation. Set `NAVIGATION_BROWSER_CHANNEL=chrome` to use an installed Chrome browser locally.
+PR Validation runs the frontend check in the official Playwright container, which includes Chromium and its Linux dependencies. Keep the container tag in `.github/workflows/pr-validation.yml` aligned with the locked Playwright version when upgrading. CI verifies that the preinstalled browser launches before running the checks. A browser test failure also blocks Pages deployment. Set `NAVIGATION_BROWSER_CHANNEL=chrome` to use an installed Chrome browser locally.
 
 ## Production Deployment
 
 Deploy frontend and backend as separate services.
+
+### GitHub Pages frontend
+
+PR Validation is the single entry point for validation and Pages deployment. Pull requests run the required frontend and backend checks once. Successful pushes to `main` then call the reusable Pages workflow, which checks out the same commit that passed validation and builds with production configuration.
+
+To redeploy manually, run **PR Validation** from the Actions tab with the `main` branch selected. Validation must succeed before deployment starts. Manual runs on other branches validate without deploying. Every successful push to `main` can deploy, including backend-only changes.
 
 ### Render backend service
 
