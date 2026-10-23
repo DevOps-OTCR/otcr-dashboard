@@ -3,7 +3,7 @@ import {
   InteractionRequiredAuthError,
   InteractionStatus,
   EventType,
-  type AuthenticationResult,
+  CacheLookupPolicy,
 } from "@azure/msal-browser";
 import { useMsal } from "@azure/msal-react";
 import { useRouter } from 'next/navigation';
@@ -93,31 +93,43 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [clearAppSession, router]);
 
   useEffect(() => {
-    let sharedSignIn: AuthenticationResult | null = null;
-    let finishSharedSignIn: (() => void) | undefined;
     let disposed = false;
     const restoreSharedSignIn = () => {
       const session = readCmsSession();
-      const result = sharedSignIn;
-      if (!result || session?.signedOut || session?.accountId !== result.account.homeAccountId) return;
-      sharedSignIn = null;
+      if (!session?.accountId || session.signedOut || sharedCacheReady.current?.revision === session.revision) return;
       const revision = session.revision;
-      // LOGIN_SUCCESS and storage notifications can precede MSAL's cache
-      // broadcast. Import the completed result before reading this tab's cache.
-      const finish = finishSharedSignIn;
-      const promise = withAuthTimeout(instance.hydrateCache(result, { account: result.account, scopes: result.scopes }));
+      // MSAL v5 LOGIN_SUCCESS contains AccountInfo, not tokens. Its cache
+      // broadcasts can arrive later than session/event notifications.
+      const promise = (async () => {
+        await withAuthTimeout(instance.initialize());
+        const deadline = Date.now() + 15000;
+        while (!disposed && cmsSessionRevision() === revision && !readCmsSession()?.signedOut) {
+          const account = instance.getAllAccounts().find(account => account.homeAccountId === session.accountId);
+          if (account) {
+            try {
+              // Cache-only lookup avoids a premature renewal or interaction
+              // while another tab's successful sign-in is still synchronizing.
+              await withAuthTimeout(instance.acquireTokenSilent({
+                account, scopes: ['User.Read'], cacheLookupPolicy: CacheLookupPolicy.AccessToken,
+              }), Math.max(1, deadline - Date.now()));
+              return;
+            } catch { /* Wait for the remaining SDK cache broadcasts. */ }
+          }
+          if (Date.now() >= deadline) throw new Error('Shared sign-in cache timed out');
+          await new Promise(resolve => window.setTimeout(resolve, 50));
+        }
+        throw new DOMException('Authentication session changed', 'AbortError');
+      })();
       sharedCacheReady.current = { revision, promise };
-      void promise.then(async () => {
-        if (readCmsSession()?.signedOut) await instance.clearCache();
-        else if (!disposed && cmsSessionRevision() === revision) setSessionChange(value => value + 1);
+      void promise.then(() => {
+        if (!disposed && cmsSessionRevision() === revision) setSessionChange(value => value + 1);
       }).catch(() => {
         if (!disposed && cmsSessionRevision() === revision) setAuthError('We could not restore your sign-in. Please retry.');
-      }).finally(finish);
+      });
     };
     const onStorage = (event: StorageEvent) => {
       if (event.key !== CMS_SESSION_KEY && event.key !== null) return;
       if (readCmsSession()?.signedOut) {
-        sharedSignIn = null;
         const revision = cmsSessionRevision();
         requireSignIn();
         // Clear this tab's in-memory MSAL cache too, without contacting Microsoft.
@@ -136,10 +148,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setIsLoggedIn(false);
         setIsAuthReady(false);
         setAuthError(null);
-        const revision = cmsSessionRevision();
-        if (sharedCacheReady.current?.revision !== revision) {
-          sharedCacheReady.current = { revision, promise: new Promise(resolve => { finishSharedSignIn = resolve; }) };
-        }
         restoreSharedSignIn();
         setSessionChange(value => value + 1);
       }
@@ -151,11 +159,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // MSAL v5 broadcasts active-account changes; account arrays alone do not
     // change when switching between two accounts already in the cache.
     const callbackId = instance.addEventCallback(message => {
-      if (message.eventType === EventType.LOGIN_SUCCESS) {
-        sharedSignIn = message.payload as AuthenticationResult;
+      if (message.eventType === EventType.LOGIN_SUCCESS || message.eventType === EventType.ACTIVE_ACCOUNT_CHANGED) {
         restoreSharedSignIn();
-      }
-      if (message.eventType === EventType.ACTIVE_ACCOUNT_CHANGED) {
         setSessionChange(value => value + 1);
       }
     });

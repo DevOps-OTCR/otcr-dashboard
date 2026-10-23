@@ -11,17 +11,18 @@ before(async () => {
 });
 after(() => browser?.close());
 
-async function setup(t, delayCacheUpdates = false) {
+async function setup(t, slowCacheOperations = false) {
   const context = await browser.newContext();
   t.after(() => context.close());
-  if (delayCacheUpdates) await context.addInitScript(() => {
-    const addListener = BroadcastChannel.prototype.addEventListener;
-    BroadcastChannel.prototype.addEventListener = function (type, listener, options) {
-      if (this.name === 'msal.broadcast.cache' && type === 'message') {
-        return addListener.call(this, type, event => setTimeout(() => listener.call(this, event), 200), options);
-      }
-      return addListener.call(this, type, listener, options);
-    };
+  if (slowCacheOperations) await context.addInitScript(() => {
+    // Delay real cache work without reordering MSAL's private broadcast handlers.
+    for (const method of ['encrypt', 'decrypt']) {
+      const operation = SubtleCrypto.prototype[method];
+      SubtleCrypto.prototype[method] = async function (...args) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+        return operation.apply(this, args);
+      };
+    }
   });
   const externalRequests = [];
   await context.route('**/*', route => {
