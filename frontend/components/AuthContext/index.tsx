@@ -295,11 +295,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [instance, requireSignIn]);
 
+  // Wait for initial cache import, including after a persisted sign-out.
   // Later token operations must not unmount the current page.
-  const isLoading = !isAuthReady;
+  const isLoading = !isAuthReady || inProgress === InteractionStatus.Startup;
+  // Notify token consumers even when batched session events retain the same user.
   const contextValue = useMemo(() => ({
-    isLoggedIn, user, loading: isLoading, login, logout, getToken,
-  }), [isLoggedIn, user, isLoading, login, logout, getToken]);
+    isLoggedIn, user, loading: isLoading, login, logout, getToken, sessionRevision: sessionChange,
+  }), [isLoggedIn, user, isLoading, login, logout, getToken, sessionChange]);
 
   return (
     <AuthContext.Provider
