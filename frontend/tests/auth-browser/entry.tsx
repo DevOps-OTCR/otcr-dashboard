@@ -53,8 +53,9 @@ async function seed(email = 'pm@example.test') {
   const result = resultFor(email);
   await instance.hydrateCache(result, { scopes: ['User.Read'], account: result.account });
   const events = new BroadcastChannel('msal.broadcast.event');
+  // MSAL v5 broadcasts account information, not an AuthenticationResult with tokens.
   events.postMessage({ eventType: EventType.LOGIN_SUCCESS, interactionType: InteractionType.Redirect,
-    payload: result, error: null, correlationId: result.correlationId, timestamp: Date.now() });
+    payload: result.account, error: null, correlationId: result.correlationId, timestamp: Date.now() });
   events.close();
   completeCmsSignIn(result.account.homeAccountId);
   instance.setActiveAccount(result.account);
