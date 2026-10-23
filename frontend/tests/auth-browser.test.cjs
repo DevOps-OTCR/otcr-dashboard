@@ -13,7 +13,17 @@ after(() => browser?.close());
 
 async function setup(t, slowCacheOperations = false) {
   const context = await browser.newContext();
-  t.after(() => context.close());
+  t.after(async () => {
+    for (const page of context.pages()) {
+      const state = await page.evaluate(() => ({
+        page: document.body.innerText,
+        account: document.querySelector('[data-testid="account"]')?.textContent,
+        hasAuthHeader: Boolean(window.authTest?.authHeader()),
+      }));
+      t.diagnostic(JSON.stringify(state));
+    }
+    await context.close();
+  });
   if (slowCacheOperations) await context.addInitScript(() => {
     // Delay real cache work without reordering MSAL's private broadcast handlers.
     for (const method of ['encrypt', 'decrypt']) {

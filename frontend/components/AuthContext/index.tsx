@@ -305,7 +305,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const isLoading = !isAuthReady;
   const contextValue = useMemo(() => ({
     isLoggedIn, user, loading: isLoading, login, logout, getToken,
-  }), [isLoggedIn, user, isLoading, login, logout, getToken]);
+  // Notify token consumers even when batched session events retain the same user.
+  }), [isLoggedIn, user, isLoading, login, logout, getToken, sessionChange]);
 
   return (
     <AuthContext.Provider
