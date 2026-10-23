@@ -3,6 +3,7 @@
 import { useAuth } from './AuthContext';
 import { useEffect } from 'react';
 import { authAPI, setAuthToken } from '@/lib/api';
+import { cmsSessionRevision, readCmsSession } from '@/lib/cms-session';
 import { useMsal } from '@azure/msal-react';
 
 /**
@@ -13,12 +14,16 @@ export function AuthApiSync() {
   const { instance } = useMsal();
 
   useEffect(() => {
+    let cancelled = false;
+    const revision = cmsSessionRevision();
+    const isCurrent = () => !cancelled && !readCmsSession()?.signedOut && revision === cmsSessionRevision();
     const sync = async () => {
       if (session.isLoggedIn) {
         try {
           const token = await session.getToken();
-          // Prefer access token; fall back to email so backend legacy auth still works.
-          const authValue = token || session.user?.email || null;
+          if (!isCurrent()) return;
+          // An expired or signed-out session must not fall back to an email credential.
+          const authValue = token;
           setAuthToken(authValue);
 
           const account = instance.getActiveAccount();
@@ -46,17 +51,18 @@ export function AuthApiSync() {
             name: displayName || undefined,
           });
 
-          if (typeof window !== 'undefined') {
+          if (isCurrent() && typeof window !== 'undefined') {
             sessionStorage.setItem(storageKey, syncFingerprint);
           }
         } catch {
-          setAuthToken(session.user?.email || null);
+          if (isCurrent()) setAuthToken(null);
         }
       } else {
         setAuthToken(null);
       }
     };
     void sync();
+    return () => { cancelled = true; };
   }, [instance, session.isLoggedIn, session?.user?.email, session?.user?.name, session]);
 
   return null;

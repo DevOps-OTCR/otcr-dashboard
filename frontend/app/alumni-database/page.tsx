@@ -131,7 +131,9 @@ function AlumniTable() {
         if (!cancelled) setRefreshing(false);
       }
     };
-    void load();
+    void load().catch((error: unknown) => {
+      if (!cancelled) setLoadError(error instanceof Error ? error.message : 'Failed to load alumni data');
+    });
     return () => {
       cancelled = true;
     };
