@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { StickyNote, ExternalLink, Plus } from 'lucide-react';
 import { AppNavbar } from '@/components/AppNavbar';
@@ -65,7 +65,9 @@ export default function ClientNotesPage() {
     role: AppRole; notes: ClientNote[]; projects: ProjectSummary[]; selectedProjectId: string;
   }>('client-notes', session.user?.email);
   const [roleLookupFailed, setRoleLookupFailed] = useState(false);
+  const [roleReady, setRoleReady] = useState(false);
   const [resolvedRole, setResolvedRole] = useState<AppRole>(snapshot?.role ?? 'CONSULTANT');
+  const dataRole = useRef(snapshot?.role);
 
   const [notes, setNotes] = useState<ClientNote[]>(snapshot?.notes ?? []);
   const [projects, setProjects] = useState<ProjectSummary[]>(snapshot?.projects ?? []);
@@ -86,14 +88,27 @@ export default function ClientNotesPage() {
   }, [session.loading, session.isLoggedIn, router]);
 
   useEffect(() => {
+    let cancelled = false;
     const syncRole = async () => {
       if (!session.isLoggedIn || roleLookupFailed) return;
       const token = await session.getToken();
       const email = session.user?.email || '';
       const role = await getEffectiveRole(token, email);
+      if (cancelled) return;
+      if (dataRole.current !== role) {
+        // Restored content belongs to the old permissions, even when both roles can write.
+        dataRole.current = role;
+        setNotes([]);
+        setProjects([]);
+        setSelectedProjectId('');
+        setLoading(true);
+        setLoadFailed(false);
+      }
       setResolvedRole(role);
+      setRoleReady(true);
     };
-    void syncRole().catch(() => setRoleLookupFailed(true));
+    void syncRole().catch(() => { if (!cancelled) setRoleLookupFailed(true); });
+    return () => { cancelled = true; };
   }, [session, roleLookupFailed]);
 
   const canWrite = useMemo(
@@ -105,9 +120,12 @@ export default function ClientNotesPage() {
     [resolvedRole],
   );
 
-  const loadNotes = async () => {
+  const loadNotes = useCallback(async (isCurrent: () => boolean = () => true) => {
+    const requestRole = dataRole.current;
+    const active = () => isCurrent() && dataRole.current === requestRole;
     try {
       const res = await deliverablesAPI.getAll({ limit: 200 });
+      if (!active()) return;
       const raw = Array.isArray(res.data)
         ? res.data
         : Array.isArray(res.data?.deliverables)
@@ -130,13 +148,15 @@ export default function ClientNotesPage() {
       setLoadFailed(false);
     } catch {
       // Keep previously loaded notes visible when a refresh fails.
-      setLoadFailed(true);
+      if (active()) setLoadFailed(true);
     } finally {
-      setLoading(false);
+      if (active()) setLoading(false);
     }
-  };
+  }, []);
 
-  const loadProjects = async () => {
+  const loadProjects = useCallback(async (isCurrent: () => boolean = () => true) => {
+    const requestRole = dataRole.current;
+    const active = () => isCurrent() && dataRole.current === requestRole;
     if (!canWrite) {
       setProjects([]);
       setSelectedProjectId('');
@@ -145,6 +165,7 @@ export default function ClientNotesPage() {
 
     try {
       const res = await projectsAPI.getAll({ limit: 100 });
+      if (!active()) return;
       const raw = Array.isArray(res.data?.projects) ? res.data.projects : [];
       const mapped = raw.map((p: { id: string; name: string }) => ({ id: p.id, name: p.name }));
       setProjects(mapped);
@@ -152,17 +173,19 @@ export default function ClientNotesPage() {
     } catch {
       // Keep the restored project list when a refresh fails.
     }
-  };
+  }, [canWrite]);
 
   useEffect(() => {
-    if (session.loading || !session.isLoggedIn || !session.user?.email || roleLookupFailed) return;
-    void loadNotes();
-    void loadProjects();
-  }, [session.loading, session.isLoggedIn, session.user?.email, canWrite, roleLookupFailed]);
+    if (session.loading || !session.isLoggedIn || !session.user?.email || roleLookupFailed || !roleReady) return;
+    let cancelled = false;
+    void loadNotes(() => !cancelled);
+    void loadProjects(() => !cancelled);
+    return () => { cancelled = true; };
+  }, [session.loading, session.isLoggedIn, session.user?.email, resolvedRole, roleReady, roleLookupFailed, loadNotes, loadProjects]);
 
   useEffect(() => {
-    if (!loading && !loadFailed && !roleLookupFailed) saveSnapshot({ role: resolvedRole, notes, projects, selectedProjectId });
-  }, [loading, loadFailed, roleLookupFailed, resolvedRole, notes, projects, selectedProjectId, saveSnapshot]);
+    if (roleReady && !loading && !loadFailed && !roleLookupFailed) saveSnapshot({ role: resolvedRole, notes, projects, selectedProjectId });
+  }, [roleReady, loading, loadFailed, roleLookupFailed, resolvedRole, notes, projects, selectedProjectId, saveSnapshot]);
 
   const addNote = async () => {
     if (!title.trim() || !link.trim()) {
