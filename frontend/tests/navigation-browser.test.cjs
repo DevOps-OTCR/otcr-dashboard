@@ -32,7 +32,7 @@ async function setup(t, initialPath, role = 'PM') {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   t.after(() => assert.deepEqual(errors, []));
-  const state = { calls: [], gate: null, failSprints: false, slowGate: null, calendarLoads: 0, eventTitle: 'Team weekly check-in',
+  const state = { role, calls: [], gate: null, failSprints: false, slowGate: null, calendarLoads: 0, eventTitle: 'Team weekly check-in',
     alumniGate: null, failAlumni: false };
   await page.route('**/api/**', async route => {
     const pathname = new URL(route.request().url()).pathname.slice(4);
@@ -41,7 +41,7 @@ async function setup(t, initialPath, role = 'PM') {
     if (state.gate && pathname !== '/auth/role' && pathname !== '/notifications/my') await state.gate;
     if (state.alumniGate && pathname === '/alumni') await state.alumniGate;
     if (pathname === '/test-write') state.eventTitle = 'Updated team check-in';
-    const payload = responseFor(pathname, role);
+    const payload = responseFor(pathname, state.role);
     if (pathname === '/attendance/events') payload.events = payload.events.map(event => ({ ...event, title: state.eventTitle }));
     const failed = (state.failSprints && pathname.endsWith('/sprints')) || (state.failAlumni && pathname === '/alumni');
     await route.fulfill({ status: failed ? 503 : 200, contentType: 'application/json',
@@ -247,6 +247,120 @@ test('returning to a tab restores its project and content during a failed refres
   release();
   await page.getByText('Failed to load slides. Please try again.', { exact: true }).waitFor();
   assert.equal(await page.getByText('team-2 Draft deck', { exact: true }).isVisible(), true);
+});
+
+test('Teams first visit keeps the navbar visible and return visits restore the selected team without requests', async t => {
+  const { page, state, nav, open } = await setup(t, '/teams');
+  let release;
+  state.gate = new Promise(resolve => { release = resolve; });
+  await open();
+  await page.getByText('Loading teams...', { exact: true }).waitFor();
+  assert.equal(await nav('Attendance').isVisible(), true);
+  release();
+  await page.getByRole('button', { name: /Team Two/ }).click();
+  await page.getByRole('heading', { name: 'Team Two', exact: true }).waitFor();
+  await page.waitForFunction(() => window.navigationTest.readSnapshot(JSON.stringify(['teams', 'pm@example.test', null]))?.selectedTeamId === 'team-2');
+  const requests = state.calls.length;
+  await nav('Attendance').click();
+  await page.getByText('Team weekly check-in', { exact: true }).waitFor();
+  const afterAttendance = state.calls.length;
+  await nav('Teams').click();
+  assert.equal(await page.getByRole('heading', { name: 'Team Two', exact: true }).isVisible(), true);
+  assert.equal(await page.getByText('Loading teams...', { exact: true }).count(), 0);
+  await page.getByRole('button', { name: 'Back to teams', exact: true }).waitFor();
+  // Only the role and notification checks may run while cached team data is fresh.
+  assert.deepEqual(state.calls.slice(afterAttendance).filter(path => path !== '/auth/role' && path !== '/notifications/my'), []);
+  assert.ok(requests > 0);
+});
+
+test('Deliverables and Client Notes keep restored content when an expired refresh fails', async t => {
+  const { page, state, nav, open } = await setup(t, '/deliverables');
+  let failNotes = false;
+  await page.route(url => url.pathname === '/api/deliverables', route => route.fulfill({ status: failNotes ? 503 : 200,
+    contentType: 'application/json', body: JSON.stringify(failNotes ? { message: 'Temporary outage' } : responseFor('/deliverables', 'PM')) }));
+  await open();
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  await nav('Client Call Notes').click();
+  await page.getByText('Client kickoff notes', { exact: true }).waitFor();
+  await nav('Attendance').click();
+  await page.getByText('Team weekly check-in', { exact: true }).waitFor();
+  await page.clock.install({ time: new Date() });
+  await page.clock.fastForward(121000);
+  state.failSprints = true;
+  failNotes = true;
+  await nav('Deliverables').click();
+  assert.equal(await page.getByText('team-1 Research', { exact: true }).isVisible(), true);
+  await page.getByText('Temporary outage', { exact: true }).waitFor();
+  assert.equal(await page.getByText('team-1 Research', { exact: true }).isVisible(), true);
+  await nav('Client Call Notes').click();
+  assert.equal(await page.getByText('Client kickoff notes', { exact: true }).isVisible(), true);
+  await page.getByRole('alert').getByText('Could not refresh client notes. Showing previously loaded notes.', { exact: true }).waitFor();
+  assert.equal(await page.getByText('Client kickoff notes', { exact: true }).isVisible(), true);
+  assert.equal(await page.getByRole('status').count(), 0);
+});
+
+test('Client Notes discards restored data after a confirmed role change, including a failed refresh', async t => {
+  const { page, state, nav, open } = await setup(t, '/client-notes', 'ADMIN');
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  let failNotes = true;
+  await page.route(url => url.pathname === '/api/deliverables', async route => {
+    const admin = state.role === 'ADMIN';
+    if (!admin) await gate;
+    const notes = responseFor('/deliverables', state.role).map(note => ({
+      ...note, title: admin ? 'Admin client note' : 'PM client note',
+    }));
+    await route.fulfill({ status: !admin && failNotes ? 503 : 200, contentType: 'application/json',
+      body: JSON.stringify(!admin && failNotes ? { message: 'Temporary outage' } : notes) });
+  });
+  await page.route(url => url.pathname === '/api/projects', route => route.fulfill({ contentType: 'application/json',
+    body: JSON.stringify({ projects: responseFor('/projects', state.role).projects.slice(state.role === 'ADMIN' ? 0 : 1) }) }));
+  await open();
+  await page.getByRole('heading', { name: 'Admin client note', exact: true }).waitFor();
+  await page.clock.install({ time: new Date() });
+  await nav('Forms').click();
+  await page.getByText('Dashboard Feedback Form', { exact: true }).waitFor();
+  // Refresh the note cache just before the five-minute role cache expires.
+  await page.clock.fastForward(271000);
+  await nav('Client Call Notes').click();
+  await page.waitForFunction(() => window.navigationTest.readResource('/deliverables?limit=200'));
+  await nav('Forms').click();
+  await page.getByText('Dashboard Feedback Form', { exact: true }).waitFor();
+  await page.clock.fastForward(31000);
+  state.role = 'PM';
+  const refresh = page.waitForRequest(request => new URL(request.url()).pathname === '/api/deliverables');
+  await nav('Client Call Notes').click();
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('otcr_role_cache:pm@example.test')).role === 'PM');
+  await refresh;
+  assert.equal(await page.getByRole('heading', { name: 'Admin client note', exact: true }).count(), 0);
+  assert.equal(await page.evaluate(() => window.navigationTest.readSnapshot(JSON.stringify(['client-notes', 'pm@example.test', null]))), undefined);
+  release();
+  await page.getByRole('alert').getByText('Could not load client notes.', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('heading', { name: 'Admin client note', exact: true }).count(), 0);
+  assert.equal(await page.locator('main select option').filter({ hasText: 'Team One' }).count(), 0);
+  failNotes = false;
+  await page.getByRole('button', { name: 'Refresh page data', exact: true }).click();
+  await page.getByRole('heading', { name: 'PM client note', exact: true }).waitFor();
+  await page.waitForFunction(() => window.navigationTest.readSnapshot(JSON.stringify(['client-notes', 'pm@example.test', null]))?.notes[0]?.title === 'PM client note');
+});
+
+test('navbar refresh bypasses fresh cached data while restored content stays visible', async t => {
+  const { page, state, open } = await setup(t, '/alumni-database');
+  await open();
+  await page.getByRole('searchbox').fill('Example');
+  const rows = await page.locator('tbody').innerText();
+  let release;
+  state.alumniGate = new Promise(resolve => { release = resolve; });
+  const refresh = page.waitForRequest('**/api/alumni');
+  await page.getByRole('button', { name: 'Refresh page data', exact: true }).click();
+  await refresh;
+  assert.equal(await page.getByRole('searchbox').inputValue(), 'Example');
+  assert.equal(await page.locator('tbody').innerText(), rows);
+  assert.equal(await page.getByRole('status').count(), 0);
+  release();
+  await page.waitForFunction(() => window.navigationTest.readResource('/alumni'));
+  assert.equal(state.calls.filter(path => path === '/alumni').length, 2);
+  assert.equal(await page.getByRole('searchbox').inputValue(), 'Example');
 });
 
 test('writes invalidate other tabs and logout clears cached data', async t => {
@@ -670,6 +784,87 @@ for (const reducedMotion of ['no-preference', 'reduce']) {
   });
 }
 
+test('navbar sign-out clears dashboard credentials and profile state', async t => {
+  const { page, open } = await setup(t, '/pm');
+  await open();
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  await page.evaluate(() => sessionStorage.setItem('otcr_profile_sync_fingerprint', 'cached-profile'));
+  await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in with NetID', exact: true }).waitFor();
+  assert.equal(await page.locator('nav').count(), 0);
+  assert.equal(await page.evaluate(() => window.navigationTest.authHeader()), undefined);
+  assert.equal(await page.evaluate(() => sessionStorage.getItem('otcr_profile_sync_fingerprint')), null);
+  assert.equal(await page.evaluate(() => localStorage.getItem('otcr_role_cache:pm@example.test')), null);
+});
+
+test('pending authentication and profile sync cannot restore a signed-out session', async t => {
+  const { page, state, open } = await setup(t, '/pm?authSync=1');
+  await open();
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  await page.waitForFunction(() => Boolean(sessionStorage.getItem('otcr_profile_sync_fingerprint')));
+  await page.evaluate(() => {
+    window.navigationTest.instance.acquireTokenSilent = () => new Promise(resolve => {
+      (window.finishOldTokenRequests ??= []).push(resolve);
+    });
+    window.oldToken = window.navigationTest.getToken().catch(error => error.name);
+    window.navigationTest.instance.getActiveAccount().name = 'Updated profile';
+    window.navigationTest.tokenProgress(true);
+  });
+  await page.evaluate(() => window.navigationTest.tokenProgress(false));
+  await page.waitForFunction(() => window.finishOldTokenRequests?.length >= 2);
+  const pendingTokens = await page.evaluate(() => window.finishOldTokenRequests.length);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.waitForFunction(count => window.finishOldTokenRequests.length > count, pendingTokens);
+  await page.evaluate(() => {
+    window.navigationTest.instance.handleRedirectPromise = () => new Promise(resolve => {
+      window.finishOldAuthCheck = resolve;
+    });
+    window.navigationTest.tokenProgress(true);
+  });
+  await page.evaluate(() => window.navigationTest.tokenProgress(false));
+  await page.waitForFunction(() => Boolean(window.finishOldAuthCheck));
+  await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in with NetID', exact: true }).waitFor();
+  const notificationRequests = state.calls.filter(path => path === '/notifications/my').length;
+  const token = await page.evaluate(async () => {
+    window.finishOldAuthCheck({ account: { username: 'pm@example.test' } });
+    for (const resolve of window.finishOldTokenRequests) resolve({ accessToken: 'stale-token' });
+    const token = await window.oldToken;
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+    return token;
+  });
+  assert.equal(token, 'AbortError');
+  assert.equal(await page.getByRole('button', { name: 'Sign in with NetID', exact: true }).isVisible(), true);
+  assert.equal(await page.locator('nav').count(), 0);
+  assert.equal(await page.evaluate(() => window.navigationTest.authHeader()), undefined);
+  assert.equal(state.calls.filter(path => path === '/notifications/my').length, notificationRequests);
+  assert.equal(await page.evaluate(() => sessionStorage.getItem('otcr_profile_sync_fingerprint')), null);
+});
+
+test('a Consultant page token request finishing after sign-out cannot send API requests', async t => {
+  const { page, state, open } = await setup(t, '/deliverables');
+  await open();
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  await page.evaluate(() => {
+    window.navigationTest.instance.acquireTokenSilent = () => new Promise(resolve => {
+      (window.finishPageTokens ??= []).push(resolve);
+    });
+    window.navigationTest.navigate('/consultant');
+  });
+  await page.waitForFunction(() => window.finishPageTokens?.length > 0);
+  await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in with NetID', exact: true }).waitFor();
+  const requests = state.calls.length;
+  await page.evaluate(async () => {
+    window.finishPageTokens.forEach(resolve => resolve({ accessToken: 'stale-token' }));
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+  });
+  assert.equal(await page.evaluate(() => window.navigationTest.authHeader()), undefined);
+  assert.equal(state.calls.length, requests);
+});
+
 for (const role of ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'EXECUTIVE']) {
   test(`People navigation and route deny ${role}`, async t => {
     const { page, state, nav, open } = await setup(t, '/people', role);
@@ -750,6 +945,8 @@ test('admin directory filters, confirms role updates, and shows failures', async
   const { page, nav, open, writes, failWrites } = await peopleSetup(t);
   await open(); await page.getByRole('heading', { name: 'People directory' }).waitFor();
   assert.equal(await nav('People').isVisible(), true);
+  await page.getByLabel('Search people', { exact: true }).fill('CASEY@EXAMPLE.TEST');
+  await page.getByText('casey@example.test', { exact: true }).waitFor();
   await page.getByLabel('Search people', { exact: true }).fill('casey');
   assert.equal(await page.getByText('riley@example.test', { exact: true }).count(), 0);
   await page.getByLabel('Role filter', { exact: true }).selectOption('PM');

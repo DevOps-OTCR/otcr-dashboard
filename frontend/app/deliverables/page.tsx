@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckSquare, Square, Users, Link as LinkIcon } from 'lucide-react';
 import { AssigneeChecklist, projectAssignees } from '@/components/AssigneeChecklist';
@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/components/AuthContext';
 import { RoleDashboardRedirect } from '@/components/RoleDashboardRedirect';
-import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { PageLoading } from '@/components/PageLoading';
 import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
 import { deliverablesAPI, projectsAPI, setAuthToken } from '@/lib/api';
@@ -175,6 +174,10 @@ export default function DeliverablesPage() {
   const [busySubtaskId, setBusySubtaskId] = useState<string | null>(null);
   const [creatingSubtaskFor, setCreatingSubtaskFor] = useState<string | null>(null);
 
+  // A failed refresh keeps content that belongs to the selected project.
+  const shownSprintsFor = useRef(snapshot?.selectedProjectId);
+  const shownMembersFor = useRef(snapshot?.selectedProjectId);
+
   const canManage = role === 'PM' || role === 'LC' || role === 'ADMIN';
   const currentEmail = (session.user?.email ?? '').toLowerCase();
 
@@ -183,13 +186,16 @@ export default function DeliverablesPage() {
       setLoadError(null);
       const res = await projectsAPI.getSprints(projectId);
       const sprintList = (res.data ?? []) as SprintItem[];
+      shownSprintsFor.current = projectId;
       setSprints(sprintList);
       setSelectedSprintId((current) =>
         current && sprintList.some((item) => item.id === current) ? current : sprintList[0]?.id ?? '',
       );
     } catch (error: any) {
-      setSprints([]);
-      setSelectedSprintId('');
+      if (shownSprintsFor.current !== projectId) {
+        setSprints([]);
+        setSelectedSprintId('');
+      }
       const message =
         error?.response?.data?.message ??
         error?.message ??
@@ -206,11 +212,14 @@ export default function DeliverablesPage() {
         members?: Array<{ user?: TeamMemberOption | null }>;
       };
 
+      shownMembersFor.current = projectId;
       setTeamMembers(projectAssignees(project));
       setAssignmentTargets({});
     } catch {
-      setTeamMembers([]);
-      setAssignmentTargets({});
+      if (shownMembersFor.current !== projectId) {
+        setTeamMembers([]);
+        setAssignmentTargets({});
+      }
     }
   }, []);
 
@@ -592,7 +601,7 @@ export default function DeliverablesPage() {
   };
 
   if (session.loading || !session.isLoggedIn) {
-    return <FullScreenLoader />;
+    return <PageLoading />;
   }
 
   if (roleLookupFailed) return <RoleDashboardRedirect onRetry={() => setRoleLookupFailed(false)} />;

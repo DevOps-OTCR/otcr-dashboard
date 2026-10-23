@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { Be_Vietnam_Pro } from 'next/font/google';
 import localFont from 'next/font/local';
 import { AppNavbar } from '@/components/AppNavbar';
-import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { PageLoading } from '@/components/PageLoading';
 import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
 import { useAuth } from '@/components/AuthContext';
@@ -336,7 +335,7 @@ export default function When2MeetPage() {
   };
 
   if (!session.isLoggedIn || session.loading) {
-    return <FullScreenLoader />;
+    return <PageLoading />;
   }
 
   return (

@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { useAuth } from './AuthContext';
 import { PersistentNavbar, type AppNavbarProps, type AppNavPath } from './AppNavbar';
 import { GoogleCalendarPanel } from './GoogleCalendarPanel';
 import { getUserRole } from '@/lib/permissions';
-import { NavbarRegistration } from './navbar-registration';
+import { DashboardRefresh, NavbarRegistration } from './navbar-registration';
+import { clearResourceCache } from '@/lib/resource-cache';
 
 // Pages register their resolved permissions. The layout owns the navbar instance.
 const overviewPaths = ['/overview', '/consultant'];
@@ -23,18 +24,28 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const [calendarVisited, setCalendarVisited] = useState(overview);
   if (overview && !calendarVisited) setCalendarVisited(true);
   const showNavbar = isLoggedIn && dashboardPaths.includes(path);
+  // Refresh bypasses cached responses and remounts the page, which renders its snapshot
+  // immediately and refetches in the background. Repeated clicks within a second are ignored.
+  const [refreshKey, setRefreshKey] = useState(0);
+  const lastRefresh = useRef(0);
+  const refresh = useCallback(() => {
+    if (Date.now() - lastRefresh.current < 1000) return;
+    lastRefresh.current = Date.now();
+    clearResourceCache();
+    setRefreshKey(key => key + 1);
+  }, []);
 
-  return <NavbarRegistration.Provider value={setNavbar}>
+  return <NavbarRegistration.Provider value={setNavbar}><DashboardRefresh.Provider value={refresh}>
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
       {showNavbar && <PersistentNavbar {...navbar} currentPath={(path.startsWith('/feedback') ? '/forms' : path) as AppNavPath} />}
       <div className={overview
         ? `mx-auto px-4 sm:px-6 lg:px-8 py-8 grid grid-cols-1 gap-6 items-start ${path === '/consultant' ? 'max-w-[1400px] xl:grid-cols-2' : 'max-w-[1800px] lg:grid-cols-2'}`
         : undefined}>
-        <div>{children}</div>
+        <div key={refreshKey}>{children}</div>
         <div hidden={!overview || !isLoggedIn}>
           {calendarVisited && isLoggedIn && <GoogleCalendarPanel className="shadow-lg h-full" active={overview} title={path === '/consultant' ? 'Google Calendar' : 'Calendar'} />}
         </div>
       </div>
     </div>
-  </NavbarRegistration.Provider>;
+  </DashboardRefresh.Provider></NavbarRegistration.Provider>;
 }

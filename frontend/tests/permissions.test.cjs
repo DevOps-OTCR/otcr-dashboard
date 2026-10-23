@@ -49,11 +49,12 @@ function setup(responses) {
       removeItem: key => cache.delete(key),
     },
     require: name => {
+      if (cacheModules[name]) return cacheModules[name];
       assert.equal(name, './api');
       return apiExports;
     },
   });
-  return { ...exports, cache, calls };
+  return { ...exports, cache, calls, cacheModules };
 }
 
 test('failure is not cached; recovery calls the API and routes to Overview immediately', async () => {
@@ -86,6 +87,41 @@ for (const [role, path] of Object.entries({
     assert.equal(context.calls[0][1].headers.Authorization, 'Bearer test-token');
   });
 }
+
+test('a changed API role clears page data cached under the previous permissions', async () => {
+  const context = setup([{ role: 'PM' }, { role: 'CONSULTANT' }]);
+  const resources = context.cacheModules['./resource-cache'];
+  const snapshots = context.cacheModules['./navigation-cache'];
+  assert.equal(await context.getEffectiveRole('test-token', 'user@example.test'), 'PM');
+  await resources.cachedRequest('/projects', async () => ({ data: 'pm projects' }));
+  snapshots.writeNavigationSnapshot('overview', ['pm projects']);
+  context.clearRoleCache('user@example.test');
+  context.cache.clear();
+  assert.equal(await context.getEffectiveRole('test-token', 'user@example.test'), 'CONSULTANT');
+  assert.equal(resources.readResource('/projects'), undefined);
+  assert.equal(snapshots.readNavigationSnapshot('overview'), undefined);
+});
+
+test('a role that changes after the stored role expires clears cached page data', async () => {
+  const context = setup([{ role: 'CONSULTANT' }]);
+  const resources = context.cacheModules['./resource-cache'];
+  context.cache.set('otcr_role_cache:user@example.test', JSON.stringify({ role: 'PM', cachedAt: Date.now(), source: 'api' }));
+  assert.equal(await context.getEffectiveRole('test-token', 'user@example.test'), 'PM');
+  await resources.cachedRequest('/projects', async () => ({ data: 'pm projects' }));
+  context.cache.clear();
+  assert.equal(await context.getEffectiveRole('test-token', 'user@example.test'), 'CONSULTANT');
+  assert.equal(resources.readResource('/projects'), undefined);
+});
+
+test('confirming the same role keeps cached page data', async () => {
+  const context = setup([{ role: 'PM' }, { role: 'PM' }]);
+  const resources = context.cacheModules['./resource-cache'];
+  assert.equal(await context.getEffectiveRole('test-token', 'user@example.test'), 'PM');
+  await resources.cachedRequest('/projects', async () => ({ data: 'pm projects' }));
+  context.cache.clear();
+  assert.equal(await context.getEffectiveRole('test-token', 'user@example.test'), 'PM');
+  assert.deepEqual(resources.readResource('/projects'), { data: 'pm projects' });
+});
 
 test('missing credentials do not write a role or call the API', async () => {
   const context = setup([]);

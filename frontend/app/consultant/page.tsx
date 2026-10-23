@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/utils';
 import { projectsAPI, setAuthToken, slideSubmissionsAPI } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
-import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
 import { PageLoading } from '@/components/PageLoading';
 import { AppNavbar } from '@/components/AppNavbar';
@@ -246,7 +245,7 @@ export default function ConsultantDashboard() {
   );
 
   if (session.loading || !session.isLoggedIn) {
-    return <FullScreenLoader />;
+    return <PageLoading />;
   }
 
   return (

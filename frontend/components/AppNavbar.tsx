@@ -2,7 +2,7 @@
 
 import { useCallback, useContext, useLayoutEffect, useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 import Image from 'next/image';
-import { NavbarRegistration } from './navbar-registration';
+import { DashboardRefresh, NavbarRegistration } from './navbar-registration';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -19,6 +19,7 @@ import {
   MapPinned,
   CalendarDays,
   GraduationCap,
+  RefreshCw,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/utils';
@@ -108,6 +109,7 @@ function formatNotificationTime(at: Date): string {
 export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotificationCount = 0 }: AppNavbarProps) {
   const { logout, user, getToken, isLoggedIn } = useAuth();
   const router = useRouter();
+  const refreshPage = useContext(DashboardRefresh);
   const overviewPath = getDefaultDashboardPath(role);
   const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || '').replace(/\/+$/, '');
   const withBasePath = (path: string) => `${basePath}${path}`;
@@ -123,7 +125,8 @@ export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotif
 
     try {
       const token = await getToken();
-      setAuthToken(token || user.email || null);
+      if (!token) return;
+      setAuthToken(token);
       const response = await notificationsAPI.getMy(50);
       const items = Array.isArray(response.data) ? response.data : [];
       const readIds = loadReadIds(user.email);
@@ -392,6 +395,17 @@ export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotif
                 </div>
               )}
             </div>
+            {refreshPage && (
+              <button
+                type="button"
+                onClick={refreshPage}
+                aria-label="Refresh page data"
+                title="Refresh page data"
+                className="p-2 rounded-lg hover:bg-[var(--accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]"
+              >
+                <RefreshCw aria-hidden="true" className="w-5 h-5" />
+              </button>
+            )}
             <ThemeToggle />
             <Link href="/settings/slack" className="p-2 hover:bg-[var(--accent)] rounded-lg transition-colors" aria-label="Slack settings">
               <Settings className="w-5 h-5" />

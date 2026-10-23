@@ -14,6 +14,14 @@ export type OnboardingRequest = {
 };
 export const personName = (person: Pick<Person, 'firstName' | 'lastName' | 'email'>) =>
   [person.firstName, person.lastName].filter(Boolean).join(' ') || person.email;
+export function safePersonName(person: Person): string {
+  const parts = [person.firstName, person.lastName].map(value => value?.trim() ?? '').filter(Boolean);
+  const encoded = parts.some(value =>
+    /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(value)
+    || /^(?:eyJ|W3)[A-Za-z0-9+/_-]*={0,2}$/.test(value));
+  const name = parts.join(' ');
+  return !name || encoded || name.includes('@') ? person.email : name;
+}
 export function apiError(error: unknown, fallback: string) {
   const value = error as { response?: { data?: { message?: string | string[] } }; message?: string };
   const message = value?.response?.data?.message ?? value?.message ?? fallback;

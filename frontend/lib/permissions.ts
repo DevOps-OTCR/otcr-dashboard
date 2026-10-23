@@ -4,6 +4,8 @@
  */
 
 import { authAPI } from "./api";
+import { clearNavigationSnapshots } from "./navigation-cache";
+import { clearResourceCache } from "./resource-cache";
 
 export type AppRole = 'CONSULTANT' | 'LC' | 'PM' | 'PARTNER' | 'EXECUTIVE' | 'ADMIN';
 
@@ -44,6 +46,19 @@ export function setDevRoleOverride(role: AppRole | null): void {
 export function subscribeDevRoleOverride(listener: () => void): () => void {
   window.addEventListener(DEV_ROLE_OVERRIDE_EVENT, listener);
   return () => window.removeEventListener(DEV_ROLE_OVERRIDE_EVENT, listener);
+}
+
+// Roles the API confirmed during this page load. A different role later means page data
+// cached under the previous permissions must not be shown again.
+const confirmedRoles = new Map<string, AppRole>();
+
+function confirmRole(email: string, role: AppRole): void {
+  const previous = confirmedRoles.get(email);
+  confirmedRoles.set(email, role);
+  if (previous && previous !== role) {
+    clearResourceCache();
+    clearNavigationSnapshots();
+  }
 }
 
 function getRoleCacheKey(email: string): string {
@@ -128,7 +143,10 @@ export async function getEffectiveRole(
   }
   const normalizedEmail = email.toLowerCase();
   const cachedRole = readCachedRole(normalizedEmail);
-  if (cachedRole) return cachedRole;
+  if (cachedRole) {
+    confirmRole(normalizedEmail, cachedRole);
+    return cachedRole;
+  }
 
   const response = await authAPI.getRole({
     headers: { Authorization: `Bearer ${token}` },
@@ -138,6 +156,7 @@ export async function getEffectiveRole(
     throw new Error('The role response did not contain a valid role');
   }
   writeCachedRole(normalizedEmail, role);
+  confirmRole(normalizedEmail, role);
   return role;
 }
 

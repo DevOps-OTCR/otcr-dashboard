@@ -3,6 +3,43 @@ import { Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { parseRole, updateAllowedEmailRole } from './access-role';
 
+// Decode stored name data for display only. These claims do not establish identity.
+function decodeEncodedValue(value: string | null, field: 'firstName' | 'lastName'): string {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) return '';
+  const jwt = /^[A-Za-z0-9_-]+\.([A-Za-z0-9_-]+)\.[A-Za-z0-9_-]+$/.exec(trimmed);
+  const payload = jwt ? jwt[1] : trimmed;
+  if (!/^[A-Za-z0-9+/_-]+={0,2}$/.test(payload)) return trimmed;
+
+  const json = Buffer.from(payload, 'base64url').toString('utf8').trim();
+  if (!jwt && !/^[{["]/.test(json)) return trimmed;
+  try {
+    const decoded: unknown = JSON.parse(json);
+    if (typeof decoded === 'string') return decoded.trim();
+    if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) return '';
+    const claims = decoded as Record<string, unknown>;
+    const fields = field === 'firstName'
+      ? ['firstName', 'first_name', 'given_name', 'name']
+      : ['lastName', 'last_name', 'family_name', 'name'];
+    for (const key of fields) {
+      const name = claims[key];
+      if (typeof name === 'string' && name.trim()) return name.trim();
+    }
+  } catch {
+    // Recognized encoded input without a usable name falls back to email in the UI.
+  }
+  return '';
+}
+
+function normalizePerson(person: Omit<PersonSummary, 'teams'> & { teams?: PersonSummary['teams'] }): PersonSummary {
+  return {
+    ...person,
+    firstName: decodeEncodedValue(person.firstName, 'firstName') || null,
+    lastName: decodeEncodedValue(person.lastName, 'lastName') || null,
+    teams: person.teams ?? [],
+  };
+}
+
 export interface PersonSummary {
   id: string;
   email: string;
@@ -29,7 +66,12 @@ export class PeopleService {
     return people.map(({ projectAssignments, pmProjects, ...person }) => {
       const teams = new Map(projectAssignments.map(({ project }) => [project.id, { ...project, manages: false }]));
       pmProjects.forEach(project => teams.set(project.id, { ...project, manages: true }));
-      return { ...person, teams: Array.from(teams.values()).sort((a, b) => a.name.localeCompare(b.name)) };
+      return normalizePerson({
+        ...person,
+        teams: Array.from(teams.values()).sort((a, b) => a.name.localeCompare(b.name)),
+        firstName: person.firstName,
+        lastName: person.lastName,
+      });
     });
   }
 

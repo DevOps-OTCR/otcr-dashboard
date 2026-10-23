@@ -34,7 +34,7 @@
   },
   "app/teams/page.tsx": {
     "react-hooks/set-state-in-effect": {
-      "count": 4
+      "count": 3
     }
   },
   "app/when2meet/page.tsx": {

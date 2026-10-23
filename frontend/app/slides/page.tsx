@@ -11,7 +11,6 @@ import { getEffectiveRole, getUserRole, type AppRole } from '@/lib/permissions';
 import { projectsAPI, slideSubmissionsAPI, setAuthToken } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
 import { RoleDashboardRedirect } from '@/components/RoleDashboardRedirect';
-import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { PageLoading } from '@/components/PageLoading';
 import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
 import { dispatchNotificationsRefresh } from '@/lib/notification-events';
@@ -349,7 +348,7 @@ export default function SlidesPage() {
   };
 
   if (session.loading || !session.isLoggedIn) {
-    return <FullScreenLoader />;
+    return <PageLoading />;
   }
 
   if (roleLookupFailed) return <RoleDashboardRedirect onRetry={() => setRoleLookupFailed(false)} />;

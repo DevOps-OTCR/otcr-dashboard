@@ -6,7 +6,6 @@ import axios from 'axios';
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, GraduationCap, Search, X } from 'lucide-react';
 import { AppNavbar } from '@/components/AppNavbar';
 import { useAuth } from '@/components/AuthContext';
-import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { PageLoading } from '@/components/PageLoading';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import {
@@ -60,7 +59,7 @@ export default function AlumniDatabasePage() {
     }
   }, [session.loading, session.isLoggedIn, router]);
 
-  if (session.loading || !session.isLoggedIn) return <FullScreenLoader />;
+  if (session.loading || !session.isLoggedIn) return <PageLoading />;
 
   // Reset mounted state when the account or permission override changes.
   return <AlumniTable key={JSON.stringify([session.user?.email, getDevRoleOverride()])} />;
@@ -131,7 +130,9 @@ function AlumniTable() {
         if (!cancelled) setRefreshing(false);
       }
     };
-    void load();
+    void load().catch((error: unknown) => {
+      if (!cancelled) setLoadError(error instanceof Error ? error.message : 'Failed to load alumni data');
+    });
     return () => {
       cancelled = true;
     };
