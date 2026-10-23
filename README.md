@@ -9,6 +9,11 @@ OTCR Dashboard is a monorepo with a Next.js frontend and a NestJS backend for ma
 - Backend: NestJS, Prisma, PostgreSQL, Redis, BullMQ
 - Integrations: Slack, Resend
 
+CMS dashboard issue reports can be queued for GitHub intake and automatic
+Copilot assignment for clear text, styling, and documentation fixes. Both
+integrations are disabled by default. See [CMS issue workflow](docs/cms-issue-workflow.md)
+for setup, routing, and failure recovery.
+
 ## Repository Layout
 
 ```text

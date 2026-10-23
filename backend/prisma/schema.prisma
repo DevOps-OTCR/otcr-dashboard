@@ -170,10 +170,32 @@ model FeedbackSubmission {
   updatedAt      DateTime @updatedAt
 
   submitter User? @relation(fields: [submitterId], references: [id], onDelete: SetNull)
+  githubDelivery FeedbackGithubDelivery?
 
   @@index([submitterId])
   @@index([createdAt])
   @@index([formType, createdAt])
+}
+
+model FeedbackGithubDelivery {
+  id              String   @id
+  repository      String
+  status          String   @default("PENDING")
+  result          String?
+  issueNumber     Int?
+  issueUrl        String?
+  attempts        Int      @default(0)
+  createStartedAt DateTime?
+  nextAttemptAt   DateTime @default(now())
+  leaseToken      String?
+  leaseUntil      DateTime?
+  lastErrorCode   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now())
+
+  submission FeedbackSubmission @relation(fields: [id], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
 }
 
 enum Role {
