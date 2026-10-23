@@ -122,3 +122,11 @@ test('expired sessions requiring interaction reach the normal sign-in screen wit
   assert.equal(await expired.evaluate(() => window.authTest.interactiveLogins()), 0);
   assert.equal(await expired.evaluate(() => window.authTest.authHeader()), null);
 });
+
+test('token requests use the CMS-selected account when the SDK active-account hint is stale', async t => {
+  const { first } = await setup(t, true);
+  await first.evaluate(() => window.authTest.seed('consultant@example.test'));
+  await first.waitForFunction(() => document.querySelector('[data-testid="account"]')?.textContent === 'consultant@example.test');
+  assert.equal(await first.evaluate(() => window.authTest.tokenWithActiveAccount('pm@example.test')),
+    'synthetic-token-for-consultant@example.test');
+});

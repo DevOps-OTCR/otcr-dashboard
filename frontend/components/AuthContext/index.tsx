@@ -273,10 +273,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     await withAuthTimeout(instance.initialize());
     if (sharedCacheReady.current) await withAuthTimeout(sharedCacheReady.current.promise);
     if (!isCurrent()) throw cancelledRequest();
-    const account = instance.getActiveAccount();
-    if (!account) return null;
     const preferredAccount = readCmsSession()?.accountId;
-    if (preferredAccount && preferredAccount !== account.homeAccountId) throw cancelledRequest();
+    // The shared CMS selection is authoritative while SDK active-account
+    // notifications from another tab are still being processed.
+    const account = preferredAccount
+      ? instance.getAllAccounts().find(account => account.homeAccountId === preferredAccount)
+      : instance.getActiveAccount();
+    if (!account) return null;
     try {
       const result = await withAuthTimeout(instance.acquireTokenSilent({
         account, scopes: ['User.Read'], authority: process.env.NEXT_PUBLIC_MSAL_AUTHORITY,
