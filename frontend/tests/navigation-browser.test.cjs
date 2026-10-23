@@ -96,7 +96,8 @@ test('Alumni restores table state, reuses fresh data, and retains rows during fa
   await nav('Forms').click();
   await page.getByText('Dashboard Feedback Form', { exact: true }).waitFor();
   await nav('Alumni Database').click();
-  await page.getByRole('button', { name: 'Refresh alumni data', exact: true }).waitFor();
+  await page.getByRole('searchbox').waitFor();
+  assert.equal(await page.getByRole('button', { name: /Refresh alumni data/i }).count(), 0);
   await assertTable();
   assert.equal(state.calls.filter(path => path === '/alumni').length, 1);
 
@@ -118,27 +119,29 @@ test('Alumni restores table state, reuses fresh data, and retains rows during fa
   state.failAlumni = false;
   state.alumniGate = new Promise(resolve => { release = resolve; });
   const retry = page.waitForRequest('**/api/alumni');
-  await page.getByRole('button', { name: 'Refresh alumni data', exact: true }).click();
+  await nav('Forms').click();
+  await nav('Alumni Database').click();
   await retry;
   await page.evaluate(() => {
     window.alumniRequests = Promise.all([window.navigationTest.requestAlumni(), window.navigationTest.requestAlumni()]);
   });
   release();
   await page.evaluate(() => window.alumniRequests.then(() => true));
-  await page.getByRole('button', { name: 'Refresh alumni data', exact: true }).waitFor();
+  await page.getByRole('alert').waitFor({ state: 'hidden' });
   await assertTable();
   assert.equal(await page.getByRole('alert').count(), 0);
   assert.equal(state.calls.filter(path => path === '/alumni').length, 3);
 });
 
-test('Alumni does not cache failed initial requests and can retry', async t => {
-  const { page, state, open } = await setup(t, '/alumni-database');
+test('Alumni does not cache failed initial requests and retries on return', async t => {
+  const { page, state, nav, open } = await setup(t, '/alumni-database');
   state.failAlumni = true;
   await open();
   await page.getByRole('alert').waitFor();
   assert.equal(await page.evaluate(() => window.navigationTest.readResource('/alumni')), undefined);
   state.failAlumni = false;
-  await page.getByRole('button', { name: 'Refresh alumni data', exact: true }).click();
+  await nav('Forms').click();
+  await nav('Alumni Database').click();
   await page.getByRole('searchbox').waitFor();
   assert.equal(state.calls.filter(path => path === '/alumni').length, 2);
 });
