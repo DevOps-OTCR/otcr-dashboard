@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckSquare, ChevronDown, Square, Users, Link as LinkIcon } from 'lucide-react';
 import { AssigneeChecklist, projectAssignees } from '@/components/AssigneeChecklist';
+import { AutosaveField, useAutosave, useRetainedDraft } from '@/components/Autosave';
+import { DeadlineEditor, SubtaskEditors } from '@/components/RoutineEditors';
+import { formatDateOnly } from '@/lib/autosave-validation';
 import { AppNavbar } from '@/components/AppNavbar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -131,18 +134,9 @@ function formatSubmitter(
   return fullName || 'Unknown submitter';
 }
 
-function toDateTimeLocalValue(value: string) {
-  const date = new Date(value);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
-}
-
 export default function DeliverablesPage() {
   const session = useAuth();
+  const autosave = useAutosave();
   const { isLoggedIn, getToken } = session;
   const email = session.user?.email;
   const { snapshot, saveSnapshot } = useNavigationSnapshot<{
@@ -163,19 +157,18 @@ export default function DeliverablesPage() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [busyDeliverableId, setBusyDeliverableId] = useState<string | null>(null);
   const [submitLinks, setSubmitLinks] = useState<Record<string, string>>({});
-  const [assignmentTargets, setAssignmentTargets] = useState<Record<string, string[]>>({});
-  const [deadlineInputs, setDeadlineInputs] = useState<Record<string, string>>({});
-  const [subtaskEdits, setSubtaskEdits] = useState<
-    Record<string, { title: string; dueDate: string; assigneeId: string; completed: boolean }>
-  >({});
-  const [newSubtasks, setNewSubtasks] = useState<
+  const [newSubtasks, setNewSubtasks] = useRetainedDraft<
     Record<string, { title: string; dueDate: string; assigneeId: string }>
-  >({});
+  >('deliverables:newSubtasks', {});
   const [busySubtaskId, setBusySubtaskId] = useState<string | null>(null);
   const [creatingSubtaskFor, setCreatingSubtaskFor] = useState<string | null>(null);
   const [expandedSubtasks, setExpandedSubtasks] = useState<Record<string, boolean>>({});
 
   // A failed refresh keeps content that belongs to the selected project.
+  const projectRef = useRef(selectedProjectId);
+  const sprintRequest = useRef(0);
+  const memberRequest = useRef(0);
+  const cancelRequests = useCallback(() => { sprintRequest.current++; memberRequest.current++; }, []);
   const shownSprintsFor = useRef(snapshot?.selectedProjectId);
   const shownMembersFor = useRef(snapshot?.selectedProjectId);
 
@@ -183,9 +176,11 @@ export default function DeliverablesPage() {
   const currentEmail = (session.user?.email ?? '').toLowerCase();
 
   const loadSprints = useCallback(async (projectId: string) => {
+    const request = ++sprintRequest.current;
     try {
       setLoadError(null);
-      const res = await projectsAPI.getSprints(projectId);
+      const res = await autosave.readFresh(() => projectsAPI.getSprints(projectId));
+      if (request !== sprintRequest.current || projectRef.current !== projectId) return;
       const sprintList = (res.data ?? []) as SprintItem[];
       shownSprintsFor.current = projectId;
       setSprints(sprintList);
@@ -193,6 +188,7 @@ export default function DeliverablesPage() {
         current && sprintList.some((item) => item.id === current) ? current : sprintList[0]?.id ?? '',
       );
     } catch (error: any) {
+      if (request !== sprintRequest.current || projectRef.current !== projectId) return;
       if (shownSprintsFor.current !== projectId) {
         setSprints([]);
         setSelectedSprintId('');
@@ -203,11 +199,13 @@ export default function DeliverablesPage() {
         'Failed to load deliverables.';
       setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
     }
-  }, []);
+  }, [autosave]);
 
   const loadTeamMembers = useCallback(async (projectId: string) => {
+    const request = ++memberRequest.current;
     try {
       const res = await projectsAPI.getById(projectId, { includeMembers: true });
+      if (request !== memberRequest.current || projectRef.current !== projectId) return;
       const project = (res.data ?? {}) as {
         pm?: TeamMemberOption;
         members?: Array<{ user?: TeamMemberOption | null }>;
@@ -215,11 +213,10 @@ export default function DeliverablesPage() {
 
       shownMembersFor.current = projectId;
       setTeamMembers(projectAssignees(project));
-      setAssignmentTargets({});
     } catch {
+      if (request !== memberRequest.current || projectRef.current !== projectId) return;
       if (shownMembersFor.current !== projectId) {
         setTeamMembers([]);
-        setAssignmentTargets({});
       }
     }
   }, []);
@@ -258,8 +255,9 @@ export default function DeliverablesPage() {
         );
         setProjects(nextProjects);
 
-        const firstProjectId = nextProjects.some(project => project.id === snapshot?.selectedProjectId)
-          ? snapshot!.selectedProjectId : nextProjects[0]?.id ?? '';
+        const firstProjectId = nextProjects.some(project => project.id === projectRef.current)
+          ? projectRef.current : nextProjects[0]?.id ?? '';
+        projectRef.current = firstProjectId;
         setSelectedProjectId(firstProjectId);
         if (firstProjectId) {
           await Promise.all([loadSprints(firstProjectId), loadTeamMembers(firstProjectId)]);
@@ -275,8 +273,8 @@ export default function DeliverablesPage() {
     };
 
     void init();
-    return () => { cancelled = true; };
-  }, [isLoggedIn, email, getToken, loadSprints, loadTeamMembers, roleLookupFailed, snapshot]);
+    return () => { cancelled = true; cancelRequests(); };
+  }, [isLoggedIn, email, getToken, loadSprints, loadTeamMembers, roleLookupFailed, cancelRequests]);
 
   useEffect(() => {
     if (!loading && !refreshing && !loadError && !roleLookupFailed) {
@@ -313,48 +311,18 @@ export default function DeliverablesPage() {
     [visibleSprints, selectedSprintId],
   );
 
-  useEffect(() => {
-    setDeadlineInputs(
-      Object.fromEntries(
-        ((selectedSprint?.deliverables ?? []) as DeliverableItem[]).map((deliverable) => [
-          deliverable.id,
-          toDateTimeLocalValue(deliverable.deadline),
-        ]),
-      ),
-    );
-    setSubtaskEdits(
-      Object.fromEntries(
-        ((selectedSprint?.deliverables ?? []) as DeliverableItem[])
-          .flatMap((deliverable) =>
-            (deliverable.subtasks ?? []).map((subtask) => [
-              subtask.id,
-              {
-                title: subtask.title,
-                dueDate: subtask.dueDate ? toDateTimeLocalValue(subtask.dueDate) : '',
-                assigneeId: subtask.assigneeId ?? '',
-                completed: subtask.completed,
-              },
-            ]),
-          ),
-      ),
-    );
-    setNewSubtasks(
-      Object.fromEntries(
-        ((selectedSprint?.deliverables ?? []) as DeliverableItem[]).map((deliverable) => [
-          deliverable.id,
-          { title: '', dueDate: '', assigneeId: '' },
-        ]),
-      ),
-    );
-  }, [selectedSprint]);
+  const changeWeek = async (id: string) => {
+    if (await autosave.flushAll()) setSelectedSprintId(id);
+  };
 
   const handleProjectChange = async (projectId: string) => {
+    if (!(await autosave.flushAll())) return;
+    projectRef.current = projectId;
     setSelectedProjectId(projectId);
     setSelectedSprintId('');
     if (!projectId) {
       setSprints([]);
       setTeamMembers([]);
-      setAssignmentTargets({});
       return;
     }
 
@@ -362,11 +330,12 @@ export default function DeliverablesPage() {
     try {
       await Promise.all([loadSprints(projectId), loadTeamMembers(projectId)]);
     } finally {
-      setLoading(false);
+      if (projectRef.current === projectId) setLoading(false);
     }
   };
 
   const handleAssignmentToggle = async (deliverable: DeliverableItem) => {
+    if (!(await autosave.flushAll())) return;
     if (!selectedProjectId) return;
 
     const assignedToCurrentUser = Boolean(
@@ -392,6 +361,7 @@ export default function DeliverablesPage() {
   };
 
   const handleCompletionToggle = async (deliverable: DeliverableItem) => {
+    if (!(await autosave.flushAll())) return;
     if (!selectedProjectId) return;
 
     const assignedToCurrentUser = Boolean(
@@ -418,35 +388,8 @@ export default function DeliverablesPage() {
     }
   };
 
-  const handleManagerAssignment = async (deliverable: DeliverableItem) => {
-    const assigneeIds = assignmentTargets[deliverable.id];
-    if (!selectedProjectId || !assigneeIds) return;
-    setBusyDeliverableId(deliverable.id);
-    setLoadError(null);
-    try {
-      const response = await deliverablesAPI.setAssignments(deliverable.id, assigneeIds);
-      setSprints(current => current.map(sprint => ({ ...sprint,
-        deliverables: sprint.deliverables?.map(item => item.id === deliverable.id
-          ? { ...item, assignees: response.data } : item),
-      })));
-      setAssignmentTargets(current => {
-        const next = { ...current };
-        delete next[deliverable.id];
-        return next;
-      });
-      setFeedback('Assignees saved');
-    } catch (error: any) {
-      const message =
-        error?.response?.data?.message ??
-        error?.message ??
-        'Failed to assign team member.';
-      setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
-    } finally {
-      setBusyDeliverableId(null);
-    }
-  };
-
   const handleSubmitLink = async (deliverable: DeliverableItem) => {
+    if (!(await autosave.flushAll())) return;
     if (!selectedProjectId) return;
     const link = (submitLinks[deliverable.id] ?? '').trim();
 
@@ -482,30 +425,6 @@ export default function DeliverablesPage() {
     }
   };
 
-  const handleUpdateDeadline = async (deliverable: DeliverableItem) => {
-    if (!selectedProjectId || !canManage) return;
-    const nextDeadline = deadlineInputs[deliverable.id];
-    if (!nextDeadline) return;
-
-    setBusyDeliverableId(deliverable.id);
-    try {
-      await deliverablesAPI.updateDeadline(
-        deliverable.id,
-        new Date(nextDeadline).toISOString(),
-      );
-      await loadSprints(selectedProjectId);
-      setFeedback('Due date updated');
-    } catch (error: any) {
-      const message =
-        error?.response?.data?.message ??
-        error?.message ??
-        'Failed to update due date.';
-      setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
-    } finally {
-      setBusyDeliverableId(null);
-    }
-  };
-
   const handleCreateSubtask = async (deliverable: DeliverableItem) => {
     if (!selectedProjectId || !canManage) return;
     const draft = newSubtasks[deliverable.id];
@@ -519,6 +438,8 @@ export default function DeliverablesPage() {
         assigneeId: draft.assigneeId || undefined,
       });
       await loadSprints(selectedProjectId);
+      setNewSubtasks(current => current[deliverable.id] === draft
+        ? { ...current, [deliverable.id]: { title: '', dueDate: '', assigneeId: '' } } : current);
       setFeedback('Subtask added');
     } catch (error: any) {
       const message =
@@ -531,35 +452,8 @@ export default function DeliverablesPage() {
     }
   };
 
-  const handleUpdateSubtask = async (
-    subtask: NonNullable<DeliverableItem['subtasks']>[number],
-  ) => {
-    if (!selectedProjectId) return;
-    const edit = subtaskEdits[subtask.id];
-    if (!edit?.title.trim()) return;
-
-    setBusySubtaskId(subtask.id);
-    try {
-      await deliverablesAPI.updateSubtask(subtask.id, {
-        title: edit.title.trim(),
-        dueDate: edit.dueDate ? new Date(edit.dueDate).toISOString() : null,
-        assigneeId: canManage ? edit.assigneeId || null : undefined,
-        completed: edit.completed,
-      });
-      await loadSprints(selectedProjectId);
-      setFeedback('Subtask updated');
-    } catch (error: any) {
-      const message =
-        error?.response?.data?.message ??
-        error?.message ??
-        'Failed to update subtask.';
-      setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
-    } finally {
-      setBusySubtaskId(null);
-    }
-  };
-
   const handleDeleteSubtask = async (subtaskId: string) => {
+    if (!(await autosave.flushAll())) return;
     if (!selectedProjectId || !canManage) return;
 
     setBusySubtaskId(subtaskId);
@@ -581,6 +475,7 @@ export default function DeliverablesPage() {
   const handleToggleSubtaskCompletion = async (
     subtask: NonNullable<DeliverableItem['subtasks']>[number],
   ) => {
+    if (!(await autosave.flushAll())) return;
     if (!selectedProjectId) return;
 
     setBusySubtaskId(subtask.id);
@@ -629,6 +524,7 @@ export default function DeliverablesPage() {
             <CardContent className="space-y-5">
               <div className="flex flex-wrap items-center gap-3">
                 <select
+                  aria-label="Project"
                   value={selectedProjectId}
                   onChange={(e) => void handleProjectChange(e.target.value)}
                   className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
@@ -657,7 +553,7 @@ export default function DeliverablesPage() {
                     <button
                       key={sprint.id}
                       type="button"
-                      onClick={() => setSelectedSprintId(sprint.id)}
+                      onClick={() => void changeWeek(sprint.id)}
                       className={cn(
                         'rounded-xl border px-4 py-2 text-sm font-medium transition-colors',
                         sprint.id === selectedSprint?.id
@@ -682,7 +578,7 @@ export default function DeliverablesPage() {
                         )}
                       </h3>
                       <p className="text-sm text-[var(--foreground)]/60">
-                        {new Date(selectedSprint.weekStartDate).toLocaleDateString()} - {new Date(selectedSprint.weekEndDate).toLocaleDateString()}
+                        {formatDateOnly(selectedSprint.weekStartDate)} - {formatDateOnly(selectedSprint.weekEndDate)}
                       </p>
                     </div>
                     <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
@@ -741,47 +637,28 @@ export default function DeliverablesPage() {
 
                             {canManage && (
                               <div className="space-y-2">
-                                <AssigneeChecklist
-                                  options={Array.from(new Map([...(deliverable.assignees ?? []), ...teamMembers].map(person => [person.id, person])).values())}
-                                  selected={assignmentTargets[deliverable.id] ?? (deliverable.assignees ?? []).map(person => person.id)}
-                                  onChange={ids => setAssignmentTargets(current => ({ ...current, [deliverable.id]: ids }))}
-                                  disabled={busyDeliverableId === deliverable.id}
-                                />
-                                <Button size="sm" variant="outline"
-                                  disabled={busyDeliverableId === deliverable.id || !assignmentTargets[deliverable.id]}
-                                  onClick={() => void handleManagerAssignment(deliverable)}>
-                                  Save assignees
-                                </Button>
+                                <AutosaveField id={`deliverable:${deliverable.id}:assignees`} resource={`deliverable:${deliverable.id}:assignees`}
+                                  label={`${deliverable.title} assignees`} href="/deliverables" delay={250}
+                                  value={(deliverable.assignees ?? []).map(person => person.id).sort()}
+                                  save={async ids => {
+                                    const response = await deliverablesAPI.setAssignments(deliverable.id, ids);
+                                    setSprints(current => current.map(sprint => ({ ...sprint,
+                                      deliverables: sprint.deliverables?.map(item => item.id === deliverable.id ? { ...item, assignees: response.data } : item),
+                                    })));
+                                  }}>
+                                  {({ value, change }) => <AssigneeChecklist
+                                    options={Array.from(new Map([...(deliverable.assignees ?? []), ...teamMembers].map(person => [person.id, person])).values())}
+                                    selected={value} onChange={ids => change([...ids].sort())} />}
+                                </AutosaveField>
                               </div>
                             )}
 
                             <div className="flex flex-wrap items-center gap-2">
                               {canManage && (
-                                <>
-                                  <input
-                                    type="datetime-local"
-                                    value={deadlineInputs[deliverable.id] ?? ''}
-                                    onChange={(e) =>
-                                      setDeadlineInputs((current) => ({
-                                        ...current,
-                                        [deliverable.id]: e.target.value,
-                                      }))
-                                    }
-                                    className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
-                                  />
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={
-                                      busyDeliverableId === deliverable.id ||
-                                      !(deadlineInputs[deliverable.id] ?? '') ||
-                                      deadlineInputs[deliverable.id] === toDateTimeLocalValue(deliverable.deadline)
-                                    }
-                                    onClick={() => void handleUpdateDeadline(deliverable)}
-                                  >
-                                    Save Due Date
-                                  </Button>
-                                </>
+                                <DeadlineEditor id={deliverable.id} sprintId={selectedSprint.id} deadline={deliverable.deadline} href="/deliverables"
+                                  onSaved={deadline => setSprints(current => current.map(sprint => ({ ...sprint,
+                                    deliverables: sprint.deliverables?.map(item => item.id === deliverable.id ? { ...item, deadline } : item),
+                                  })))} />
                               )}
 
                               <Button
@@ -926,12 +803,6 @@ export default function DeliverablesPage() {
                                 )}
 
                                 {(deliverable.subtasks ?? []).map((subtask) => {
-                                  const edit = subtaskEdits[subtask.id] ?? {
-                                    title: subtask.title,
-                                    dueDate: subtask.dueDate ? toDateTimeLocalValue(subtask.dueDate) : '',
-                                    assigneeId: subtask.assigneeId ?? '',
-                                    completed: subtask.completed,
-                                  };
                                   const assignedToCurrentUserSubtask = Boolean(
                                     subtask.assignee?.email?.toLowerCase() === currentEmail,
                                   );
@@ -943,69 +814,13 @@ export default function DeliverablesPage() {
                                     >
                                       {canManage ? (
                                         <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-2 [&>*]:min-w-0">
-                                          <input
-                                            aria-label="Subtask title"
-                                            value={edit.title}
-                                            onChange={(e) =>
-                                              setSubtaskEdits((current) => ({
-                                                ...current,
-                                                [subtask.id]: { ...edit, title: e.target.value },
-                                              }))
-                                            }
-                                            className="min-w-0 max-w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
-                                          />
-                                          <select
-                                            aria-label="Subtask assignee"
-                                            value={edit.assigneeId}
-                                            onChange={(e) =>
-                                              setSubtaskEdits((current) => ({
-                                                ...current,
-                                                [subtask.id]: { ...edit, assigneeId: e.target.value },
-                                              }))
-                                            }
-                                            className="min-w-0 max-w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
-                                          >
-                                            <option value="">Unassigned</option>
-                                            {teamMembers.map((member) => (
-                                              <option key={member.id} value={member.id}>
-                                                {formatPerson(member)}
-                                              </option>
-                                            ))}
-                                          </select>
-                                          <input
-                                            type="datetime-local"
-                                            aria-label="Subtask due date"
-                                            value={edit.dueDate}
-                                            onChange={(e) =>
-                                              setSubtaskEdits((current) => ({
-                                                ...current,
-                                                [subtask.id]: { ...edit, dueDate: e.target.value },
-                                              }))
-                                            }
-                                            className="min-w-0 max-w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
-                                          />
-                                          <label className="flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm">
-                                            <input
-                                              type="checkbox"
-                                              checked={edit.completed}
-                                              onChange={(e) =>
-                                                setSubtaskEdits((current) => ({
-                                                  ...current,
-                                                  [subtask.id]: { ...edit, completed: e.target.checked },
-                                                }))
-                                              }
-                                            />
-                                            Done
-                                          </label>
+                                          <SubtaskEditors subtask={subtask} members={teamMembers}
+                                            onSaved={patch => setSprints(current => current.map(sprint => ({ ...sprint,
+                                              deliverables: sprint.deliverables?.map(item => ({ ...item,
+                                                subtasks: item.subtasks?.map(task => task.id === subtask.id ? { ...task, ...patch } : task),
+                                              })),
+                                            })))} />
                                           <div className="flex flex-wrap gap-2">
-                                            <Button
-                                              size="sm"
-                                              variant="outline"
-                                              disabled={busySubtaskId === subtask.id || !edit.title.trim()}
-                                              onClick={() => void handleUpdateSubtask(subtask)}
-                                            >
-                                              Save
-                                            </Button>
                                             <Button
                                               size="sm"
                                               variant="ghost"

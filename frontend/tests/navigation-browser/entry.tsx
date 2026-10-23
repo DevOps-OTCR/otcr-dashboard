@@ -20,6 +20,7 @@ import AlumniDatabasePage from '@/app/alumni-database/page';
 import FormsPage from '@/app/forms/page';
 import TeamsPage from '@/app/teams/page';
 import ClientNotesPage from '@/app/client-notes/page';
+import { AutosaveProvider } from '@/components/Autosave';
 import { DashboardShell } from '@/components/DashboardShell';
 import { ThemeProvider, themeInitScript } from '@/components/ThemeProvider';
 import { cachedRequest, readResource } from '@/lib/resource-cache';
@@ -91,7 +92,7 @@ function Fixture() {
     });
   }, [instance]);
   return <MsalContext.Provider value={{ instance, accounts, inProgress }}>
-    <ThemeProvider><AuthProvider><AuthProbe /><DashboardShell><Pages /></DashboardShell></AuthProvider></ThemeProvider>
+    <ThemeProvider><AuthProvider><AuthProbe /><AutosaveProvider><DashboardShell><Pages /></DashboardShell></AutosaveProvider></AuthProvider></ThemeProvider>
   </MsalContext.Provider>;
 }
 // Match the root layout's theme initialization before mounting the browser fixture.

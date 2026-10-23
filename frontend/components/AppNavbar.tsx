@@ -25,6 +25,7 @@ import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/utils';
 import { AdminRoleSwitcher } from '@/components/AdminRoleSwitcher';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { useAutosave } from '@/components/Autosave';
 import { useAuth } from '@/components/AuthContext';
 import { getDefaultDashboardPath, hasAccess, canShowNavItem, ROLE_FULL_LABELS, type AppRole } from '@/lib/permissions';
 import { notificationsAPI, setAuthToken } from '@/lib/api';
@@ -109,6 +110,7 @@ function formatNotificationTime(at: Date): string {
 export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotificationCount = 0 }: AppNavbarProps) {
   const { logout, user, getToken, isLoggedIn } = useAuth();
   const router = useRouter();
+  const autosave = useAutosave();
   const refreshPage = useContext(DashboardRefresh);
   const overviewPath = getDefaultDashboardPath(role);
   const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || '').replace(/\/+$/, '');
@@ -364,7 +366,7 @@ export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotif
                               ),
                             );
                             setNotificationsOpen(false);
-                            router.push(resolveNotificationTarget(n));
+                            void autosave.flushAll().then(saved => { if (saved) router.push(resolveNotificationTarget(n)); });
                           }}
                           className={cn(
                             'w-full text-left p-3 rounded-xl border transition-colors',
@@ -411,7 +413,7 @@ export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotif
               <Settings className="w-5 h-5" />
             </Link>
             <button
-              onClick={() => logout()}
+              onClick={() => { void autosave.flushAll().then(saved => { if (saved) logout(); }); }}
               className="text-sm font-medium px-3 py-2 rounded-lg hover:bg-[var(--accent)] transition-colors"
             >
               Sign Out
