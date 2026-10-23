@@ -1,5 +1,6 @@
 'use client';
 
+import { AutosaveProvider } from '@/components/Autosave';
 import { DashboardShell } from '@/components/DashboardShell';
 import { AuthApiSync } from '@/components/AuthApiSync';
 import "./globals.css";
@@ -31,7 +32,7 @@ export default function MsalWrapper({ children }: { children: ReactNode }) {
           <MsalProvider instance={pca}>
             <AuthProvider>
               <AuthApiSync />
-              <DashboardShell>{children}</DashboardShell>
+              <AutosaveProvider><DashboardShell>{children}</DashboardShell></AutosaveProvider>
             </AuthProvider>
           </MsalProvider>
         </ThemeProvider>

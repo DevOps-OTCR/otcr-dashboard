@@ -21,6 +21,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Modal } from '@/components/ui/Modal';
 import { cn } from '@/lib/utils';
 import { getEffectiveRole, getUserRole, type AppRole } from '@/lib/permissions';
+import { AutosaveInput, useAutosave } from '@/components/Autosave';
+import { ScheduleEditors } from '@/components/RoutineEditors';
 import { AppNavbar } from '@/components/AppNavbar';
 import { useRouter } from 'next/navigation';
 import { projectsAPI, authAPI, attendanceAPI, deliverablesAPI, setAuthToken, type AttendanceEventCategory } from '@/lib/api';
@@ -110,16 +112,6 @@ type MemberAttendanceHistory = {
 };
 
 type HistoryFilter = 'TEAM' | 'FIRMWIDE';
-
-const WEEKDAY_OPTIONS = [
-  'MONDAY',
-  'TUESDAY',
-  'WEDNESDAY',
-  'THURSDAY',
-  'FRIDAY',
-  'SATURDAY',
-  'SUNDAY',
-];
 
 const DEFAULT_SPRINT_CONFIG: Omit<SprintConfig, 'id'> = {
   sprintStartDay: 'MONDAY',
@@ -215,6 +207,7 @@ function TeamDeliverableCard({
 
 export default function TeamsPage() {
   const session = useAuth();
+  const autosave = useAutosave();
   const router = useRouter();
   const { snapshot, saveSnapshot } = useNavigationSnapshot<{
     role: AppRole; projects: ProjectFromApi[]; allowedEmails: string[]; selectedTeamId: string | null;
@@ -233,11 +226,12 @@ export default function TeamsPage() {
     search: '',
   });
   const [addMemberSearch, setAddMemberSearch] = useState('');
-  const [teamCalendarIdDraft, setTeamCalendarIdDraft] = useState('');
-  const [teamCalendarIdSaving, setTeamCalendarIdSaving] = useState(false);
   const [sprintConfigDraft, setSprintConfigDraft] = useState(snapshot?.sprintConfigDraft ?? DEFAULT_SPRINT_CONFIG);
+  const teamRef = useRef(selectedTeamId);
+  const settingsRequest = useRef(0);
+  const cancelSettingsRequest = useCallback(() => { settingsRequest.current++; }, []);
+  const [settingsTeamId, setSettingsTeamId] = useState(snapshot?.sprintsFor ?? null);
   const [sprintDataLoading, setSprintDataLoading] = useState(false);
-  const [sprintConfigSaving, setSprintConfigSaving] = useState(false);
   const [sprintGenerationLoading, setSprintGenerationLoading] = useState(false);
   const [teamSprints, setTeamSprints] = useState<SprintRecord[]>(snapshot?.teamSprints ?? []);
   const [selectedSprintId, setSelectedSprintId] = useState<string>(snapshot?.selectedSprintId ?? '');
@@ -259,14 +253,14 @@ export default function TeamsPage() {
         return;
       }
       setAuthToken(token);
-      const res = await projectsAPI.getAll({ includeMembers: true, limit: 100 });
+      const res = await autosave.readFresh(() => projectsAPI.getAll({ includeMembers: true, limit: 100 }));
       setProjects(res.data?.projects ?? []);
     } catch {
       // Keep previously loaded teams visible when a refresh fails.
     } finally {
       setLoading(false);
     }
-  }, [session]);
+  }, [session, autosave]);
 
   useEffect(() => {
     if (!session.isLoggedIn || !session.user?.email) return;
@@ -354,12 +348,8 @@ export default function TeamsPage() {
     return () => clearTimeout(timer);
   }, [session.loading, session.isLoggedIn, actionFeedback]);
 
-  useEffect(() => {
-    if (session.loading || !session.isLoggedIn) return;
-    setTeamCalendarIdDraft(selectedTeam?.googleCalendarId ?? '');
-  }, [session.loading, session.isLoggedIn, selectedTeam?.id, selectedTeam?.googleCalendarId]);
-
   const loadSelectedTeamSprintData = useCallback(async (projectId: string) => {
+    const request = ++settingsRequest.current;
     // Refresh restored sprint data in place; show the loader only for another team.
     if (sprintsFor.current !== projectId) setSprintDataLoading(true);
     try {
@@ -368,11 +358,10 @@ export default function TeamsPage() {
         setAuthToken(token);
       }
 
-      const [configRes, sprintsRes] = await Promise.all([
-        projectsAPI.getSprintConfig(projectId),
-        projectsAPI.getSprints(projectId),
-      ]);
-
+      const [configRes, sprintsRes] = await autosave.readFresh(() => Promise.all([
+        projectsAPI.getSprintConfig(projectId), projectsAPI.getSprints(projectId),
+      ]));
+      if (request !== settingsRequest.current || teamRef.current !== projectId) return;
       const incomingConfig = configRes.data as SprintConfig;
       setSprintConfigDraft({
         sprintStartDay: incomingConfig?.sprintStartDay ?? DEFAULT_SPRINT_CONFIG.sprintStartDay,
@@ -386,6 +375,7 @@ export default function TeamsPage() {
       });
       const nextSprints = (sprintsRes.data ?? []) as SprintRecord[];
       sprintsFor.current = projectId;
+      setSettingsTeamId(projectId);
       setTeamSprints(nextSprints);
       setSelectedSprintId((current) =>
         current && nextSprints.some((item) => item.id === current)
@@ -393,8 +383,10 @@ export default function TeamsPage() {
           : nextSprints[0]?.id ?? '',
       );
     } catch (err) {
+      if (request !== settingsRequest.current || teamRef.current !== projectId) return;
       if (sprintsFor.current !== projectId) {
         sprintsFor.current = null;
+        setSettingsTeamId(null);
         setSprintConfigDraft(DEFAULT_SPRINT_CONFIG);
         setTeamSprints([]);
         setSelectedSprintId('');
@@ -404,14 +396,15 @@ export default function TeamsPage() {
         tone: 'warning',
       });
     } finally {
-      setSprintDataLoading(false);
+      if (request === settingsRequest.current && teamRef.current === projectId) setSprintDataLoading(false);
     }
-  }, [session]);
+  }, [session, autosave]);
 
   useEffect(() => {
     if (session.loading || !session.isLoggedIn) return;
     if (!selectedTeamId || !canManageTeams) {
       sprintsFor.current = null;
+      setSettingsTeamId(null);
       setSprintConfigDraft(DEFAULT_SPRINT_CONFIG);
       setTeamSprints([]);
       setSelectedSprintId('');
@@ -419,7 +412,15 @@ export default function TeamsPage() {
     }
 
     void loadSelectedTeamSprintData(selectedTeamId);
-  }, [session.loading, session.isLoggedIn, selectedTeamId, canManageTeams, loadSelectedTeamSprintData]);
+    return cancelSettingsRequest;
+  }, [session.loading, session.isLoggedIn, selectedTeamId, canManageTeams, loadSelectedTeamSprintData, cancelSettingsRequest]);
+
+  const changeTeam = async (id: string | null) => {
+    if (!(await autosave.flushAll())) return;
+    teamRef.current = id;
+    settingsRequest.current++;
+    setSelectedTeamId(id);
+  };
 
   const filterEmailsBySearch = (emails: string[], query: string) => {
     if (!query.trim()) return emails;
@@ -470,26 +471,6 @@ export default function TeamsPage() {
       );
   };
 
-  const handleSaveTeamCalendarId = async () => {
-    if (!selectedTeam) return;
-
-    setTeamCalendarIdSaving(true);
-    try {
-      await projectsAPI.update(selectedTeam.id, {
-        googleCalendarId: teamCalendarIdDraft.trim() || null,
-      });
-      await fetchProjects();
-      setActionFeedback({ message: 'Team calendar saved', tone: 'success' });
-    } catch (err) {
-      setActionFeedback({
-        message: parseApiError(err, 'Failed to save team calendar'),
-        tone: 'warning',
-      });
-    } finally {
-      setTeamCalendarIdSaving(false);
-    }
-  };
-
   const handleAddMemberToTeam = (projectId: string, email: string) => {
     projectsAPI
       .addMember(projectId, { email })
@@ -520,11 +501,12 @@ export default function TeamsPage() {
       );
   };
 
-  const handleDeleteTeam = (projectId: string) => {
+  const handleDeleteTeam = async (projectId: string) => {
+    if (!(await autosave.flushAll())) return;
     projectsAPI
       .delete(projectId)
       .then(() => {
-        setSelectedTeamId((id) => (id === projectId ? null : id));
+        if (teamRef.current === projectId) { teamRef.current = null; setSelectedTeamId(null); }
         setActionFeedback({ message: 'Team deleted', tone: 'warning' });
         fetchProjects();
       })
@@ -555,31 +537,6 @@ export default function TeamsPage() {
       });
     } finally {
       setMemberHistoryLoading(false);
-    }
-  };
-
-  const handleSaveSprintConfig = async () => {
-    if (!selectedTeam) return;
-
-    setSprintConfigSaving(true);
-    try {
-      const res = await projectsAPI.updateSprintConfig(selectedTeam.id, sprintConfigDraft);
-      setSprintConfigDraft({
-        sprintStartDay: res.data?.sprintStartDay ?? sprintConfigDraft.sprintStartDay,
-        initialSlideDueDay: res.data?.initialSlideDueDay ?? sprintConfigDraft.initialSlideDueDay,
-        finalSlideDueDay: res.data?.finalSlideDueDay ?? sprintConfigDraft.finalSlideDueDay,
-        defaultDueTime: res.data?.defaultDueTime ?? sprintConfigDraft.defaultDueTime,
-        sprintTimezone: res.data?.sprintTimezone ?? sprintConfigDraft.sprintTimezone,
-        autoGenerateSprints: res.data?.autoGenerateSprints ?? sprintConfigDraft.autoGenerateSprints,
-      });
-      setActionFeedback({ message: 'Sprint schedule saved', tone: 'success' });
-    } catch (err) {
-      setActionFeedback({
-        message: parseApiError(err, 'Failed to save sprint settings'),
-        tone: 'warning',
-      });
-    } finally {
-      setSprintConfigSaving(false);
     }
   };
 
@@ -779,7 +736,7 @@ export default function TeamsPage() {
                       size="sm"
                       variant="ghost"
                       className="text-[var(--foreground)]"
-                      onClick={() => setSelectedTeamId(null)}
+                      onClick={() => void changeTeam(null)}
                     >
                       <ChevronLeft className="w-4 h-4 mr-1" />
                       Back to teams
@@ -817,126 +774,15 @@ export default function TeamsPage() {
                             </p>
                           </div>
 
-                          {sprintDataLoading ? (
-                            <div className="text-sm text-[var(--foreground)]/60">Loading sprint settings...</div>
+                          {sprintDataLoading || settingsTeamId !== selectedTeam.id ? (
+                            <div className="text-sm text-[var(--foreground)]/60">
+                              {sprintDataLoading ? 'Loading sprint settings...' : <button type="button" onClick={() => void loadSelectedTeamSprintData(selectedTeam.id)}>Retry loading sprint settings</button>}
+                            </div>
                           ) : (
                             <>
-                              <div className="grid gap-3 md:grid-cols-2">
-                                <label className="space-y-1 text-sm">
-                                  <span className="font-medium text-[var(--foreground)]">Sprint starts on</span>
-                                  <select
-                                    value={sprintConfigDraft.sprintStartDay}
-                                    onChange={(e) =>
-                                      setSprintConfigDraft((prev) => ({
-                                        ...prev,
-                                        sprintStartDay: e.target.value,
-                                      }))
-                                    }
-                                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
-                                  >
-                                    {WEEKDAY_OPTIONS.map((day) => (
-                                      <option key={day} value={day}>
-                                        {labelForWeekday(day)}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </label>
-
-                                <label className="space-y-1 text-sm">
-                                  <span className="font-medium text-[var(--foreground)]">Default due time</span>
-                                  <input
-                                    type="time"
-                                    value={sprintConfigDraft.defaultDueTime}
-                                    onChange={(e) =>
-                                      setSprintConfigDraft((prev) => ({
-                                        ...prev,
-                                        defaultDueTime: e.target.value,
-                                      }))
-                                    }
-                                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
-                                  />
-                                </label>
-
-                                <label className="space-y-1 text-sm">
-                                  <span className="font-medium text-[var(--foreground)]">Initial Slides due day</span>
-                                  <select
-                                    value={sprintConfigDraft.initialSlideDueDay}
-                                    onChange={(e) =>
-                                      setSprintConfigDraft((prev) => ({
-                                        ...prev,
-                                        initialSlideDueDay: e.target.value,
-                                      }))
-                                    }
-                                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
-                                  >
-                                    {WEEKDAY_OPTIONS.map((day) => (
-                                      <option key={day} value={day}>
-                                        {labelForWeekday(day)}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </label>
-
-                                <label className="space-y-1 text-sm">
-                                  <span className="font-medium text-[var(--foreground)]">Final Slides due day</span>
-                                  <select
-                                    value={sprintConfigDraft.finalSlideDueDay}
-                                    onChange={(e) =>
-                                      setSprintConfigDraft((prev) => ({
-                                        ...prev,
-                                        finalSlideDueDay: e.target.value,
-                                      }))
-                                    }
-                                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
-                                  >
-                                    {WEEKDAY_OPTIONS.map((day) => (
-                                      <option key={day} value={day}>
-                                        {labelForWeekday(day)}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </label>
-
-                                <label className="space-y-1 text-sm md:col-span-2">
-                                  <span className="font-medium text-[var(--foreground)]">Timezone</span>
-                                  <input
-                                    type="text"
-                                    value={sprintConfigDraft.sprintTimezone}
-                                    onChange={(e) =>
-                                      setSprintConfigDraft((prev) => ({
-                                        ...prev,
-                                        sprintTimezone: e.target.value,
-                                      }))
-                                    }
-                                    placeholder="America/Chicago"
-                                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
-                                  />
-                                </label>
-                              </div>
-
-                              <label className="flex items-center gap-2 text-sm text-[var(--foreground)]">
-                                <input
-                                  type="checkbox"
-                                  checked={sprintConfigDraft.autoGenerateSprints}
-                                  onChange={(e) =>
-                                    setSprintConfigDraft((prev) => ({
-                                      ...prev,
-                                      autoGenerateSprints: e.target.checked,
-                                    }))
-                                  }
-                                  className="rounded border-[var(--border)]"
-                                />
-                                Auto-generate weekly sprint templates for this team
-                              </label>
-
+                              <ScheduleEditors projectId={selectedTeam.id} config={sprintConfigDraft}
+                                onSaved={patch => setSprintConfigDraft(current => ({ ...current, ...patch }))} />
                               <div className="flex flex-wrap items-center gap-3">
-                                <Button
-                                  size="sm"
-                                  onClick={handleSaveSprintConfig}
-                                  disabled={sprintConfigSaving}
-                                >
-                                  {sprintConfigSaving ? 'Saving...' : 'Save sprint schedule'}
-                                </Button>
                                 <p className="text-xs text-[var(--foreground)]/60">
                                   Current pattern: Initial Slides every {labelForWeekday(sprintConfigDraft.initialSlideDueDay)} at {sprintConfigDraft.defaultDueTime}, Final Slides every {labelForWeekday(sprintConfigDraft.finalSlideDueDay)} at {sprintConfigDraft.defaultDueTime}.
                                 </p>
@@ -968,22 +814,15 @@ export default function TeamsPage() {
                           <>
                             <label className="space-y-1 text-sm block">
                               <span className="font-medium text-[var(--foreground)]">Google Calendar secret / ID</span>
-                              <input
-                                type="text"
-                                value={teamCalendarIdDraft}
-                                onChange={(e) => setTeamCalendarIdDraft(e.target.value)}
-                                placeholder="team-calendar@group.calendar.google.com"
-                                className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
-                              />
+                              <AutosaveInput id={`project:${selectedTeam.id}:calendar`} resource={`project:${selectedTeam.id}:calendar`}
+                                normalize={value => value.trim()} label="Google Calendar secret / ID" href="/teams" value={selectedTeam.googleCalendarId ?? ''} delay={null}
+                                save={async value => {
+                                  const googleCalendarId = value.trim() || null;
+                                  await projectsAPI.update(selectedTeam.id, { googleCalendarId });
+                                  setProjects(current => current.map(project => project.id === selectedTeam.id ? { ...project, googleCalendarId } : project));
+                                }} />
                             </label>
                             <div className="flex flex-wrap items-center gap-3">
-                              <Button
-                                size="sm"
-                                onClick={handleSaveTeamCalendarId}
-                                disabled={teamCalendarIdSaving}
-                              >
-                                {teamCalendarIdSaving ? 'Saving...' : 'Save team calendar'}
-                              </Button>
                               <p className="text-xs text-[var(--foreground)]/60">
                                 Use the calendar secret/ID, not the public embed URL.
                               </p>
@@ -1080,7 +919,7 @@ export default function TeamsPage() {
                             >
                               <button
                                 type="button"
-                                onClick={() => setSelectedTeamId(project.id)}
+                                onClick={() => void changeTeam(project.id)}
                                 className="flex-1 min-w-0 text-left flex items-center justify-between gap-2"
                               >
                                 <div className="flex items-center gap-2">
@@ -1175,7 +1014,7 @@ export default function TeamsPage() {
                       size="sm"
                       variant="ghost"
                       className="text-[var(--foreground)]"
-                      onClick={() => setSelectedTeamId(null)}
+                      onClick={() => void changeTeam(null)}
                     >
                       <ChevronLeft className="w-4 h-4 mr-1" />
                       Back to teams

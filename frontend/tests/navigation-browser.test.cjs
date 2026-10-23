@@ -187,7 +187,8 @@ for (const width of [375, 768, 1440]) {
     await page.addStyleTag({ content: styles });
     await page.getByLabel('New subtask title', { exact: true }).fill('New subtask');
     for (const label of ['Subtask title', 'New subtask title']) {
-      const form = page.getByLabel(label, { exact: true }).locator('..');
+      const inputParent = page.getByLabel(label, { exact: true }).locator('..');
+      const form = label === 'Subtask title' ? inputParent.locator('..') : inputParent;
       const overflow = await form.evaluate(element => {
         const bounds = element.getBoundingClientRect();
         return Array.from(element.querySelectorAll('input, select, button')).filter(control => {
@@ -197,7 +198,7 @@ for (const width of [375, 768, 1440]) {
       });
       assert.deepEqual(overflow, []);
     }
-    for (const name of ['Add Subtask', 'Save', 'Delete']) {
+    for (const name of ['Add Subtask', 'Delete']) {
       const button = page.getByRole('button', { name, exact: true });
       await button.focus();
       assert.equal(await button.evaluate(element => element === document.activeElement), true);
@@ -372,7 +373,7 @@ test('Client Notes discards restored data after a confirmed role change, includi
   state.role = 'PM';
   const refresh = page.waitForRequest(request => new URL(request.url()).pathname === '/api/deliverables');
   await nav('Client Call Notes').click();
-  await page.waitForFunction(() => JSON.parse(localStorage.getItem('otcr_role_cache:pm@example.test')).role === 'PM');
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('otcr_role_cache:pm@example.test'))?.role === 'PM');
   await refresh;
   assert.equal(await page.getByRole('heading', { name: 'Admin client note', exact: true }).count(), 0);
   assert.equal(await page.evaluate(() => window.navigationTest.readSnapshot(JSON.stringify(['client-notes', 'pm@example.test', null]))), undefined);
@@ -589,25 +590,28 @@ test('assignment editor preselects everyone, saves a complete set, and retains s
       body: JSON.stringify(fail ? { message: 'Save failed; try again' } : users.filter(user => ids.includes(user.id))) });
   });
   await open();
+  await page.clock.install({ time: new Date() });
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  const saveStatus = page.locator('[data-autosave="deliverable:team-1-research:assignees"]');
   const group = page.getByRole('group', { name: 'Assignees', exact: true });
   assert.equal(await group.getByRole('checkbox', { name: 'Test PM' }).isChecked(), true);
   assert.equal(await group.getByRole('checkbox', { name: 'Casey' }).isChecked(), true);
   await group.getByRole('checkbox', { name: 'Test PM' }).uncheck();
   await group.getByRole('checkbox', { name: 'Riley' }).check();
-  await page.getByRole('button', { name: 'Save assignees', exact: true }).click();
-  await page.getByText('Assignees saved', { exact: true }).waitFor();
+  await page.clock.runFor(250);
+  await saveStatus.getByRole('status').filter({ hasText: /^Saved$/ }).waitFor();
   assert.deepEqual(saves, [['u-2', 'u-3']]);
   assert.equal(await page.getByText('Casey, Riley', { exact: true }).isVisible(), true);
   assert.equal(await page.getByRole('link', { name: /submission/i }).count() > 0, true);
   fail = true;
   await group.getByRole('checkbox', { name: 'Casey' }).uncheck();
-  await page.getByRole('button', { name: 'Save assignees', exact: true }).click();
-  await page.getByText('Save failed; try again', { exact: true }).waitFor();
+  await page.clock.runFor(250);
+  await saveStatus.getByRole('button', { name: 'Retry' }).waitFor();
   assert.equal(await group.getByRole('checkbox', { name: 'Casey' }).isChecked(), false);
   assert.equal(await page.getByText('Casey, Riley', { exact: true }).isVisible(), true);
   fail = false;
   await group.getByRole('checkbox', { name: 'Riley' }).uncheck();
-  await page.getByRole('button', { name: 'Save assignees', exact: true }).click();
+  await page.clock.runFor(250);
   await page.getByText('Unassigned', { exact: true }).first().waitFor();
   assert.deepEqual(saves.at(-1), []);
 });

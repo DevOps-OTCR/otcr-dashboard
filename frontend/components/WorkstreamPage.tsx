@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Users, RefreshCw, FileText } from 'lucide-react';
 import { AssigneeChecklist, projectAssignees, type AssigneeOption } from '@/components/AssigneeChecklist';
+import { AutosaveField, AutosaveInput, useAutosave } from '@/components/Autosave';
+import { DeadlineEditor } from '@/components/RoutineEditors';
+import { formatDateOnly, validDate } from '@/lib/autosave-validation';
 import { AppNavbar } from '@/components/AppNavbar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -106,18 +109,9 @@ function toDateInputValue(value: string) {
   return new Date(value).toISOString().slice(0, 10);
 }
 
-function toDateTimeLocalValue(value: string) {
-  const date = new Date(value);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
-}
-
 export default function WorkstreamPage() {
   const session = useAuth();
+  const autosave = useAutosave();
   const router = useRouter();
   const { isLoggedIn, getToken } = session;
   const email = session.user?.email;
@@ -148,11 +142,6 @@ export default function WorkstreamPage() {
   const [newSprintStartDate, setNewSprintStartDate] = useState(
     new Date().toISOString().slice(0, 10),
   );
-  const [generalNotesInput, setGeneralNotesInput] = useState('');
-  const [sprintDateInput, setSprintDateInput] = useState('');
-  const [deadlineInputs, setDeadlineInputs] = useState<Record<string, string>>({});
-  const [updatingSprintDate, setUpdatingSprintDate] = useState(false);
-
   const canManage = role === 'PM' || role === 'LC' || role === 'ADMIN';
 
   const loadTeamMembers = useCallback(async (projectId: string) => {
@@ -174,8 +163,8 @@ export default function WorkstreamPage() {
     const request = ++sprintRequest.current;
     try {
       setLoadError(null);
-      const res = await projectsAPI.getSprints(projectId);
-      if (request !== sprintRequest.current) return;
+      const res = await autosave.readFresh(() => projectsAPI.getSprints(projectId));
+      if (request !== sprintRequest.current || projectRef.current !== projectId) return;
       const sprintList = (res.data ?? []) as SprintItem[];
       setSprints(sprintList);
       setSelectedSprintId((current) => {
@@ -184,14 +173,14 @@ export default function WorkstreamPage() {
           : sprintList[0]?.id ?? '';
       });
     } catch (error: any) {
-      if (request !== sprintRequest.current) return;
+      if (request !== sprintRequest.current || projectRef.current !== projectId) return;
       const message =
         error?.response?.data?.message ??
         error?.message ??
         'Failed to load workstream weeks.';
       setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
     }
-  }, []);
+  }, [autosave]);
 
   useEffect(() => {
     if (!session.loading && !session.isLoggedIn) {
@@ -258,23 +247,6 @@ export default function WorkstreamPage() {
     [sprints, selectedSprintId],
   );
   
-  useEffect(() => {
-    setGeneralNotesInput(selectedSprint?.configSnapshot?.generalNotes ?? '');
-  }, [selectedSprintId, selectedSprint?.configSnapshot?.generalNotes]);
-
-  useEffect(() => {
-    setSprintDateInput(selectedSprint ? toDateInputValue(selectedSprint.weekStartDate) : '');
-    setDeadlineInputs(
-      Object.fromEntries(
-        (selectedSprint?.deliverables ?? []).map((deliverable) => [
-          deliverable.id,
-          toDateTimeLocalValue(deliverable.deadline),
-        ]),
-      ),
-    );
-  }, [selectedSprint]);
-
-  
   const sprintIndex = useMemo(
     () => sprints.findIndex((item) => item.id === selectedSprintId),
     [selectedSprintId, sprints],
@@ -304,7 +276,12 @@ export default function WorkstreamPage() {
     );
   }, [selectedSprint, sprintIndex]);
 
+  const changeWeek = async (id: string) => {
+    if (await autosave.flushAll()) setSelectedSprintId(id);
+  };
+
   const handleProjectChange = async (projectId: string) => {
+    if (!(await autosave.flushAll())) return;
     projectRef.current = projectId;
     setSelectedProjectId(projectId);
     setParsedDrafts(current => current.map(draft => ({ ...draft, assigneeIds: [] })));
@@ -334,6 +311,7 @@ export default function WorkstreamPage() {
   };
 
   const handleGenerateSprint = async () => {
+    if (!(await autosave.flushAll())) return;
     if (!selectedProjectId || !newSprintStartDate) return;
     setGenerating(true);
     try {
@@ -365,6 +343,7 @@ export default function WorkstreamPage() {
   };
 
   const handleSprintStatusToggle = async () => {
+    if (!(await autosave.flushAll())) return;
     if (!selectedProjectId || !selectedSprint || !canManage) return;
     const nextStatus = selectedSprint.status === 'RELEASED' ? 'DRAFT' : 'RELEASED';
     try {
@@ -384,6 +363,7 @@ export default function WorkstreamPage() {
   };
 
   const handleSaveDrafts = async () => {
+    if (!(await autosave.flushAll())) return;
     if (!selectedProjectId || !selectedSprint || teamMembersStatus !== 'ready' || savingDrafts) return;
     if (parsedDrafts.length === 0 && !addWhitepaperSubmission) return;
 
@@ -462,6 +442,7 @@ export default function WorkstreamPage() {
   };
 
   const handleDeleteSprint = async () => {
+    if (!(await autosave.flushAll())) return;
     if (!selectedProjectId || !selectedSprint || !canManage) return;
     const confirmed = window.confirm(
       `Delete ${normalizeWeekText(selectedSprint.label)}? This will also delete the deliverables saved in this week.`,
@@ -482,6 +463,7 @@ export default function WorkstreamPage() {
   };
 
   const handleDeleteDeliverable = async (deliverable: DeliverableItem) => {
+    if (!(await autosave.flushAll())) return;
     if (!selectedProjectId || !canManage) return;
     const confirmed = window.confirm(
       `Delete "${normalizeWeekText(deliverable.title)}"? This cannot be undone.`,
@@ -501,71 +483,6 @@ export default function WorkstreamPage() {
       setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
     } finally {
       setBusyDeliverableId(null);
-    }
-  };
-
-  const handleUpdateSprintDate = async () => {
-    if (!selectedProjectId || !selectedSprint || !canManage || !sprintDateInput) return;
-
-    setUpdatingSprintDate(true);
-    try {
-      setLoadError(null);
-      await projectsAPI.updateSprint(selectedProjectId, selectedSprint.id, {
-        weekStartDate: sprintDateInput,
-      });
-      await loadSprints(selectedProjectId);
-      setFeedback('Workstream updated');
-    } catch (error: any) {
-      const message =
-        error?.response?.data?.message ??
-        error?.message ??
-        'Failed to update workstream.';
-      setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
-    } finally {
-      setUpdatingSprintDate(false);
-    }
-  };
-
-  const handleUpdateDeliverableDeadline = async (deliverable: DeliverableItem) => {
-    if (!selectedProjectId || !canManage) return;
-    const nextDeadline = deadlineInputs[deliverable.id];
-    if (!nextDeadline) return;
-
-    setBusyDeliverableId(deliverable.id);
-    try {
-      setLoadError(null);
-      await deliverablesAPI.updateDeadline(
-        deliverable.id,
-        new Date(nextDeadline).toISOString(),
-      );
-      await loadSprints(selectedProjectId);
-      setFeedback('Due date updated');
-    } catch (error: any) {
-      const message =
-        error?.response?.data?.message ??
-        error?.message ??
-        'Failed to update due date.';
-      setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
-    } finally {
-      setBusyDeliverableId(null);
-    }
-  };
-
-  const handleSaveGeneralNotes = async () => {
-    if (!selectedProjectId || !selectedSprint || !canManage) return;
-    try {
-      setLoadError(null);
-      await projectsAPI.updateSprintNotes(selectedProjectId, selectedSprint.id, {
-        generalNotes: generalNotesInput,
-      });
-      await loadSprints(selectedProjectId);
-      setFeedback('Week notes saved');
-    } catch (error: any) {
-      const message =
-        error?.response?.data?.message ??
-        error?.message ??
-        'Failed to save week notes.';
-      setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
     }
   };
 
@@ -594,6 +511,7 @@ export default function WorkstreamPage() {
             <CardContent className="space-y-5">
               <div className="flex flex-wrap items-center gap-3">
                 <select
+                  aria-label="Project"
                   value={selectedProjectId}
                   onChange={(e) => void handleProjectChange(e.target.value)}
                   className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
@@ -625,8 +543,9 @@ export default function WorkstreamPage() {
                 )}
                 {canManage && sprints.length > 0 && (
                   <select
+                    aria-label="Workstream week"
                     value={selectedSprintId}
-                    onChange={(e) => setSelectedSprintId(e.target.value)}
+                    onChange={(e) => void changeWeek(e.target.value)}
                     className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
                   >
                     {sprints.map((sprint, index) => (
@@ -686,7 +605,7 @@ export default function WorkstreamPage() {
                     <button
                       key={sprint.id}
                       type="button"
-                      onClick={() => setSelectedSprintId(sprint.id)}
+                      onClick={() => void changeWeek(sprint.id)}
                       className={cn(
                         'rounded-xl border px-4 py-2 text-sm font-medium transition-colors',
                         sprint.id === selectedSprintId
@@ -711,7 +630,7 @@ export default function WorkstreamPage() {
                         )}
                       </h3>
                       <p className="text-sm text-[var(--foreground)]/60">
-                        {new Date(selectedSprint.weekStartDate).toLocaleDateString()} - {new Date(selectedSprint.weekEndDate).toLocaleDateString()}
+                        {formatDateOnly(selectedSprint.weekStartDate)} - {formatDateOnly(selectedSprint.weekEndDate)}
                       </p>
                     </div>
                     <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
@@ -725,25 +644,19 @@ export default function WorkstreamPage() {
                         <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--foreground)]/55">
                           Workstream Week Start
                         </span>
-                        <input
-                          type="date"
-                          value={sprintDateInput}
-                          onChange={(e) => setSprintDateInput(e.target.value)}
-                          className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
-                        />
+                        <AutosaveInput id={`sprint:${selectedSprint.id}:weekStartDate`} resource={`sprint:${selectedSprint.id}`}
+                          label="Workstream Week Start" href="/workstream" type="date" delay={null} validate={validDate}
+                          value={toDateInputValue(selectedSprint.weekStartDate)}
+                          save={async value => {
+                            const { data } = await projectsAPI.updateSprint(selectedProjectId, selectedSprint.id, { weekStartDate: value });
+                            setSprints(current => current.map(sprint => sprint.id === selectedSprint.id ? { ...sprint,
+                              weekStartDate: data.weekStartDate, weekEndDate: data.weekEndDate,
+                              deliverables: sprint.deliverables?.map(item => ({ ...item,
+                                deadline: data.deliverables?.find((updated: DeliverableItem) => updated.id === item.id)?.deadline ?? item.deadline,
+                              })),
+                            } : sprint));
+                          }} />
                       </label>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => void handleUpdateSprintDate()}
-                        disabled={
-                          updatingSprintDate ||
-                          !sprintDateInput ||
-                          sprintDateInput === toDateInputValue(selectedSprint.weekStartDate)
-                        }
-                      >
-                        Save Workstream Date
-                      </Button>
                     </div>
                   )}
 
@@ -755,20 +668,18 @@ export default function WorkstreamPage() {
                       Week-level context for this workstream (updates, links, reminders).
                     </p>
                     {canManage ? (
-                      <>
-                        <textarea
-                          value={generalNotesInput}
-                          onChange={(e) => setGeneralNotesInput(e.target.value)}
-                          rows={4}
+                      <AutosaveField id={`sprint:${selectedSprint.id}:notes`} resource={`sprint:${selectedSprint.id}`}
+                        label="General Notes / Links" href="/workstream" value={selectedSprint.configSnapshot?.generalNotes ?? ''}
+                        save={async value => {
+                          await projectsAPI.updateSprintNotes(selectedProjectId, selectedSprint.id, { generalNotes: value });
+                          setSprints(current => current.map(sprint => sprint.id === selectedSprint.id
+                            ? { ...sprint, configSnapshot: { ...sprint.configSnapshot, generalNotes: value } } : sprint));
+                        }}>
+                        {({ value, change, blur }) => <textarea aria-label="General Notes / Links" value={value}
+                          onChange={e => change(e.target.value)} onBlur={blur} rows={4}
                           placeholder={'Weekly context...\n- Link: https://...\n- Notes: ...'}
-                          className="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
-                        />
-                        <div className="mt-3 flex justify-end">
-                          <Button size="sm" onClick={() => void handleSaveGeneralNotes()}>
-                            Save Notes
-                          </Button>
-                        </div>
-                      </>
+                          className="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm" />}
+                      </AutosaveField>
                     ) : (
                       <div className="mt-3 rounded-xl border border-dashed border-[var(--border)] bg-[var(--card)] p-3 text-sm text-[var(--foreground)]/75 whitespace-pre-wrap">
                         {selectedSprint.configSnapshot?.generalNotes?.trim()
@@ -913,29 +824,10 @@ export default function WorkstreamPage() {
                           </div>
                           {canManage ? (
                             <div className="flex flex-wrap items-center gap-2 justify-end">
-                              <input
-                                type="datetime-local"
-                                value={deadlineInputs[deliverable.id] ?? ''}
-                                onChange={(e) =>
-                                  setDeadlineInputs((current) => ({
-                                    ...current,
-                                    [deliverable.id]: e.target.value,
-                                  }))
-                                }
-                                className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
-                              />
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={
-                                  busyDeliverableId === deliverable.id ||
-                                  !(deadlineInputs[deliverable.id] ?? '') ||
-                                  deadlineInputs[deliverable.id] === toDateTimeLocalValue(deliverable.deadline)
-                                }
-                                onClick={() => void handleUpdateDeliverableDeadline(deliverable)}
-                              >
-                                Save Due Date
-                              </Button>
+                              <DeadlineEditor id={deliverable.id} sprintId={selectedSprint.id} deadline={deliverable.deadline} href="/workstream"
+                                onSaved={deadline => setSprints(current => current.map(sprint => ({ ...sprint,
+                                  deliverables: sprint.deliverables?.map(item => item.id === deliverable.id ? { ...item, deadline } : item),
+                                })))} />
                               <Button
                                 size="sm"
                                 variant="ghost"

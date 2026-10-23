@@ -17,11 +17,6 @@
       "count": 1
     }
   },
-  "app/deliverables/page.tsx": {
-    "react-hooks/set-state-in-effect": {
-      "count": 1
-    }
-  },
   "app/settings/slack/page.tsx": {
     "react-hooks/set-state-in-effect": {
       "count": 1
@@ -34,7 +29,7 @@
   },
   "app/teams/page.tsx": {
     "react-hooks/set-state-in-effect": {
-      "count": 3
+      "count": 2
     }
   },
   "app/when2meet/page.tsx": {
@@ -53,11 +48,6 @@
   "components/GoogleCalenderPanel.tsx": {
     "react-hooks/set-state-in-effect": {
       "count": 1
-    }
-  },
-  "components/WorkstreamPage.tsx": {
-    "react-hooks/set-state-in-effect": {
-      "count": 2
     }
   },
   "when2meet/When2MeetBoard.tsx": {
