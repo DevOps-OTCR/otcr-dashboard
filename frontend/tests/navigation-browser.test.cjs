@@ -720,6 +720,8 @@ test('admin directory filters, confirms role updates, and shows failures', async
   const { page, nav, open, writes, failWrites } = await peopleSetup(t);
   await open(); await page.getByRole('heading', { name: 'People directory' }).waitFor();
   assert.equal(await nav('People').isVisible(), true);
+  await page.getByLabel('Search people', { exact: true }).fill('CASEY@EXAMPLE.TEST');
+  await page.getByText('casey@example.test', { exact: true }).waitFor();
   await page.getByLabel('Search people', { exact: true }).fill('casey');
   assert.equal(await page.getByText('riley@example.test', { exact: true }).count(), 0);
   await page.getByLabel('Role filter', { exact: true }).selectOption('PM');

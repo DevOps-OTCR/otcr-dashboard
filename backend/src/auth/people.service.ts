@@ -3,56 +3,39 @@ import { Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { parseRole, updateAllowedEmailRole } from './access-role';
 
-// Decodes a potentially JWT-/base64-encoded value back to a plain string.
-// Handles the case where the backend returns a full JWT claim (e.g. eyJ...)
-// or a base64-encoded JSON payload. Returns the original value if decoding fails.
-function decodeEncodedValue(value: string): string {
-  if (!value) return value;
-  // If it looks like a JWT (3 parts separated by dots) or base64 JSON, try to decode it.
-  const trimmed = value.trim();
-  // JWT: payload is the middle base64 segment between two dots
-  if (trimmed.match(/^[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+$/)) {
-    try {
-      const payloadBase64 = trimmed.split('.')[1];
-      // Pad base64 if needed
-      const padded = payloadBase64.replace(/-/g, '+').replace(/_/g, '/');
-      const decoded = JSON.parse(atob(padded));
-      if (typeof decoded === 'object' && decoded !== null && decoded.name) return String(decoded.name);
-      if (typeof decoded === 'object' && decoded !== null && decoded.firstName) return String(decoded.firstName);
-      if (typeof decoded === 'object' && decoded !== null && decoded.first_name) return String(decoded.first_name);
-      return '';
-    } catch {
-      // fall through to return original
-    }
-  }
-  // Try base64 JSON decode (no dots, just a base64 string that decodes to JSON)
+// Decode stored name data for display only. These claims do not establish identity.
+function decodeEncodedValue(value: string | null, field: 'firstName' | 'lastName'): string {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) return '';
+  const jwt = /^[A-Za-z0-9_-]+\.([A-Za-z0-9_-]+)\.[A-Za-z0-9_-]+$/.exec(trimmed);
+  const payload = jwt ? jwt[1] : trimmed;
+  if (!/^[A-Za-z0-9+/_-]+={0,2}$/.test(payload)) return trimmed;
+
+  const json = Buffer.from(payload, 'base64url').toString('utf8').trim();
+  if (!jwt && !/^[{["]/.test(json)) return trimmed;
   try {
-    const padded = trimmed.replace(/-/g, '+').replace(/_/g, '/');
-    const decoded = JSON.parse(atob(padded));
-    if (typeof decoded === 'object' && decoded !== null && decoded.name) return String(decoded.name);
-    if (typeof decoded === 'object' && decoded !== null && decoded.firstName) return String(decoded.firstName);
-    if (typeof decoded === 'object' && decoded !== null && decoded.first_name) return String(decoded.first_name);
-    return '';
+    const decoded: unknown = JSON.parse(json);
+    if (typeof decoded === 'string') return decoded.trim();
+    if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) return '';
+    const claims = decoded as Record<string, unknown>;
+    const fields = field === 'firstName'
+      ? ['firstName', 'first_name', 'given_name', 'name']
+      : ['lastName', 'last_name', 'family_name', 'name'];
+    for (const key of fields) {
+      const name = claims[key];
+      if (typeof name === 'string' && name.trim()) return name.trim();
+    }
   } catch {
-    // fall through to return original
+    // Recognized encoded input without a usable name falls back to email in the UI.
   }
-  return trimmed;
+  return '';
 }
 
-/** Normalize a PersonSummary from the DB, decoding any encoded name fields. */
-function normalizePerson(person: { id: string; email: string; firstName: string | null; lastName: string | null; role: Role; active: boolean; teams?: PersonSummary['teams'] }): PersonSummary {
-  const decodedFirstName = decodeEncodedValue(person.firstName ?? '');
-  const decodedLastName = decodeEncodedValue(person.lastName ?? '');
-  // If both decoded values are empty/identical to original and original looks encoded, fallback to email-derived name
-  const firstName = decodedFirstName && decodedFirstName !== person.firstName ? decodedFirstName : (person.firstName ?? '');
-  const lastName = decodedLastName && decodedLastName !== person.lastName ? decodedLastName : (person.lastName ?? '');
+function normalizePerson(person: Omit<PersonSummary, 'teams'> & { teams?: PersonSummary['teams'] }): PersonSummary {
   return {
-    id: person.id,
-    email: person.email,
-    firstName: firstName || null,
-    lastName: lastName || null,
-    role: person.role,
-    active: person.active,
+    ...person,
+    firstName: decodeEncodedValue(person.firstName, 'firstName') || null,
+    lastName: decodeEncodedValue(person.lastName, 'lastName') || null,
     teams: person.teams ?? [],
   };
 }

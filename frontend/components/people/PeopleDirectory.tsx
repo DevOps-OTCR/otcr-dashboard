@@ -32,7 +32,7 @@ export function PeopleDirectory({ people, busy, onChangeRole }: {
   const filtered = people.filter(person => (!role || person.role === role)
     && (!team || person.teams.some(item => item.id === team))
     && (!status || person.active === (status === 'active'))
-    && safePersonName(person).toLowerCase().includes(query))
+    && `${safePersonName(person)} ${person.email}`.toLowerCase().includes(query))
     .sort((a, b) => (sort === 'email' ? a.email.localeCompare(b.email) : sort === 'role'
       ? a.role.localeCompare(b.role) : safePersonName(a).localeCompare(safePersonName(b))) || a.id.localeCompare(b.id));
   const pages = Math.max(1, Math.ceil(filtered.length / 25));
