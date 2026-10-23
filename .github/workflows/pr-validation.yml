@@ -44,6 +44,10 @@ jobs:
     name: Frontend typecheck and tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    container:
+      # Keep this version aligned with frontend/package-lock.json.
+      image: mcr.microsoft.com/playwright:v1.64.0-noble
+      options: --init --ipc=host
     defaults:
       run:
         working-directory: frontend
@@ -59,7 +63,19 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Install locked dependencies
+        timeout-minutes: 3
         run: npm ci --ignore-scripts
+      - name: Verify preinstalled Chromium
+        timeout-minutes: 1
+        run: |
+          node <<'NODE'
+          const { chromium } = require('playwright');
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            console.log(`Preinstalled Chromium ${browser.version()}`);
+            await browser.close();
+          })().catch(error => { console.error(error); process.exit(1); });
+          NODE
       - name: Generate Prisma client
         run: npm run prisma:generate
       - name: Lint frontend
@@ -68,8 +84,6 @@ jobs:
         run: npx tsc --noEmit
       - name: Run frontend unit tests
         run: npm test
-      - name: Install Chromium for browser tests
-        run: npx --no-install playwright install --with-deps chromium
       - name: Run navigation browser tests
         timeout-minutes: 5
         run: npm run test:navigation:browser
@@ -132,3 +146,23 @@ jobs:
         run: npm test -- --runInBand
       - name: Build backend
         run: npm run build
+
+  pages:
+    name: Deploy validated frontend
+    needs: [frontend, backend]
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    uses: ./.github/workflows/deploy-github-pages.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    secrets:
+      NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+      NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+      NEXT_PUBLIC_GEOAPIFY_API_KEY: ${{ secrets.NEXT_PUBLIC_GEOAPIFY_API_KEY }}
+      NEXT_PUBLIC_GOOGLE_CALENDAR_EMBED_URL: ${{ secrets.NEXT_PUBLIC_GOOGLE_CALENDAR_EMBED_URL }}
+      NEXT_PUBLIC_MSAL_AUTHORITY: ${{ secrets.NEXT_PUBLIC_MSAL_AUTHORITY }}
+      NEXT_PUBLIC_MSAL_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_MSAL_CLIENT_ID }}
+      NEXT_PUBLIC_MSAL_REDIRECT_URI: ${{ secrets.NEXT_PUBLIC_MSAL_REDIRECT_URI }}
