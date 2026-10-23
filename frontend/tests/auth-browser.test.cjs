@@ -113,6 +113,17 @@ test('protected links wait for SDK initialization instead of redirecting early',
   assert.equal(new URL(slow.url()).pathname, '/deliverables');
 });
 
+test('signed-out tabs finish SDK initialization before showing the sign-in form', async t => {
+  const { first, page } = await setup(t);
+  await first.getByRole('button', { name: 'Sign Out' }).click();
+  const slow = await page('/sign-in?slow');
+  assert.equal(await slow.getByRole('button', { name: 'Sign in with Microsoft' }).count(), 0);
+  await slow.getByRole('heading', { name: 'CMS sign-in' }).waitFor();
+  await slow.getByRole('button', { name: 'Sign in with Microsoft' }).click();
+  await slow.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
+  await first.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
+});
+
 test('a newly selected account replaces the previous account across tabs', async t => {
   const { first, page } = await setup(t, true);
   const second = await page('/deliverables');
