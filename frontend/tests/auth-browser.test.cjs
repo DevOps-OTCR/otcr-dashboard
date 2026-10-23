@@ -11,17 +11,18 @@ before(async () => {
 });
 after(() => browser?.close());
 
-async function setup(t, delayCacheUpdates = false) {
+async function setup(t, slowCacheOperations = false) {
   const context = await browser.newContext();
   t.after(() => context.close());
-  if (delayCacheUpdates) await context.addInitScript(() => {
-    const addListener = BroadcastChannel.prototype.addEventListener;
-    BroadcastChannel.prototype.addEventListener = function (type, listener, options) {
-      if (this.name === 'msal.broadcast.cache' && type === 'message') {
-        return addListener.call(this, type, event => setTimeout(() => listener.call(this, event), 200), options);
-      }
-      return addListener.call(this, type, listener, options);
-    };
+  if (slowCacheOperations) await context.addInitScript(() => {
+    // Delay real cache work without reordering MSAL's private broadcast handlers.
+    for (const method of ['encrypt', 'decrypt']) {
+      const operation = SubtleCrypto.prototype[method];
+      SubtleCrypto.prototype[method] = async function (...args) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+        return operation.apply(this, args);
+      };
+    }
   });
   const externalRequests = [];
   await context.route('**/*', route => {
@@ -120,4 +121,12 @@ test('expired sessions requiring interaction reach the normal sign-in screen wit
   assert.equal(new URL(expired.url()).pathname, '/sign-in');
   assert.equal(await expired.evaluate(() => window.authTest.interactiveLogins()), 0);
   assert.equal(await expired.evaluate(() => window.authTest.authHeader()), null);
+});
+
+test('token requests use the CMS-selected account when the SDK active-account hint is stale', async t => {
+  const { first } = await setup(t, true);
+  await first.evaluate(() => window.authTest.seed('consultant@example.test'));
+  await first.waitForFunction(() => document.querySelector('[data-testid="account"]')?.textContent === 'consultant@example.test');
+  assert.equal(await first.evaluate(() => window.authTest.tokenWithActiveAccount('pm@example.test')),
+    'synthetic-token-for-consultant@example.test');
 });
