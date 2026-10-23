@@ -1,7 +1,7 @@
 import axios, { type AxiosRequestConfig } from 'axios';
 import type { AlumniDataset } from './alumni-data';
 import { clearNavigationSnapshots } from './navigation-cache';
-import { cachedRequest, clearResourceCache } from './resource-cache';
+import { cachedRequest, clearResourceCache, FRESHNESS } from './resource-cache';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
@@ -12,9 +12,13 @@ export const api = axios.create({
   },
 });
 
+// Writes that do not change dashboard data, such as the sign-in profile sync.
+const nonDataWrites = ['/auth/sync-user', '/notifications/bell-mirror'];
+
 // A successful write can change data shown on another tab.
 api.interceptors.response.use((response) => {
-  if (['post', 'put', 'patch', 'delete'].includes(response.config.method?.toLowerCase() ?? '')) {
+  if (['post', 'put', 'patch', 'delete'].includes(response.config.method?.toLowerCase() ?? '')
+    && !nonDataWrites.includes(response.config.url ?? '')) {
     clearNavigationSnapshots();
     clearResourceCache();
   }
@@ -46,7 +50,7 @@ export const authAPI = {
   health: () => api.get('/auth/health'),
   getRole: (config?: AxiosRequestConfig) => api.get('/auth/role', config),
   checkEmail: (email: string) => api.get(`/auth/check-email?email=${encodeURIComponent(email)}`),
-  getAllowedEmails: () => api.get('/auth/allowed-emails'),
+  getAllowedEmails: () => cachedRequest('/auth/allowed-emails', () => api.get('/auth/allowed-emails')),
   addAllowedEmail: (data: { email: string; role?: 'ADMIN' | 'PM' | 'LC' | 'PARTNER' | 'EXECUTIVE' | 'CONSULTANT' }) =>
     api.post('/auth/allowed-emails', data),
   syncUser: (data: { googleId: string; email: string; name?: string }) =>
@@ -54,8 +58,8 @@ export const authAPI = {
 };
 
 export const alumniAPI = {
-  // Reuse data for two minutes; explicit refresh bypasses freshness but shares pending requests.
-  getDataset: (refresh = false) => cachedRequest('/alumni', () => api.get<AlumniDataset>('/alumni'), refresh ? 0 : 120000),
+  // An explicit refresh bypasses freshness but shares pending requests.
+  getDataset: (refresh = false) => cachedRequest('/alumni', () => api.get<AlumniDataset>('/alumni'), refresh ? 0 : FRESHNESS.standard),
 };
 
 export const onboardingAPI = {
@@ -180,7 +184,7 @@ export type AttendanceEvent = {
 };
 
 export const attendanceAPI = {
-  listEvents: () => cachedRequest('/attendance/events', () => api.get('/attendance/events'), 30000),
+  listEvents: () => cachedRequest('/attendance/events', () => api.get('/attendance/events'), FRESHNESS.live),
   createEvent: (data: {
     title: string;
     eventDate: string;
@@ -252,8 +256,8 @@ export const when2meetAPI = {
   }) => api.post('/when2meet/polls', body),
   listPolls: (projectId: string) =>
     cachedRequest(`/when2meet/polls?projectId=${encodeURIComponent(projectId)}`,
-      () => api.get('/when2meet/polls', { params: { projectId } }), 30000),
-  getPoll: (id: string) => cachedRequest(`/when2meet/polls/${id}`, () => api.get(`/when2meet/polls/${id}`), 30000),
+      () => api.get('/when2meet/polls', { params: { projectId } }), FRESHNESS.live),
+  getPoll: (id: string) => cachedRequest(`/when2meet/polls/${id}`, () => api.get(`/when2meet/polls/${id}`), FRESHNESS.live),
   deletePoll: (id: string) => api.delete(`/when2meet/polls/${id}`),
   saveMyAvailability: (id: string, slots: number[]) =>
     api.put(`/when2meet/polls/${id}/my-availability`, { slots }),
@@ -305,7 +309,8 @@ export const projectsAPI = {
     if (options?.includeMembers) q.set('includeMembers', 'true');
     if (options?.includeDeliverables) q.set('includeDeliverables', 'true');
     const query = q.toString();
-    return api.get(`/projects/${id}` + (query ? `?${query}` : ''));
+    const path = `/projects/${id}` + (query ? `?${query}` : '');
+    return cachedRequest(path, () => api.get(path));
   },
   create: (data: {
     name: string;
@@ -349,7 +354,8 @@ export const projectsAPI = {
       clearProjectsCache();
       return response;
     }),
-  getSprintConfig: (projectId: string) => api.get(`/projects/${projectId}/sprint-config`),
+  getSprintConfig: (projectId: string) =>
+    cachedRequest(`/projects/${projectId}/sprint-config`, () => api.get(`/projects/${projectId}/sprint-config`)),
   updateSprintConfig: (
     projectId: string,
     data: {
@@ -414,7 +420,10 @@ export const tasksAPI = {
 };
 
 export const deliverablesAPI = {
-  getAll: (params?: any) => api.get('/deliverables', { params }),
+  getAll: (params?: Record<string, string | number | boolean>) => {
+    const query = new URLSearchParams(Object.entries(params ?? {}).map(([key, value]) => [key, String(value)])).toString();
+    return cachedRequest('/deliverables' + (query ? `?${query}` : ''), () => api.get('/deliverables', { params }));
+  },
   getByProject: (projectId: string) => api.get('/deliverables', { 
     params: { projectId } 
   }),
@@ -485,8 +494,8 @@ export const slideSubmissionsAPI = {
     fileName?: string;
     mimeType?: string;
   }) => api.post('/slide-submissions', data),
-  getMine: () => api.get('/slide-submissions/my'),
-  getAll: () => api.get('/slide-submissions/all'),
+  getMine: () => cachedRequest('/slide-submissions/my', () => api.get('/slide-submissions/my')),
+  getAll: () => cachedRequest('/slide-submissions/all', () => api.get('/slide-submissions/all')),
   markCommented: (id: string) => api.post(`/slide-submissions/${id}/mark-commented`),
   approve: (id: string) => api.post(`/slide-submissions/${id}/approve`),
   requestRevision: (id: string, feedback?: string) =>

@@ -9,7 +9,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/components/AuthContext';
-import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { PageLoading } from './PageLoading';
 import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
 import { readResource } from '@/lib/resource-cache';
@@ -571,7 +570,7 @@ export default function WorkstreamPage() {
   };
 
   if (session.loading || !session.isLoggedIn) {
-    return <FullScreenLoader />;
+    return <PageLoading />;
   }
 
   return (

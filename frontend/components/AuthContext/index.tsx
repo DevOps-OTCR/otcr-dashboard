@@ -58,14 +58,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const previousEmail = useRef<string | undefined>(undefined);
 
+  // Scope page caches before rendering a different account's content.
+  const scopeCaches = useCallback((email: string | undefined) => {
+    if (previousEmail.current === email) return;
+    clearProjectsCache();
+    setResourceCacheScope(email);
+    clearNavigationSnapshots();
+    previousEmail.current = email;
+  }, []);
+
   useEffect(() => {
-    if (previousEmail.current !== user?.email) {
-      clearProjectsCache();
-      setResourceCacheScope(user?.email);
-      clearNavigationSnapshots();
-      previousEmail.current = user?.email;
-    }
-  }, [user?.email]);
+    scopeCaches(user?.email);
+  }, [scopeCaches, user?.email]);
 
   const clearAppSession = useCallback(() => {
     signedOut.current = true;
@@ -207,6 +211,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           ? instance.getAllAccounts().find(account => account.homeAccountId === preferred)
           : instance.getActiveAccount() ?? instance.getAllAccounts()[0];
         if (!account) {
+          scopeCaches(undefined);
           setUser(null);
           setIsLoggedIn(false);
           return;
@@ -222,6 +227,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const claims = account.idTokenClaims as { name?: string; given_name?: string; family_name?: string } | undefined;
         const claimName = [claims?.given_name, claims?.family_name].filter(Boolean).join(' ').trim();
         const nextUser = { email: account.username, name: claimName || claims?.name || account.name || undefined };
+        scopeCaches(nextUser.email);
         setUser(current => current?.email === nextUser.email && current?.name === nextUser.name ? current : nextUser);
         setIsLoggedIn(true);
         setAuthError(null);
@@ -235,7 +241,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
     void checkAuth();
     return () => { cancelled = true; };
-  }, [instance, accounts, inProgress, sessionChange, clearAppSession, requireSignIn]);
+  }, [instance, accounts, inProgress, sessionChange, clearAppSession, requireSignIn, scopeCaches]);
 
   const login = useCallback(async () => {
     await withAuthTimeout(instance.initialize());
