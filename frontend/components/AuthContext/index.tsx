@@ -303,9 +303,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   // Later token operations must not unmount the current page.
   const isLoading = !isAuthReady;
-  const contextValue = useMemo(() => ({
-    isLoggedIn, user, loading: isLoading, login, logout, getToken,
   // Notify token consumers even when batched session events retain the same user.
+  const contextValue = useMemo(() => ({
+    isLoggedIn, user, loading: isLoading, login, logout, getToken, sessionRevision: sessionChange,
   }), [isLoggedIn, user, isLoading, login, logout, getToken, sessionChange]);
 
   return (
