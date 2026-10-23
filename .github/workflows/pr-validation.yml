@@ -146,3 +146,23 @@ jobs:
         run: npm test -- --runInBand
       - name: Build backend
         run: npm run build
+
+  pages:
+    name: Deploy validated frontend
+    needs: [frontend, backend]
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    uses: ./.github/workflows/deploy-github-pages.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    secrets:
+      NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+      NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+      NEXT_PUBLIC_GEOAPIFY_API_KEY: ${{ secrets.NEXT_PUBLIC_GEOAPIFY_API_KEY }}
+      NEXT_PUBLIC_GOOGLE_CALENDAR_EMBED_URL: ${{ secrets.NEXT_PUBLIC_GOOGLE_CALENDAR_EMBED_URL }}
+      NEXT_PUBLIC_MSAL_AUTHORITY: ${{ secrets.NEXT_PUBLIC_MSAL_AUTHORITY }}
+      NEXT_PUBLIC_MSAL_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_MSAL_CLIENT_ID }}
+      NEXT_PUBLIC_MSAL_REDIRECT_URI: ${{ secrets.NEXT_PUBLIC_MSAL_REDIRECT_URI }}
