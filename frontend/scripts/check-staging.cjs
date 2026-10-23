@@ -46,7 +46,9 @@ async function main() {
     await page.waitForURL('**/sign-in/**');
     await page.getByRole('button', { name: 'Sign in with NetID', exact: true }).waitFor();
     const result = await page.evaluate(async apiUrl => {
-      const response = await fetch(`${apiUrl}/__meta`, { credentials: 'include' });
+      const response = await fetch(`${apiUrl}/__meta`, {
+        credentials: 'include', signal: AbortSignal.timeout(30000),
+      });
       return { status: response.status, body: await response.json() };
     }, api);
     assert.equal(result.status, 200);
