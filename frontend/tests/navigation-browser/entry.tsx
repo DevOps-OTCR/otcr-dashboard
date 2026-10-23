@@ -11,6 +11,7 @@ import SlidesPage from '@/app/slides/page';
 import AttendancePage from '@/app/attendance/page';
 import WorkstreamPage from '@/app/workstream/page';
 import When2MeetPage from '@/app/when2meet/page';
+import OverviewPage from '@/app/overview/page';
 import PMDashboard from '@/app/pm/page';
 import LCDashboard from '@/app/lc/page';
 import PartnerDashboard from '@/app/partner/page';
@@ -30,7 +31,7 @@ const { MsalContext } = require('./routing.cjs');
 function Pages() {
   const path = usePathname() ?? '/deliverables';
   const pages: Record<string, typeof DeliverablesPage> = { '/slides': SlidesPage, '/attendance': AttendancePage,
-    '/workstream': WorkstreamPage, '/when2meet': When2MeetPage, '/pm': PMDashboard, '/lc': LCDashboard,
+    '/workstream': WorkstreamPage, '/when2meet': When2MeetPage, '/overview': OverviewPage, '/pm': PMDashboard, '/lc': LCDashboard,
     '/partner': PartnerDashboard, '/consultant': ConsultantDashboard, '/sign-in': SignInPage,
     '/alumni-database': AlumniDatabasePage, '/forms': FormsPage, '/teams': TeamsPage, '/client-notes': ClientNotesPage,
     '/people': PeoplePage, '/settings/slack': SlackSettingsPage };

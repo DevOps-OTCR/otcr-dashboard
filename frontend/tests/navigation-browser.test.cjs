@@ -598,7 +598,7 @@ test('Workstream and W2M restore selected content while expired resources refres
 });
 
 test('Overview shares sprint requests and retains the calendar across routes and failed refreshes', async t => {
-  const { page, state, nav, open } = await setup(t, '/pm');
+  const { page, state, nav, open } = await setup(t, '/overview');
   await open();
   await page.getByText('team-1 Research', { exact: true }).waitFor();
   const iframe = page.locator('iframe');
@@ -626,17 +626,31 @@ test('Overview shares sprint requests and retains the calendar across routes and
   assert.equal(await page.getByText('team-1 Research', { exact: true }).isVisible(), true);
   state.gate = null;
   state.failSprints = false;
-  for (const path of ['/lc', '/partner', '/consultant']) {
-    await page.evaluate(path => window.navigationTest.navigate(path), path);
-    await page.getByText('team-1 Draft deck', { exact: true }).waitFor();
-    assert.equal(await iframe.isVisible(), true);
-    assert.equal(await page.evaluate(() => document.querySelector('iframe') === window.originalCalendar), true);
-  }
+  await page.evaluate(() => window.navigationTest.navigate('/consultant'));
+  await page.getByText('team-1 Draft deck', { exact: true }).waitFor();
+  assert.equal(await iframe.isVisible(), true);
+  assert.equal(await page.evaluate(() => document.querySelector('iframe') === window.originalCalendar), true);
   assert.equal(state.calendarLoads, 1);
 });
 
+test('legacy role overview URLs redirect to the canonical Overview', async t => {
+  const { page, nav, open } = await setup(t, '/pm');
+  await open();
+  await page.waitForURL('**/overview');
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  await page.evaluate(() => { window.originalCalendar = document.querySelector('iframe'); });
+  for (const path of ['/lc', '/partner/', '/pm/']) {
+    await page.evaluate(path => window.navigationTest.navigate(path), path);
+    await page.waitForURL('**/overview');
+    await page.getByText('team-1 Research', { exact: true }).waitFor();
+    assert.match(await nav('Overview').getAttribute('class'), /text-\[var\(--primary\)\]/);
+    assert.equal(await page.evaluate(() => document.querySelector('iframe') === window.originalCalendar), true);
+  }
+  assert.equal(await nav('Overview').getAttribute('href'), '/overview');
+});
+
 test('Pages trailing-slash routes keep the navbar and overview calendar', async t => {
-  const { page, nav, open } = await setup(t, '/pm/');
+  const { page, nav, open } = await setup(t, '/overview/');
   await open();
   await page.getByText('team-1 Research', { exact: true }).waitFor();
   assert.equal(await nav('Workstream').isVisible(), true);
@@ -648,7 +662,7 @@ test('Pages trailing-slash routes keep the navbar and overview calendar', async 
 });
 
 test('Light/Dark toggle persists and syncs without replacing icons or reloading the calendar', async t => {
-  const { page, state, open } = await setup(t, '/pm');
+  const { page, state, open } = await setup(t, '/overview');
   await open();
   await page.getByText('team-1 Research', { exact: true }).waitFor();
   await page.locator('iframe').waitFor();
@@ -900,7 +914,7 @@ test('admin navbar retains People on Overview and fits without horizontal scroll
   await page.getByRole('heading', { name: 'People directory' }).waitFor();
   await page.addStyleTag({ content: styles });
   await nav('Overview').click();
-  await page.waitForURL('**/pm');
+  await page.waitForURL('**/overview');
   await page.getByText('team-1 Research', { exact: true }).waitFor();
   await nav('People').waitFor();
   for (const width of [1440, 375]) {
@@ -909,6 +923,22 @@ test('admin navbar retains People on Overview and fits without horizontal scroll
   }
   await nav('People').click();
   await page.getByRole('heading', { name: 'People directory' }).waitFor();
+});
+
+test('admin View as on Overview updates navbar permissions without leaving the route', async t => {
+  const { page, nav, open } = await setup(t, '/overview', 'ADMIN');
+  await open();
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  await nav('People').waitFor();
+  await page.getByRole('button', { name: /View as/ }).click();
+  await page.getByRole('button', { name: 'Lead Consultant', exact: true }).click();
+  await page.locator('header').getByText('Lead Consultant', { exact: true }).first().waitFor();
+  await nav('People').waitFor({ state: 'detached' });
+  assert.equal(new URL(page.url()).pathname, '/overview');
+  await page.getByRole('button', { name: /View as/ }).click();
+  await page.getByRole('button', { name: 'Administrator', exact: true }).click();
+  await nav('People').waitFor();
+  assert.equal(new URL(page.url()).pathname, '/overview');
 });
 
 test('admin directory filters, confirms role updates, and shows failures', async t => {

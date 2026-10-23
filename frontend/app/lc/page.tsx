@@ -1,7 +1,7 @@
 'use client';
 
-import { OverviewDeliverables } from '@/components/OverviewDeliverables';
+import { LegacyOverviewRedirect } from '@/components/LegacyOverviewRedirect';
 
 export default function LCDashboard() {
-  return <OverviewDeliverables path="/lc" />;
+  return <LegacyOverviewRedirect />;
 }

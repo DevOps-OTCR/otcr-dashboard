@@ -57,14 +57,14 @@ function setup(responses) {
   return { ...exports, cache, calls, cacheModules };
 }
 
-test('failure is not cached; recovery calls the API and routes to PM immediately', async () => {
+test('failure is not cached; recovery calls the API and routes to Overview immediately', async () => {
   const context = setup([new Error('503'), { role: 'PM' }]);
   await assert.rejects(context.getDefaultDashboardPathForUser('test-token', 'pm@example.test'));
   assert.equal(context.cache.size, 0);
-  assert.equal(await context.getDefaultDashboardPathForUser('test-token', 'pm@example.test'), '/pm');
+  assert.equal(await context.getDefaultDashboardPathForUser('test-token', 'pm@example.test'), '/overview');
   assert.equal(context.calls.length, 2);
   assert.equal(JSON.parse(context.cache.get('otcr_role_cache:pm@example.test')).role, 'PM');
-  assert.equal(await context.getDefaultDashboardPathForUser('test-token', 'PM@example.test'), '/pm');
+  assert.equal(await context.getDefaultDashboardPathForUser('test-token', 'PM@example.test'), '/overview');
   assert.equal(context.calls.length, 2);
 });
 
@@ -77,7 +77,7 @@ for (const response of [null, {}, { role: 'UNKNOWN' }, { role: 123 }]) {
 }
 
 for (const [role, path] of Object.entries({
-  CONSULTANT: '/consultant', LC: '/lc', PM: '/pm', PARTNER: '/partner', EXECUTIVE: '/partner', ADMIN: '/pm',
+  CONSULTANT: '/consultant', LC: '/overview', PM: '/overview', PARTNER: '/overview', EXECUTIVE: '/overview', ADMIN: '/overview',
 })) {
   test(`API-confirmed ${role} is cached and routed correctly`, async () => {
     const context = setup([{ role }]);
@@ -135,7 +135,7 @@ test('a legacy fallback cache entry is discarded instead of masking recovery', a
   context.cache.set('otcr_role_cache:user@example.test', JSON.stringify({
     role: 'CONSULTANT', cachedAt: Date.now(),
   }));
-  assert.equal(await context.getDefaultDashboardPathForUser('test-token', 'user@example.test'), '/pm');
+  assert.equal(await context.getDefaultDashboardPathForUser('test-token', 'user@example.test'), '/overview');
   assert.equal(context.calls.length, 1);
   assert.equal(JSON.parse(context.cache.get('otcr_role_cache:user@example.test')).source, 'api');
 });

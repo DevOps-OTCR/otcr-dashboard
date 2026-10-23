@@ -42,9 +42,7 @@ export type NavItem = {
 export type AppNavPath =
   | '/dashboard'
   | '/consultant'
-  | '/pm'
-  | '/lc'
-  | '/partner'
+  | '/overview'
   | '/forms'
   | '/deliverables'
   | '/workstream'

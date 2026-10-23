@@ -11,6 +11,7 @@ export type AppRole = 'CONSULTANT' | 'LC' | 'PM' | 'PARTNER' | 'EXECUTIVE' | 'AD
 
 const ROLES: AppRole[] = ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'EXECUTIVE', 'ADMIN'];
 const DEV_ROLE_OVERRIDE_KEY = 'otcr_dev_role_override';
+const DEV_ROLE_OVERRIDE_EVENT = 'otcr-dev-role-override';
 const ROLE_CACHE_PREFIX = 'otcr_role_cache:';
 const ROLE_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -38,6 +39,13 @@ export function setDevRoleOverride(role: AppRole | null): void {
   } else {
     localStorage.removeItem(DEV_ROLE_OVERRIDE_KEY);
   }
+  window.dispatchEvent(new Event(DEV_ROLE_OVERRIDE_EVENT));
+}
+
+/** Lets a page re-resolve its role when "View as" changes without a route change. */
+export function subscribeDevRoleOverride(listener: () => void): () => void {
+  window.addEventListener(DEV_ROLE_OVERRIDE_EVENT, listener);
+  return () => window.removeEventListener(DEV_ROLE_OVERRIDE_EVENT, listener);
 }
 
 // Roles the API confirmed during this page load. A different role later means page data
@@ -154,19 +162,8 @@ export async function getEffectiveRole(
 
 /** Default dashboard path for a role (for redirects and admin switcher). */
 export function getDefaultDashboardPath(role: AppRole): string {
-  switch (role) {
-    case 'PM':
-    case 'ADMIN':
-      return '/pm';
-    case 'LC':
-      return '/lc';
-    case 'PARTNER':
-    case 'EXECUTIVE':
-      return '/partner';
-    case 'CONSULTANT':
-    default:
-      return '/consultant';
-  }
+  // Consultants have a distinct assignment view; every other role shares Overview.
+  return role === 'CONSULTANT' ? '/consultant' : '/overview';
 }
 
 export async function getDefaultDashboardPathForUser(

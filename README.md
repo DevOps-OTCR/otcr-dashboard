@@ -22,14 +22,13 @@ otcr-dashboard/
 
 ## Current Role Routing
 
-Authenticated users are redirected to role-specific routes instead of a shared `/dashboard` page.
+Authenticated users are redirected to their role's default route. Navbar permissions come from the resolved role, not the URL.
 
 - `CONSULTANT` -> `/consultant`
-- `LC` -> `/lc`
-- `PM` -> `/pm`
-- `PARTNER` -> `/partner`
-- `EXECUTIVE` -> `/partner`
-- `ADMIN` -> `/pm` (with admin badge, admin switcher, and full access)
+- `LC`, `PM`, `PARTNER`, `EXECUTIVE` -> `/overview`
+- `ADMIN` -> `/overview` (with admin badge, admin switcher, and full access)
+
+The legacy `/pm`, `/lc`, and `/partner` URLs redirect to `/overview` on the client, so old bookmarks keep working in the static export.
 
 ## Local Development
 

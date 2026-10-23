@@ -22,7 +22,6 @@ import { Modal } from '@/components/ui/Modal';
 import { cn } from '@/lib/utils';
 import { getEffectiveRole, getUserRole, type AppRole } from '@/lib/permissions';
 import { AppNavbar } from '@/components/AppNavbar';
-import { getLastDashboard } from '@/lib/dashboard-context';
 import { useRouter } from 'next/navigation';
 import { projectsAPI, authAPI, attendanceAPI, deliverablesAPI, setAuthToken, type AttendanceEventCategory } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';

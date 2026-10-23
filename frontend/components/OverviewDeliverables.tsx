@@ -1,18 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { useAuth } from './AuthContext';
 import { AppNavbar } from './AppNavbar';
 import { WeeklyDeliverablesCard } from './WeeklyDeliverablesCard';
 import { projectsAPI, setAuthToken } from '@/lib/api';
 import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
 import { getDashboardDeliverables, type ProjectSprintSummary, type SprintSummary } from '@/lib/dashboard-deliverables';
-import { setLastDashboard } from '@/lib/dashboard-context';
 import { useRouter } from 'next/navigation';
-import { getEffectiveRole, getUserRole } from '@/lib/permissions';
+import { getDevRoleOverride, getEffectiveRole, getUserRole, subscribeDevRoleOverride } from '@/lib/permissions';
 
-export function OverviewDeliverables({ path }: { path: '/pm' | '/lc' | '/partner' }) {
+export function OverviewDeliverables() {
   const { isLoggedIn, user, getToken } = useAuth();
+  // Admin "View as" stays on /overview, so re-resolve the navbar role when it changes.
+  const roleOverride = useSyncExternalStore(subscribeDevRoleOverride, getDevRoleOverride, () => null);
   const [role, setRole] = useState(() => getUserRole(user?.email));
   const router = useRouter();
   const { snapshot, saveSnapshot } = useNavigationSnapshot<ProjectSprintSummary[]>('overview', user?.email);
@@ -45,12 +46,11 @@ export function OverviewDeliverables({ path }: { path: '/pm' | '/lc' | '/partner
     };
     void load();
     return () => { cancelled = true; };
-  }, [isLoggedIn, user?.email, getToken, router, saveSnapshot]);
-  useEffect(() => { setLastDashboard(path); }, [path]);
+  }, [isLoggedIn, user?.email, getToken, router, saveSnapshot, roleOverride]);
 
   if (!isLoggedIn) return null;
   return <>
-    <AppNavbar role={role} currentPath={path} />
+    <AppNavbar role={role} currentPath="/overview" />
     <WeeklyDeliverablesCard
       description="Current week deliverables and due dates across projects"
       items={getDashboardDeliverables(projects)} loading={loading}
