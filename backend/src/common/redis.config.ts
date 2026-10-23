@@ -5,6 +5,11 @@ import { Logger } from '@nestjs/common';
 const logger = new Logger('RedisConfig');
 
 export const createRedisConnection = (configService: ConfigService): Redis | null => {
+  if (configService.get<string>('REDIS_ENABLED') === 'false') {
+    logger.log('Redis disabled by configuration');
+    return null;
+  }
+
   const redisUrl = configService.get<string>('REDIS_URL');
 
   if (redisUrl) {

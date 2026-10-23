@@ -1,0 +1,81 @@
+# Create a Render Blueprint from the staging branch using this file.
+services:
+  - type: web
+    name: otcr-dashboard-staging-api
+    runtime: node
+    branch: staging
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildFilter:
+      paths:
+        - backend/**
+        - frontend/**
+        - .github/workflows/**
+        - render.staging.yaml
+    autoDeployTrigger: checksPass
+    buildCommand: npm ci --include=dev && npm run prisma:generate && npm run build
+    startCommand: npm run start:prod
+    healthCheckPath: /__meta
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: otcr-dashboard-staging-db
+          property: connectionString
+      - key: DIRECT_URL
+        fromDatabase:
+          name: otcr-dashboard-staging-db
+          property: connectionString
+      - key: REDIS_ENABLED
+        value: "false"
+      # Set to the staging site's assigned HTTPS URL for CORS and deep links.
+      - key: FRONTEND_URL
+        sync: false
+
+  - type: web
+    name: otcr-dashboard-staging
+    runtime: static
+    branch: staging
+    rootDir: frontend
+    buildFilter:
+      paths:
+        - backend/**
+        - frontend/**
+        - .github/workflows/**
+        - render.staging.yaml
+    autoDeployTrigger: checksPass
+    buildCommand: >-
+      npm ci --include=dev &&
+      NEXT_PUBLIC_APP_URL="$RENDER_EXTERNAL_URL"
+      NEXT_PUBLIC_MSAL_REDIRECT_URI="$RENDER_EXTERNAL_URL/auth/callback"
+      npm run build &&
+      node -e "require('node:fs').writeFileSync('out/__build.json', JSON.stringify({gitCommit:process.env.RENDER_GIT_COMMIT}))"
+    staticPublishPath: out
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: GITHUB_PAGES
+        value: "true"
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          name: otcr-dashboard-staging-api
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: NEXT_PUBLIC_MSAL_CLIENT_ID
+        sync: false
+      - key: NEXT_PUBLIC_MSAL_AUTHORITY
+        sync: false
+
+databases:
+  - name: otcr-dashboard-staging-db
+    region: oregon
+    plan: free
+    postgresMajorVersion: "18"
+    databaseName: otcr_staging
+    ipAllowList: []
