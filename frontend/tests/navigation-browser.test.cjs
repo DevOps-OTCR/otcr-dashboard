@@ -32,7 +32,7 @@ async function setup(t, initialPath, role = 'PM') {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   t.after(() => assert.deepEqual(errors, []));
-  const state = { calls: [], gate: null, failSprints: false, slowGate: null, calendarLoads: 0, eventTitle: 'Team weekly check-in',
+  const state = { role, calls: [], gate: null, failSprints: false, slowGate: null, calendarLoads: 0, eventTitle: 'Team weekly check-in',
     alumniGate: null, failAlumni: false };
   await page.route('**/api/**', async route => {
     const pathname = new URL(route.request().url()).pathname.slice(4);
@@ -41,7 +41,7 @@ async function setup(t, initialPath, role = 'PM') {
     if (state.gate && pathname !== '/auth/role' && pathname !== '/notifications/my') await state.gate;
     if (state.alumniGate && pathname === '/alumni') await state.alumniGate;
     if (pathname === '/test-write') state.eventTitle = 'Updated team check-in';
-    const payload = responseFor(pathname, role);
+    const payload = responseFor(pathname, state.role);
     if (pathname === '/attendance/events') payload.events = payload.events.map(event => ({ ...event, title: state.eventTitle }));
     const failed = (state.failSprints && pathname.endsWith('/sprints')) || (state.failAlumni && pathname === '/alumni');
     await route.fulfill({ status: failed ? 503 : 200, contentType: 'application/json',
@@ -297,6 +297,51 @@ test('Deliverables and Client Notes keep restored content when an expired refres
   await page.getByRole('alert').getByText('Could not refresh client notes. Showing previously loaded notes.', { exact: true }).waitFor();
   assert.equal(await page.getByText('Client kickoff notes', { exact: true }).isVisible(), true);
   assert.equal(await page.getByRole('status').count(), 0);
+});
+
+test('Client Notes discards restored data after a confirmed role change, including a failed refresh', async t => {
+  const { page, state, nav, open } = await setup(t, '/client-notes', 'ADMIN');
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  let failNotes = true;
+  await page.route(url => url.pathname === '/api/deliverables', async route => {
+    const admin = state.role === 'ADMIN';
+    if (!admin) await gate;
+    const notes = responseFor('/deliverables', state.role).map(note => ({
+      ...note, title: admin ? 'Admin client note' : 'PM client note',
+    }));
+    await route.fulfill({ status: !admin && failNotes ? 503 : 200, contentType: 'application/json',
+      body: JSON.stringify(!admin && failNotes ? { message: 'Temporary outage' } : notes) });
+  });
+  await page.route(url => url.pathname === '/api/projects', route => route.fulfill({ contentType: 'application/json',
+    body: JSON.stringify({ projects: responseFor('/projects', state.role).projects.slice(state.role === 'ADMIN' ? 0 : 1) }) }));
+  await open();
+  await page.getByRole('heading', { name: 'Admin client note', exact: true }).waitFor();
+  await page.clock.install({ time: new Date() });
+  await nav('Forms').click();
+  await page.getByText('Dashboard Feedback Form', { exact: true }).waitFor();
+  // Refresh the note cache just before the five-minute role cache expires.
+  await page.clock.fastForward(271000);
+  await nav('Client Call Notes').click();
+  await page.waitForFunction(() => window.navigationTest.readResource('/deliverables?limit=200'));
+  await nav('Forms').click();
+  await page.getByText('Dashboard Feedback Form', { exact: true }).waitFor();
+  await page.clock.fastForward(31000);
+  state.role = 'PM';
+  const refresh = page.waitForRequest(request => new URL(request.url()).pathname === '/api/deliverables');
+  await nav('Client Call Notes').click();
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('otcr_role_cache:pm@example.test')).role === 'PM');
+  await refresh;
+  assert.equal(await page.getByRole('heading', { name: 'Admin client note', exact: true }).count(), 0);
+  assert.equal(await page.evaluate(() => window.navigationTest.readSnapshot(JSON.stringify(['client-notes', 'pm@example.test', null]))), undefined);
+  release();
+  await page.getByRole('alert').getByText('Could not load client notes.', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('heading', { name: 'Admin client note', exact: true }).count(), 0);
+  assert.equal(await page.locator('main select option').filter({ hasText: 'Team One' }).count(), 0);
+  failNotes = false;
+  await page.getByRole('button', { name: 'Refresh page data', exact: true }).click();
+  await page.getByRole('heading', { name: 'PM client note', exact: true }).waitFor();
+  await page.waitForFunction(() => window.navigationTest.readSnapshot(JSON.stringify(['client-notes', 'pm@example.test', null]))?.notes[0]?.title === 'PM client note');
 });
 
 test('navbar refresh bypasses fresh cached data while restored content stays visible', async t => {
