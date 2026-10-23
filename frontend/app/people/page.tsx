@@ -7,7 +7,7 @@ import { PageLoading } from '@/components/PageLoading';
 import { Button } from '@/components/ui/Button';
 import { PeopleDirectory } from '@/components/people/PeopleDirectory';
 import { OnboardingQueue } from '@/components/people/OnboardingQueue';
-import { apiError, personName, type Person, type OnboardingRequest } from '@/components/people/types';
+import { apiError, safePersonName, type Person, type OnboardingRequest } from '@/components/people/types';
 import { authAPI, onboardingAPI, peopleAPI, setAuthToken } from '@/lib/api';
 import { clearRoleCache, isValidAppRole, ROLE_FULL_LABELS, type AppRole } from '@/lib/permissions';
 
@@ -69,7 +69,7 @@ export default function PeoplePage() {
   }, [load]);
 
   async function changeRole(person: Person, nextRole: AppRole) {
-    if (!window.confirm(`Change ${personName(person)} (${person.email}) from ${ROLE_FULL_LABELS[person.role]} to ${ROLE_FULL_LABELS[nextRole]}?`)) return;
+    if (!window.confirm(`Change ${safePersonName(person)} (${person.email}) from ${ROLE_FULL_LABELS[person.role]} to ${ROLE_FULL_LABELS[nextRole]}?`)) return;
     setBusy(true); setError(null); setMessage(null);
     try {
       const token = await getToken();
@@ -78,7 +78,7 @@ export default function PeoplePage() {
       await peopleAPI.changeRole(person.id, nextRole);
       setPeople(current => current.map(item => item.id === person.id ? { ...item, role: nextRole } : item));
       clearRoleCache(person.email);
-      setMessage(`Role updated for ${personName(person)}.`);
+      setMessage(`Role updated for ${safePersonName(person)}.`);
       if (person.email.toLowerCase() === email?.toLowerCase()) await load();
     } catch (error) { setError(apiError(error, 'Failed to change role')); }
     finally { setBusy(false); }

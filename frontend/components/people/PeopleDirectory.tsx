@@ -1,12 +1,13 @@
 'use client';
+
 import { useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
 import { ROLE_FULL_LABELS, type AppRole } from '@/lib/permissions';
-import { CMS_ROLES, personName, type Person } from './types';
+import { CMS_ROLES, safePersonName, type Person } from './types';
 
 // Add typed per-person display fields here as the directory grows.
 const columns: Array<{ key: string; label: string; render: (person: Person) => ReactNode }> = [
-  { key: 'name', label: 'Name', render: personName },
+  { key: 'name', label: 'Name', render: safePersonName },
   { key: 'email', label: 'Email', render: person => person.email },
   { key: 'status', label: 'Status', render: person => person.active ? 'Active' : 'Inactive' },
   { key: 'role', label: 'Current role', render: person => ROLE_FULL_LABELS[person.role] },
@@ -31,9 +32,9 @@ export function PeopleDirectory({ people, busy, onChangeRole }: {
   const filtered = people.filter(person => (!role || person.role === role)
     && (!team || person.teams.some(item => item.id === team))
     && (!status || person.active === (status === 'active'))
-    && `${personName(person)} ${person.email}`.toLowerCase().includes(query))
+    && `${safePersonName(person)} ${person.email}`.toLowerCase().includes(query))
     .sort((a, b) => (sort === 'email' ? a.email.localeCompare(b.email) : sort === 'role'
-      ? a.role.localeCompare(b.role) : personName(a).localeCompare(personName(b))) || a.id.localeCompare(b.id));
+      ? a.role.localeCompare(b.role) : safePersonName(a).localeCompare(safePersonName(b))) || a.id.localeCompare(b.id));
   const pages = Math.max(1, Math.ceil(filtered.length / 25));
   const currentPage = Math.min(page, pages);
   const visible = filtered.slice((currentPage - 1) * 25, currentPage * 25);
