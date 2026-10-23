@@ -58,6 +58,7 @@ async function setup(t, slowCacheOperations = false) {
   const first = await page();
   await first.getByRole('button', { name: 'Sign in with Microsoft' }).click();
   await first.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
+  await first.waitForFunction(() => window.authTest.authHeader() === 'Bearer synthetic-token-for-pm@example.test');
   t.after(() => assert.deepEqual(externalRequests, []));
   return { first, page };
 }
@@ -128,6 +129,7 @@ test('a newly selected account replaces the previous account across tabs', async
   const { first, page } = await setup(t, true);
   const second = await page('/deliverables');
   await second.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
+  await second.waitForFunction(() => window.authTest.authHeader() === 'Bearer synthetic-token-for-pm@example.test');
   await first.evaluate(() => window.authTest.seed('consultant@example.test'));
   for (const current of [first, second, await page('/deliverables')]) {
     await current.waitForFunction(() => document.querySelector('[data-testid="account"]')?.textContent === 'consultant@example.test');
