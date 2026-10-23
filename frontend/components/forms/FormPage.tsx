@@ -23,6 +23,9 @@ export type StoredFormSubmission = {
   contactEmail: string | null;
   submitterName: string | null;
   createdAt: string;
+  githubStatus?: string | null;
+  githubIssueUrl?: string | null;
+  githubErrorCode?: string | null;
 };
 
 type FormPageProps = {
