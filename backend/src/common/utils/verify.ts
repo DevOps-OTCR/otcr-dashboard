@@ -4,7 +4,7 @@ export const graphApiExpectedResponseSchema = z.object({
   userPrincipalName: z
     .string()
     .min(1)
-    .refine((val) => val.endsWith("@illinois.edu"), {
+    .refine((val) => val.toLowerCase().endsWith("@illinois.edu"), {
       message: "userPrincipalName must have domain @illinois.edu",
     }),
   givenName: z.string().min(1),
@@ -21,6 +21,7 @@ export async function getVerifiedUser(accessToken: string) {
         Authorization: `Bearer ${accessToken}`,
       },
     });
+    if (!response.ok) throw new Error('Microsoft rejected the access token');
 
     // The 'mail' field is the primary email, 'userPrincipalName' is the NetID email
     const data = await graphApiExpectedResponseSchema.parseAsync(

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SlackOAuthPurpose } from '@prisma/client';
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto';
@@ -67,7 +67,9 @@ export class SlackService {
     workspaceId?: string,
     redirectUri?: string,
   ): Promise<string> {
-    const state = randomBytes(24).toString('hex');
+    // Version states issued after verified-token authentication was enforced.
+    // Pre-change states may have been minted through email impersonation.
+    const state = 'cms-verified-v1:' + randomBytes(24).toString('hex');
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     await this.prisma.slackOAuthState.create({
@@ -85,6 +87,9 @@ export class SlackService {
   }
 
   async getValidOAuthState(state: string) {
+    if (!state.startsWith('cms-verified-v1:')) {
+      throw new BadRequestException('Restart Slack connection after signing in again');
+    }
     const oauthState = await this.prisma.slackOAuthState.findUnique({
       where: { state },
     });

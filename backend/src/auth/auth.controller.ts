@@ -1,7 +1,10 @@
-import { Controller, Get, Post,Headers, Query, Body, UnauthorizedException, ForbiddenException, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Query, Body, ForbiddenException, UseGuards, SetMetadata, Req, Header } from '@nestjs/common';
+import { Request } from 'express';
+import { Role, User } from '@prisma/client';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
 import { GetUser } from '../common/get-user.decorator';
+import { normalizeEmail } from './access-policy';
 
 @Controller('auth')
 @UseGuards(AuthGuard)
@@ -9,128 +12,61 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Get('me')
-  async getCurrentUser(@Headers('authorization') authorization: string) {
-    if (!authorization) {
-      throw new UnauthorizedException('No authorization header');
-    }
-    
-    return {
-      success: true,
-      message: 'Use session-based auth from NextAuth',
-    };
+  getCurrentUser(@GetUser() user: User) {
+    return { success: true, user: { id: user.id, email: user.email, role: user.role } };
   }
 
   @Get('health')
+  @SetMetadata('auth:public-health', true)
   health() {
-    return {
-      success: true,
-      message: 'Auth service is running',
-    };
+    return { success: true, message: 'Auth service is running' };
+  }
+
+  @Get('access-status')
+  @Header('Cache-Control', 'no-store')
+  @SetMetadata('auth:identity-only', true)
+  async accessStatus(@Req() request: Request & { identity: { email: string } }) {
+    return { success: true, ...(await this.authService.getAccessStatus(request.identity.email)) };
   }
 
   @Get('role')
-  async getRole(@GetUser() user: any) {
-    try {
-      const role = await this.authService.getRoleByEmail(user.email);
-      return { success: true, role: role ?? 'CONSULTANT' };
-    } catch (error) {
-      console.error('Error fetching role:', error);
-      return { success: false, role: null, message: 'Error fetching role' };
-    }
+  @Header('Cache-Control', 'no-store')
+  getRole(@GetUser() user: User) {
+    return { success: true, role: user.role };
   }
 
   @Get('check-email')
-  async checkEmail(@Query('email') email: string) {
-    if (!email) {
-      return {
-        success: false,
-        allowed: false,
-        message: 'Email is required',
-      };
+  @Header('Cache-Control', 'no-store')
+  @SetMetadata('auth:identity-only', true)
+  async checkEmail(
+    @Query('email') email: string | undefined,
+    @Req() request: Request & { identity: { email: string } },
+  ) {
+    if (email !== undefined && (typeof email !== 'string' || normalizeEmail(email) !== request.identity.email)) {
+      throw new ForbiddenException('You can only check your own access');
     }
-    
-    try {
-      const normalizedEmail = email.toLowerCase().trim();
-      const isAllowed = await this.authService.isEmailAllowed(normalizedEmail);
-      
-      // Log for debugging
-      console.log(`Email check for ${normalizedEmail}: ${isAllowed ? 'ALLOWED' : 'DENIED'}`);
-      
-      return {
-        success: true,
-        allowed: isAllowed,
-      };
-    } catch (error) {
-      console.error('Error checking email:', error);
-      return {
-        success: false,
-        allowed: false,
-        message: 'Error checking email',
-      };
-    }
+    return { success: true, allowed: await this.authService.isEmailAllowed(request.identity.email) };
   }
 
   @Get('allowed-emails')
-  async getAllowedEmails(@Headers('authorization') authorization: string) {
-    if (!authorization) {
-      throw new UnauthorizedException('No authorization header');
-    }
-
-    const emails = await this.authService.getAllowedEmails();
-    return {
-      success: true,
-      emails,
-    };
+  async getAllowedEmails() {
+    return { success: true, emails: await this.authService.getAllowedEmails() };
   }
 
   @Post('allowed-emails')
-  async addAllowedEmail(
-    @Body() body: { email?: string; role?: 'ADMIN' | 'PM' | 'LC' | 'PARTNER' | 'EXECUTIVE' | 'CONSULTANT' },
-    @GetUser() user: any,
-  ) {
-    if (user.role !== 'ADMIN') {
-      throw new ForbiddenException('Only Admins can grant dashboard access');
-    }
-
-    const normalizedEmail = body?.email?.toLowerCase().trim();
-    if (!normalizedEmail) {
-      return { success: false, message: 'Email is required' };
-    }
-
-    const entry = await this.authService.addAllowedEmail(normalizedEmail, body.role ?? 'CONSULTANT');
-    return { success: true, email: entry };
+  async addAllowedEmail(@Body() body: { email?: string; role?: Role }, @GetUser() user: User) {
+    if (user.role !== 'ADMIN') throw new ForbiddenException('Only Admins can grant dashboard access');
+    if (typeof body?.email !== 'string' || !body.email.trim()) return { success: false, message: 'Email is required' };
+    return { success: true, email: await this.authService.addAllowedEmail(body.email, body.role ?? 'CONSULTANT') };
   }
 
   @Post('sync-user')
-  async syncUser(@Body() body: { googleId: string; email: string; name?: string }) {
-    // This endpoint can be called during sign-in to sync user with database
-    if (!body.email || !body.googleId) {
-      return {
-        success: false,
-        message: 'Email and googleId are required',
-      };
+  async syncUser(@Body() body: { googleId?: string; email?: string; name?: string }, @GetUser() user: User) {
+    if (body?.email !== undefined && (typeof body.email !== 'string' || normalizeEmail(body.email) !== normalizeEmail(user.email))) {
+      throw new ForbiddenException('You can only sync your own profile');
     }
-
-    try {
-      const user = await this.authService.syncUserWithDatabase(
-        body.googleId,
-        body.email,
-        body.name
-      );
-      return {
-        success: true,
-        user: {
-          id: user.id,
-          email: user.email,
-          role: user.role,
-        },
-      };
-    } catch (error) {
-      console.error('Error syncing user:', error);
-      return {
-        success: false,
-        message: 'Error syncing user',
-      };
-    }
+    // Client-supplied provider IDs are not identity proof and must not link accounts.
+    const synced = await this.authService.syncUserWithDatabase(user.email, body?.name);
+    return { success: true, user: { id: synced.id, email: synced.email, role: synced.role } };
   }
 }

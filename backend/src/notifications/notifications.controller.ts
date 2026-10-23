@@ -6,11 +6,9 @@ import {
   Headers,
   Post,
   Query,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { AuthService } from '../auth/auth.service';
-import { getVerifiedUser } from '../common/utils/verify';
 
 @Controller('notifications')
 export class NotificationsController {
@@ -20,23 +18,7 @@ export class NotificationsController {
   ) {}
 
   private async getUserFromHeader(authorization: string) {
-    if (!authorization) {
-      throw new UnauthorizedException('No authorization header');
-    }
-
-    const raw = authorization.replace(/^Bearer\s+/i, '').trim();
-    if (!raw) {
-      throw new UnauthorizedException('No user identifier in authorization');
-    }
-
-    const email = raw.includes('@') ? raw : await getVerifiedUser(raw);
-
-    const user = await this.authService.getUserByEmail(email);
-    if (!user) {
-      throw new UnauthorizedException('User not found');
-    }
-
-    return user;
+    return this.authService.getUserFromAuthorization(authorization);
   }
 
   @Post('bell-mirror')
@@ -62,7 +44,7 @@ export class NotificationsController {
       throw new BadRequestException('assigneeEmail, title, and message are required');
     }
 
-    const targetUser = await this.authService.getUserByEmail(assigneeEmail);
+    const targetUser = await this.authService.findApprovedUserByEmail(assigneeEmail);
     if (!targetUser) {
       // Bell notification can still exist locally even if no backend user exists.
       return { queued: false, reason: 'target_user_not_found' };

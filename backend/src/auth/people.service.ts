@@ -2,8 +2,10 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { parseRole, updateAllowedEmailRole } from './access-role';
+import { AccessSummary, normalizeEmail, summarizeAccess } from './access-policy';
 
-export interface PersonSummary {
+export interface PersonSummary extends AccessSummary {
+  accessRole: Role | null;
   id: string;
   email: string;
   firstName: string | null;
@@ -26,10 +28,20 @@ export class PeopleService {
         pmProjects: { select: { id: true, name: true } },
       },
     });
+    const [grants, requests] = await Promise.all([
+      this.prisma.allowedEmail.findMany(),
+      this.prisma.onboardingRequest.findMany({ select: { email: true, status: true } }),
+    ]);
     return people.map(({ projectAssignments, pmProjects, ...person }) => {
+      const email = normalizeEmail(person.email);
+      const access = summarizeAccess(
+        people.filter(user => user.email.toLowerCase() === email),
+        grants.filter(grant => grant.email.toLowerCase() === email),
+        requests.find(request => request.email.toLowerCase() === email),
+      );
       const teams = new Map(projectAssignments.map(({ project }) => [project.id, { ...project, manages: false }]));
       pmProjects.forEach(project => teams.set(project.id, { ...project, manages: true }));
-      return { ...person, teams: Array.from(teams.values()).sort((a, b) => a.name.localeCompare(b.name)) };
+      return { ...access, ...person, accessRole: access.role, teams: Array.from(teams.values()).sort((a, b) => a.name.localeCompare(b.name)) };
     });
   }
 
@@ -38,7 +50,7 @@ export class PeopleService {
     return this.prisma.$transaction(async tx => {
       const user = await tx.user.findUnique({ where: { id } });
       if (!user) throw new NotFoundException('User not found');
-      await updateAllowedEmailRole(tx, user.email, role, { mode: 'preserve', activeOnCreate: user.active });
+      await updateAllowedEmailRole(tx, user.email, role, { mode: 'preserve' });
       return tx.user.update({ where: { id }, data: { role },
         select: { id: true, email: true, role: true } });
     });

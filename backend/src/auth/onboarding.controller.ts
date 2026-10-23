@@ -47,7 +47,8 @@ export class OnboardingController {
       body?.requestedRole ?? 'CONSULTANT',
     );
 
-    return { success: true, request };
+    // Public submission is a receipt, not a lookup of another person's review.
+    return { success: true, request: { id: request.id, status: 'PENDING' } };
   }
 
   @Get('requests')

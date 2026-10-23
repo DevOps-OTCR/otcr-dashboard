@@ -7,7 +7,6 @@ import {
   Headers,
   Post,
   Query,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { SlackOAuthPurpose } from '@prisma/client';
 import { AuthService } from '../auth/auth.service';
@@ -21,21 +20,7 @@ export class SlackController {
   ) {}
 
   private async getUserFromHeader(authorization: string) {
-    if (!authorization) {
-      throw new UnauthorizedException('No authorization header');
-    }
-
-    const email = authorization.replace(/^Bearer\s+/i, '').trim();
-    if (!email) {
-      throw new UnauthorizedException('No user identifier in authorization');
-    }
-
-    const user = await this.authService.getUserByEmail(email);
-    if (!user) {
-      throw new UnauthorizedException('User not found');
-    }
-
-    return user;
+    return this.authService.getUserFromAuthorization(authorization);
   }
 
   @Get('install-url')
@@ -82,6 +67,12 @@ export class SlackController {
     }
 
     const oauthState = await this.slackService.getValidOAuthState(state);
+    // OAuth state proves which verified caller initiated the flow. Recheck
+    // current approval before completing a flow started before access revocation.
+    const caller = await this.authService.requireApprovedUserById(oauthState.userId);
+    if (oauthState.purpose === 'INSTALL' && !['ADMIN', 'PM', 'PARTNER', 'EXECUTIVE'].includes(caller.role)) {
+      throw new ForbiddenException('Your current role cannot install Slack workspaces');
+    }
     const oauthResponse = await this.slackService.exchangeOAuthCode(code);
 
     const teamId = oauthResponse.team?.id;
