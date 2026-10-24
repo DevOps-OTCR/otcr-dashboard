@@ -14,6 +14,7 @@ import { RoleDashboardRedirect } from '@/components/RoleDashboardRedirect';
 import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { PageLoading } from '@/components/PageLoading';
 import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
+import { useProjectRecency } from '@/lib/use-project-recency';
 import { dispatchNotificationsRefresh } from '@/lib/notification-events';
 
 type ProjectOption = {
@@ -115,6 +116,7 @@ export default function SlidesPage() {
   const router = useRouter();
   const { isLoggedIn, getToken } = session;
   const email = session.user?.email;
+  const { recordProject, orderProjects } = useProjectRecency(email);
   const { snapshot, saveSnapshot } = useNavigationSnapshot<{
     role: AppRole; projects: ProjectOption[]; selectedProjectId: string;
     sprints: SprintItem[]; submissions: SlideSubmissionFromApi[];
@@ -387,7 +389,7 @@ export default function SlidesPage() {
                   onChange={(e) => void handleProjectChange(e.target.value)}
                   className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
                 >
-                  {projects.map((project) => (
+                  {orderProjects(projects).map((project) => (
                     <option key={project.id} value={project.id}>
                       {project.name}
                     </option>

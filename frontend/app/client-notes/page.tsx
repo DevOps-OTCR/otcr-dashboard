@@ -8,6 +8,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { getEffectiveRole, hasAccess } from '@/lib/permissions';
+import { useProjectRecency } from '@/lib/use-project-recency';
 import { deliverablesAPI, projectsAPI } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
 import { RoleDashboardRedirect } from '@/components/RoleDashboardRedirect';
@@ -233,7 +234,7 @@ export default function ClientNotesPage() {
                       className="w-full px-3 py-2 rounded-xl border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
                     >
                       {!projects.length && <option value="">No project</option>}
-                      {projects.map((project) => (
+                      {orderProjects(projects).map((project) => (
                         <option key={project.id} value={project.id}>
                           {project.name}
                         </option>

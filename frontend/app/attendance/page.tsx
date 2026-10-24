@@ -17,6 +17,7 @@ import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { PageLoading } from '@/components/PageLoading';
 import { RoleDashboardRedirect } from '@/components/RoleDashboardRedirect';
 import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
+import { useProjectRecency } from '@/lib/use-project-recency';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
@@ -1146,7 +1147,7 @@ export default function AttendancePage() {
                   required
                 >
                   <option value="">Select team</option>
-                  {projects.map((project) => (
+                  {orderProjects(projects).map((project) => (
                     <option key={project.id} value={project.id}>
                       {project.name}
                     </option>

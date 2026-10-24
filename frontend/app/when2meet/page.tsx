@@ -367,7 +367,7 @@ export default function When2MeetPage() {
                 {projects.length === 0 ? (
                   <option value="">No teams available</option>
                 ) : (
-                  projects.map((p) => (
+                  orderProjects(projects).map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
                     </option>
