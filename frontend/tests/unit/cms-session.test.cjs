@@ -22,8 +22,10 @@ function tab(localStorage = storage()) {
 test('sign-out in another tab rejects an earlier login redirect result', () => {
   const first = tab();
   first.beginCmsSignIn();
+  assert.equal(first.hasCurrentCmsSignInAttempt(), true);
   const second = tab(first.localStorage);
   second.markCmsSignedOut();
+  assert.equal(first.hasCurrentCmsSignInAttempt(), false);
   assert.equal(first.completeCmsSignIn('late-account'), false);
   assert.equal(first.readCmsSession().signedOut, true);
 });
