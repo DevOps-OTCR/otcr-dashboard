@@ -26,6 +26,12 @@ export class FeedbackController {
     return { success: true, submissions };
   }
 
+  @Post('submissions/:id/github/retry')
+  @Roles('ADMIN')
+  async retryGithubSync(@Param('id') id: string) {
+    return this.feedbackService.retryGithubSync(id);
+  }
+
   @Post('forms/:formType/submissions')
   @Roles('ADMIN', 'PM', 'LC', 'PARTNER', 'EXECUTIVE', 'CONSULTANT')
   async createFormSubmission(

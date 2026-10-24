@@ -176,6 +176,17 @@ for (const [width, height] of [[375, 667], [667, 375], [899, 520], [901, 520], [
       { slotIndex: 0, names: [], userIds: members.slice(0, 20).map(m => m.id) },
     ], width, { height });
     const clearOfNavbar = async label => {
+      // Wait for the resize observer to apply the available viewport height.
+      await page.waitForFunction(() => {
+        const overlay = document.querySelector('.w2m-available-overlay');
+        const navbar = document.querySelector('header');
+        const body = overlay?.querySelector('.w2m-availability-body');
+        if (!overlay || !navbar || !body) return false;
+        const bounds = overlay.getBoundingClientRect();
+        const names = body.getBoundingClientRect();
+        return innerWidth > 900 || (bounds.top >= navbar.getBoundingClientRect().bottom - 0.5 &&
+          bounds.bottom <= innerHeight && Math.min(names.bottom, bounds.bottom) - names.top >= 40);
+      });
       const layout = await popup.evaluate(element => {
         const navbar = document.querySelector('header').getBoundingClientRect();
         const bounds = element.getBoundingClientRect();

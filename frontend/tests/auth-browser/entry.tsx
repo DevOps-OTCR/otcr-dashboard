@@ -26,9 +26,22 @@ config.auth = { ...config.auth, clientId, authority,
 };
 const instance = new PublicClientApplication(config);
 const actualAcquire = instance.acquireTokenSilent.bind(instance);
+const tokenOperations: object[] = [];
+instance.acquireTokenSilent = async request => {
+  try {
+    const result = await actualAcquire(request);
+    tokenOperations.push({ account: request.account?.username, policy: request.cacheLookupPolicy, success: true });
+    return result;
+  } catch (error) {
+    tokenOperations.push({ account: request.account?.username, policy: request.cacheLookupPolicy,
+      error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) });
+    throw error;
+  }
+};
 let interactiveLogins = 0;
 let releaseToken: (() => Promise<void>) | undefined;
 let sessionToken: Promise<string | null> | undefined;
+let releaseRedirect: (() => Promise<void>) | undefined;
 
 function resultFor(email = 'pm@example.test'): AuthenticationResult {
   const now = Math.floor(Date.now() / 1000);
@@ -53,8 +66,9 @@ async function seed(email = 'pm@example.test') {
   const result = resultFor(email);
   await instance.hydrateCache(result, { scopes: ['User.Read'], account: result.account });
   const events = new BroadcastChannel('msal.broadcast.event');
+  // MSAL v5 broadcasts account information, not an AuthenticationResult with tokens.
   events.postMessage({ eventType: EventType.LOGIN_SUCCESS, interactionType: InteractionType.Redirect,
-    payload: result, error: null, correlationId: result.correlationId, timestamp: Date.now() });
+    payload: result.account, error: null, correlationId: result.correlationId, timestamp: Date.now() });
   events.close();
   completeCmsSignIn(result.account.homeAccountId);
   instance.setActiveAccount(result.account);
@@ -67,6 +81,20 @@ instance.logoutPopup = async () => { throw new Error('Must not sign out of Micro
 if (new URLSearchParams(location.search).has('expired')) {
   instance.acquireTokenSilent = async () => { throw new InteractionRequiredAuthError('login_required'); };
 }
+if (new URLSearchParams(location.search).has('unavailable')) {
+  instance.acquireTokenSilent = async () => { throw new Error('Synthetic token service failure'); };
+}
+if (new URLSearchParams(location.search).has('redirect')) {
+  beginCmsSignIn();
+  let response: Promise<AuthenticationResult> | undefined;
+  instance.handleRedirectPromise = () => response ??= new Promise(resolve => {
+    releaseRedirect = async () => {
+      const result = resultFor();
+      await instance.hydrateCache(result, { scopes: ['User.Read'], account: result.account });
+      resolve(result);
+    };
+  });
+}
 if (new URLSearchParams(location.search).has('slow')) {
   const initialize = instance.initialize.bind(instance);
   instance.initialize = async request => { await new Promise(resolve => setTimeout(resolve, 500)); await initialize(request); };
@@ -75,8 +103,19 @@ if (new URLSearchParams(location.search).has('slow')) {
 const testApi = {
   seed,
   interactiveLogins: () => interactiveLogins,
+  redirectIsPending: () => Boolean(releaseRedirect),
+  finishRedirect: async () => { await releaseRedirect?.(); },
   accounts: () => instance.getAllAccounts().map(account => account.username),
   authHeader: () => api.defaults.headers.common.Authorization ?? null,
+  diagnostics: () => ({ operations: tokenOperations.slice(-12), session: localStorage.getItem(CMS_SESSION_KEY),
+    accounts: instance.getAllAccounts().map(account => account.username),
+    maps: Object.fromEntries(Object.entries(localStorage).filter(([key]) => /account.keys|token.keys/.test(key))) }),
+  tokenWithActiveAccount: async (email: string) => {
+    const account = instance.getAllAccounts().find(account => account.username === email);
+    if (!account) throw new Error('The requested test account is not cached');
+    instance.setActiveAccount(account);
+    return testApi.getToken().catch(error => error.name);
+  },
   getToken: async (): Promise<string | null> => null,
   holdToken: () => {
     instance.acquireTokenSilent = async () => new Promise(resolve => {

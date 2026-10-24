@@ -12,7 +12,7 @@ export default function FeedbackPage() {
     <FormPage
       formType="DASHBOARD_FEEDBACK"
       title="Dashboard Feedback Form"
-      description="Submit product issues and improvement feedback for the OTCR dashboard."
+      description="Submit product issues and improvement feedback for the OTCR dashboard. When GitHub intake is enabled, the problem and description are copied to the public OTCR GitHub repository and may be used by Copilot to prepare a fix. Do not include personal information, client information, passwords, or tokens."
       icon={MessageSquare}
       submitLabel="Submit Feedback"
       onSubmit={() => {
@@ -57,6 +57,24 @@ export default function FeedbackPage() {
               {submission.description}
             </p>
           </div>
+          {submission.githubStatus && (
+            <div className="text-sm space-y-1">
+              <p>GitHub: {{
+                PENDING: 'Queued for synchronization',
+                PROCESSING: 'Synchronizing',
+                COMPLETE: 'Synchronized',
+                NEEDS_REVIEW: 'Issue created - maintainer review required',
+                COPILOT_ASSIGNED: 'Copilot assigned - check GitHub for the pull request',
+                FAILED: 'Synchronization failed - maintainer action required',
+              }[submission.githubStatus] || submission.githubStatus}</p>
+              {submission.githubIssueUrl && (
+                <a href={submission.githubIssueUrl} target="_blank" rel="noopener noreferrer" className="underline">
+                  View GitHub issue
+                </a>
+              )}
+              {submission.githubErrorCode && <p>Error: {submission.githubErrorCode}</p>}
+            </div>
+          )}
         </>
       )}
       formFields={
@@ -65,6 +83,7 @@ export default function FeedbackPage() {
             <h2 className="text-base font-semibold">Problem</h2>
             <input
               type="text"
+              maxLength={500}
               value={problem}
               onChange={(event) => setProblem(event.target.value)}
               placeholder="Short summary of the issue"
@@ -79,6 +98,7 @@ export default function FeedbackPage() {
               onChange={(event) => setDescription(event.target.value)}
               placeholder="Include context, expected behavior, and impact"
               rows={6}
+              maxLength={20000}
               className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] placeholder:text-[var(--foreground)]/50 text-sm"
             />
           </div>
