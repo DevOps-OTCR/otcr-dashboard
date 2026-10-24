@@ -16,7 +16,7 @@ import {
   useRef,
   Fragment,
 } from "react";
-import { CMS_SESSION_KEY, readCmsSession, cmsSessionRevision, beginCmsSignIn, completeCmsSignIn, markCmsSignedOut, withAuthTimeout } from '@/lib/cms-session';
+import { CMS_SESSION_KEY, readCmsSession, cmsSessionRevision, beginCmsSignIn, hasCurrentCmsSignInAttempt, completeCmsSignIn, markCmsSignedOut, withAuthTimeout } from '@/lib/cms-session';
 import FullScreenLoader from "./LoadingScreen";
 import { clearRoleCache } from "@/lib/permissions";
 import { clearProjectsCache, setAuthToken } from "@/lib/api";
@@ -114,6 +114,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       } else refreshChangedSession();
     };
     const onPageShow = () => {
+      // A fresh explicit redirect must finish before the persisted sign-out
+      // marker is replaced. A later cross-tab sign-out invalidates the attempt.
+      if (readCmsSession()?.signedOut && hasCurrentCmsSignInAttempt()) return;
       if (readCmsSession()?.signedOut) requireSignIn();
       else if (cmsSessionRevision() !== documentSessionRevision.current) refreshChangedSession();
       else setSessionChange(value => value + 1);

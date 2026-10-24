@@ -165,3 +165,15 @@ test('a failed session restore can return to sign-in and clear cached credential
   assert.equal(await unavailable.evaluate(() => window.authTest.authHeader()), null);
   assert.deepEqual(await unavailable.evaluate(() => window.authTest.accounts()), []);
 });
+
+test('pageshow preserves an explicit login redirect after a persisted sign-out', async t => {
+  const { first, page } = await setup(t);
+  await first.getByRole('button', { name: 'Sign Out' }).click();
+  const callback = await page('/auth/callback?redirect');
+  await callback.waitForFunction(() => window.authTest.redirectIsPending());
+  await callback.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow')));
+  await callback.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(new URL(callback.url()).pathname, '/auth/callback');
+  await callback.evaluate(() => window.authTest.finishRedirect());
+  await callback.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
+});
