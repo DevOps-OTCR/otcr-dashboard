@@ -288,14 +288,13 @@ export function DeliveryReminderOverrides({
     };
   }, [projectId, filter, refresh]);
   const refreshStatus = () => setRefresh((n) => n + 1);
-  const section =
-    'border rounded-xl border-[var(--border)] bg-[var(--card)] p-5 space-y-3';
+  const section = 'border-t border-[var(--border)] pt-3 space-y-3';
   return (
-    <div className="space-y-6">
-      <section className={section}>
-        <h3 className="text-sm font-semibold">
-          Per-Deliverable Reminder Overrides
-        </h3>
+    <div className="space-y-3">
+      <details className={section}>
+        <summary className="cursor-pointer text-sm">
+          Per-deliverable settings
+        </summary>
         {deliverables.map((d) => (
           <div
             key={d.id}
@@ -325,9 +324,9 @@ export function DeliveryReminderOverrides({
             )}
           </div>
         ))}
-      </section>
-      <section className={section}>
-        <h3 className="text-sm font-semibold">Delivery Status</h3>
+      </details>
+      <details className={section}>
+        <summary className="cursor-pointer text-sm">Delivery history</summary>
         <div className="flex gap-3">
           <label className="text-sm">
             Status{' '}
@@ -406,7 +405,7 @@ export function DeliveryReminderOverrides({
             </table>
           </div>
         )}
-      </section>
+      </details>
     </div>
   );
 }

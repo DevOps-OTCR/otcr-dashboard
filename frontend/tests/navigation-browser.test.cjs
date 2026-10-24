@@ -333,8 +333,21 @@ test('Reminder overrides load saved recipients, retain failed edits, and reset t
       eligibleRecipients: [{ userId: 'u-1', name: 'Test Consultant', email: 'consultant@example.test', slackConnected: false }],
     }) });
   });
+  await page.route('**/api/projects/team-1/reminders/status*', route => route.fulfill({
+    contentType: 'application/json', body: JSON.stringify([{ id: 'failed-1', status: 'FAILED', fireAt: '2026-10-24T17:00:00Z',
+      attempts: 3, lastError: 'Sample delivery failure', user: { id: 'u-1', email: 'consultant@example.test' },
+      deliverable: { id: 'team-1-research', title: 'team-1 Research', deadline: '2026-10-25T17:00:00Z' } }]),
+  }));
   await open();
   await page.getByRole('button', { name: /Team One/ }).click();
+  await page.getByText('Deadline reminders', { exact: true }).waitFor();
+  assert.equal(await page.getByLabel('Timezone', { exact: true }).count(), 0);
+  assert.equal(await page.getByLabel('Enable automatic deadline reminders for this team').isVisible(), false);
+  assert.equal(await page.getByText('Google Calendar secret / ID', { exact: true }).isVisible(), false);
+  await page.getByText('Deadline reminders', { exact: true }).click();
+  await page.getByLabel('Enable automatic deadline reminders for this team').waitFor();
+  assert.equal(await page.getByRole('table').isVisible(), false);
+  await page.getByText('Per-deliverable settings', { exact: true }).click();
   await page.getByRole('button', { name: 'team-1 Research', exact: true }).click();
   assert.equal(await page.getByLabel('Use project defaults').isChecked(), false);
   assert.equal(await page.getByRole('checkbox', { name: /Test Consultant/ }).isChecked(), true);
@@ -353,6 +366,8 @@ test('Reminder overrides load saved recipients, retain failed edits, and reset t
   await page.waitForFunction(() => !document.querySelector('fieldset[disabled]'));
   assert.deepEqual(saves.at(-1), { enabled: null, offsetMinutes: [], explicitRecipientUserIds: [] });
   assert.equal(await page.getByLabel('Use project defaults').isChecked(), true);
+  await page.getByText('Delivery history', { exact: true }).click();
+  await page.getByText('Sample delivery failure', { exact: true }).waitFor();
 });
 
 test('Deliverables and Client Notes keep restored content when an expired refresh fails', async t => {
