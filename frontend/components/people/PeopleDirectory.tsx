@@ -1,5 +1,7 @@
 'use client';
-import { useState, type ReactNode } from 'react';
+
+import { useAuth } from '@/components/AuthContext';
+import { useState, type ReactNode } from 'react'
 import { Button } from '@/components/ui/Button';
 import { ROLE_FULL_LABELS, type AppRole } from '@/lib/permissions';
 import { CMS_ROLES, personName, type Person } from './types';
@@ -22,11 +24,12 @@ export function PeopleDirectory({ people, busy, onChangeRole }: {
   const [role, setRole] = useState('');
   const [team, setTeam] = useState('');
   const [status, setStatus] = useState('');
+  const session = useAuth();
   const [sort, setSort] = useState('name');
   const [page, setPage] = useState(1);
   const [roles, setRoles] = useState<Record<string, AppRole>>({});
   const teams = Array.from(new Map(people.flatMap(person => person.teams).map(item => [item.id, item])).values())
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort((a, b) => session.user ? a.name.localeCompare(b.name) : 0);
   const query = search.trim().toLowerCase();
   const filtered = people.filter(person => (!role || person.role === role)
     && (!team || person.teams.some(item => item.id === team))

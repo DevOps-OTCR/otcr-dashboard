@@ -63,7 +63,8 @@ export default function ClientNotesPage() {
   const [roleLookupFailed, setRoleLookupFailed] = useState(false);
   const [resolvedRole, setResolvedRole] = useState<AppRole>('CONSULTANT');
 
-  const [notes, setNotes] = useState<ClientNote[]>([]);
+  const { recordProject, orderProjects } = useProjectRecency(session.user?.email);
+  const email = session.user?.email;
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [title, setTitle] = useState('');
@@ -224,7 +225,11 @@ export default function ClientNotesPage() {
                   <div className="grid grid-cols-1 md:grid-cols-[220px_1fr_1fr_auto] gap-2">
                     <select
                       value={selectedProjectId}
-                      onChange={(e) => setSelectedProjectId(e.target.value)}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setSelectedProjectId(next);
+                        if (next) recordProject(next);
+                      }}
                       className="w-full px-3 py-2 rounded-xl border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
                     >
                       {!projects.length && <option value="">No project</option>}

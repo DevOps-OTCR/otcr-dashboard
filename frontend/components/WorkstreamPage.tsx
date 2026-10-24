@@ -130,9 +130,6 @@ export default function WorkstreamPage() {
   }>('workstream', email);
   const [role, setRole] = useState<AppRole>(snapshot?.role ?? 'CONSULTANT');
   const [projects, setProjects] = useState<ProjectOption[]>(snapshot?.projects ?? []);
-  if (projects.length > 0) {
-    recordProject(projects[0].id);
-  }
   const [selectedProjectId, setSelectedProjectId] = useState(snapshot?.selectedProjectId ?? '');
   const projectRef = useRef(selectedProjectId);
   const sprintRequest = useRef(0);
@@ -226,8 +223,13 @@ export default function WorkstreamPage() {
         if (cancelled) return;
         setProjects(nextProjects);
 
-        if (nextProjects.length > 0) {
-          recordProject(nextProjects[0].id);
+        // Only an explicit user selection (or a restored navigation snapshot)
+        // promotes a project as recently used. The automatic first-project
+        // fallback below must not record anything.
+        const restoredProjectId = nextProjects.some(project => project.id === projectRef.current)
+          ? projectRef.current : '';
+        if (restoredProjectId) {
+          recordProject(restoredProjectId);
         }
         const firstProjectId = nextProjects.some(project => project.id === projectRef.current)
           ? projectRef.current : nextProjects[0]?.id ?? '';
@@ -316,6 +318,9 @@ export default function WorkstreamPage() {
   const handleProjectChange = async (projectId: string) => {
     projectRef.current = projectId;
     setSelectedProjectId(projectId);
+    if (projectId) {
+      recordProject(projectId);
+    }
     setParsedDrafts(current => current.map(draft => ({ ...draft, assigneeIds: [] })));
     setTeamMembers([]);
     setTeamMembersStatus('loading');

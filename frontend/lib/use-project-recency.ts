@@ -1,5 +1,7 @@
 'use client';
 
+import { useCallback } from 'react';
+
 /**
  * Per-user project recency ordering.
  *
@@ -10,29 +12,34 @@
  * recorded — automatic fallback selection is left unrecorded.
  */
 const STORAGE_KEY_PREFIX = 'otcr_project_recency';
+// Projects without recorded history sort after every remembered project while
+// keeping their incoming order relative to each other.
+const UNSET_RANK = Number.MAX_SAFE_INTEGER;
 
 function buildStorageKey(userEmail: string | undefined): string | null {
-  const scope = (userEmail ?? '').toLowerCase();
+  const scope = (userEmail ?? '').trim().toLowerCase();
   if (!scope) return null;
   return `${STORAGE_KEY_PREFIX}_${scope}`;
 }
 
-function safeReadLocales(key: string): string[] {
+function safeReadRecency(key: string): string[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(key);
-    const parsed = raw ? JSON.parse(raw) : [];
-    if (Array.isArray(parsed)) return parsed as string[];
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((id): id is string => typeof id === 'string' && id.length > 0);
   } catch {
-    // Corrupt or non-array data — reset on next write.
+    // Corrupt JSON, non-array payloads, or unavailable storage — treat as no history.
+    return [];
   }
-  return [];
 }
 
-function safeWriteLocales(key: string, ids: string[]): void {
+function safeWriteRecency(key: string, ids: string[]): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(key, JSON.stringify(ids));
+    window.localStorage.setItem(key, JSON.stringify(ids));
   } catch {
     // Quota or privacy-mode errors — silently ignore.
   }
@@ -41,25 +48,26 @@ function safeWriteLocales(key: string, ids: string[]): void {
 export function useProjectRecency(userEmail: string | undefined) {
   const key = buildStorageKey(userEmail);
 
-  const recordProject = (projectId: string) => {
+  const recordProject = useCallback((projectId: string) => {
     if (!key || !projectId) return;
-    const existing = safeReadLocales(key);
+    const existing = safeReadRecency(key);
     const filtered = existing.filter((id) => id !== projectId);
     filtered.unshift(projectId);
-    safeWriteLocales(key, filtered);
-  };
+    safeWriteRecency(key, filtered);
+  }, [key]);
 
-  const orderProjects = <T extends { id: string; name: string }>(projects: T[]): T[] => {
+  const orderProjects = useCallback(<T extends { id: string; name: string }>(projects: T[]): T[] => {
     if (!key || projects.length === 0) return projects;
-    const order = safeReadLocales(key);
+    const order = safeReadRecency(key);
     if (order.length === 0) return projects;
     const rank = new Map(order.map((id, index) => [id, index]));
-    return [...projects].sort((a, b) => {
-      const aRank = rank.has(a.id) ? rank.get(a.id)! : order.length;
-      const bRank = rank.has(b.id) ? rank.get(b.id)! : order.length;
-      return aRank - bRank;
-    });
-  };
+    // Sort a copy so cached API data is never mutated. Projects with no recorded
+    // history keep their incoming order (stable sort), and remembered IDs are
+    // only honoured while the project is still available to the user.
+    return [...projects].sort((a, b) =>
+      (rank.get(a.id) ?? UNSET_RANK) - (rank.get(b.id) ?? UNSET_RANK),
+    );
+  }, [key]);
 
   return { recordProject, orderProjects };
 }

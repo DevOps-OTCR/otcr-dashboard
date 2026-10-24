@@ -265,6 +265,9 @@ export default function SlidesPage() {
       );
 
   const handleProjectChange = async (projectId: string) => {
+    if (projectId) {
+      recordProject(projectId);
+    }
     selectedProjectRef.current = projectId;
     setSelectedProjectId(projectId);
     if (!projectId) {

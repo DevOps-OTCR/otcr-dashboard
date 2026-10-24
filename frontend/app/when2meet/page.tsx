@@ -60,6 +60,7 @@ export default function When2MeetPage() {
   const router = useRouter();
   const { isLoggedIn, getToken } = session;
   const email = session.user?.email;
+  const { recordProject, orderProjects } = useProjectRecency(email);
   const { snapshot, saveSnapshot } = useNavigationSnapshot<{
     role: AppRole; projects: ProjectOption[]; projectId: string; polls: When2MeetPollSummary[];
     selectedPollId: string | null; pollDetail: When2MeetPollDetail | null;
@@ -243,6 +244,9 @@ export default function When2MeetPage() {
   }, [loading, pollsReady, pollsLoading, detailLoading, error, role, projects, projectId, polls, selectedPollId, pollDetail, saveSnapshot]);
 
   const handleProjectChange = (nextId: string) => {
+    if (nextId) {
+      recordProject(nextId);
+    }
     setPollsReady(false);
     setPolls([]);
     setProjectId(nextId);

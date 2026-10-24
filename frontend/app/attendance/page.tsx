@@ -229,6 +229,7 @@ export default function AttendancePage() {
   const router = useRouter();
   const { isLoggedIn, getToken } = session;
   const email = session.user?.email;
+  const { recordProject, orderProjects } = useProjectRecency(email);
   const { snapshot, saveSnapshot } = useNavigationSnapshot<{
     role: AppRole; events: AttendanceEvent[]; projects: ProjectOption[];
   }>('attendance', email);
@@ -1136,7 +1137,11 @@ export default function AttendancePage() {
                 <span className="font-medium">Team</span>
                 <select
                   value={form.projectId}
-                  onChange={(event) => handleFormChange('projectId', event.target.value)}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    handleFormChange('projectId', next);
+                    if (next) recordProject(next);
+                  }}
                   className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2"
                   required
                 >
