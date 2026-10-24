@@ -13,7 +13,6 @@ import {
 } from 'lucide-react';
 import { AppNavbar } from '@/components/AppNavbar';
 import { useAuth } from '@/components/AuthContext';
-import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { PageLoading } from '@/components/PageLoading';
 import { RoleDashboardRedirect } from '@/components/RoleDashboardRedirect';
 import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
@@ -499,7 +498,7 @@ export default function AttendancePage() {
   );
 
   if (session.loading || !session.isLoggedIn) {
-    return <FullScreenLoader />;
+    return <PageLoading />;
   }
   if (roleLookupFailed) return <RoleDashboardRedirect onRetry={() => setRoleLookupFailed(false)} />;
 
@@ -687,7 +686,8 @@ export default function AttendancePage() {
 
       const response = await attendanceAPI.checkIn(attendanceEvent.id, {
         method: 'GEOFENCE',
-        geofenceVerified: true,
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
       });
       const attendance = response.data?.attendance;
       setEvents((current) =>
@@ -822,7 +822,10 @@ export default function AttendancePage() {
               <Badge variant={attendanceEvent.locationType === 'ONLINE' ? 'info' : 'success'}>
                 {attendanceEvent.locationType === 'ONLINE' ? 'Online' : 'In person'}
               </Badge>
-              <Badge variant={attendanceEvent.audienceScope === 'GLOBAL' ? 'warning' : 'default'}>
+              <Badge
+                variant={attendanceEvent.audienceScope === 'GLOBAL' ? 'warning' : 'default'}
+                className="max-w-full whitespace-normal [overflow-wrap:anywhere]"
+              >
                 {attendanceEvent.audienceScope === 'GLOBAL' ? 'Everyone' : attendanceEvent.projectName || 'Team'}
               </Badge>
               <Badge variant="purple">
@@ -857,7 +860,7 @@ export default function AttendancePage() {
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <p className="text-sm font-medium">Created by {attendanceEvent.createdByName}</p>
               {attendanceEvent.attendance?.present ? (
-                <Badge variant="success">
+                <Badge variant="success" className="max-w-full whitespace-normal">
                   Checked in {attendanceEvent.attendance.checkedInAt ? `at ${new Date(attendanceEvent.attendance.checkedInAt).toLocaleTimeString()}` : ''}
                 </Badge>
               ) : (

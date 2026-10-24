@@ -18,19 +18,29 @@ const events = [{
   attendanceCount: 0, attendance: null,
 }];
 exports.responseFor = (pathname, role) => {
+  if (pathname === '/alumni') return {
+    generatedAt: '2026-10-12T12:00:00Z', sourceFile: 'alumni.xlsx', sheet: 'Alumni', headerRow: ['Name'],
+    rows: Array.from({ length: 130 }, (_, index) => ({ id: index + 1, fields: {
+      name: `Alumni ${String(index + 1).padStart(3, '0')}`, graduationyear: '2020',
+      currentemployer: index < 120 ? 'Example Company' : 'Other Company', currentjobtitle: 'Engineer',
+    } })),
+  };
   if (pathname === '/auth/role') return { role };
   if (pathname === '/projects') return { projects };
   const sprintMatch = pathname.match(/^\/projects\/(.+)\/sprints$/);
   if (sprintMatch) return sprints(sprintMatch[1]);
   if (pathname.startsWith('/projects/')) return { pm: { id: 'u-1', firstName: 'Test', email: 'pm@example.test' }, members: [] };
   if (pathname === '/attendance/events') return { events };
+  if (pathname === '/deliverables') return [{ id: 'note-1', title: 'Client kickoff notes', type: 'REPORT',
+    description: '[[CLIENT_NOTE_LINK:https://example.test/notes]]', createdAt: '2026-10-12T12:00:00Z',
+    project: { id: 'team-1', name: 'Team One' } }];
   const poll = { id: 'poll-1', projectId: 'team-1', title: 'Planning poll', createdAt: '2026-10-10' };
   if (pathname === '/when2meet/polls') return { polls: [poll] };
   if (pathname === '/when2meet/polls/poll-1') return { poll,
     grid: { numCols: 1, numRows: 2, totalSlots: 2, slotStartMinute: 540, slotEndMinute: 570,
       gridFirstDate: '2026-10-12', gridLastDate: '2026-10-12', columnLabels: ['Monday'], rowStartLabels: ['9:00', '9:15'] },
     teamSize: 1, members: [{ id: 'u-1', email: 'pm@example.test', displayName: 'PM' }],
-    slots: [{ slotIndex: 0, names: ['PM'] }], mySlots: [0] };
+    slots: [{ slotIndex: 0, names: ['PM'], userIds: ['u-1'] }], mySlots: [0] };
 
   return [];
 };

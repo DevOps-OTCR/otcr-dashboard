@@ -1,7 +1,7 @@
 'use client';
 
-import { OverviewDeliverables } from '@/components/OverviewDeliverables';
+import { LegacyOverviewRedirect } from '@/components/LegacyOverviewRedirect';
 
 export default function PMDashboard() {
-  return <OverviewDeliverables role="PM" path="/pm" />;
+  return <LegacyOverviewRedirect />;
 }

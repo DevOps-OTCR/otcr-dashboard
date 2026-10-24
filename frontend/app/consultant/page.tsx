@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/utils';
 import { projectsAPI, setAuthToken, slideSubmissionsAPI } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
-import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
 import { PageLoading } from '@/components/PageLoading';
 import { AppNavbar } from '@/components/AppNavbar';
@@ -246,7 +245,7 @@ export default function ConsultantDashboard() {
   );
 
   if (session.loading || !session.isLoggedIn) {
-    return <FullScreenLoader />;
+    return <PageLoading />;
   }
 
   return (
@@ -256,18 +255,18 @@ export default function ConsultantDashboard() {
       <main>
         <div>
           <Card className="shadow-lg h-full">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Assignments</CardTitle>
-                  <CardDescription>
-                    Tasks assigned to you, including slide and whitepaper submissions for the selected week.
-                  </CardDescription>
-                </div>
+            <CardHeader
+              className="items-start"
+              action={
                 <Badge variant="info" size="sm">
                   {pendingActions} open
                 </Badge>
-              </div>
+              }
+            >
+              <CardTitle>Assignments</CardTitle>
+              <CardDescription>
+                Tasks assigned to you, including slide and whitepaper submissions for the selected week.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 max-h-[560px] overflow-y-auto">
               <div className="flex flex-wrap gap-2">
@@ -325,7 +324,7 @@ export default function ConsultantDashboard() {
                           : 'border-[var(--border)] bg-[var(--secondary)]/80',
                       )}
                     >
-                      <div className="flex-1">
+                      <div className="min-w-0 flex-1 break-words">
                         <h5
                           className={cn(
                             'font-semibold text-[var(--foreground)]',
@@ -337,7 +336,7 @@ export default function ConsultantDashboard() {
                         <p className="text-sm text-[var(--foreground)]/70 mt-1">
                           {item.projectName} • {item.weekLabel}
                         </p>
-                        <div className="flex items-center gap-2 mt-2">
+                        <div className="flex flex-wrap items-center gap-2 mt-2">
                           {consultantStatusMeta && (
                             <Badge variant={consultantStatusMeta.variant} size="sm">
                               {consultantStatusMeta.label}

@@ -57,7 +57,7 @@ describe('ProjectsService.listSprints submissions (#30)', () => {
   function buildService(queryRawImpl: (sql: unknown) => Promise<unknown[]>) {
     const prisma = { $queryRaw: jest.fn(queryRawImpl) } as unknown as PrismaService;
     const notificationsService = {} as NotificationsService;
-    return new ProjectsService(prisma, notificationsService);
+    return new ProjectsService(prisma, notificationsService, {} as ConstructorParameters<typeof ProjectsService>[2]);
   }
 
   // Calls happen in order: sprints, deliverables, assignments, subtasks, submissions.

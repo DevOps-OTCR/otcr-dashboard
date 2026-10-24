@@ -4,6 +4,7 @@ import { Worker, Job } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { SlackService } from '../integrations/slack.service';
 import { createRedisConnection } from '../common/redis.config';
+import { Prisma } from '@prisma/client';
 import { NotificationJob } from './notifications.service';
 
 // Bounded Slack retry for scheduled reminders (matches the queue's attempts).
@@ -20,7 +21,11 @@ export class NotificationsProcessor implements OnModuleInit {
     private configService: ConfigService,
   ) {}
 
-  private getDisplayName(firstName?: string | null, lastName?: string | null, email?: string | null): string {
+  private getDisplayName(
+    firstName?: string | null,
+    lastName?: string | null,
+    email?: string | null,
+  ): string {
     const fullName = `${firstName || ''} ${lastName || ''}`.trim();
     return fullName || 'Team member';
   }
@@ -29,7 +34,9 @@ export class NotificationsProcessor implements OnModuleInit {
     const connection = createRedisConnection(this.configService);
 
     if (!connection) {
-      this.logger.warn('Redis not available, notification worker will not start');
+      this.logger.warn(
+        'Redis not available, notification worker will not start',
+      );
       return;
     }
 
@@ -62,7 +69,9 @@ export class NotificationsProcessor implements OnModuleInit {
   private async processNotification(job: Job<NotificationJob>): Promise<void> {
     const { userId, type, channel, data, scheduledReminderId } = job.data;
 
-    this.logger.log(`Processing notification for user ${userId}, type: ${type}`);
+    this.logger.log(
+      `Processing notification for user ${userId}, type: ${type}`,
+    );
 
     // Get user details
     const user = await this.prisma.user.findUnique({
@@ -77,14 +86,20 @@ export class NotificationsProcessor implements OnModuleInit {
     // and extensions don't produce stale reminders. If the reminder is no longer
     // valid (cancelled, already sent, or deliverable finalized), skip sending.
     if (scheduledReminderId) {
-      const stillValid = await this.reminderStillValid(scheduledReminderId);
+      const stillValid = await this.reminderStillValid(job);
       if (!stillValid) {
-        this.logger.log(`Skipping reminder ${scheduledReminderId}: no longer valid`);
+        this.logger.log(
+          `Skipping reminder ${scheduledReminderId}: no longer valid`,
+        );
         return;
       }
     }
 
-    const userName = this.getDisplayName(user.firstName, user.lastName, user.email);
+    const userName = this.getDisplayName(
+      user.firstName,
+      user.lastName,
+      user.email,
+    );
 
     let slackSuccess = true;
     let slackError: string | undefined;
@@ -92,10 +107,15 @@ export class NotificationsProcessor implements OnModuleInit {
     // Send based on channel preference
     if (channel === 'SLACK' || channel === 'BOTH' || channel === 'EMAIL') {
       try {
-        slackSuccess = await this.sendSlackNotification(type, user.id, userName, data);
-      } catch (error: any) {
+        slackSuccess = await this.sendSlackNotification(
+          type,
+          user.id,
+          userName,
+          data,
+        );
+      } catch (error: unknown) {
         slackSuccess = false;
-        slackError = error?.message ?? String(error);
+        slackError = error instanceof Error ? error.message : String(error);
       }
     }
 
@@ -105,18 +125,25 @@ export class NotificationsProcessor implements OnModuleInit {
         await this.prisma.notification.create({
           data: {
             userId,
-            type: type as any,
+            type,
             channel,
             title: this.buildNotificationTitle(type, data),
             message: this.buildNotificationMessage(type, data),
             status: 'SENT',
             sentAt: new Date(),
-            metadata: { ...(data as any), scheduledReminderId },
+            metadata: {
+              ...(JSON.parse(JSON.stringify(data)) as Prisma.InputJsonObject),
+              scheduledReminderId,
+            },
           },
         });
         await this.prisma.scheduledReminder.updateMany({
-          where: { id: scheduledReminderId, status: 'PENDING' },
-          data: { status: 'SENT', sentAt: new Date(), attempts: { increment: 1 } },
+          where: { id: scheduledReminderId, jobId: job.id, status: 'PENDING' },
+          data: {
+            status: 'SENT',
+            sentAt: new Date(),
+            attempts: { increment: 1 },
+          },
         });
         return;
       }
@@ -125,12 +152,16 @@ export class NotificationsProcessor implements OnModuleInit {
       // attempt limit; do not create the in-app record until we stop retrying
       // (avoids duplicates on each retry).
       await this.prisma.scheduledReminder.updateMany({
-        where: { id: scheduledReminderId, status: 'PENDING' },
-        data: { attempts: { increment: 1 }, lastError: slackError ?? 'Slack delivery failed' },
+        where: { id: scheduledReminderId, jobId: job.id, status: 'PENDING' },
+        data: {
+          attempts: { increment: 1 },
+          lastError: slackError ?? 'Slack delivery failed',
+        },
       });
 
-      const attemptsMade = job.attemptsMade ?? 1;
-      if (attemptsMade < REMINDER_MAX_ATTEMPTS) {
+      const attemptsUsed = (job.attemptsMade ?? 0) + 1;
+      const maxAttempts = job.opts.attempts ?? REMINDER_MAX_ATTEMPTS;
+      if (attemptsUsed < maxAttempts) {
         // Let BullMQ re-run this job with its exponential backoff.
         throw new Error(slackError ?? 'Slack delivery failed');
       }
@@ -140,22 +171,25 @@ export class NotificationsProcessor implements OnModuleInit {
       await this.prisma.notification.create({
         data: {
           userId,
-          type: type as any,
+          type,
           channel,
           title: this.buildNotificationTitle(type, data),
           message: this.buildNotificationMessage(type, data),
           status: 'FAILED',
           sentAt: new Date(),
           metadata: {
-            ...(data as any),
+            ...(JSON.parse(JSON.stringify(data)) as Prisma.InputJsonObject),
             slackError: slackError ?? 'Slack delivery failed',
             scheduledReminderId,
           },
         },
       });
       await this.prisma.scheduledReminder.updateMany({
-        where: { id: scheduledReminderId, status: 'PENDING' },
-        data: { status: 'FAILED', lastError: slackError ?? 'Slack delivery failed' },
+        where: { id: scheduledReminderId, jobId: job.id, status: 'PENDING' },
+        data: {
+          status: 'FAILED',
+          lastError: slackError ?? 'Slack delivery failed',
+        },
       });
     } else {
       // Non-reminder notifications were pre-created as PENDING by
@@ -170,29 +204,65 @@ export class NotificationsProcessor implements OnModuleInit {
     }
   }
 
-  /**
-   * A scheduled reminder is still valid if its row is PENDING and the underlying
-   * deliverable has not been finalized (submitted/approved). This prevents stale
-   * reminders after extensions or assignment changes.
-   */
-  private async reminderStillValid(scheduledReminderId: string): Promise<boolean> {
+  /** Recheck current state before every send, including jobs already claimed by a worker. */
+  private async reminderStillValid(
+    job: Job<NotificationJob>,
+  ): Promise<boolean> {
     const reminder = await this.prisma.scheduledReminder.findUnique({
-      where: { id: scheduledReminderId },
-      select: {
-        status: true,
-        deliverable: { select: { status: true } },
+      where: { id: job.data.scheduledReminderId },
+      include: {
+        user: true,
+        deliverable: {
+          include: {
+            assignments: true,
+            reminderOverride: true,
+            project: {
+              include: {
+                reminderConfig: true,
+                members: { where: { leftAt: null } },
+              },
+            },
+          },
+        },
       },
     });
-    if (!reminder || reminder.status !== 'PENDING') {
+    if (!reminder || reminder.status !== 'PENDING' || reminder.jobId !== job.id)
       return false;
-    }
-    if (['SUBMITTED', 'APPROVED'].includes(reminder.deliverable.status)) {
-      return false;
-    }
-    return true;
+    const d = reminder.deliverable;
+    const override = d.reminderOverride;
+    const enabled =
+      override?.enabled ?? d.project.reminderConfig?.enabled ?? false;
+    const offsets = override?.offsetMinutes.length
+      ? override.offsetMinutes
+      : (d.project.reminderConfig?.offsetsMinutes ?? [1440, 60]);
+    const recipients = override?.explicitRecipientUserIds.length
+      ? override.explicitRecipientUserIds
+      : d.assignments.map((a) => a.userId);
+    const valid =
+      enabled &&
+      !d.completed &&
+      !['SUBMITTED', 'APPROVED'].includes(d.status) &&
+      reminder.user.active &&
+      d.project.members.some((m) => m.userId === reminder.userId) &&
+      recipients.includes(reminder.userId) &&
+      offsets.includes(reminder.offsetMinutes) &&
+      new Date(job.data.data.deadline).getTime() === d.deadline.getTime() &&
+      reminder.fireAt.getTime() ===
+        d.deadline.getTime() - reminder.offsetMinutes * 60000 &&
+      job.data.data.timezone ===
+        (d.project.sprintTimezone || 'America/Chicago');
+    if (!valid)
+      await this.prisma.scheduledReminder.updateMany({
+        where: { id: reminder.id, jobId: job.id, status: 'PENDING' },
+        data: { status: 'CANCELLED', cancelledAt: new Date() },
+      });
+    return valid;
   }
 
-  private buildNotificationTitle(type: string, data: any): string {
+  private buildNotificationTitle(
+    type: string,
+    data: NotificationJob['data'],
+  ): string {
     switch (type) {
       case 'DEADLINE_1H':
         return 'Deadline in 1 hour';
@@ -205,23 +275,26 @@ export class NotificationsProcessor implements OnModuleInit {
     }
   }
 
-  private buildNotificationMessage(type: string, data: any): string {
+  private buildNotificationMessage(
+    type: string,
+    data: NotificationJob['data'],
+  ): string {
     const parts: string[] = [];
     if (data?.deliverableTitle) parts.push(`${data.deliverableTitle}`);
     if (data?.projectName) parts.push(`Project: ${data.projectName}`);
-    if (data?.deadline) parts.push(`Due: ${new Date(data.deadline).toISOString()}`);
+    if (data?.deadline)
+      parts.push(`Due: ${new Date(data.deadline).toISOString()}`);
     if (typeof data?.remainingMinutes === 'number') {
       parts.push(`Reminder ${data.remainingMinutes} minutes before deadline`);
     }
     return parts.join(' · ') || 'You have a new notification.';
   }
 
-
   private async sendSlackNotification(
     type: string,
     userId: string,
     userName: string,
-    data: any,
+    data: NotificationJob['data'],
   ): Promise<boolean> {
     try {
       switch (type) {
@@ -295,16 +368,22 @@ export class NotificationsProcessor implements OnModuleInit {
       }
     } catch (error) {
       this.logger.error(`Slack notification failed:`, error);
-      return false;
+      throw error;
     }
   }
 
-  private buildProjectUpdateSlackMessage(data: any): string {
-    const projectName = data?.projectName ? `Project: ${data.projectName}. ` : '';
+  private buildProjectUpdateSlackMessage(
+    data: NotificationJob['data'],
+  ): string {
+    const projectName = data?.projectName
+      ? `Project: ${data.projectName}. `
+      : '';
     const deliverableTitle = data?.deliverableTitle
       ? `Assignment: ${data.deliverableTitle}. `
       : '';
-    const feedback = data?.feedback ? String(data.feedback) : 'A project update is available.';
+    const feedback = data?.feedback
+      ? String(data.feedback)
+      : 'A project update is available.';
     return `${projectName}${deliverableTitle}${feedback}`.trim();
   }
 }

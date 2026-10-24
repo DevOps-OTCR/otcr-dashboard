@@ -143,9 +143,9 @@ export class ProjectsController {
 
   @Get(':id/reminders/config')
   @Roles('ADMIN', 'PM', 'LC')
-  async getReminderConfig(@Param('id') id: string, @GetUser() user: any) {
+  async getReminderConfig(@Param('id') id: string, @GetUser() user: { id: string; role: string }) {
     const project = await this.projectsService.findOne(id);
-    await this.ensureProjectAccess(project, user);
+    await this.ensureReminderAccess(project, user);
     return this.deadlineReminders.getConfig(id);
   }
 
@@ -153,22 +153,22 @@ export class ProjectsController {
   @Roles('ADMIN', 'PM', 'LC')
   async updateReminderConfig(
     @Param('id') id: string,
-    @GetUser() user: any,
+    @GetUser() user: { id: string; role: string },
     @Body() body: { enabled: boolean; offsetsMinutes: number[] },
   ) {
     const project = await this.projectsService.findOne(id);
-    await this.ensureProjectAccess(project, user);
+    await this.ensureReminderAccess(project, user);
     return this.deadlineReminders.updateConfig(id, {
-      enabled: Boolean(body.enabled),
+      enabled: body.enabled,
       offsetsMinutes: body.offsetsMinutes,
     });
   }
 
   @Get(':id/reminders/recipients')
   @Roles('ADMIN', 'PM', 'LC')
-  async getReminderRecipients(@Param('id') id: string, @GetUser() user: any) {
+  async getReminderRecipients(@Param('id') id: string, @GetUser() user: { id: string; role: string }) {
     const project = await this.projectsService.findOne(id);
-    await this.ensureProjectAccess(project, user);
+    await this.ensureReminderAccess(project, user);
     return this.deadlineReminders.getRecipientPreview(id);
   }
 
@@ -176,11 +176,11 @@ export class ProjectsController {
   @Roles('ADMIN', 'PM', 'LC')
   async getReminderStatus(
     @Param('id') id: string,
-    @GetUser() user: any,
+    @GetUser() user: { id: string; role: string },
     @Query('status') status?: string,
   ) {
     const project = await this.projectsService.findOne(id);
-    await this.ensureProjectAccess(project, user);
+    await this.ensureReminderAccess(project, user);
     return this.deadlineReminders.getProjectReminderStatus(
       id,
       status as ScheduledReminderStatus | undefined,
@@ -198,31 +198,32 @@ export class ProjectsController {
   @Roles('ADMIN', 'PM', 'LC')
   async getDeliverableReminderConfig(
     @Param('id') id: string,
-    @GetUser() user: any,
+    @GetUser() user: { id: string; role: string },
   ) {
     const deliverable = await this.projectsService.findDeliverable(id);
-    await this.ensureProjectAccess(deliverable.project, user);
-    return this.deadlineReminders.getDeliverableReminderConfig(id);
+    await this.ensureReminderAccess(deliverable.project, user);
+    return this.deadlineReminders.getDeliverableReminderSettings(id);
   }
 
   @Patch('deliverables/:id/reminders/config')
   @Roles('ADMIN', 'PM', 'LC')
   async updateDeliverableReminderConfig(
     @Param('id') id: string,
-    @GetUser() user: any,
+    @GetUser() user: { id: string; role: string },
     @Body() body: {
-      enabled?: boolean;
+      enabled?: boolean | null;
       offsetMinutes?: number[];
       explicitRecipientUserIds?: string[];
     },
   ) {
     const deliverable = await this.projectsService.findDeliverable(id);
-    await this.ensureProjectAccess(deliverable.project, user);
-    return this.deadlineReminders.updateDeliverableReminderConfig(id, {
+    await this.ensureReminderAccess(deliverable.project, user);
+    await this.deadlineReminders.updateDeliverableReminderConfig(id, {
       enabled: body.enabled,
       offsetMinutes: body.offsetMinutes,
       explicitRecipientUserIds: body.explicitRecipientUserIds,
     });
+    return this.deadlineReminders.getDeliverableReminderSettings(id);
   }
 
   @Get(':id/sprints')
@@ -519,6 +520,12 @@ export class ProjectsController {
     }
 
     return this.projectsService.removeMember(id, userId);
+  }
+
+  private async ensureReminderAccess(project: { id: string; pmId: string } | null, user: { id: string; role: string }) {
+    if (!project) throw new NotFoundException('Project not found');
+    if (user.role === 'ADMIN' || project.pmId === user.id) return;
+    if (!(await this.projectsService.isMember(project.id, user.id))) throw new ForbiddenException('You do not have access to this project');
   }
 
   private parsePositiveInt(value: string | undefined, fallback: number): number {

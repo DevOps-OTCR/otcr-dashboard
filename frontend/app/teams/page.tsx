@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users,
@@ -23,7 +23,6 @@ import { Modal } from '@/components/ui/Modal';
 import { cn } from '@/lib/utils';
 import { getEffectiveRole, getUserRole, type AppRole } from '@/lib/permissions';
 import { AppNavbar } from '@/components/AppNavbar';
-import { getLastDashboard } from '@/lib/dashboard-context';
 import { useRouter } from 'next/navigation';
 import { projectsAPI, authAPI, attendanceAPI, deliverablesAPI, remindersAPI, setAuthToken, type AttendanceEventCategory } from '@/lib/api';
 import {
@@ -33,10 +32,11 @@ import {
   type ReminderRecipientGroup,
 } from '@/lib/reminders-config';
 import { useAuth } from '@/components/AuthContext';
-import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
+import { PageLoading } from '@/components/PageLoading';
 import { parseDashPrefixedDeliverables } from '@/lib/deliverables-parser';
 import { buildSprintDeadlineInChicago } from '@/lib/sprint-deadlines';
 import { DeliveryReminderOverrides } from './DeliveryReminderOverrides';
+import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
 
 type ProjectMember = { user: { id: string; email: string; firstName?: string; lastName?: string; role?: string } };
 type ProjectFromApi = {
@@ -227,12 +227,15 @@ function TeamDeliverableCard({
 export default function TeamsPage() {
   const session = useAuth();
   const router = useRouter();
-  const [role, setRole] = useState<AppRole>('CONSULTANT');
-  const [hasMounted, setHasMounted] = useState(false);
-  const [projects, setProjects] = useState<ProjectFromApi[]>([]);
-  const [allowedEmails, setAllowedEmails] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  const { snapshot, saveSnapshot } = useNavigationSnapshot<{
+    role: AppRole; projects: ProjectFromApi[]; allowedEmails: string[]; selectedTeamId: string | null;
+    sprintsFor: string | null; teamSprints: SprintRecord[]; selectedSprintId: string; sprintConfigDraft: typeof DEFAULT_SPRINT_CONFIG;
+  }>('teams', session.user?.email);
+  const [role, setRole] = useState<AppRole>(() => snapshot?.role ?? getUserRole(session.user?.email));
+  const [projects, setProjects] = useState<ProjectFromApi[]>(snapshot?.projects ?? []);
+  const [allowedEmails, setAllowedEmails] = useState<string[]>(snapshot?.allowedEmails ?? []);
+  const [loading, setLoading] = useState(!snapshot);
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(snapshot?.selectedTeamId ?? null);
   const [createTeamModalOpen, setCreateTeamModalOpen] = useState(false);
   const [createTeamForm, setCreateTeamForm] = useState({
     name: '',
@@ -243,12 +246,14 @@ export default function TeamsPage() {
   const [addMemberSearch, setAddMemberSearch] = useState('');
   const [teamCalendarIdDraft, setTeamCalendarIdDraft] = useState('');
   const [teamCalendarIdSaving, setTeamCalendarIdSaving] = useState(false);
-  const [sprintConfigDraft, setSprintConfigDraft] = useState(DEFAULT_SPRINT_CONFIG);
+  const [sprintConfigDraft, setSprintConfigDraft] = useState(snapshot?.sprintConfigDraft ?? DEFAULT_SPRINT_CONFIG);
   const [sprintDataLoading, setSprintDataLoading] = useState(false);
   const [sprintConfigSaving, setSprintConfigSaving] = useState(false);
   const [sprintGenerationLoading, setSprintGenerationLoading] = useState(false);
-  const [teamSprints, setTeamSprints] = useState<SprintRecord[]>([]);
-  const [selectedSprintId, setSelectedSprintId] = useState<string>('');
+  const [teamSprints, setTeamSprints] = useState<SprintRecord[]>(snapshot?.teamSprints ?? []);
+  const [selectedSprintId, setSelectedSprintId] = useState<string>(snapshot?.selectedSprintId ?? '');
+  // The team whose sprint data is shown; a failed refresh for that team keeps it visible.
+  const sprintsFor = useRef(snapshot?.sprintsFor ?? null);
   const [draftDeliverablesInput, setDraftDeliverablesInput] = useState('');
   const [draftDeliverablesSaving, setDraftDeliverablesSaving] = useState(false);
   const [memberHistoryOpen, setMemberHistoryOpen] = useState(false);
@@ -266,6 +271,8 @@ export default function TeamsPage() {
   const [reminderRecipients, setReminderRecipients] = useState<ReminderRecipientGroup[]>([]);
   const [reminderLoading, setReminderLoading] = useState(false);
   const [reminderSaving, setReminderSaving] = useState(false);
+  const reminderScope = useRef<string | null>(null);
+  const [loadedReminderProject, setLoadedReminderProject] = useState<string | null>(null);
 
   const fetchProjects = useCallback(async () => {
     try {
@@ -278,15 +285,11 @@ export default function TeamsPage() {
       const res = await projectsAPI.getAll({ includeMembers: true, limit: 100 });
       setProjects(res.data?.projects ?? []);
     } catch {
-      setProjects([]);
+      // Keep previously loaded teams visible when a refresh fails.
     } finally {
       setLoading(false);
     }
   }, [session]);
-
-  useEffect(() => {
-    setHasMounted(true);
-  }, []);
 
   useEffect(() => {
     if (!session.isLoggedIn || !session.user?.email) return;
@@ -319,7 +322,7 @@ export default function TeamsPage() {
           : [];
         setAllowedEmails(emails);
       } catch {
-        setAllowedEmails([]);
+        // Keep the previously loaded directory when a refresh fails.
       }
     };
 
@@ -348,7 +351,7 @@ export default function TeamsPage() {
     }
   }, [session, router]);
 
-  const resolvedRole = hasMounted && session.isLoggedIn ? role : role;
+  const resolvedRole = role;
   const canManageTeams =
     resolvedRole === 'PM' ||
     resolvedRole === 'LC' ||
@@ -381,7 +384,8 @@ export default function TeamsPage() {
   }, [session.loading, session.isLoggedIn, selectedTeam?.id, selectedTeam?.googleCalendarId]);
 
   const loadSelectedTeamSprintData = useCallback(async (projectId: string) => {
-    setSprintDataLoading(true);
+    // Refresh restored sprint data in place; show the loader only for another team.
+    if (sprintsFor.current !== projectId) setSprintDataLoading(true);
     try {
       const token = await session.getToken();
       if (token) {
@@ -405,6 +409,7 @@ export default function TeamsPage() {
           incomingConfig?.autoGenerateSprints ?? DEFAULT_SPRINT_CONFIG.autoGenerateSprints,
       });
       const nextSprints = (sprintsRes.data ?? []) as SprintRecord[];
+      sprintsFor.current = projectId;
       setTeamSprints(nextSprints);
       setSelectedSprintId((current) =>
         current && nextSprints.some((item) => item.id === current)
@@ -412,9 +417,12 @@ export default function TeamsPage() {
           : nextSprints[0]?.id ?? '',
       );
     } catch (err) {
-      setSprintConfigDraft(DEFAULT_SPRINT_CONFIG);
-      setTeamSprints([]);
-      setSelectedSprintId('');
+      if (sprintsFor.current !== projectId) {
+        sprintsFor.current = null;
+        setSprintConfigDraft(DEFAULT_SPRINT_CONFIG);
+        setTeamSprints([]);
+        setSelectedSprintId('');
+      }
       setActionFeedback({
         message: parseApiError(err, 'Failed to load sprint settings'),
         tone: 'warning',
@@ -427,6 +435,7 @@ export default function TeamsPage() {
   useEffect(() => {
     if (session.loading || !session.isLoggedIn) return;
     if (!selectedTeamId || !canManageTeams) {
+      sprintsFor.current = null;
       setSprintConfigDraft(DEFAULT_SPRINT_CONFIG);
       setTeamSprints([]);
       setSelectedSprintId('');
@@ -436,50 +445,44 @@ export default function TeamsPage() {
     void loadSelectedTeamSprintData(selectedTeamId);
   }, [session.loading, session.isLoggedIn, selectedTeamId, canManageTeams, loadSelectedTeamSprintData]);
 
-  const loadReminderData = useCallback(
-    async (projectId: string) => {
-      setReminderLoading(true);
-      try {
-        const token = await session.getToken();
-        if (token) {
-          setAuthToken(token);
-        }
-        const [presetsRes, configRes, recipientsRes] = await Promise.all([
-          remindersAPI.getPresets(projectId),
-          remindersAPI.getConfig(projectId),
-          remindersAPI.getRecipients(projectId),
-        ]);
-        const presets = (presetsRes.data?.presets ?? []) as ReminderOffsetPreset[];
-        const config = configRes.data as ReminderConfig;
-        setReminderPresets(presets);
-        setReminderConfig(config);
-        setReminderDraft({
-          enabled: Boolean(config?.enabled),
-          offsetsMinutes: Array.isArray(config?.offsetsMinutes) ? config.offsetsMinutes : [],
-        });
-        setReminderRecipients((recipientsRes.data ?? []) as ReminderRecipientGroup[]);
-      } catch (err) {
-        setActionFeedback({
-          message: parseApiError(err, 'Failed to load reminder settings'),
-          tone: 'warning',
-        });
-      } finally {
-        setReminderLoading(false);
-      }
-    },
-    [session],
-  );
+  const fetchReminderData = useCallback(async (projectId: string) => {
+    const token = await session.getToken();
+    if (token) setAuthToken(token);
+    return Promise.all([
+      remindersAPI.getPresets(projectId),
+      remindersAPI.getConfig(projectId),
+      remindersAPI.getRecipients(projectId),
+    ]);
+  }, [session]);
+
+  const applyReminderData = useCallback((projectId: string, [presetsRes, configRes, recipientsRes]: Awaited<ReturnType<typeof fetchReminderData>>) => {
+    if (reminderScope.current !== projectId) return;
+    const config = configRes.data as ReminderConfig;
+    setLoadedReminderProject(projectId);
+    setReminderPresets((presetsRes.data?.presets ?? []) as ReminderOffsetPreset[]);
+    setReminderConfig(config);
+    setReminderDraft({ enabled: config.enabled, offsetsMinutes: config.offsetsMinutes });
+    setReminderRecipients((recipientsRes.data ?? []) as ReminderRecipientGroup[]);
+  }, []);
+
+  const loadReminderData = useCallback(async (projectId: string) => {
+    setReminderLoading(true);
+    try { applyReminderData(projectId, await fetchReminderData(projectId)); }
+    catch (error) { setActionFeedback({ message: parseApiError(error, 'Failed to load reminder settings'), tone: 'warning' }); }
+    finally { setReminderLoading(false); }
+  }, [fetchReminderData, applyReminderData]);
 
   useEffect(() => {
-    if (session.loading || !session.isLoggedIn) return;
-    if (!selectedTeamId || !canConfigureRemindersForTeam) {
-      setReminderConfig(null);
-      setReminderPresets([]);
-      setReminderRecipients([]);
-      return;
-    }
-    void loadReminderData(selectedTeamId);
-  }, [session.loading, session.isLoggedIn, selectedTeamId, canConfigureRemindersForTeam, loadReminderData]);
+    reminderScope.current = selectedTeamId;
+    if (session.loading || !session.isLoggedIn || !selectedTeamId || !canConfigureRemindersForTeam) return;
+    let current = true;
+    fetchReminderData(selectedTeamId).then(data => {
+      if (current) applyReminderData(selectedTeamId, data);
+    }).catch(error => {
+      if (current) setActionFeedback({ message: parseApiError(error, 'Failed to load reminder settings'), tone: 'warning' });
+    });
+    return () => { current = false; };
+  }, [session.loading, session.isLoggedIn, selectedTeamId, canConfigureRemindersForTeam, fetchReminderData, applyReminderData]);
 
   const handleToggleReminderOffset = (minutes: number) => {
     setReminderDraft((prev) => {
@@ -494,7 +497,7 @@ export default function TeamsPage() {
   };
 
   const handleSaveReminderConfig = async () => {
-    if (!selectedTeam) return;
+    if (!selectedTeam || loadedReminderProject !== selectedTeam.id) return;
 
     // Client-side validation: enabling requires at least one timing, and the
     // selection must survive preset validation (mirrors the backend rules).
@@ -513,6 +516,7 @@ export default function TeamsPage() {
         enabled: reminderDraft.enabled,
         offsetsMinutes: offsets,
       });
+      if (reminderScope.current !== selectedTeam.id) return;
       const saved = res.data as ReminderConfig;
       setReminderConfig(saved);
       setReminderDraft({
@@ -783,8 +787,15 @@ export default function TeamsPage() {
     }
   };
 
-  if (session.loading || !session.isLoggedIn || !hasMounted) {
-    return <FullScreenLoader />;
+  useEffect(() => {
+    if (!loading) {
+      saveSnapshot({ role, projects, allowedEmails, selectedTeamId, sprintsFor: sprintsFor.current,
+        teamSprints, selectedSprintId, sprintConfigDraft });
+    }
+  }, [loading, role, projects, allowedEmails, selectedTeamId, teamSprints, selectedSprintId, sprintConfigDraft, saveSnapshot]);
+
+  if (session.loading || !session.isLoggedIn) {
+    return <PageLoading />;
   }
 
   const formatDateRange = (start?: string, end?: string) => {
@@ -1071,7 +1082,7 @@ export default function TeamsPage() {
                               </p>
                             </div>
 
-                            {reminderLoading ? (
+                            {reminderLoading || loadedReminderProject !== selectedTeamId ? (
                               <div className="text-sm text-[var(--foreground)]/60">Loading reminder settings...</div>
                             ) : (
                               <>
@@ -1115,7 +1126,6 @@ export default function TeamsPage() {
                                     </p>
                                   )}
                                 </div>
-                                {/* RECIPIENTS_AND_SAVE */}
                                 <div className="space-y-2">
                                   <span className="text-sm font-medium text-[var(--foreground)]">
                                     Who will be reminded
@@ -1196,39 +1206,16 @@ export default function TeamsPage() {
                         )}
                         </>
                       )}
-                      <DeliveryReminderOverrides
-                        projectId={selectedTeamId ?? ''}
-                        projectTimezone={sprintConfigDraft.sprintTimezone}
-                        projectDefaults={{
-                          enabled: Boolean(reminderConfig?.enabled),
-                          offsetMinutes: Array.isArray(reminderConfig?.offsetsMinutes)
-                            ? reminderConfig.offsetsMinutes
-                            : [],
-                          timezone: reminderConfig?.timezone ?? 'America/Chicago',
-                        }}
-                        deliverables={teamSprints.flatMap(
-                          (s) => s.deliverables ?? [],
-                        ).map((d) => ({
-                          id: d.id,
-                          title: d.title,
-                          deadline: d.deadline,
-                          status: d.status ?? 'PENDING',
-                          projectId: selectedTeamId ?? '',
-                          reminderOverride: null,
-                        }))}
-                        members={(selectedTeam?.members ?? []).map((m) => ({
-                          id: m.user.id,
-                          email: m.user.email,
-                          firstName: m.user.firstName,
-                          lastName: m.user.lastName,
-                          active: true,
-                          slackConnected: false,
-                        }))}
-                        canConfigure={canConfigureRemindersForTeam}
-                        onConfigChange={() => {
-                          void loadReminderData(selectedTeamId ?? '');
-                        }}
-                      />
+                      {canConfigureRemindersForTeam && loadedReminderProject === selectedTeamId && reminderConfig && (
+                        <DeliveryReminderOverrides
+                          key={selectedTeamId}
+                          projectId={selectedTeamId ?? ''}
+                          projectTimezone={reminderConfig.timezone}
+                          projectDefaults={{enabled: reminderConfig.enabled, offsetMinutes: reminderConfig.offsetsMinutes, timezone: reminderConfig.timezone}}
+                          deliverables={teamSprints.flatMap(s => s.deliverables ?? [])}
+                          onConfigChange={() => { void loadReminderData(selectedTeamId ?? ''); }}
+                        />
+                      )}
                       <div className="mb-4 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] space-y-4">
                         <div className="flex items-start justify-between gap-4">
                           <div>

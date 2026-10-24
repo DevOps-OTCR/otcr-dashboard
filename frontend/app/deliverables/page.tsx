@@ -1,15 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CheckSquare, Square, Users, Link as LinkIcon } from 'lucide-react';
+import { CheckSquare, ChevronDown, Square, Users, Link as LinkIcon } from 'lucide-react';
+import { AssigneeChecklist, projectAssignees } from '@/components/AssigneeChecklist';
 import { AppNavbar } from '@/components/AppNavbar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/components/AuthContext';
 import { RoleDashboardRedirect } from '@/components/RoleDashboardRedirect';
-import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { PageLoading } from '@/components/PageLoading';
 import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
 import { deliverablesAPI, projectsAPI, setAuthToken } from '@/lib/api';
@@ -163,7 +163,7 @@ export default function DeliverablesPage() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [busyDeliverableId, setBusyDeliverableId] = useState<string | null>(null);
   const [submitLinks, setSubmitLinks] = useState<Record<string, string>>({});
-  const [assignmentTargets, setAssignmentTargets] = useState<Record<string, string>>({});
+  const [assignmentTargets, setAssignmentTargets] = useState<Record<string, string[]>>({});
   const [deadlineInputs, setDeadlineInputs] = useState<Record<string, string>>({});
   const [subtaskEdits, setSubtaskEdits] = useState<
     Record<string, { title: string; dueDate: string; assigneeId: string; completed: boolean }>
@@ -173,6 +173,11 @@ export default function DeliverablesPage() {
   >({});
   const [busySubtaskId, setBusySubtaskId] = useState<string | null>(null);
   const [creatingSubtaskFor, setCreatingSubtaskFor] = useState<string | null>(null);
+  const [expandedSubtasks, setExpandedSubtasks] = useState<Record<string, boolean>>({});
+
+  // A failed refresh keeps content that belongs to the selected project.
+  const shownSprintsFor = useRef(snapshot?.selectedProjectId);
+  const shownMembersFor = useRef(snapshot?.selectedProjectId);
 
   const canManage = role === 'PM' || role === 'LC' || role === 'ADMIN';
   const currentEmail = (session.user?.email ?? '').toLowerCase();
@@ -182,13 +187,16 @@ export default function DeliverablesPage() {
       setLoadError(null);
       const res = await projectsAPI.getSprints(projectId);
       const sprintList = (res.data ?? []) as SprintItem[];
+      shownSprintsFor.current = projectId;
       setSprints(sprintList);
       setSelectedSprintId((current) =>
         current && sprintList.some((item) => item.id === current) ? current : sprintList[0]?.id ?? '',
       );
     } catch (error: any) {
-      setSprints([]);
-      setSelectedSprintId('');
+      if (shownSprintsFor.current !== projectId) {
+        setSprints([]);
+        setSelectedSprintId('');
+      }
       const message =
         error?.response?.data?.message ??
         error?.message ??
@@ -205,23 +213,14 @@ export default function DeliverablesPage() {
         members?: Array<{ user?: TeamMemberOption | null }>;
       };
 
-      const nextMembers = new Map<string, TeamMemberOption>();
-
-      if (project.pm?.id) {
-        nextMembers.set(project.pm.id, project.pm);
-      }
-
-      (project.members ?? []).forEach((member) => {
-        if (member.user?.id) {
-          nextMembers.set(member.user.id, member.user);
-        }
-      });
-
-      setTeamMembers(Array.from(nextMembers.values()));
+      shownMembersFor.current = projectId;
+      setTeamMembers(projectAssignees(project));
       setAssignmentTargets({});
     } catch {
-      setTeamMembers([]);
-      setAssignmentTargets({});
+      if (shownMembersFor.current !== projectId) {
+        setTeamMembers([]);
+        setAssignmentTargets({});
+      }
     }
   }, []);
 
@@ -420,34 +419,22 @@ export default function DeliverablesPage() {
   };
 
   const handleManagerAssignment = async (deliverable: DeliverableItem) => {
-    const assigneeId = assignmentTargets[deliverable.id];
-
-    if (!selectedProjectId || !assigneeId) return;
-
+    const assigneeIds = assignmentTargets[deliverable.id];
+    if (!selectedProjectId || !assigneeIds) return;
     setBusyDeliverableId(deliverable.id);
+    setLoadError(null);
     try {
-      const assigneeAlreadyAssigned = Boolean(
-        deliverable.assignees?.some((assignee) => assignee.id === assigneeId),
-      );
-
-      await deliverablesAPI.updateAssignment(
-        deliverable.id,
-        !assigneeAlreadyAssigned,
-        assigneeId,
-      );
-      await loadSprints(selectedProjectId);
-      setAssignmentTargets((current) => ({
-        ...current,
-        [deliverable.id]: '',
-      }));
-
-      const target = teamMembers.find((member) => member.id === assigneeId);
-      const targetLabel = target ? formatPerson(target) : 'Team member';
-      setFeedback(
-        assigneeAlreadyAssigned
-          ? `${targetLabel} unassigned`
-          : `${targetLabel} assigned`,
-      );
+      const response = await deliverablesAPI.setAssignments(deliverable.id, assigneeIds);
+      setSprints(current => current.map(sprint => ({ ...sprint,
+        deliverables: sprint.deliverables?.map(item => item.id === deliverable.id
+          ? { ...item, assignees: response.data } : item),
+      })));
+      setAssignmentTargets(current => {
+        const next = { ...current };
+        delete next[deliverable.id];
+        return next;
+      });
+      setFeedback('Assignees saved');
     } catch (error: any) {
       const message =
         error?.response?.data?.message ??
@@ -615,7 +602,7 @@ export default function DeliverablesPage() {
   };
 
   if (session.loading || !session.isLoggedIn) {
-    return <FullScreenLoader />;
+    return <PageLoading />;
   }
 
   if (roleLookupFailed) return <RoleDashboardRedirect onRetry={() => setRoleLookupFailed(false)} />;
@@ -719,11 +706,13 @@ export default function DeliverablesPage() {
                       const nonSubmittingAssignees = (deliverable.assignees ?? []).filter(
                         (assignee) => !submittedUserIds.has(assignee.id),
                       );
+                      const subtasksExpanded = Boolean(expandedSubtasks[deliverable.id]);
+                      const subtasksPanelId = `deliverable-${deliverable.id}-subtasks`;
 
                       return (
                         <div
                           key={deliverable.id}
-                          className="rounded-xl border border-[var(--border)] bg-[var(--secondary)]/70 p-4"
+                          className="min-w-0 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/70 p-4"
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div>
@@ -749,6 +738,22 @@ export default function DeliverablesPage() {
                               <p className="text-xs font-medium text-[var(--foreground)]/70">Assigned</p>
                               <p className="text-sm text-[var(--foreground)]">{formatAssignees(deliverable.assignees)}</p>
                             </div>
+
+                            {canManage && (
+                              <div className="space-y-2">
+                                <AssigneeChecklist
+                                  options={Array.from(new Map([...(deliverable.assignees ?? []), ...teamMembers].map(person => [person.id, person])).values())}
+                                  selected={assignmentTargets[deliverable.id] ?? (deliverable.assignees ?? []).map(person => person.id)}
+                                  onChange={ids => setAssignmentTargets(current => ({ ...current, [deliverable.id]: ids }))}
+                                  disabled={busyDeliverableId === deliverable.id}
+                                />
+                                <Button size="sm" variant="outline"
+                                  disabled={busyDeliverableId === deliverable.id || !assignmentTargets[deliverable.id]}
+                                  onClick={() => void handleManagerAssignment(deliverable)}>
+                                  Save assignees
+                                </Button>
+                              </div>
+                            )}
 
                             <div className="flex flex-wrap items-center gap-2">
                               {canManage && (
@@ -778,42 +783,7 @@ export default function DeliverablesPage() {
                                   </Button>
                                 </>
                               )}
-                              {canManage && teamMembers.length > 0 && (
-                                <>
-                                  <select
-                                    value={assignmentTargets[deliverable.id] ?? ''}
-                                    onChange={(e) =>
-                                      setAssignmentTargets((current) => ({
-                                        ...current,
-                                        [deliverable.id]: e.target.value,
-                                      }))
-                                    }
-                                    className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
-                                  >
-                                    <option value="">Assign to team member</option>
-                                    {teamMembers.map((member) => (
-                                      <option key={member.id} value={member.id}>
-                                        {formatPerson(member)}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={
-                                      busyDeliverableId === deliverable.id ||
-                                      !(assignmentTargets[deliverable.id] ?? '')
-                                    }
-                                    onClick={() => void handleManagerAssignment(deliverable)}
-                                  >
-                                    {deliverable.assignees?.some(
-                                      (assignee) => assignee.id === assignmentTargets[deliverable.id],
-                                    )
-                                      ? 'Remove Person'
-                                      : 'Assign Person'}
-                                  </Button>
-                                </>
-                              )}
+
                               <Button
                                 size="sm"
                                 variant={assignedToCurrentUser ? 'outline' : 'primary'}
@@ -916,20 +886,39 @@ export default function DeliverablesPage() {
                             </div>
 
                             <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-3">
-                              <div className="flex items-center justify-between gap-3">
-                                <div>
-                                  <p className="text-sm font-medium text-[var(--foreground)]">Subtasks</p>
-                                  <p className="text-xs text-[var(--foreground)]/60">
-                                    Split the deliverable into smaller assigned steps.
-                                  </p>
-                                </div>
-                                <span className="text-xs text-[var(--foreground)]/55">
-                                  {(deliverable.subtasks ?? []).filter((subtask) => subtask.completed).length}/
-                                  {(deliverable.subtasks ?? []).length} done
+                              <button
+                                type="button"
+                                aria-expanded={subtasksExpanded}
+                                aria-controls={subtasksPanelId}
+                                onClick={() =>
+                                  setExpandedSubtasks((current) => ({
+                                    ...current,
+                                    [deliverable.id]: !current[deliverable.id],
+                                  }))
+                                }
+                                className="flex w-full min-w-0 items-center justify-between gap-3 rounded-lg text-left"
+                              >
+                                <span className="min-w-0 text-sm font-medium text-[var(--foreground)]">
+                                  Subtasks
+                                  <span className="font-normal text-[var(--foreground)]/55">
+                                    {' · '}
+                                    {(deliverable.subtasks ?? []).filter((subtask) => subtask.completed).length}/
+                                    {(deliverable.subtasks ?? []).length} done
+                                  </span>
                                 </span>
-                              </div>
+                                <ChevronDown
+                                  aria-hidden="true"
+                                  className={cn(
+                                    'h-4 w-4 shrink-0 text-[var(--foreground)]/60 transition-transform',
+                                    subtasksExpanded && 'rotate-180',
+                                  )}
+                                />
+                              </button>
 
-                              <div className="mt-3 space-y-3">
+                              <div id={subtasksPanelId} hidden={!subtasksExpanded} className="mt-3 space-y-3">
+                                <p className="text-xs text-[var(--foreground)]/60">
+                                  Split the deliverable into smaller assigned steps.
+                                </p>
                                 {(deliverable.subtasks ?? []).length === 0 && (
                                   <div className="rounded-lg border border-dashed border-[var(--border)] p-3 text-xs text-[var(--foreground)]/60">
                                     No subtasks yet.
@@ -950,11 +939,12 @@ export default function DeliverablesPage() {
                                   return (
                                     <div
                                       key={subtask.id}
-                                      className="rounded-lg border border-[var(--border)] bg-[var(--secondary)]/60 p-3"
+                                      className="min-w-0 max-w-full rounded-lg border border-[var(--border)] bg-[var(--secondary)]/60 p-3"
                                     >
                                       {canManage ? (
-                                        <div className="grid gap-2 md:grid-cols-[minmax(0,2fr)_180px_180px_auto_auto]">
+                                        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-2 [&>*]:min-w-0">
                                           <input
+                                            aria-label="Subtask title"
                                             value={edit.title}
                                             onChange={(e) =>
                                               setSubtaskEdits((current) => ({
@@ -962,9 +952,10 @@ export default function DeliverablesPage() {
                                                 [subtask.id]: { ...edit, title: e.target.value },
                                               }))
                                             }
-                                            className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                                            className="min-w-0 max-w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
                                           />
                                           <select
+                                            aria-label="Subtask assignee"
                                             value={edit.assigneeId}
                                             onChange={(e) =>
                                               setSubtaskEdits((current) => ({
@@ -972,7 +963,7 @@ export default function DeliverablesPage() {
                                                 [subtask.id]: { ...edit, assigneeId: e.target.value },
                                               }))
                                             }
-                                            className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                                            className="min-w-0 max-w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
                                           >
                                             <option value="">Unassigned</option>
                                             {teamMembers.map((member) => (
@@ -983,6 +974,7 @@ export default function DeliverablesPage() {
                                           </select>
                                           <input
                                             type="datetime-local"
+                                            aria-label="Subtask due date"
                                             value={edit.dueDate}
                                             onChange={(e) =>
                                               setSubtaskEdits((current) => ({
@@ -990,7 +982,7 @@ export default function DeliverablesPage() {
                                                 [subtask.id]: { ...edit, dueDate: e.target.value },
                                               }))
                                             }
-                                            className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                                            className="min-w-0 max-w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
                                           />
                                           <label className="flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm">
                                             <input
@@ -1005,7 +997,7 @@ export default function DeliverablesPage() {
                                             />
                                             Done
                                           </label>
-                                          <div className="flex gap-2">
+                                          <div className="flex flex-wrap gap-2">
                                             <Button
                                               size="sm"
                                               variant="outline"
@@ -1056,9 +1048,10 @@ export default function DeliverablesPage() {
                                 })}
 
                                 {canManage && (
-                                  <div className="rounded-lg border border-dashed border-[var(--border)] p-3">
-                                    <div className="grid gap-2 md:grid-cols-[minmax(0,2fr)_180px_180px_auto]">
+                                  <div className="min-w-0 max-w-full rounded-lg border border-dashed border-[var(--border)] p-3">
+                                    <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-2 [&>*]:min-w-0">
                                       <input
+                                        aria-label="New subtask title"
                                         value={newSubtasks[deliverable.id]?.title ?? ''}
                                         onChange={(e) =>
                                           setNewSubtasks((current) => ({
@@ -1070,9 +1063,10 @@ export default function DeliverablesPage() {
                                           }))
                                         }
                                         placeholder="Add a subtask"
-                                        className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                                        className="min-w-0 max-w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
                                       />
                                       <select
+                                        aria-label="New subtask assignee"
                                         value={newSubtasks[deliverable.id]?.assigneeId ?? ''}
                                         onChange={(e) =>
                                           setNewSubtasks((current) => ({
@@ -1083,7 +1077,7 @@ export default function DeliverablesPage() {
                                             },
                                           }))
                                         }
-                                        className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                                        className="min-w-0 max-w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
                                       >
                                         <option value="">Assign later</option>
                                         {teamMembers.map((member) => (
@@ -1094,6 +1088,7 @@ export default function DeliverablesPage() {
                                       </select>
                                       <input
                                         type="datetime-local"
+                                        aria-label="New subtask due date"
                                         value={newSubtasks[deliverable.id]?.dueDate ?? ''}
                                         onChange={(e) =>
                                           setNewSubtasks((current) => ({
@@ -1104,7 +1099,7 @@ export default function DeliverablesPage() {
                                             },
                                           }))
                                         }
-                                        className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                                        className="min-w-0 max-w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
                                       />
                                       <Button
                                         size="sm"

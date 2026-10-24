@@ -84,3 +84,22 @@ test('summarizeReminderRecipients handles an all-unassigned project', () => {
   assert.equal(summary.missingSlack.length, 0);
   assert.deepEqual(summary.unassignedDeliverables, ['Solo']);
 });
+
+const { resolveDeliverableReminderConfig, validateCustomOffsets } = loadRemindersConfig();
+test('recipient-only override does not appear as inherited', () => {
+  const resolved = resolveDeliverableReminderConfig({ enabled: null, offsetMinutes: [], explicitRecipientUserIds: ['u2'] },
+    { enabled: true, offsetMinutes: [60], timezone: 'America/Chicago' });
+  assert.equal(resolved.inherited, false);
+});
+test('reset override inherits project settings', () => {
+  const resolved = resolveDeliverableReminderConfig({ enabled: null, offsetMinutes: [], explicitRecipientUserIds: [] },
+    { enabled: true, offsetMinutes: [60], timezone: 'America/Chicago' });
+  assert.equal(resolved.inherited, true);
+  assert.deepEqual([...resolved.offsetMinutes], [60]);
+});
+test('custom offsets reject invalid and excessive values', () => {
+  for (const offsets of [[], [0], [-1], [1.5], [20161], [1,2,3,4,5,6]]) {
+    assert.equal(validateCustomOffsets(offsets).valid, false);
+  }
+  assert.equal(validateCustomOffsets([30,60,1440]).valid, true);
+});

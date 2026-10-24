@@ -2,7 +2,7 @@
 
 import { useCallback, useContext, useLayoutEffect, useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 import Image from 'next/image';
-import { NavbarRegistration } from './navbar-registration';
+import { DashboardRefresh, NavbarRegistration } from './navbar-registration';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -19,6 +19,7 @@ import {
   MapPinned,
   CalendarDays,
   GraduationCap,
+  RefreshCw,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/utils';
@@ -41,9 +42,7 @@ export type NavItem = {
 export type AppNavPath =
   | '/dashboard'
   | '/consultant'
-  | '/pm'
-  | '/lc'
-  | '/partner'
+  | '/overview'
   | '/forms'
   | '/deliverables'
   | '/workstream'
@@ -55,6 +54,7 @@ export type AppNavPath =
   | '/attendance'
   | '/when2meet'
   | '/alumni-database'
+  | '/people'
   | '/settings/slack';
 
 export interface AppNavbarProps {
@@ -109,6 +109,7 @@ function formatNotificationTime(at: Date): string {
 export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotificationCount = 0 }: AppNavbarProps) {
   const { logout, user, getToken, isLoggedIn } = useAuth();
   const router = useRouter();
+  const refreshPage = useContext(DashboardRefresh);
   const overviewPath = getDefaultDashboardPath(role);
   const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || '').replace(/\/+$/, '');
   const withBasePath = (path: string) => `${basePath}${path}`;
@@ -124,7 +125,8 @@ export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotif
 
     try {
       const token = await getToken();
-      setAuthToken(token || user.email || null);
+      if (!token) return;
+      setAuthToken(token);
       const response = await notificationsAPI.getMy(50);
       const items = Array.isArray(response.data) ? response.data : [];
       const readIds = loadReadIds(user.email);
@@ -274,6 +276,7 @@ export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotif
       href: '/teams',
       canAccess: (r) => canShowNavItem('team', r),
     },
+    { id: 'people', label: 'People', icon: Users, href: '/people', canAccess: role => role === 'ADMIN' },
     {
       id: 'forms',
       label: 'Forms',
@@ -392,6 +395,17 @@ export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotif
                 </div>
               )}
             </div>
+            {refreshPage && (
+              <button
+                type="button"
+                onClick={refreshPage}
+                aria-label="Refresh page data"
+                title="Refresh page data"
+                className="p-2 rounded-lg hover:bg-[var(--accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]"
+              >
+                <RefreshCw aria-hidden="true" className="w-5 h-5" />
+              </button>
+            )}
             <ThemeToggle />
             <Link href="/settings/slack" className="p-2 hover:bg-[var(--accent)] rounded-lg transition-colors" aria-label="Slack settings">
               <Settings className="w-5 h-5" />
@@ -404,17 +418,18 @@ export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotif
             </button>
           </div>
         </div>
-        <nav className="flex items-center gap-1 border-t border-[var(--border)] py-2 overflow-x-auto scrollbar-hide">
+        <nav className="flex flex-wrap items-center gap-1 border-t border-[var(--border)] py-2">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentPath === item.href;
             const enabled = item.canAccess(role);
+            if (item.id === 'people' && !enabled) return null;
 
             if (!enabled) {
               return (
                 <span
                   key={item.id}
-                  className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm transition-colors whitespace-nowrap text-[var(--foreground)]/35 cursor-not-allowed"
+                  className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs lg:text-sm transition-colors whitespace-nowrap text-[var(--foreground)]/35 cursor-not-allowed"
                   title="You do not have access to this page"
                 >
                   <Icon className="w-4 h-4 text-[var(--foreground)]/35" />
@@ -428,7 +443,7 @@ export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotif
                 key={item.id}
                 href={item.href}
                 className={cn(
-                  'flex items-center gap-2 rounded-lg px-4 py-2 text-sm transition-colors whitespace-nowrap',
+                  'flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs lg:text-sm transition-colors whitespace-nowrap',
                   isActive
                     ? 'bg-[var(--primary)]/15 text-[var(--primary)]'
                     : 'text-[var(--foreground)]/75 hover:bg-[var(--accent)] hover:text-[var(--foreground)]'

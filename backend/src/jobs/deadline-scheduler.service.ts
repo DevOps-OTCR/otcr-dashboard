@@ -41,9 +41,9 @@ export class DeadlineSchedulerService {
     for (const deliverable of upcomingDeliverables) {
       try {
         await this.deadlineReminders.rescheduleDeliverable(deliverable.id);
-      } catch (error: any) {
+      } catch (error: unknown) {
         this.logger.warn(
-          `Failed to schedule reminders for deliverable ${deliverable.id}: ${error?.message ?? error}`,
+          `Failed to schedule reminders for deliverable ${deliverable.id}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }

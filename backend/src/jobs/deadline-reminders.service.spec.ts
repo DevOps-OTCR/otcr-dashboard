@@ -6,7 +6,9 @@ const DAY = 24 * 60 * 60 * 1000;
 function createPrismaMock() {
   return {
     project: {
-      findUnique: jest.fn().mockResolvedValue({ sprintTimezone: 'America/Chicago' }),
+      findUnique: jest
+        .fn()
+        .mockResolvedValue({ sprintTimezone: 'America/Chicago' }),
     },
     reminderConfig: {
       findUnique: jest.fn().mockResolvedValue(null),
@@ -21,11 +23,16 @@ function createPrismaMock() {
       findUnique: jest.fn().mockResolvedValue(null),
     },
     user: {
-      findMany: jest.fn().mockResolvedValue([{ id: 'user-1' }, { id: 'user-2' }]),
+      findMany: jest
+        .fn()
+        .mockResolvedValue([{ id: 'user-1' }, { id: 'user-2' }]),
     },
     scheduledReminder: {
       upsert: jest.fn().mockImplementation(({ create }) =>
-        Promise.resolve({ id: `rem-${create.userId}-${create.offsetMinutes}`, ...create }),
+        Promise.resolve({
+          id: `rem-${create.userId}-${create.offsetMinutes}`,
+          ...create,
+        }),
       ),
       findMany: jest.fn().mockResolvedValue([]),
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
@@ -50,12 +57,22 @@ describe('DeadlineRemindersService', () => {
   beforeEach(() => {
     prisma = createPrismaMock();
     queue = createQueueMock();
-    notificationsService = { getNotificationQueue: jest.fn().mockReturnValue(queue) };
-    configService = { get: jest.fn().mockReturnValue('https://cms.example.com') };
+    notificationsService = {
+      getNotificationQueue: jest.fn().mockReturnValue(queue),
+    };
+    configService = {
+      get: jest.fn().mockReturnValue('https://cms.example.com'),
+    };
     service = new DeadlineRemindersService(
-      prisma as any,
-      notificationsService as any,
-      configService as any,
+      prisma as unknown as ConstructorParameters<
+        typeof DeadlineRemindersService
+      >[0],
+      notificationsService as unknown as ConstructorParameters<
+        typeof DeadlineRemindersService
+      >[1],
+      configService as unknown as ConstructorParameters<
+        typeof DeadlineRemindersService
+      >[2],
     );
   });
 
@@ -70,7 +87,9 @@ describe('DeadlineRemindersService', () => {
     });
 
     it('uses the project timezone', async () => {
-      prisma.project.findUnique.mockResolvedValue({ sprintTimezone: 'America/New_York' });
+      prisma.project.findUnique.mockResolvedValue({
+        sprintTimezone: 'America/New_York',
+      });
       const config = await service.getConfig('project-1');
       expect(config.timezone).toBe('America/New_York');
     });
@@ -79,13 +98,19 @@ describe('DeadlineRemindersService', () => {
   describe('updateConfig validation', () => {
     it('rejects empty offsets', async () => {
       await expect(
-        service.updateConfig('project-1', { enabled: true, offsetsMinutes: [] }),
+        service.updateConfig('project-1', {
+          enabled: true,
+          offsetsMinutes: [],
+        }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('rejects non-positive offsets', async () => {
       await expect(
-        service.updateConfig('project-1', { enabled: true, offsetsMinutes: [0] }),
+        service.updateConfig('project-1', {
+          enabled: true,
+          offsetsMinutes: [0],
+        }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -100,7 +125,10 @@ describe('DeadlineRemindersService', () => {
 
     it('rejects offsets beyond two weeks', async () => {
       await expect(
-        service.updateConfig('project-1', { enabled: true, offsetsMinutes: [30000] }),
+        service.updateConfig('project-1', {
+          enabled: true,
+          offsetsMinutes: [30000],
+        }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
   });
@@ -108,7 +136,7 @@ describe('DeadlineRemindersService', () => {
   describe('rescheduleDeliverable', () => {
     const futureDeadline = () => new Date(Date.now() + 7 * DAY);
 
-    function deliverableFixture(overrides: any = {}) {
+    function deliverableFixture(overrides: Record<string, unknown> = {}) {
       return {
         id: 'deliverable-1',
         title: 'Final Deck',
@@ -161,8 +189,13 @@ describe('DeadlineRemindersService', () => {
     });
 
     it('never notifies the whole team when the deliverable is unassigned', async () => {
-      prisma.reminderConfig.findUnique.mockResolvedValue({ enabled: true, offsetsMinutes: [1440] });
-      prisma.deliverable.findUnique.mockResolvedValue(deliverableFixture({ assignments: [] }));
+      prisma.reminderConfig.findUnique.mockResolvedValue({
+        enabled: true,
+        offsetsMinutes: [1440],
+      });
+      prisma.deliverable.findUnique.mockResolvedValue(
+        deliverableFixture({ assignments: [] }),
+      );
 
       await service.rescheduleDeliverable('deliverable-1');
 
@@ -172,7 +205,10 @@ describe('DeadlineRemindersService', () => {
     });
 
     it('only notifies active assignees who still belong to the project', async () => {
-      prisma.reminderConfig.findUnique.mockResolvedValue({ enabled: true, offsetsMinutes: [1440] });
+      prisma.reminderConfig.findUnique.mockResolvedValue({
+        enabled: true,
+        offsetsMinutes: [1440],
+      });
       prisma.deliverable.findUnique.mockResolvedValue(deliverableFixture());
       // Simulate user-2 having left the project / gone inactive.
       prisma.user.findMany.mockResolvedValue([{ id: 'user-1' }]);
@@ -185,14 +221,21 @@ describe('DeadlineRemindersService', () => {
     });
 
     it('cancels reminders instead of scheduling when the deliverable is finalized', async () => {
-      prisma.reminderConfig.findUnique.mockResolvedValue({ enabled: true, offsetsMinutes: [1440] });
-      prisma.deliverable.findUnique.mockResolvedValue(deliverableFixture({ status: 'SUBMITTED' }));
+      prisma.reminderConfig.findUnique.mockResolvedValue({
+        enabled: true,
+        offsetsMinutes: [1440],
+      });
+      prisma.deliverable.findUnique.mockResolvedValue(
+        deliverableFixture({ status: 'SUBMITTED' }),
+      );
 
       await service.rescheduleDeliverable('deliverable-1');
 
       expect(queue.add).not.toHaveBeenCalled();
       expect(prisma.scheduledReminder.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { deliverableId: 'deliverable-1', status: 'PENDING' } }),
+        expect.objectContaining({
+          where: { deliverableId: 'deliverable-1', status: 'PENDING' },
+        }),
       );
     });
 
@@ -208,8 +251,126 @@ describe('DeadlineRemindersService', () => {
       expect(queue.add).not.toHaveBeenCalled();
     });
 
+    it('replaces the queued job when a deadline changes', async () => {
+      const deliverable = deliverableFixture();
+      prisma.reminderConfig.findUnique.mockResolvedValue({
+        enabled: true,
+        offsetsMinutes: [60],
+      });
+      prisma.user.findMany.mockResolvedValue([{ id: 'user-1' }]);
+      prisma.deliverable.findUnique.mockResolvedValue(deliverable);
+      await service.rescheduleDeliverable(deliverable.id);
+      const previous = prisma.scheduledReminder.upsert.mock.calls[0][0].create;
+      prisma.scheduledReminder.findMany.mockResolvedValue([
+        { id: 'rem-1', ...previous },
+      ]);
+      const remove = jest.fn().mockResolvedValue(undefined);
+      queue.getJob.mockImplementation((id) =>
+        Promise.resolve(id === previous.jobId ? { remove } : null),
+      );
+      deliverable.deadline = new Date(deliverable.deadline.getTime() + DAY);
+      await service.rescheduleDeliverable(deliverable.id);
+      const current = queue.add.mock.calls[1];
+      expect(current[2].jobId).not.toBe(previous.jobId);
+      expect(current[1].data.deadline).toEqual(deliverable.deadline);
+      expect(remove).toHaveBeenCalledTimes(1);
+      expect(prisma.scheduledReminder.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'rem-1', jobId: previous.jobId, status: 'PENDING' },
+        }),
+      );
+    });
+
+    it.each(['SENT', 'FAILED'])(
+      'does not rearm a %s reminder on a repeated scan',
+      async (status) => {
+        prisma.reminderConfig.findUnique.mockResolvedValue({
+          enabled: true,
+          offsetsMinutes: [60],
+        });
+        prisma.user.findMany.mockResolvedValue([{ id: 'user-1' }]);
+        prisma.deliverable.findUnique.mockResolvedValue(deliverableFixture());
+        await service.rescheduleDeliverable('deliverable-1');
+        const row = prisma.scheduledReminder.upsert.mock.calls[0][0].create;
+        prisma.scheduledReminder.findMany.mockResolvedValue([
+          { id: 'rem-1', ...row, status },
+        ]);
+        queue.add.mockClear();
+        await service.rescheduleDeliverable('deliverable-1');
+        expect(queue.add).not.toHaveBeenCalled();
+      },
+    );
+
+    it('cancels removed recipients and offsets', async () => {
+      prisma.reminderConfig.findUnique.mockResolvedValue({
+        enabled: true,
+        offsetsMinutes: [60],
+      });
+      prisma.deliverable.findUnique.mockResolvedValue(
+        deliverableFixture({ assignments: [] }),
+      );
+      prisma.scheduledReminder.findMany.mockResolvedValue([
+        { id: 'rem-1', jobId: 'old-job', status: 'PENDING' },
+      ]);
+      await service.rescheduleDeliverable('deliverable-1');
+      expect(queue.add).not.toHaveBeenCalled();
+      expect(prisma.scheduledReminder.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'rem-1', jobId: 'old-job', status: 'PENDING' },
+          data: expect.objectContaining({ status: 'CANCELLED' }),
+        }),
+      );
+    });
+
+    it('preserves already-due jobs so their retries can finish', async () => {
+      prisma.reminderConfig.findUnique.mockResolvedValue({
+        enabled: true,
+        offsetsMinutes: [60],
+      });
+      prisma.user.findMany.mockResolvedValue([{ id: 'user-1' }]);
+      prisma.deliverable.findUnique.mockResolvedValue(
+        deliverableFixture({ deadline: new Date(Date.now() + 3601000) }),
+      );
+      await service.rescheduleDeliverable('deliverable-1');
+      const row = prisma.scheduledReminder.upsert.mock.calls[0][0].create;
+      prisma.scheduledReminder.findMany.mockResolvedValue([
+        { id: 'rem-1', ...row },
+      ]);
+      const clock = jest
+        .spyOn(Date, 'now')
+        .mockReturnValue(row.fireAt.getTime() + 100);
+      try {
+        await service.rescheduleDeliverable('deliverable-1');
+      } finally {
+        clock.mockRestore();
+      }
+      expect(prisma.scheduledReminder.updateMany).not.toHaveBeenCalled();
+      expect(queue.add).toHaveBeenCalledTimes(1);
+    });
+
+    it('records queue failures instead of leaving an unqueued reminder pending', async () => {
+      prisma.reminderConfig.findUnique.mockResolvedValue({
+        enabled: true,
+        offsetsMinutes: [60],
+      });
+      prisma.deliverable.findUnique.mockResolvedValue(deliverableFixture());
+      notificationsService.getNotificationQueue.mockReturnValue(null);
+      await service.rescheduleDeliverable('deliverable-1');
+      expect(prisma.scheduledReminder.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            status: 'FAILED',
+            lastError: expect.stringContaining('Redis unavailable'),
+          },
+        }),
+      );
+    });
+
     it('includes timezone and a deep link in the queued job payload', async () => {
-      prisma.reminderConfig.findUnique.mockResolvedValue({ enabled: true, offsetsMinutes: [1440] });
+      prisma.reminderConfig.findUnique.mockResolvedValue({
+        enabled: true,
+        offsetsMinutes: [1440],
+      });
       prisma.deliverable.findUnique.mockResolvedValue(deliverableFixture());
 
       await service.rescheduleDeliverable('deliverable-1');
@@ -235,51 +396,59 @@ describe('DeadlineRemindersService', () => {
       await service.cancelRemindersForDeliverable('deliverable-1', 'submitted');
 
       expect(removeJob).toHaveBeenCalledTimes(2);
-      expect(prisma.scheduledReminder.updateMany).toHaveBeenCalledWith({
-        where: { deliverableId: 'deliverable-1', status: 'PENDING' },
-        data: { status: 'CANCELLED', cancelledAt: expect.any(Date) },
-      });
+      expect(prisma.scheduledReminder.updateMany).toHaveBeenCalledTimes(2);
+      expect(prisma.scheduledReminder.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { status: 'CANCELLED', cancelledAt: expect.any(Date) },
+        }),
+      );
     });
   });
 
   describe('getRecipientPreview', () => {
-    it('reports slack connection status and skips inactive users', async () => {
+    it('uses eligible recipients and honors explicit override recipients', async () => {
       prisma.deliverable.findMany.mockResolvedValue([
         {
-          id: 'deliverable-1',
+          id: 'd1',
           title: 'Deck',
           deadline: new Date(),
-          assignments: [
-            {
-              user: {
-                id: 'user-1',
-                email: 'a@x.com',
-                firstName: 'A',
-                lastName: 'One',
-                active: true,
-                slackConnections: [{ id: 'conn-1' }],
-              },
-            },
-            {
-              user: {
-                id: 'user-2',
-                email: 'b@x.com',
-                firstName: 'B',
-                lastName: 'Two',
-                active: false,
-                slackConnections: [],
-              },
-            },
-          ],
+          assignments: [{ userId: 'u1' }],
+          reminderOverride: { explicitRecipientUserIds: ['u2'] },
         },
       ]);
-
-      const preview = await service.getRecipientPreview('project-1');
-      expect(preview[0].recipients).toHaveLength(1);
-      expect(preview[0].recipients[0]).toMatchObject({
-        userId: 'user-1',
-        slackConnected: true,
+      prisma.user.findMany.mockResolvedValue([
+        {
+          id: 'u2',
+          email: 'b@example.test',
+          firstName: 'B',
+          lastName: 'Two',
+          slackConnections: [{ id: 'c1' }],
+        },
+      ]);
+      prisma.reminderConfig.findUnique.mockResolvedValue({
+        enabled: true,
+        offsetsMinutes: [60],
+        timezone: 'America/Chicago',
       });
+      const preview = await service.getRecipientPreview('project-1');
+      expect(preview[0].recipients).toEqual([
+        {
+          userId: 'u2',
+          email: 'b@example.test',
+          name: 'B Two',
+          slackConnected: true,
+        },
+      ]);
+      expect(prisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            active: true,
+            projectAssignments: {
+              some: { projectId: 'project-1', leftAt: null },
+            },
+          },
+        }),
+      );
     });
   });
 
@@ -295,7 +464,8 @@ describe('DeadlineRemindersService', () => {
         offsetsMinutes: [1440, 60],
       });
 
-      const config = await service.getDeliverableReminderConfig('deliverable-1');
+      const config =
+        await service.getDeliverableReminderConfig('deliverable-1');
 
       expect(config).toEqual({
         enabled: true,
@@ -308,14 +478,19 @@ describe('DeadlineRemindersService', () => {
       prisma.deliverable.findUnique.mockResolvedValue({
         id: 'deliverable-1',
         projectId: 'project-1',
-        reminderOverride: { enabled: false, offsetMinutes: null, explicitRecipientUserIds: null },
+        reminderOverride: {
+          enabled: false,
+          offsetMinutes: null,
+          explicitRecipientUserIds: null,
+        },
       });
       prisma.reminderConfig.findUnique.mockResolvedValue({
         enabled: true,
         offsetsMinutes: [1440, 60],
       });
 
-      const config = await service.getDeliverableReminderConfig('deliverable-1');
+      const config =
+        await service.getDeliverableReminderConfig('deliverable-1');
 
       expect(config.enabled).toBe(false);
       expect(config.offsetsMinutes).toEqual([1440, 60]);
@@ -325,14 +500,19 @@ describe('DeadlineRemindersService', () => {
       prisma.deliverable.findUnique.mockResolvedValue({
         id: 'deliverable-1',
         projectId: 'project-1',
-        reminderOverride: { enabled: true, offsetMinutes: [60], explicitRecipientUserIds: null },
+        reminderOverride: {
+          enabled: true,
+          offsetMinutes: [60],
+          explicitRecipientUserIds: null,
+        },
       });
       prisma.reminderConfig.findUnique.mockResolvedValue({
         enabled: true,
         offsetsMinutes: [1440, 60],
       });
 
-      const config = await service.getDeliverableReminderConfig('deliverable-1');
+      const config =
+        await service.getDeliverableReminderConfig('deliverable-1');
 
       expect(config.enabled).toBe(true);
       expect(config.offsetsMinutes).toEqual([60]);
@@ -371,15 +551,16 @@ describe('DeadlineRemindersService', () => {
         enabled: true,
         offsetsMinutes: [1440, 60],
       });
-      prisma.user.findMany.mockResolvedValue([
-        { id: 'user-1' },
-      ]);
+      prisma.user.findMany.mockResolvedValue([{ id: 'user-1' }]);
 
-      const result = await service.updateDeliverableReminderConfig('deliverable-1', {
-        enabled: true,
-        offsetMinutes: [60],
-        explicitRecipientUserIds: [],
-      });
+      const result = await service.updateDeliverableReminderConfig(
+        'deliverable-1',
+        {
+          enabled: true,
+          offsetMinutes: [60],
+          explicitRecipientUserIds: [],
+        },
+      );
 
       expect(prisma.deliverableReminderOverride.upsert).toHaveBeenCalledWith({
         where: { deliverableId: 'deliverable-1' },
@@ -470,12 +651,24 @@ describe('DeadlineRemindersService', () => {
         sentAt: null,
         cancelledAt: null,
         createdAt: new Date(),
-        user: { id: 'user-1', email: 'a@x.com', firstName: 'A', lastName: 'One' },
-        deliverable: { id: 'deliverable-1', title: 'Deck', deadline: new Date() },
+        user: {
+          id: 'user-1',
+          email: 'a@x.com',
+          firstName: 'A',
+          lastName: 'One',
+        },
+        deliverable: {
+          id: 'deliverable-1',
+          title: 'Deck',
+          deadline: new Date(),
+        },
       };
       prisma.scheduledReminder.findMany.mockResolvedValue([failedReminder]);
 
-      const result = await service.getProjectReminderStatus('project-1', 'FAILED');
+      const result = await service.getProjectReminderStatus(
+        'project-1',
+        'FAILED',
+      );
       expect(result).toHaveLength(1);
       expect(result[0].lastError).toBe('Slack API rate limited');
       expect(result[0].attempts).toBe(3);
@@ -509,7 +702,9 @@ describe('DeadlineRemindersService', () => {
         where: {
           id: { in: ['user-1'] },
           active: true,
-          projectAssignments: { some: { projectId: 'project-1' } },
+          projectAssignments: {
+            some: { projectId: 'project-1', leftAt: null },
+          },
         },
         select: { id: true },
       });
@@ -542,7 +737,7 @@ describe('DeadlineRemindersService', () => {
       await service.rescheduleDeliverable('deliverable-1');
 
       expect(prisma.scheduledReminder.updateMany).toHaveBeenCalledWith({
-        where: { deliverableId: 'deliverable-1', status: 'PENDING' },
+        where: { id: 'rem-1', jobId: 'rem-1-job', status: 'PENDING' },
         data: { status: 'CANCELLED', cancelledAt: expect.any(Date) },
       });
     });

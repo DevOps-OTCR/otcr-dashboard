@@ -37,30 +37,23 @@ export class DeliverablesService {
     return Math.max(0, Math.floor((submittedAt.getTime() - deadline.getTime()) / 60000));
   }
 
-  /**
-   * Reschedule deadline reminders for a deliverable after a change that affects
-   * timing or recipients. Fire-and-forget: reminder scheduling must never fail
-   * the core deliverable mutation.
-   */
-  private syncReminders(deliverableId: string): void {
-    void this.deadlineReminders.rescheduleDeliverable(deliverableId).catch((error: any) => {
-      this.logger.warn(
-        `Failed to reschedule reminders for deliverable ${deliverableId}: ${error?.message ?? error}`,
-      );
-    });
+  /** Synchronize after commit without failing the saved deliverable mutation. */
+  private async syncReminders(deliverableId: string): Promise<void> {
+    try {
+      await this.deadlineReminders.rescheduleDeliverable(deliverableId);
+    } catch (error: unknown) {
+      this.logger.warn('Failed to reschedule reminders for ' + deliverableId + ': ' +
+        (error instanceof Error ? error.message : String(error)));
+    }
   }
 
-  /**
-   * Cancel pending reminders (e.g. on submit/approve/delete). Fire-and-forget.
-   */
-  private cancelReminders(deliverableId: string, reason: string): void {
-    void this.deadlineReminders.cancelRemindersForDeliverable(deliverableId, reason).catch(
-      (error: any) => {
-        this.logger.warn(
-          `Failed to cancel reminders for deliverable ${deliverableId}: ${error?.message ?? error}`,
-        );
-      },
-    );
+  private async cancelReminders(deliverableId: string, reason: string): Promise<void> {
+    try {
+      await this.deadlineReminders.cancelRemindersForDeliverable(deliverableId, reason);
+    } catch (error: unknown) {
+      this.logger.warn('Failed to cancel reminders for ' + deliverableId + ': ' +
+        (error instanceof Error ? error.message : String(error)));
+    }
   }
 
   async create(
@@ -73,10 +66,16 @@ export class DeliverablesService {
       deadline: string;
       templateKind?: string;
       assignProjectMembers?: boolean;
+      assigneeIds?: string[];
     },
     actorUserId?: string,
   ) {
+    if (data.assigneeIds !== undefined && data.assignProjectMembers) {
+      throw new BadRequestException('Choose explicit assignees or all project members, not both');
+    }
     const created = await this.prisma.$transaction(async (tx) => {
+      const assigneeIds = data.assigneeIds === undefined
+        ? [] : await this.validateAssignees(tx, projectId, data.assigneeIds);
       const deliverable = await tx.deliverable.create({
         data: {
           projectId,
@@ -121,6 +120,12 @@ export class DeliverablesService {
         },
       } as any);
 
+      if (assigneeIds.length > 0) {
+        await tx.deliverableAssignment.createMany({
+          data: assigneeIds.map((userId) => ({ deliverableId: deliverable.id, userId })),
+        });
+      }
+
       if (data.assignProjectMembers) {
         const projectMembers = await tx.projectMember.findMany({
           where: {
@@ -153,7 +158,7 @@ export class DeliverablesService {
 
     // New deliverable: schedule reminders if the project has them enabled and
     // assignees exist (assignProjectMembers assignment happens inside the tx).
-    this.syncReminders(created.id);
+    await this.syncReminders(created.id);
 
     return created;
   }
@@ -414,9 +419,9 @@ export class DeliverablesService {
     // Deadline or status changed: reschedule (or cancel if now finalized).
     if (data.deadline || data.status) {
       if (['SUBMITTED', 'APPROVED'].includes((data.status ?? '').toUpperCase())) {
-        this.cancelReminders(id, 'Deliverable finalized');
+        await this.cancelReminders(id, 'Deliverable finalized');
       } else {
-        this.syncReminders(id);
+        await this.syncReminders(id);
       }
     }
 
@@ -427,7 +432,7 @@ export class DeliverablesService {
     const deleted = await this.prisma.deliverable.delete({
       where: { id },
     });
-    this.cancelReminders(id, 'Deliverable deleted');
+    await this.cancelReminders(id, 'Deliverable deleted');
     return deleted;
   }
 
@@ -462,8 +467,53 @@ export class DeliverablesService {
       },
     });
     // Deadline moved: recompute reminder fire times.
-    this.syncReminders(id);
+    await this.syncReminders(id);
     return updated;
+  }
+
+  private async validateAssignees(tx: Prisma.TransactionClient, projectId: string, value: unknown) {
+    if (!Array.isArray(value) || value.some((id) => typeof id !== 'string' || !id.trim())) {
+      throw new BadRequestException('assigneeIds must be an array of user IDs');
+    }
+    const ids = [...new Set(value as string[])];
+    if (!ids.length) return ids;
+    const eligible = await tx.user.findMany({
+      where: {
+        id: { in: ids }, active: true,
+        OR: [
+          { pmProjects: { some: { id: projectId } } },
+          { projectAssignments: { some: { projectId, leftAt: null } } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (eligible.length !== ids.length) {
+      throw new BadRequestException('Assignees must be active users who manage or belong to this project');
+    }
+    return ids;
+  }
+
+  async setAssignments(id: string, projectId: string, value: unknown) {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const ids = await this.validateAssignees(tx, projectId, value);
+      // Keep retained assignments (and their assignedAt timestamps) intact.
+      // Submissions belong to users independently and are never removed here.
+      await tx.deliverableAssignment.deleteMany({
+        where: { deliverableId: id, userId: { notIn: ids } },
+      });
+      if (ids.length) {
+        await tx.deliverableAssignment.createMany({
+          data: ids.map((userId) => ({ deliverableId: id, userId })), skipDuplicates: true,
+        });
+      }
+      const assignments = await tx.deliverableAssignment.findMany({
+        where: { deliverableId: id }, orderBy: { assignedAt: 'asc' },
+        select: { user: { select: { id: true, email: true, firstName: true, lastName: true } } },
+      });
+      return assignments.map(({ user }) => user);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    await this.syncReminders(id);
+    return result;
   }
 
   async updateAssignment(id: string, userId: string, assigned: boolean) {
@@ -485,13 +535,13 @@ export class DeliverablesService {
     }
 
     // Recipient set changed: rebuild reminders for the new assignee set.
-    this.syncReminders(id);
+    await this.syncReminders(id);
 
     return this.getAssignmentUsers(id);
   }
 
   async updateCompletion(id: string, completed: boolean) {
-    return this.prisma.deliverable.update({
+    const updated = await this.prisma.deliverable.update({
       where: { id },
       data: {
         completed,
@@ -517,7 +567,9 @@ export class DeliverablesService {
           },
         },
       },
-    } as any);
+    });
+    await this.syncReminders(id);
+    return updated;
   }
 
   async submitLink(id: string, userId: string, link: string) {
@@ -597,7 +649,7 @@ export class DeliverablesService {
     });
 
     // Submitted: no more deadline reminders for this deliverable.
-    this.cancelReminders(id, 'Deliverable submitted');
+    await this.cancelReminders(id, 'Deliverable submitted');
 
     // The submission is already saved, so a notification failure must not fail the request.
     // It stays PENDING and retryPendingReviewerNotifications picks it up later.

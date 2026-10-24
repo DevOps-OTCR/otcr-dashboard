@@ -4,7 +4,7 @@ import { useEffect, useState, type ComponentType, type FormEvent, type ReactNode
 import { AppNavbar } from '@/components/AppNavbar';
 import { useAuth } from '@/components/AuthContext';
 import { RoleDashboardRedirect } from '@/components/RoleDashboardRedirect';
-import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
+import { PageLoading } from '@/components/PageLoading';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { feedbackAPI, setAuthToken } from '@/lib/api';
@@ -114,7 +114,7 @@ export function FormPage({
   }, [formType, session.isLoggedIn, showReview, title]);
 
   if (session.loading || !session.isLoggedIn) {
-    return <FullScreenLoader />;
+    return <PageLoading />;
   }
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {

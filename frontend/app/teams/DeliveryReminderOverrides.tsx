@@ -1,357 +1,429 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { Slack, ChevronDown, ChevronRight, User } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { remindersAPI } from '@/lib/api';
 import {
-  buildExplicitRecipientSummary,
+  remindersAPI,
+  type DeliverableReminderSettings,
+  type ReminderDeliveryStatus,
+} from '@/lib/api';
+import {
   formatOffsetLabel,
   resolveDeliverableReminderConfig,
   validateCustomOffsets,
-  type ResolvedDeliverableConfig,
 } from '@/lib/reminders-config';
 
-type ProjectMember = {
-  id: string;
-  email: string;
-  firstName?: string;
-  lastName?: string;
-  active: boolean;
-  slackConnected: boolean;
+type Defaults = { enabled: boolean; offsetMinutes: number[]; timezone: string };
+type Deliverable = { id: string; title: string; deadline: string };
+type Draft = ReturnType<typeof resolveDeliverableReminderConfig> & {
+  recipientIds: string[];
 };
 
-type SprintDeliverable = {
-  id: string;
-  title: string;
-  deadline: string;
-  status: string;
-  projectId: string;
-  reminderOverride?: {
-    enabled?: boolean | null;
-    offsetMinutes?: number[] | null;
-    explicitRecipientUserIds?: string[] | null;
-  } | null;
-};
+function makeDraft(settings: DeliverableReminderSettings): Draft {
+  return {
+    ...resolveDeliverableReminderConfig(settings.override, {
+      enabled: settings.enabled,
+      offsetMinutes: settings.offsetsMinutes,
+      timezone: settings.timezone,
+    }),
+    recipientIds: settings.override?.explicitRecipientUserIds ?? [],
+  };
+}
 
-type DeliveryReminderOverridesProps = {
-  projectId: string;
-  projectTimezone: string;
-  projectDefaults: { enabled: boolean; offsetMinutes: number[]; timezone: string };
-  deliverables: SprintDeliverable[];
-  members: ProjectMember[];
-  canConfigure: boolean;
-  onConfigChange?: () => void;
-};
+function OverrideEditor({
+  deliverable,
+  defaults,
+  onSaved,
+}: {
+  deliverable: Deliverable;
+  defaults: Defaults;
+  onSaved: () => void;
+}) {
+  const [settings, setSettings] = useState<DeliverableReminderSettings | null>(
+    null,
+  );
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
+  useEffect(() => {
+    let current = true;
+    remindersAPI
+      .getDeliverableConfig(deliverable.id)
+      .then((res) => {
+        if (current) {
+          setSettings(res.data);
+          setDraft(makeDraft(res.data));
+          setError(null);
+        }
+      })
+      .catch(() => {
+        if (current) setError('Could not load reminder settings.');
+      })
+      .finally(() => {
+        if (current) setLoading(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [deliverable.id, reload]);
+
+  if (loading) return <p role="status">Loading reminder settings...</p>;
+  if (!draft || !settings)
+    return (
+      <div role="alert">
+        {error} <Button onClick={() => setReload((n) => n + 1)}>Retry</Button>
+      </div>
+    );
+  const save = async () => {
+    if (!draft.inherited && draft.enabled) {
+      const validation = validateCustomOffsets(draft.offsetMinutes);
+      if (!validation.valid) {
+        setError(validation.error ?? 'Invalid reminder times');
+        return;
+      }
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await remindersAPI.updateDeliverableConfig(deliverable.id, {
+        enabled: draft.inherited ? null : draft.enabled,
+        offsetMinutes: draft.inherited ? [] : draft.offsetMinutes,
+        explicitRecipientUserIds: draft.inherited ? [] : draft.recipientIds,
+      });
+      setSettings(res.data);
+      setDraft(makeDraft(res.data));
+      onSaved();
+    } catch {
+      setError(
+        'Could not save reminder settings. Your changes are still here; try again.',
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <fieldset disabled={saving} className="space-y-3 pt-3">
+      <label className="flex gap-2 items-center">
+        <input
+          type="checkbox"
+          checked={draft.inherited}
+          onChange={(event) =>
+            setDraft({
+              ...draft,
+              inherited: event.target.checked,
+              ...(event.target.checked
+                ? { ...defaults, recipientIds: [] }
+                : {}),
+            })
+          }
+        />
+        Use project defaults
+      </label>
+      {!draft.inherited && (
+        <>
+          <label className="flex gap-2 items-center">
+            <input
+              type="checkbox"
+              checked={draft.enabled}
+              onChange={(event) =>
+                setDraft({ ...draft, enabled: event.target.checked })
+              }
+            />
+            Enable reminders for this deliverable
+          </label>
+          {draft.enabled && (
+            <div>
+              <p className="text-sm font-medium">Reminder times</p>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {[
+                  ...new Set([
+                    60,
+                    120,
+                    1440,
+                    10080,
+                    20160,
+                    ...draft.offsetMinutes,
+                  ]),
+                ]
+                  .sort((a, b) => a - b)
+                  .map((minutes) => (
+                    <label
+                      key={minutes}
+                      className="flex gap-2 items-center text-sm"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={draft.offsetMinutes.includes(minutes)}
+                        onChange={(event) =>
+                          setDraft({
+                            ...draft,
+                            offsetMinutes: event.target.checked
+                              ? [...draft.offsetMinutes, minutes]
+                              : draft.offsetMinutes.filter(
+                                  (n) => n !== minutes,
+                                ),
+                          })
+                        }
+                      />
+                      {formatOffsetLabel(minutes)}
+                    </label>
+                  ))}
+              </div>
+              <label className="block mt-2 text-sm">
+                Add custom reminder (minutes before deadline)
+                <input
+                  type="number"
+                  min={1}
+                  max={20160}
+                  step={1}
+                  className="ml-2 border rounded p-1 bg-[var(--background)]"
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter') return;
+                    event.preventDefault();
+                    const minutes = Number(event.currentTarget.value);
+                    const next = [
+                      ...new Set([...draft.offsetMinutes, minutes]),
+                    ];
+                    const validation = validateCustomOffsets(next);
+                    if (!validation.valid)
+                      setError(validation.error ?? 'Invalid reminder time');
+                    else {
+                      setDraft({ ...draft, offsetMinutes: next });
+                      event.currentTarget.value = '';
+                      setError(null);
+                    }
+                  }}
+                />
+              </label>
+              <p className="text-xs">
+                Press Enter to add. Up to five reminders, at most two weeks
+                before the deadline.
+              </p>
+            </div>
+          )}
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">Explicit recipients</legend>
+            <p className="text-xs">
+              Leave all unchecked to use the deliverable&apos;s active
+              assignees.
+            </p>
+            {settings.eligibleRecipients.map((person) => (
+              <label
+                key={person.userId}
+                className="flex gap-2 items-center text-sm"
+              >
+                <input
+                  type="checkbox"
+                  checked={draft.recipientIds.includes(person.userId)}
+                  onChange={(event) =>
+                    setDraft({
+                      ...draft,
+                      recipientIds: event.target.checked
+                        ? [...draft.recipientIds, person.userId]
+                        : draft.recipientIds.filter(
+                            (id) => id !== person.userId,
+                          ),
+                    })
+                  }
+                />
+                {person.name} ({person.email}){' '}
+                <Badge
+                  size="sm"
+                  variant={person.slackConnected ? 'success' : 'warning'}
+                >
+                  {person.slackConnected ? 'Slack' : 'No Slack'}
+                </Badge>
+              </label>
+            ))}
+          </fieldset>
+        </>
+      )}
+      {error && (
+        <p role="alert" className="text-sm text-red-600">
+          {error}
+        </p>
+      )}
+      <div className="flex gap-3">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() =>
+            setDraft({ ...defaults, inherited: true, recipientIds: [] })
+          }
+        >
+          Reset to inherit
+        </Button>
+        <Button size="sm" onClick={() => void save()} disabled={saving}>
+          {saving ? 'Saving...' : 'Save override'}
+        </Button>
+      </div>
+    </fieldset>
+  );
+}
 
 export function DeliveryReminderOverrides({
   projectId,
   projectTimezone,
   projectDefaults,
   deliverables,
-  members,
-  canConfigure,
   onConfigChange,
-}: DeliveryReminderOverridesProps) {
-  const [expandedDeliverable, setExpandedDeliverable] = useState<string | null>(null);
-  const [deliveryStatus, setDeliveryStatus] = useState<any[]>([]);
-  const [deliveryStatusLoading, setDeliveryStatusLoading] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
-  const [overrideSaving, setOverrideSaving] = useState<Set<string>>(new Set());
-  const [drafts, setDrafts] = useState<Map<string, ResolvedDeliverableConfig>>(new Map());
-
+}: {
+  projectId: string;
+  projectTimezone: string;
+  projectDefaults: Defaults;
+  deliverables: Deliverable[];
+  onConfigChange?: () => void;
+}) {
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [rows, setRows] = useState<ReminderDeliveryStatus[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState('ALL');
+  const [refresh, setRefresh] = useState(0);
   useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      setDeliveryStatusLoading(true);
-      try {
-        const res = await remindersAPI.getStatus(
-          projectId,
-          statusFilter === 'ALL' ? undefined : statusFilter,
-        );
-        if (mounted) setDeliveryStatus(res.data ?? []);
-      } catch {
-        if (mounted) setDeliveryStatus([]);
-      } finally {
-        if (mounted) setDeliveryStatusLoading(false);
-      }
-    };
-    load();
+    let current = true;
+    remindersAPI
+      .getStatus(projectId, filter === 'ALL' ? undefined : filter)
+      .then((res) => {
+        if (current) {
+          setRows(res.data);
+          setError(null);
+        }
+      })
+      .catch(() => {
+        if (current) setError('Could not load delivery status.');
+      })
+      .finally(() => {
+        if (current) setLoading(false);
+      });
     return () => {
-      mounted = false;
+      current = false;
     };
-  }, [projectId, statusFilter]);
-
-  const getDraft = useCallback(
-    (deliverableId: string): ResolvedDeliverableConfig => {
-      const existing = drafts.get(deliverableId);
-      if (existing) return existing;
-      const d = deliverables.find((x) => x.id === deliverableId);
-      const resolved = resolveDeliverableReminderConfig(
-        d?.reminderOverride ?? null,
-        projectDefaults,
-      );
-      setDrafts((prev) => new Map(prev).set(deliverableId, resolved));
-      return resolved;
-    },
-    [deliverables, drafts, projectDefaults],
-  );
-
-  const handleToggleInherit = (deliverableId: string) => {
-    const draft = getDraft(deliverableId);
-    setDrafts((prev) => {
-      const next = new Map(prev);
-      next.set(deliverableId, {
-        ...draft,
-        inherited: !draft.inherited,
-        enabled: draft.inherited ? projectDefaults.enabled : !draft.enabled,
-      });
-      return next;
-    });
-  };
-
-  const handleToggleEnabled = (deliverableId: string) => {
-    const draft = getDraft(deliverableId);
-    setDrafts((prev) => {
-      const next = new Map(prev);
-      next.set(deliverableId, {
-        ...draft,
-        inherited: false,
-        enabled: !draft.enabled,
-      });
-      return next;
-    });
-  };
-
-  const handleOffsetChange = (deliverableId: string, minutes: number, checked: boolean) => {
-    const draft = getDraft(deliverableId);
-    const current = new Set(draft.offsetMinutes);
-    if (checked) current.add(minutes);
-    else current.delete(minutes);
-    setDrafts((prev) => {
-      const next = new Map(prev);
-      next.set(deliverableId, {
-        ...draft,
-        inherited: false,
-        offsetMinutes: [...current].sort((a, b) => b - a),
-      });
-      return next;
-    });
-  };
-
-  const handleSaveOverride = async (deliverableId: string) => {
-    setOverrideSaving((prev) => new Set(prev).add(deliverableId));
-    try {
-      const draft = getDraft(deliverableId);
-      const validation = validateCustomOffsets(draft.offsetMinutes);
-      if (!validation.valid) {
-        alert(validation.error);
-        return;
-      }
-      await remindersAPI.updateDeliverableConfig(deliverableId, {
-        enabled: draft.inherited ? undefined : draft.enabled,
-        offsetMinutes: draft.inherited ? undefined : draft.offsetMinutes,
-        explicitRecipientUserIds: draft.inherited ? undefined : [],
-      });
-      setExpandedDeliverable(null);
-      onConfigChange?.();
-    } catch {
-      alert('Failed to save reminder override');
-    } finally {
-      setOverrideSaving((prev) => {
-        const next = new Set(prev);
-        next.delete(deliverableId);
-        return next;
-      });
-    }
-  };
-
-  const handleResetToInherit = (deliverableId: string) => {
-    const d = deliverables.find((x) => x.id === deliverableId)!;
-    const resolved = resolveDeliverableReminderConfig(
-      d.reminderOverride ?? null,
-      projectDefaults,
-    );
-    setDrafts((prev) => {
-      const next = new Map(prev);
-      next.set(deliverableId, resolved);
-      return next;
-    });
-  };
-
-  const statusBadge = (status: string) => {
-    switch (status) {
-      case 'PENDING': return <Badge variant="default">Pending</Badge>;
-      case 'SENT': return <Badge variant="info">Sent</Badge>;
-      case 'FAILED': return <Badge variant="danger">Failed</Badge>;
-      case 'CANCELLED': return <Badge variant="default">Cancelled</Badge>;
-      default: return <Badge variant="default">{status}</Badge>;
-    }
-  };
-
-  const filteredStatus = deliveryStatus.filter(
-    (r) => statusFilter === 'ALL' || r.status === statusFilter,
-  );
-
+  }, [projectId, filter, refresh]);
+  const refreshStatus = () => setRefresh((n) => n + 1);
+  const section =
+    'border rounded-xl border-[var(--border)] bg-[var(--card)] p-5 space-y-3';
   return (
     <div className="space-y-6">
-      <section className="border rounded-xl border-[var(--border)] bg-[var(--card)] p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Slack className="w-4 h-4 text-[var(--primary)]" />
-            <h3 className="text-sm font-semibold text-[var(--foreground)]">
-              Per-Deliverable Reminder Overrides
-            </h3>
-          </div>
-          <p className="text-xs text-[var(--foreground)]/60">
-            Override project reminder settings for individual deliverables
-          </p>
-        </div>
-        <div className="space-y-3">
-          {deliverables.map((d) => {
-            const draft = getDraft(d.id);
-            const isExpanded = expandedDeliverable === d.id;
-            const isSaving = overrideSaving.has(d.id);
-            const summary = buildExplicitRecipientSummary(
-              d.reminderOverride?.explicitRecipientUserIds ?? [],
-              members,
-            );
-            return (
-              <div key={d.id} className="border border-[var(--border)] rounded-lg p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setExpandedDeliverable(isExpanded ? null : d.id)}
-                      className="p-1 hover:bg-[var(--accent)] rounded"
-                    >
-                      {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                    </button>
-                    <span className="text-sm font-medium text-[var(--foreground)]">{d.title}</span>
-                    {draft.inherited ? (
-                      <Badge variant="default" size="sm" className="ml-2">Inherits project defaults</Badge>
-                    ) : (
-                      <Badge variant="info" size="sm" className="ml-2">Custom</Badge>
-                    )}
-                  </div>
-                  <span className="text-xs text-[var(--foreground)]/60">
-                    {new Date(d.deadline).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                  </span>
-                </div>
-                {isExpanded && canConfigure && (
-                  <div className="space-y-3 pt-3 border-t border-[var(--border)]/50">
-                    <div className="space-y-2">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={draft.inherited} onChange={() => handleToggleInherit(d.id)} disabled={!canConfigure} className="rounded border-[var(--border)]" />
-                        <span className="text-sm text-[var(--foreground)]">
-                          Use project defaults ({draft.enabled ? 'enabled' : 'disabled'}, {draft.offsetMinutes.join(', ')} min)
-                        </span>
-                      </label>
-                      {!draft.inherited && (
-                        <>
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" checked={draft.enabled} onChange={() => handleToggleEnabled(d.id)} disabled={!canConfigure} className="rounded border-[var(--border)]" />
-                            <span className="text-sm text-[var(--foreground)]">Enable reminders for this deliverable</span>
-                          </label>
-                          {draft.enabled && (
-                            <div className="space-y-2">
-                              <span className="text-xs font-medium text-[var(--foreground)]/70 mb-1 block">Reminder times</span>
-                              <div className="grid gap-2 sm:grid-cols-3">
-                                {[60, 120, 1440, 10080, 20160].map((m) => {
-                                  const checked = draft.offsetMinutes.includes(m);
-                                  return (
-                                    <label key={m} className="flex items-center gap-2 text-sm text-[var(--foreground)]">
-                                      <input type="checkbox" checked={checked} onChange={(e) => handleOffsetChange(d.id, m, e.target.checked)} disabled={!canConfigure} className="rounded border-[var(--border)]" />
-                                      {formatOffsetLabel(m)}
-                                    </label>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                          <div className="pt-2 border-t border-[var(--border)]/50">
-                            <span className="text-xs font-medium text-[var(--foreground)]/70 mb-2 block">Explicit recipients</span>
-                            <p className="text-xs text-[var(--foreground)]/60">
-                              {summary.activeCount} of {summary.selectedCount} selected
-                              {summary.inactiveCount > 0 && <> - {summary.inactiveCount} inactive</>}
-                              {summary.missingSlackCount > 0 && <> - {summary.missingSlackCount} without Slack</>}
-                            </p>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3 pt-3">
-                      <Button size="sm" variant="outline" onClick={() => handleResetToInherit(d.id)} disabled={!canConfigure || draft.inherited}>
-                        Reset to inherit
-                      </Button>
-                      <Button size="sm" onClick={() => handleSaveOverride(d.id)} disabled={!canConfigure || isSaving}>
-                        {isSaving ? 'Saving...' : 'Save override'}
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="border rounded-xl border-[var(--border)] bg-[var(--card)] p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold text-[var(--foreground)]">Delivery Status</h3>
-          </div>
-          <button
-            onClick={() => setStatusFilter(statusFilter === 'ALL' ? 'PENDING' : statusFilter === 'PENDING' ? 'SENT' : statusFilter === 'SENT' ? 'FAILED' : statusFilter === 'FAILED' ? 'CANCELLED' : 'ALL')}
-            className="text-xs border border-[var(--border)] rounded px-2 py-1 text-[var(--foreground)]/60 hover:text-[var(--foreground)]"
+      <section className={section}>
+        <h3 className="text-sm font-semibold">
+          Per-Deliverable Reminder Overrides
+        </h3>
+        {deliverables.map((d) => (
+          <div
+            key={d.id}
+            className="border border-[var(--border)] rounded-lg p-3"
           >
-            {statusFilter === 'ALL' ? 'All statuses' : statusFilter}
-          </button>
-        </div>
-        {deliveryStatusLoading ? (
-          <p className="text-sm text-[var(--foreground)]/60">Loading delivery status...</p>
-        ) : filteredStatus.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-[var(--border)] p-4 text-sm text-[var(--foreground)]/60">
-            No {statusFilter === 'ALL' ? 'reminders' : statusFilter.toLowerCase()} reminders found.
+            <button
+              aria-expanded={expanded === d.id}
+              className="flex gap-2 items-center text-sm font-medium"
+              onClick={() => setExpanded(expanded === d.id ? null : d.id)}
+            >
+              {expanded === d.id ? (
+                <ChevronDown className="w-4 h-4" />
+              ) : (
+                <ChevronRight className="w-4 h-4" />
+              )}
+              {d.title}
+            </button>
+            {expanded === d.id && (
+              <OverrideEditor
+                deliverable={d}
+                defaults={projectDefaults}
+                onSaved={() => {
+                  refreshStatus();
+                  onConfigChange?.();
+                }}
+              />
+            )}
           </div>
+        ))}
+      </section>
+      <section className={section}>
+        <h3 className="text-sm font-semibold">Delivery Status</h3>
+        <div className="flex gap-3">
+          <label className="text-sm">
+            Status{' '}
+            <select
+              className="border rounded p-1 bg-[var(--background)]"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+            >
+              <option value="ALL">All statuses</option>
+              {['PENDING', 'SENT', 'FAILED', 'CANCELLED'].map((status) => (
+                <option key={status}>{status}</option>
+              ))}
+            </select>
+          </label>
+          <Button size="sm" variant="outline" onClick={refreshStatus}>
+            Refresh status
+          </Button>
+        </div>
+        <p className="text-xs">Times shown in {projectTimezone}.</p>
+        {error && (
+          <p role="alert">
+            {error}{' '}
+            <Button size="sm" onClick={refreshStatus}>
+              Retry
+            </Button>
+          </p>
+        )}
+        {loading ? (
+          <p role="status">Loading delivery status...</p>
+        ) : !rows.length && !error ? (
+          <p>No reminders found.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm text-left">
               <thead>
-                <tr className="border-b border-[var(--border)]/50">
-                  <th className="text-left pb-2 text-[var(--foreground)]/60 font-medium">Deliverable</th>
-                  <th className="text-left pb-2 text-[var(--foreground)]/60 font-medium">Recipient</th>
-                  <th className="text-left pb-2 text-[var(--foreground)]/60 font-medium">Scheduled</th>
-                  <th className="text-left pb-2 text-[var(--foreground)]/60 font-medium">Status</th>
-                  <th className="text-right pb-2 text-[var(--foreground)]/60 font-medium">Attempts</th>
+                <tr>
+                  {[
+                    'Deliverable',
+                    'Recipient',
+                    'Scheduled',
+                    'Status',
+                    'Attempts',
+                    'Error',
+                  ].map((title) => (
+                    <th key={title} className="p-2">
+                      {title}
+                    </th>
+                  ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[var(--border)]/50">
-                {filteredStatus.map((r) => (
-                  <tr key={r.id} className="hover:bg-[var(--accent)]/50 transition-colors">
-                    <td className="py-3 text-[var(--foreground)]">{r.deliverableTitle}</td>
-                    <td className="py-3 flex items-center gap-2">
-                      <User className="w-3 h-3 text-[var(--foreground)]/40" />
-                      <span className="text-[var(--foreground)]">{r.userName}</span>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.id} className="border-t border-[var(--border)]">
+                    <td className="p-2">{row.deliverable.title}</td>
+                    <td className="p-2">
+                      {[row.user.firstName, row.user.lastName]
+                        .filter(Boolean)
+                        .join(' ') || row.user.email}
                     </td>
-                    <td className="py-3 text-[var(--foreground)]/60">
-                      {new Date(r.fireAt).toLocaleString(undefined, {
+                    <td className="p-2">
+                      {new Date(row.fireAt).toLocaleString(undefined, {
                         timeZone: projectTimezone,
-                        month: 'short',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
                       })}
                     </td>
-                    <td className="py-3">{statusBadge(r.status)}</td>
-                    <td className="py-3 text-right text-[var(--foreground)]/60">{r.attempts}</td>
-                    {r.status === 'FAILED' && r.lastError && (
-                      <td className="py-3">
-                        <Button size="sm" variant="outline" onClick={() => alert(r.lastError)}>
-                          {r.lastError}
-                        </Button>
-                      </td>
-                    )}
+                    <td className="p-2">
+                      <Badge
+                        variant={
+                          row.status === 'FAILED'
+                            ? 'danger'
+                            : row.status === 'SENT'
+                              ? 'success'
+                              : 'default'
+                        }
+                      >
+                        {row.status}
+                      </Badge>
+                    </td>
+                    <td className="p-2">{row.attempts}</td>
+                    <td className="p-2 break-words">{row.lastError ?? ''}</td>
                   </tr>
                 ))}
               </tbody>

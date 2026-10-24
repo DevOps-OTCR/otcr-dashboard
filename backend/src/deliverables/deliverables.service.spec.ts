@@ -65,9 +65,9 @@ describe('DeliverablesService reviewer notifications', () => {
       cancelRemindersForDeliverable: jest.fn().mockResolvedValue(undefined),
     };
     service = new DeliverablesService(
-      prisma as any,
-      notificationsService as any,
-      deadlineReminders as any,
+      prisma as unknown as ConstructorParameters<typeof DeliverablesService>[0],
+      notificationsService as unknown as ConstructorParameters<typeof DeliverablesService>[1],
+      deadlineReminders as unknown as ConstructorParameters<typeof DeliverablesService>[2],
     );
   });
 

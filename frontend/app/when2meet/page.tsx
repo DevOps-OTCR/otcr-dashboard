@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Be_Vietnam_Pro, Mulish } from 'next/font/google';
+import { Be_Vietnam_Pro } from 'next/font/google';
+import localFont from 'next/font/local';
 import { AppNavbar } from '@/components/AppNavbar';
-import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { PageLoading } from '@/components/PageLoading';
 import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
 import { useAuth } from '@/components/AuthContext';
@@ -21,9 +21,10 @@ import {
 import { getEffectiveRole, type AppRole } from '@/lib/permissions';
 import { When2MeetBoard } from '@/when2meet/When2MeetBoard';
 
-const mulish = Mulish({
-  subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700', '800'],
+const mulish = localFont({
+  src: './fonts/Mulish.ttf',
+  weight: '300 800',
+  display: 'swap',
 });
 
 const beVietnam = Be_Vietnam_Pro({
@@ -73,6 +74,12 @@ export default function When2MeetPage() {
   const [selectedPollId, setSelectedPollId] = useState<string | null>(snapshot?.selectedPollId ?? null);
   const [pollDetail, setPollDetail] = useState<When2MeetPollDetail | null>(snapshot?.pollDetail ?? null);
   const projectRef = useRef(projectId);
+
+  // True while the page is in its initial load, or while a team/poll refresh is in flight
+  // (e.g. changing the team). During these windows the Team/Poll controls must stay hidden.
+  const pageLoading = loading || (pollsLoading && !pollsReady);
+
+
   const pollRef = useRef(selectedPollId);
   useEffect(() => {
     projectRef.current = projectId;
@@ -81,6 +88,7 @@ export default function When2MeetPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [gridFirstDate, setGridFirstDate] = useState('');
   const [gridLastDate, setGridLastDate] = useState('');
@@ -133,6 +141,7 @@ export default function When2MeetPage() {
 
   useEffect(() => {
     if (!createOpen) return;
+    setCreateError(null);
     const today = localCalendarDateISO();
     setGridFirstDate(today);
     setGridLastDate(today);
@@ -244,11 +253,11 @@ export default function When2MeetPage() {
     ev.preventDefault();
     if (!projectId || !newTitle.trim()) return;
     if (!gridFirstDate || !gridLastDate) {
-      setError('Choose both the first and last day for this poll.');
+      setCreateError('Choose both the first and last day for this poll.');
       return;
     }
     if (gridLastDate < gridFirstDate) {
-      setError('The last day must be on or after the first day.');
+      setCreateError('The last day must be on or after the first day.');
       return;
     }
 
@@ -266,12 +275,12 @@ export default function When2MeetPage() {
       startM % 15 !== 0 ||
       endM % 15 !== 0
     ) {
-      setError('Pick a valid time window in fifteen‑minute steps (start before end).');
+      setCreateError('Pick a valid time window in fifteen‑minute steps (start before end).');
       return;
     }
 
     setCreating(true);
-    setError(null);
+    setCreateError(null);
     try {
       const res = await when2meetAPI.createPoll({
         projectId,
@@ -289,7 +298,7 @@ export default function When2MeetPage() {
       setCreateOpen(false);
       await loadPolls(createdId ? { selectPollId: createdId } : undefined);
     } catch (err) {
-      setError(parseApiError(err, 'Could not create poll.'));
+      setCreateError(parseApiError(err, 'Could not create poll.'));
     } finally {
       setCreating(false);
     }
@@ -326,7 +335,7 @@ export default function When2MeetPage() {
   };
 
   if (!session.isLoggedIn || session.loading) {
-    return <FullScreenLoader />;
+    return <PageLoading />;
   }
 
   return (
@@ -334,8 +343,8 @@ export default function When2MeetPage() {
       <AppNavbar role={role} currentPath="/when2meet" />
 
       <main className="max-w-[2000px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        {(loading || (pollsLoading && !pollsReady)) && <PageLoading />}
-        <Card>
+        {pageLoading ? <PageLoading /> : <>
+          <Card>
           <CardHeader>
             <CardTitle>When2Meet</CardTitle>
             <CardDescription>
@@ -406,6 +415,7 @@ export default function When2MeetPage() {
             ) : null}
           </CardContent>
         </Card>
+        </>}
 
         {error ? (
           <p className="text-sm text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
@@ -434,6 +444,11 @@ export default function When2MeetPage() {
           title="Create When2Meet"
         >
           <form id="when2meet-create-form" className="space-y-4" onSubmit={handleCreatePoll}>
+            {createError ? (
+              <p role="alert" className="text-sm text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
+                {createError}
+              </p>
+            ) : null}
             <label className="flex flex-col gap-1 text-sm">
               <span className="font-medium">Title</span>
               <input

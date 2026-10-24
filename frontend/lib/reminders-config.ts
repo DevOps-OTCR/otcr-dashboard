@@ -127,7 +127,7 @@ export function resolveDeliverableReminderConfig(
     enabled,
     offsetMinutes,
     timezone: projectDefaults.timezone,
-    inherited: inheritedEnabled && inheritedOffsets,
+    inherited: inheritedEnabled && inheritedOffsets && !override?.explicitRecipientUserIds?.length,
   };
 }
 
