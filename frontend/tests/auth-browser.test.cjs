@@ -19,6 +19,7 @@ async function setup(t, slowCacheOperations = false) {
         page: document.body.innerText,
         account: document.querySelector('[data-testid="account"]')?.textContent,
         hasAuthHeader: Boolean(window.authTest?.authHeader()),
+        sdk: window.authTest?.diagnostics(),
       }));
       t.diagnostic(JSON.stringify(state));
     }
