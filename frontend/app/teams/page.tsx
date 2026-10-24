@@ -452,6 +452,8 @@ export default function TeamsPage() {
       remindersAPI.getPresets(projectId),
       remindersAPI.getConfig(projectId),
       remindersAPI.getRecipients(projectId),
+      // Warm the status cache before the child mounts or the user navigates away.
+      remindersAPI.getStatus(projectId).catch(() => undefined),
     ]);
   }, [session]);
 

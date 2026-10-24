@@ -315,6 +315,46 @@ test('Teams first visit keeps the navbar visible and return visits restore the s
   assert.ok(requests > 0);
 });
 
+test('Reminder overrides load saved recipients, retain failed edits, and reset to project defaults', async t => {
+  const { page, open } = await setup(t, '/teams');
+  let override = { enabled: true, offsetMinutes: [60], explicitRecipientUserIds: ['u-1'] };
+  let failSave = false;
+  const saves = [];
+  await page.route('**/api/projects/deliverables/*/reminders/config', async route => {
+    if (route.request().method() === 'PATCH') {
+      const input = route.request().postDataJSON();
+      saves.push(input);
+      if (failSave) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ message: 'Temporary outage' }) });
+      override = input;
+    }
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+      enabled: override.enabled ?? true, offsetsMinutes: override.offsetMinutes.length ? override.offsetMinutes : [60],
+      timezone: 'America/Chicago', override,
+      eligibleRecipients: [{ userId: 'u-1', name: 'Test Consultant', email: 'consultant@example.test', slackConnected: false }],
+    }) });
+  });
+  await open();
+  await page.getByRole('button', { name: /Team One/ }).click();
+  await page.getByRole('button', { name: 'team-1 Research', exact: true }).click();
+  assert.equal(await page.getByLabel('Use project defaults').isChecked(), false);
+  assert.equal(await page.getByRole('checkbox', { name: /Test Consultant/ }).isChecked(), true);
+  await page.getByLabel('Add custom reminder (minutes before deadline)').fill('30');
+  await page.getByLabel('Add custom reminder (minutes before deadline)').press('Enter');
+  failSave = true;
+  await page.getByRole('button', { name: 'Save override', exact: true }).click();
+  await page.getByRole('alert').filter({ hasText: 'Your changes are still here' }).waitFor();
+  assert.equal(await page.getByLabel('30 minutes before', { exact: true }).isChecked(), true);
+  failSave = false;
+  await page.getByRole('button', { name: 'Reset to inherit', exact: true }).click();
+  const resetSaved = page.waitForResponse(response => response.url().includes('/reminders/config')
+    && response.request().method() === 'PATCH' && response.status() === 200);
+  await page.getByRole('button', { name: 'Save override', exact: true }).click();
+  await resetSaved;
+  await page.waitForFunction(() => !document.querySelector('fieldset[disabled]'));
+  assert.deepEqual(saves.at(-1), { enabled: null, offsetMinutes: [], explicitRecipientUserIds: [] });
+  assert.equal(await page.getByLabel('Use project defaults').isChecked(), true);
+});
+
 test('Deliverables and Client Notes keep restored content when an expired refresh fails', async t => {
   const { page, state, nav, open } = await setup(t, '/deliverables');
   let failNotes = false;

@@ -404,15 +404,24 @@ export type ReminderDeliveryStatus = {
 };
 
 export const remindersAPI = {
-  getPresets: (projectId: string) => api.get(`/projects/${projectId}/reminders/presets`),
-  getConfig: (projectId: string) => api.get(`/projects/${projectId}/reminders/config`),
+  getPresets: (projectId: string) => cachedRequest(`/projects/${projectId}/reminders/presets`,
+    () => api.get<{ presets: ReminderOffsetPreset[] }>(`/projects/${projectId}/reminders/presets`)),
+  getConfig: (projectId: string) => cachedRequest(`/projects/${projectId}/reminders/config`,
+    () => api.get<ReminderConfig>(`/projects/${projectId}/reminders/config`)),
   updateConfig: (projectId: string, data: { enabled: boolean; offsetsMinutes: number[] }) =>
     api.patch(`/projects/${projectId}/reminders/config`, data),
-  getRecipients: (projectId: string) => api.get(`/projects/${projectId}/reminders/recipients`),
-  getStatus: (projectId: string, status?: string) =>
-    api.get<ReminderDeliveryStatus[]>(`/projects/${projectId}/reminders/status`, { params: status ? { status } : {} }),
+  getRecipients: (projectId: string) => cachedRequest(`/projects/${projectId}/reminders/recipients`,
+    () => api.get<ReminderRecipientGroup[]>(`/projects/${projectId}/reminders/recipients`)),
+  getStatus: (projectId: string, status?: string, refresh = false) =>
+    cachedRequest(
+      '/projects/' + projectId + '/reminders/status' + (status ? '?status=' + status : ''),
+      () => api.get<ReminderDeliveryStatus[]>(
+        '/projects/' + projectId + '/reminders/status', { params: status ? { status } : {} }),
+      refresh ? 0 : FRESHNESS.live,
+    ),
   getDeliverableConfig: (deliverableId: string) =>
-    api.get<DeliverableReminderSettings>(`/projects/deliverables/${deliverableId}/reminders/config`),
+    cachedRequest(`/projects/deliverables/${deliverableId}/reminders/config`,
+      () => api.get<DeliverableReminderSettings>(`/projects/deliverables/${deliverableId}/reminders/config`)),
   updateDeliverableConfig: (
     deliverableId: string,
     data: {

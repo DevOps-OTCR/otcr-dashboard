@@ -287,7 +287,7 @@ export function DeliveryReminderOverrides({
   useEffect(() => {
     let current = true;
     remindersAPI
-      .getStatus(projectId, filter === 'ALL' ? undefined : filter)
+      .getStatus(projectId, filter === 'ALL' ? undefined : filter, refresh > 0)
       .then((res) => {
         if (current) {
           setRows(res.data);
