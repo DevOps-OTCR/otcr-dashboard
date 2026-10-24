@@ -24,6 +24,10 @@ export function beginCmsSignIn() {
   sessionStorage.setItem(LOGIN_ATTEMPT_KEY, cmsSessionRevision());
 }
 
+export function hasCurrentCmsSignInAttempt(): boolean {
+  return sessionStorage.getItem(LOGIN_ATTEMPT_KEY) === cmsSessionRevision();
+}
+
 export function completeCmsSignIn(accountId: string): boolean {
   const startedAt = sessionStorage.getItem(LOGIN_ATTEMPT_KEY);
   sessionStorage.removeItem(LOGIN_ATTEMPT_KEY);

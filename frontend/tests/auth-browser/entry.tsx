@@ -41,6 +41,7 @@ instance.acquireTokenSilent = async request => {
 let interactiveLogins = 0;
 let releaseToken: (() => Promise<void>) | undefined;
 let sessionToken: Promise<string | null> | undefined;
+let releaseRedirect: (() => Promise<void>) | undefined;
 
 function resultFor(email = 'pm@example.test'): AuthenticationResult {
   const now = Math.floor(Date.now() / 1000);
@@ -83,6 +84,17 @@ if (new URLSearchParams(location.search).has('expired')) {
 if (new URLSearchParams(location.search).has('unavailable')) {
   instance.acquireTokenSilent = async () => { throw new Error('Synthetic token service failure'); };
 }
+if (new URLSearchParams(location.search).has('redirect')) {
+  beginCmsSignIn();
+  let response: Promise<AuthenticationResult> | undefined;
+  instance.handleRedirectPromise = () => response ??= new Promise(resolve => {
+    releaseRedirect = async () => {
+      const result = resultFor();
+      await instance.hydrateCache(result, { scopes: ['User.Read'], account: result.account });
+      resolve(result);
+    };
+  });
+}
 if (new URLSearchParams(location.search).has('slow')) {
   const initialize = instance.initialize.bind(instance);
   instance.initialize = async request => { await new Promise(resolve => setTimeout(resolve, 500)); await initialize(request); };
@@ -91,6 +103,8 @@ if (new URLSearchParams(location.search).has('slow')) {
 const testApi = {
   seed,
   interactiveLogins: () => interactiveLogins,
+  redirectIsPending: () => Boolean(releaseRedirect),
+  finishRedirect: async () => { await releaseRedirect?.(); },
   accounts: () => instance.getAllAccounts().map(account => account.username),
   authHeader: () => api.defaults.headers.common.Authorization ?? null,
   diagnostics: () => ({ operations: tokenOperations.slice(-12), session: localStorage.getItem(CMS_SESSION_KEY),
