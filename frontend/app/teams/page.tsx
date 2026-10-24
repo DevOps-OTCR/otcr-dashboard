@@ -255,6 +255,7 @@ export default function TeamsPage() {
   const [draftDeliverablesSaving, setDraftDeliverablesSaving] = useState(false);
   const [memberHistoryOpen, setMemberHistoryOpen] = useState(false);
   const [memberHistoryLoading, setMemberHistoryLoading] = useState(false);
+  const [memberHistoryError, setMemberHistoryError] = useState<string | null>(null);
   const [memberHistoryFilter, setMemberHistoryFilter] = useState<HistoryFilter>('TEAM');
   const [memberHistory, setMemberHistory] = useState<MemberAttendanceHistory | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{ message: string; tone: 'success' | 'warning' | 'info' } | null>(null);
@@ -654,6 +655,7 @@ export default function TeamsPage() {
 
     setMemberHistoryOpen(true);
     setMemberHistoryLoading(true);
+    setMemberHistoryError(null);
     setMemberHistoryFilter('TEAM');
     setMemberHistory(null);
 
@@ -662,10 +664,7 @@ export default function TeamsPage() {
       setMemberHistory(response.data as MemberAttendanceHistory);
     } catch (err) {
       setMemberHistory(null);
-      setActionFeedback({
-        message: parseApiError(err, 'Failed to load member attendance history'),
-        tone: 'warning',
-      });
+      setMemberHistoryError(parseApiError(err, 'Failed to load member attendance history'));
     } finally {
       setMemberHistoryLoading(false);
     }
@@ -1235,27 +1234,29 @@ export default function TeamsPage() {
                             key={m.user.id}
                             className="flex items-center justify-between py-2 px-3 rounded-lg bg-[var(--card)] border border-[var(--border)]"
                           >
-                            <span className="text-sm">
+                            <span className="min-w-0 flex-1 break-words text-sm">
                               <span className="font-medium text-[var(--foreground)]">{formatMemberName(m.user)}</span>
                               <span className="text-[var(--foreground)]/60 ml-2">({getUserRole(m.user.email)})</span>
                             </span>
-                            {canInspectMemberAttendance && (
+                            <div className="ml-3 flex shrink-0 items-center gap-3">
+                              {canInspectMemberAttendance && (
+                                <button
+                                  type="button"
+                                  onClick={() => void handleOpenMemberHistory(m.user)}
+                                  className="whitespace-nowrap text-xs font-medium text-[var(--primary)] hover:underline"
+                                >
+                                  View attendance
+                                </button>
+                              )}
                               <button
                                 type="button"
-                                onClick={() => void handleOpenMemberHistory(m.user)}
-                                className="ml-3 text-xs font-medium text-[var(--primary)] hover:underline"
+                                onClick={() => handleRemoveMemberFromTeam(selectedTeam.id, m.user.id)}
+                                className="p-1.5 rounded hover:bg-rose-500/20 text-rose-600 dark:text-rose-400"
+                                title="Remove member"
                               >
-                                View attendance
+                                <UserMinus className="w-4 h-4" />
                               </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveMemberFromTeam(selectedTeam.id, m.user.id)}
-                              className="p-1.5 rounded hover:bg-rose-500/20 text-rose-600 dark:text-rose-400"
-                              title="Remove member"
-                            >
-                              <UserMinus className="w-4 h-4" />
-                            </button>
+                            </div>
                           </li>
                         ))}
                       </ul>
@@ -1420,7 +1421,7 @@ export default function TeamsPage() {
                             key={m.user.id}
                             className="flex items-center justify-between py-2 px-3 rounded-lg bg-[var(--card)] border border-[var(--border)]"
                           >
-                            <span className="text-sm">
+                            <span className="min-w-0 flex-1 break-words text-sm">
                               <span className="font-medium text-[var(--foreground)]">{formatMemberName(m.user)}</span>
                               <span className="text-[var(--foreground)]/60 ml-2">({getUserRole(m.user.email)})</span>
                             </span>
@@ -1428,7 +1429,7 @@ export default function TeamsPage() {
                               <button
                                 type="button"
                                 onClick={() => void handleOpenMemberHistory(m.user)}
-                                className="ml-3 text-xs font-medium text-[var(--primary)] hover:underline"
+                                className="ml-3 shrink-0 whitespace-nowrap text-xs font-medium text-[var(--primary)] hover:underline"
                               >
                                 View attendance
                               </button>
@@ -1593,6 +1594,8 @@ export default function TeamsPage() {
       >
         {memberHistoryLoading ? (
           <p className="text-sm text-[var(--foreground)]/65">Loading attendance history...</p>
+        ) : memberHistoryError ? (
+          <p role="alert" className="text-sm text-rose-600 dark:text-rose-400">{memberHistoryError}</p>
         ) : !memberHistory ? (
           <p className="text-sm text-[var(--foreground)]/65">No attendance history available.</p>
         ) : (

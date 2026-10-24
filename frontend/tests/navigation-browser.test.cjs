@@ -315,6 +315,59 @@ test('Teams first visit keeps the navbar visible and return visits restore the s
   assert.ok(requests > 0);
 });
 
+for (const width of [375, 1280]) {
+  test(`Team attendance actions align and history errors stay above the backdrop at ${width}px`, async t => {
+    const { page, open } = await setup(t, '/teams');
+    await page.setViewportSize({ width, height: 900 });
+    const members = [
+      { user: { id: 'member-1', email: 'short@example.test', firstName: 'Alex', lastName: 'Li' } },
+      { user: { id: 'member-2', email: 'long@example.test', firstName: 'Alexandria', lastName: 'Longfamilyname' } },
+    ];
+    await page.route(url => url.pathname === '/api/projects', route => route.fulfill({
+      contentType: 'application/json', body: JSON.stringify({ projects: [{ id: 'team-1', name: 'Team One', members }] }),
+    }));
+    let failHistory = true;
+    await page.route('**/api/attendance/members/*/history*', route => route.fulfill({
+      status: failHistory ? 503 : 200, contentType: 'application/json',
+      body: JSON.stringify(failHistory ? { message: 'Attendance history is temporarily unavailable.' } : {
+        member: { id: 'member-2', email: 'long@example.test', name: 'Alexandria Longfamilyname' },
+        team: { attended: [], missed: [] }, firmwide: { attended: [], missed: [] },
+      }),
+    }));
+    await open();
+    await page.getByRole('button', { name: /Team One/ }).click();
+    const buttons = page.getByRole('button', { name: 'View attendance', exact: true });
+    await buttons.first().waitFor();
+    await page.addStyleTag({ content: styles });
+    const positions = await buttons.evaluateAll(elements => elements.map(element => {
+      const rect = element.getBoundingClientRect();
+      const row = element.closest('li').getBoundingClientRect();
+      return { x: rect.x, right: rect.right, rowRight: row.right };
+    }));
+    assert.equal(positions.length, 2);
+    assert.ok(Math.abs(positions[0].x - positions[1].x) < 1, 'Attendance actions share a column');
+    assert.ok(positions.every(position => position.right <= position.rowRight), 'Actions fit inside their rows');
+
+    await buttons.first().click();
+    const error = page.getByRole('alert');
+    await error.waitFor();
+    assert.equal(await error.textContent(), 'Attendance history is temporarily unavailable.');
+    assert.equal(await error.evaluate(element => {
+      const rect = element.getBoundingClientRect();
+      return element.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+    }), true, 'The error is visible above the modal backdrop');
+    assert.equal(await page.getByText('No attendance history available.', { exact: true }).count(), 0);
+
+    await page.keyboard.press('Escape');
+    await page.getByRole('heading', { name: 'Member attendance', exact: true }).waitFor({ state: 'hidden' });
+    failHistory = false;
+    await buttons.nth(1).click();
+    await page.getByRole('heading', { name: 'Alexandria Longfamilyname attendance', exact: true }).waitFor();
+    assert.equal(await page.getByRole('alert').count(), 0);
+    assert.equal(await page.getByText('No attended events in this filter.', { exact: true }).isVisible(), true);
+  });
+}
+
 test('Reminder overrides load saved recipients, retain failed edits, and reset to project defaults', async t => {
   const { page, open } = await setup(t, '/teams');
   let override = { enabled: true, offsetMinutes: [60], explicitRecipientUserIds: ['u-1'] };
