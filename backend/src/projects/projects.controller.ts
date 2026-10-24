@@ -158,10 +158,7 @@ export class ProjectsController {
   ) {
     const project = await this.projectsService.findOne(id);
     await this.ensureReminderAccess(project, user);
-    return this.deadlineReminders.updateConfig(id, {
-      enabled: body.enabled,
-      offsetsMinutes: body.offsetsMinutes,
-    });
+    return this.deadlineReminders.updateConfig(id, body);
   }
 
   @Get(':id/reminders/recipients')
@@ -218,12 +215,7 @@ export class ProjectsController {
   ) {
     const deliverable = await this.projectsService.findDeliverable(id);
     await this.ensureReminderAccess(deliverable.project, user);
-    await this.deadlineReminders.updateDeliverableReminderConfig(id, {
-      enabled: body.enabled,
-      offsetMinutes: body.offsetMinutes,
-      explicitRecipientUserIds: body.explicitRecipientUserIds,
-    });
-    return this.deadlineReminders.getDeliverableReminderSettings(id);
+    return this.deadlineReminders.updateDeliverableReminderConfig(id, body);
   }
 
   @Get(':id/sprints')

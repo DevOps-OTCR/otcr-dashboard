@@ -26,10 +26,11 @@ import { AppNavbar } from '@/components/AppNavbar';
 import { useRouter } from 'next/navigation';
 import { projectsAPI, authAPI, attendanceAPI, deliverablesAPI, remindersAPI, setAuthToken, type AttendanceEventCategory } from '@/lib/api';
 import {
-  canConfigureReminders,
   summarizeReminderRecipients,
   validateReminderOffsets,
   type ReminderRecipientGroup,
+  type ReminderConfig,
+  type ReminderOffsetPreset,
 } from '@/lib/reminders-config';
 import { useAuth } from '@/components/AuthContext';
 import { PageLoading } from '@/components/PageLoading';
@@ -58,9 +59,6 @@ type SprintConfig = {
   autoGenerateSprints: boolean;
   updatedAt?: string;
 };
-
-type ReminderOffsetPreset = { minutes: number; label: string };
-type ReminderConfig = { enabled: boolean; offsetsMinutes: number[]; timezone: string };
 
 type SprintDeliverable = {
   id: string;
@@ -356,7 +354,6 @@ export default function TeamsPage() {
     resolvedRole === 'PM' ||
     resolvedRole === 'LC' ||
     resolvedRole === 'ADMIN';
-  const canConfigureRemindersForTeam = canManageTeams && canConfigureReminders(resolvedRole);
   const canEditTeamCalendar = resolvedRole === 'PM' || resolvedRole === 'ADMIN';
   const canInspectMemberAttendance =
     resolvedRole === 'PM' || resolvedRole === 'PARTNER' || resolvedRole === 'EXECUTIVE' || resolvedRole === 'ADMIN';
@@ -459,12 +456,12 @@ export default function TeamsPage() {
 
   const applyReminderData = useCallback((projectId: string, [presetsRes, configRes, recipientsRes]: Awaited<ReturnType<typeof fetchReminderData>>) => {
     if (reminderScope.current !== projectId) return;
-    const config = configRes.data as ReminderConfig;
+    const config = configRes.data;
     setLoadedReminderProject(projectId);
-    setReminderPresets((presetsRes.data?.presets ?? []) as ReminderOffsetPreset[]);
+    setReminderPresets(presetsRes.data.presets);
     setReminderConfig(config);
     setReminderDraft({ enabled: config.enabled, offsetsMinutes: config.offsetsMinutes });
-    setReminderRecipients((recipientsRes.data ?? []) as ReminderRecipientGroup[]);
+    setReminderRecipients(recipientsRes.data);
   }, []);
 
   const loadReminderData = useCallback(async (projectId: string) => {
@@ -476,7 +473,7 @@ export default function TeamsPage() {
 
   useEffect(() => {
     reminderScope.current = selectedTeamId;
-    if (session.loading || !session.isLoggedIn || !selectedTeamId || !canConfigureRemindersForTeam) return;
+    if (session.loading || !session.isLoggedIn || !selectedTeamId || !canManageTeams) return;
     let current = true;
     fetchReminderData(selectedTeamId).then(data => {
       if (current) applyReminderData(selectedTeamId, data);
@@ -484,7 +481,7 @@ export default function TeamsPage() {
       if (current) setActionFeedback({ message: parseApiError(error, 'Failed to load reminder settings'), tone: 'warning' });
     });
     return () => { current = false; };
-  }, [session.loading, session.isLoggedIn, selectedTeamId, canConfigureRemindersForTeam, fetchReminderData, applyReminderData]);
+  }, [session.loading, session.isLoggedIn, selectedTeamId, canManageTeams, fetchReminderData, applyReminderData]);
 
   const handleToggleReminderOffset = (minutes: number) => {
     setReminderDraft((prev) => {
@@ -503,7 +500,7 @@ export default function TeamsPage() {
 
     // Client-side validation: enabling requires at least one timing, and the
     // selection must survive preset validation (mirrors the backend rules).
-    const { offsets } = validateReminderOffsets(reminderDraft.offsetsMinutes, reminderPresets);
+    const offsets = validateReminderOffsets(reminderDraft.offsetsMinutes, reminderPresets);
     if (reminderDraft.enabled && offsets.length === 0) {
       setActionFeedback({
         message: 'Select at least one reminder time before enabling reminders.',
@@ -519,7 +516,7 @@ export default function TeamsPage() {
         offsetsMinutes: offsets,
       });
       if (reminderScope.current !== selectedTeam.id) return;
-      const saved = res.data as ReminderConfig;
+      const saved = res.data;
       setReminderConfig(saved);
       setReminderDraft({
         enabled: Boolean(saved?.enabled),
@@ -1069,7 +1066,7 @@ export default function TeamsPage() {
                           )}
                         </div>
 
-                        {canConfigureRemindersForTeam && (
+                        {canManageTeams && (
                           <div className="mb-4 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] space-y-4">
                             <div>
                               <p className="text-sm font-semibold flex items-center gap-2">
@@ -1208,12 +1205,12 @@ export default function TeamsPage() {
                         )}
                         </>
                       )}
-                      {canConfigureRemindersForTeam && loadedReminderProject === selectedTeamId && reminderConfig && (
+                      {canManageTeams && loadedReminderProject === selectedTeamId && reminderConfig && (
                         <DeliveryReminderOverrides
                           key={selectedTeamId}
                           projectId={selectedTeamId ?? ''}
                           projectTimezone={reminderConfig.timezone}
-                          projectDefaults={{enabled: reminderConfig.enabled, offsetMinutes: reminderConfig.offsetsMinutes, timezone: reminderConfig.timezone}}
+                          presets={reminderPresets}
                           deliverables={teamSprints.flatMap(s => s.deliverables ?? [])}
                           onConfigChange={() => { void loadReminderData(selectedTeamId ?? ''); }}
                         />

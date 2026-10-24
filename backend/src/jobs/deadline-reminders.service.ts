@@ -8,7 +8,10 @@ import {
   NotificationsService,
 } from '../notifications/notifications.service';
 
-const DEFAULT_TIMEZONE = 'America/Chicago';
+import {
+  resolveReminderConfig,
+  type ResolvedReminderConfig,
+} from './reminder-config';
 /** Reminder offsets (minutes before deadline) offered as presets. */
 export const REMINDER_OFFSET_PRESETS = [
   { minutes: 10080, label: '1 week before' },
@@ -18,12 +21,6 @@ export const REMINDER_OFFSET_PRESETS = [
 ];
 const MAX_OFFSETS = 5;
 const MAX_OFFSET_MINUTES = 20160; // 2 weeks
-
-export interface ResolvedReminderConfig {
-  enabled: boolean;
-  offsetsMinutes: number[];
-  timezone: string;
-}
 
 @Injectable()
 export class DeadlineRemindersService {
@@ -52,19 +49,14 @@ export class DeadlineRemindersService {
     if (!project) {
       throw new BadRequestException('Project not found');
     }
-    const timezone = project.sprintTimezone || DEFAULT_TIMEZONE;
 
     const stored = await this.prisma.reminderConfig.findUnique({
       where: { projectId },
     });
-    if (!stored) {
-      return { enabled: false, offsetsMinutes: [1440, 60], timezone };
-    }
-    return {
-      enabled: stored.enabled,
-      offsetsMinutes: stored.offsetsMinutes ?? [1440, 60],
-      timezone,
-    };
+    return resolveReminderConfig({
+      ...stored,
+      timezone: project.sprintTimezone,
+    });
   }
 
   /**
@@ -168,10 +160,14 @@ export class DeadlineRemindersService {
       select: { projectId: true, reminderOverride: true },
     });
     if (!d) throw new BadRequestException('Deliverable not found');
+    const [config, eligibleRecipients] = await Promise.all([
+      this.getConfig(d.projectId),
+      this.getEligibleRecipients(d.projectId),
+    ]);
     return {
-      ...(await this.getDeliverableReminderConfig(deliverableId)),
+      ...resolveReminderConfig(config, d.reminderOverride),
       override: d.reminderOverride,
-      eligibleRecipients: await this.getEligibleRecipients(d.projectId),
+      eligibleRecipients,
     };
   }
 
@@ -214,7 +210,10 @@ export class DeadlineRemindersService {
       return;
     }
 
-    const config = await this.getDeliverableReminderConfig(deliverableId);
+    const config = resolveReminderConfig(
+      await this.getConfig(deliverable.projectId),
+      deliverable.reminderOverride,
+    );
     if (!config.enabled) {
       await this.cancelRemindersForDeliverable(
         deliverableId,
@@ -420,44 +419,6 @@ export class DeadlineRemindersService {
   }
 
   /**
-   * Resolve the effective reminder config for a specific deliverable:
-   * deliverable-level override if present, otherwise project defaults.
-   * Null override fields mean "inherit from project".
-   */
-  async getDeliverableReminderConfig(
-    deliverableId: string,
-  ): Promise<ResolvedReminderConfig> {
-    const deliverable = await this.prisma.deliverable.findUnique({
-      where: { id: deliverableId },
-      select: {
-        projectId: true,
-        reminderOverride: true,
-      },
-    });
-
-    if (!deliverable) {
-      throw new BadRequestException('Deliverable not found');
-    }
-
-    const projectConfig = await this.getConfig(deliverable.projectId);
-
-    // Inherit everything from project unless override specifies otherwise.
-    const enabled =
-      deliverable.reminderOverride?.enabled ?? projectConfig.enabled;
-    const overrideOffsets = deliverable.reminderOverride?.offsetMinutes;
-    const offsetsMinutes =
-      overrideOffsets?.length > 0
-        ? overrideOffsets
-        : projectConfig.offsetsMinutes;
-
-    return {
-      enabled,
-      offsetsMinutes,
-      timezone: projectConfig.timezone,
-    };
-  }
-
-  /**
    * Upsert a deliverable-level reminder override. Null fields mean inherit.
    * After saving, reschedule the deliverable so the new config takes effect.
    */
@@ -468,7 +429,7 @@ export class DeadlineRemindersService {
       offsetMinutes?: number[];
       explicitRecipientUserIds?: string[];
     },
-  ): Promise<ResolvedReminderConfig> {
+  ) {
     const deliverable = await this.prisma.deliverable.findUnique({
       where: { id: deliverableId },
       select: { id: true, projectId: true },
@@ -507,26 +468,18 @@ export class DeadlineRemindersService {
         );
     }
 
+    const data = {
+      enabled: input.enabled ?? null,
+      offsetMinutes: offsets,
+      explicitRecipientUserIds: ids,
+    };
     await this.prisma.deliverableReminderOverride.upsert({
       where: { deliverableId },
-      create: {
-        deliverableId,
-        enabled: input.enabled ?? null,
-        offsetMinutes: offsets ?? [],
-        explicitRecipientUserIds: input.explicitRecipientUserIds ?? [],
-      },
-      update: {
-        enabled: input.enabled !== undefined ? input.enabled : null,
-        offsetMinutes: offsets ?? [],
-        explicitRecipientUserIds:
-          input.explicitRecipientUserIds !== undefined
-            ? input.explicitRecipientUserIds
-            : [],
-      },
+      create: { deliverableId, ...data },
+      update: data,
     });
-
     await this.rescheduleDeliverable(deliverableId);
-    return this.getDeliverableReminderConfig(deliverableId);
+    return this.getDeliverableReminderSettings(deliverableId);
   }
 
   private validateOffsets(offsets: number[]): number[] {
@@ -539,8 +492,7 @@ export class DeadlineRemindersService {
       );
     }
     const normalized = new Set<number>();
-    for (const value of offsets) {
-      const minutes = value;
+    for (const minutes of offsets) {
       if (!Number.isInteger(minutes) || minutes <= 0) {
         throw new BadRequestException(
           'Reminder offsets must be positive whole minutes',

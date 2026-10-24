@@ -4,41 +4,40 @@ import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import {
-  remindersAPI,
-  type DeliverableReminderSettings,
-  type ReminderDeliveryStatus,
-} from '@/lib/api';
+import { remindersAPI } from '@/lib/api';
 import {
   formatOffsetLabel,
-  resolveDeliverableReminderConfig,
+  inheritsProjectReminders,
+  type ReminderOffsetPreset,
+  type DeliverableReminderSettings,
+  type ReminderDeliveryStatus,
   validateCustomOffsets,
 } from '@/lib/reminders-config';
 
-type Defaults = { enabled: boolean; offsetMinutes: number[]; timezone: string };
 type Deliverable = { id: string; title: string; deadline: string };
-type Draft = ReturnType<typeof resolveDeliverableReminderConfig> & {
+type Draft = {
+  enabled: boolean;
+  offsetMinutes: number[];
+  inherited: boolean;
   recipientIds: string[];
 };
 
 function makeDraft(settings: DeliverableReminderSettings): Draft {
   return {
-    ...resolveDeliverableReminderConfig(settings.override, {
-      enabled: settings.enabled,
-      offsetMinutes: settings.offsetsMinutes,
-      timezone: settings.timezone,
-    }),
+    enabled: settings.enabled,
+    offsetMinutes: settings.offsetsMinutes,
+    inherited: inheritsProjectReminders(settings.override),
     recipientIds: settings.override?.explicitRecipientUserIds ?? [],
   };
 }
 
 function OverrideEditor({
   deliverable,
-  defaults,
+  presets,
   onSaved,
 }: {
   deliverable: Deliverable;
-  defaults: Defaults;
+  presets: ReminderOffsetPreset[];
   onSaved: () => void;
 }) {
   const [settings, setSettings] = useState<DeliverableReminderSettings | null>(
@@ -115,9 +114,6 @@ function OverrideEditor({
             setDraft({
               ...draft,
               inherited: event.target.checked,
-              ...(event.target.checked
-                ? { ...defaults, recipientIds: [] }
-                : {}),
             })
           }
         />
@@ -141,11 +137,7 @@ function OverrideEditor({
               <div className="grid gap-2 sm:grid-cols-3">
                 {[
                   ...new Set([
-                    60,
-                    120,
-                    1440,
-                    10080,
-                    20160,
+                    ...presets.map((preset) => preset.minutes),
                     ...draft.offsetMinutes,
                   ]),
                 ]
@@ -248,16 +240,7 @@ function OverrideEditor({
         </p>
       )}
       <div className="flex gap-3">
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() =>
-            setDraft({ ...defaults, inherited: true, recipientIds: [] })
-          }
-        >
-          Reset to inherit
-        </Button>
-        <Button size="sm" onClick={() => void save()} disabled={saving}>
+        <Button size="sm" onClick={() => void save()}>
           {saving ? 'Saving...' : 'Save override'}
         </Button>
       </div>
@@ -268,13 +251,13 @@ function OverrideEditor({
 export function DeliveryReminderOverrides({
   projectId,
   projectTimezone,
-  projectDefaults,
+  presets,
   deliverables,
   onConfigChange,
 }: {
   projectId: string;
   projectTimezone: string;
-  projectDefaults: Defaults;
+  presets: ReminderOffsetPreset[];
   deliverables: Deliverable[];
   onConfigChange?: () => void;
 }) {
@@ -333,7 +316,7 @@ export function DeliveryReminderOverrides({
             {expanded === d.id && (
               <OverrideEditor
                 deliverable={d}
-                defaults={projectDefaults}
+                presets={presets}
                 onSaved={() => {
                   refreshStatus();
                   onConfigChange?.();
@@ -364,14 +347,7 @@ export function DeliveryReminderOverrides({
           </Button>
         </div>
         <p className="text-xs">Times shown in {projectTimezone}.</p>
-        {error && (
-          <p role="alert">
-            {error}{' '}
-            <Button size="sm" onClick={refreshStatus}>
-              Retry
-            </Button>
-          </p>
-        )}
+        {error && <p role="alert">{error} Use Refresh status to try again.</p>}
         {loading ? (
           <p role="status">Loading delivery status...</p>
         ) : !rows.length && !error ? (

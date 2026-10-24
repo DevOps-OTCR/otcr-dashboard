@@ -1,3 +1,5 @@
+import type { ReminderOffsetPreset, ReminderConfig, ReminderRecipientGroup,
+  DeliverableReminderSettings, DeliverableReminderInput, ReminderDeliveryStatus } from './reminders-config';
 import axios, { type AxiosRequestConfig } from 'axios';
 import type { AlumniDataset } from './alumni-data';
 import { clearNavigationSnapshots } from './navigation-cache';
@@ -382,34 +384,13 @@ export const projectsAPI = {
     api.delete(`/projects/${projectId}/sprints/${sprintId}`),
 };
 
-export type ReminderOffsetPreset = { minutes: number; label: string };
-export type ReminderConfig = { enabled: boolean; offsetsMinutes: number[]; timezone: string };
-export type ReminderRecipient = { userId: string; email: string; name: string; slackConnected: boolean };
-export type ReminderRecipientGroup = {
-  deliverableId: string;
-  title: string;
-  deadline: string;
-  unassigned: boolean;
-  recipients: ReminderRecipient[];
-};
-
-export type DeliverableReminderSettings = ReminderConfig & {
-  override: { enabled: boolean | null; offsetMinutes: number[]; explicitRecipientUserIds: string[] } | null;
-  eligibleRecipients: ReminderRecipient[];
-};
-export type ReminderDeliveryStatus = {
-  id: string; status: 'PENDING' | 'SENT' | 'FAILED' | 'CANCELLED'; fireAt: string; attempts: number; lastError: string | null;
-  user: { id: string; email: string; firstName?: string | null; lastName?: string | null };
-  deliverable: { id: string; title: string; deadline: string };
-};
-
 export const remindersAPI = {
   getPresets: (projectId: string) => cachedRequest(`/projects/${projectId}/reminders/presets`,
     () => api.get<{ presets: ReminderOffsetPreset[] }>(`/projects/${projectId}/reminders/presets`)),
   getConfig: (projectId: string) => cachedRequest(`/projects/${projectId}/reminders/config`,
     () => api.get<ReminderConfig>(`/projects/${projectId}/reminders/config`)),
   updateConfig: (projectId: string, data: { enabled: boolean; offsetsMinutes: number[] }) =>
-    api.patch(`/projects/${projectId}/reminders/config`, data),
+    api.patch<ReminderConfig>(`/projects/${projectId}/reminders/config`, data),
   getRecipients: (projectId: string) => cachedRequest(`/projects/${projectId}/reminders/recipients`,
     () => api.get<ReminderRecipientGroup[]>(`/projects/${projectId}/reminders/recipients`)),
   getStatus: (projectId: string, status?: string, refresh = false) =>
@@ -424,11 +405,7 @@ export const remindersAPI = {
       () => api.get<DeliverableReminderSettings>(`/projects/deliverables/${deliverableId}/reminders/config`)),
   updateDeliverableConfig: (
     deliverableId: string,
-    data: {
-      enabled?: boolean | null;
-      offsetMinutes?: number[];
-      explicitRecipientUserIds?: string[];
-    },
+    data: DeliverableReminderInput,
   ) => api.patch<DeliverableReminderSettings>(`/projects/deliverables/${deliverableId}/reminders/config`, data),
 };
 

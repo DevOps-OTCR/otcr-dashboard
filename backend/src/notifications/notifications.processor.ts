@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SlackService } from '../integrations/slack.service';
 import { createRedisConnection } from '../common/redis.config';
 import { Prisma } from '@prisma/client';
+import { resolveReminderConfig } from '../jobs/reminder-config';
 import { NotificationJob } from './notifications.service';
 
 // Bounded Slack retry for scheduled reminders (matches the queue's attempts).
@@ -120,75 +121,47 @@ export class NotificationsProcessor implements OnModuleInit {
     }
 
     if (scheduledReminderId) {
-      if (slackSuccess) {
-        // Delivered: create the in-app record and mark the reminder SENT.
-        await this.prisma.notification.create({
-          data: {
-            userId,
-            type,
-            channel,
-            title: this.buildNotificationTitle(type, data),
-            message: this.buildNotificationMessage(type, data),
-            status: 'SENT',
-            sentAt: new Date(),
-            metadata: {
-              ...(JSON.parse(JSON.stringify(data)) as Prisma.InputJsonObject),
-              scheduledReminderId,
-            },
-          },
-        });
+      const errorMessage = slackError ?? 'Slack delivery failed';
+      const where = {
+        id: scheduledReminderId,
+        jobId: job.id,
+        status: 'PENDING' as const,
+      };
+      if (!slackSuccess) {
         await this.prisma.scheduledReminder.updateMany({
-          where: { id: scheduledReminderId, jobId: job.id, status: 'PENDING' },
-          data: {
-            status: 'SENT',
-            sentAt: new Date(),
-            attempts: { increment: 1 },
-          },
+          where,
+          data: { attempts: { increment: 1 }, lastError: errorMessage },
         });
-        return;
+        const attemptsUsed = (job.attemptsMade ?? 0) + 1;
+        if (attemptsUsed < (job.opts.attempts ?? REMINDER_MAX_ATTEMPTS))
+          throw new Error(errorMessage);
       }
-
-      // Slack failed. Retry transient failures via BullMQ up to the bounded
-      // attempt limit; do not create the in-app record until we stop retrying
-      // (avoids duplicates on each retry).
-      await this.prisma.scheduledReminder.updateMany({
-        where: { id: scheduledReminderId, jobId: job.id, status: 'PENDING' },
-        data: {
-          attempts: { increment: 1 },
-          lastError: slackError ?? 'Slack delivery failed',
-        },
-      });
-
-      const attemptsUsed = (job.attemptsMade ?? 0) + 1;
-      const maxAttempts = job.opts.attempts ?? REMINDER_MAX_ATTEMPTS;
-      if (attemptsUsed < maxAttempts) {
-        // Let BullMQ re-run this job with its exponential backoff.
-        throw new Error(slackError ?? 'Slack delivery failed');
-      }
-
-      // Final attempt failed: preserve the in-app notification (marked FAILED)
-      // and record the terminal failure state for the manager status view.
+      // Only create the in-app record once delivery succeeds or retries are exhausted.
+      const status = slackSuccess ? 'SENT' : 'FAILED';
+      const sentAt = new Date();
       await this.prisma.notification.create({
         data: {
           userId,
           type,
           channel,
+          status,
+          sentAt,
           title: this.buildNotificationTitle(type, data),
           message: this.buildNotificationMessage(type, data),
-          status: 'FAILED',
-          sentAt: new Date(),
           metadata: {
             ...(JSON.parse(JSON.stringify(data)) as Prisma.InputJsonObject),
-            slackError: slackError ?? 'Slack delivery failed',
             scheduledReminderId,
+            ...(!slackSuccess ? { slackError: errorMessage } : {}),
           },
         },
       });
       await this.prisma.scheduledReminder.updateMany({
-        where: { id: scheduledReminderId, jobId: job.id, status: 'PENDING' },
+        where,
         data: {
-          status: 'FAILED',
-          lastError: slackError ?? 'Slack delivery failed',
+          status,
+          ...(slackSuccess
+            ? { sentAt, attempts: { increment: 1 } }
+            : { lastError: errorMessage }),
         },
       });
     } else {
@@ -230,27 +203,25 @@ export class NotificationsProcessor implements OnModuleInit {
       return false;
     const d = reminder.deliverable;
     const override = d.reminderOverride;
-    const enabled =
-      override?.enabled ?? d.project.reminderConfig?.enabled ?? false;
-    const offsets = override?.offsetMinutes.length
-      ? override.offsetMinutes
-      : (d.project.reminderConfig?.offsetsMinutes ?? [1440, 60]);
+    const config = resolveReminderConfig(
+      { ...d.project.reminderConfig, timezone: d.project.sprintTimezone },
+      override,
+    );
     const recipients = override?.explicitRecipientUserIds.length
       ? override.explicitRecipientUserIds
       : d.assignments.map((a) => a.userId);
     const valid =
-      enabled &&
+      config.enabled &&
       !d.completed &&
       !['SUBMITTED', 'APPROVED'].includes(d.status) &&
       reminder.user.active &&
       d.project.members.some((m) => m.userId === reminder.userId) &&
       recipients.includes(reminder.userId) &&
-      offsets.includes(reminder.offsetMinutes) &&
+      config.offsetsMinutes.includes(reminder.offsetMinutes) &&
       new Date(job.data.data.deadline).getTime() === d.deadline.getTime() &&
       reminder.fireAt.getTime() ===
         d.deadline.getTime() - reminder.offsetMinutes * 60000 &&
-      job.data.data.timezone ===
-        (d.project.sprintTimezone || 'America/Chicago');
+      job.data.data.timezone === config.timezone;
     if (!valid)
       await this.prisma.scheduledReminder.updateMany({
         where: { id: reminder.id, jobId: job.id, status: 'PENDING' },

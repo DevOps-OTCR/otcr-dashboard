@@ -345,7 +345,7 @@ test('Reminder overrides load saved recipients, retain failed edits, and reset t
   await page.getByRole('alert').filter({ hasText: 'Your changes are still here' }).waitFor();
   assert.equal(await page.getByLabel('30 minutes before', { exact: true }).isChecked(), true);
   failSave = false;
-  await page.getByRole('button', { name: 'Reset to inherit', exact: true }).click();
+  await page.getByLabel('Use project defaults').check();
   const resetSaved = page.waitForResponse(response => response.url().includes('/reminders/config')
     && response.request().method() === 'PATCH' && response.status() === 200);
   await page.getByRole('button', { name: 'Save override', exact: true }).click();

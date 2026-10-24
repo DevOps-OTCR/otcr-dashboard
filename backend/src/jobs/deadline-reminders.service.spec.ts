@@ -25,7 +25,15 @@ function createPrismaMock() {
     user: {
       findMany: jest
         .fn()
-        .mockResolvedValue([{ id: 'user-1' }, { id: 'user-2' }]),
+        .mockResolvedValue(
+          ['user-1', 'user-2'].map((id) => ({
+            id,
+            email: id + '@example.test',
+            firstName: 'Test',
+            lastName: 'User',
+            slackConnections: [],
+          })),
+        ),
     },
     scheduledReminder: {
       upsert: jest.fn().mockImplementation(({ create }) =>
@@ -452,7 +460,7 @@ describe('DeadlineRemindersService', () => {
     });
   });
 
-  describe('getDeliverableReminderConfig', () => {
+  describe('getDeliverableReminderSettings', () => {
     it('inherits project defaults when no override exists', async () => {
       prisma.deliverable.findUnique.mockResolvedValue({
         id: 'deliverable-1',
@@ -465,13 +473,15 @@ describe('DeadlineRemindersService', () => {
       });
 
       const config =
-        await service.getDeliverableReminderConfig('deliverable-1');
+        await service.getDeliverableReminderSettings('deliverable-1');
 
-      expect(config).toEqual({
-        enabled: true,
-        offsetsMinutes: [1440, 60],
-        timezone: 'America/Chicago',
-      });
+      expect(config).toEqual(
+        expect.objectContaining({
+          enabled: true,
+          offsetsMinutes: [1440, 60],
+          timezone: 'America/Chicago',
+        }),
+      );
     });
 
     it('uses override enabled value when set', async () => {
@@ -490,7 +500,7 @@ describe('DeadlineRemindersService', () => {
       });
 
       const config =
-        await service.getDeliverableReminderConfig('deliverable-1');
+        await service.getDeliverableReminderSettings('deliverable-1');
 
       expect(config.enabled).toBe(false);
       expect(config.offsetsMinutes).toEqual([1440, 60]);
@@ -512,7 +522,7 @@ describe('DeadlineRemindersService', () => {
       });
 
       const config =
-        await service.getDeliverableReminderConfig('deliverable-1');
+        await service.getDeliverableReminderSettings('deliverable-1');
 
       expect(config.enabled).toBe(true);
       expect(config.offsetsMinutes).toEqual([60]);
@@ -522,7 +532,7 @@ describe('DeadlineRemindersService', () => {
       prisma.deliverable.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.getDeliverableReminderConfig('missing'),
+        service.getDeliverableReminderSettings('missing'),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
   });
@@ -551,7 +561,15 @@ describe('DeadlineRemindersService', () => {
         enabled: true,
         offsetsMinutes: [1440, 60],
       });
-      prisma.user.findMany.mockResolvedValue([{ id: 'user-1' }]);
+      prisma.user.findMany.mockResolvedValue([
+        {
+          id: 'user-1',
+          email: 'a@example.test',
+          firstName: 'A',
+          lastName: 'User',
+          slackConnections: [],
+        },
+      ]);
 
       const result = await service.updateDeliverableReminderConfig(
         'deliverable-1',
