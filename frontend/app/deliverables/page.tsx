@@ -146,6 +146,7 @@ export default function DeliverablesPage() {
   const session = useAuth();
   const { isLoggedIn, getToken } = session;
   const email = session.user?.email;
+  const { recordProject, orderProjects } = useProjectRecency(email);
   const { snapshot, saveSnapshot } = useNavigationSnapshot<{
     role: AppRole; projects: ProjectOption[]; selectedProjectId: string;
     teamMembers: TeamMemberOption[]; sprints: SprintItem[]; selectedSprintId: string;
@@ -339,6 +340,7 @@ export default function DeliverablesPage() {
   }, [selectedSprint]);
 
   const handleProjectChange = async (projectId: string) => {
+    recordProject(projectId);
     setSelectedProjectId(projectId);
     setSelectedSprintId('');
     if (!projectId) {
@@ -623,7 +625,7 @@ export default function DeliverablesPage() {
                   onChange={(e) => void handleProjectChange(e.target.value)}
                   className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
                 >
-                  {projects.map((project) => (
+                  {orderProjects(projects).map((project) => (
                     <option key={project.id} value={project.id}>
                       {project.name}
                     </option>
