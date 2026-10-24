@@ -67,7 +67,8 @@ flowchart TD
    ```
 
    Use a user token belonging to an account with repository access and a paid
-   Copilot plan. Enable Copilot's agent for this repository. GitHub documents
+   Copilot plan or an activated Copilot Student benefit. Enable Copilot's agent
+   for this repository. For staging, set `CMS_COPILOT_BASE_BRANCH=staging`. GitHub documents
    metadata read and actions, contents, issues, and pull requests read/write for
    fine-grained tokens used to assign Copilot. Organization approval may also be
    required. The standard Actions `GITHUB_TOKEN` and installation tokens are not

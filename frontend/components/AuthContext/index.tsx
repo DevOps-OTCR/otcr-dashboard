@@ -2,8 +2,6 @@
 import {
   InteractionRequiredAuthError,
   InteractionStatus,
-  EventType,
-  CacheLookupPolicy,
 } from "@azure/msal-browser";
 import { useMsal } from "@azure/msal-react";
 import { useRouter } from 'next/navigation';
@@ -48,7 +46,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const signedOut = useRef(false);
   const authGeneration = useRef(0);
   const handledRedirect = useRef(false);
-  const sharedCacheReady = useRef<{ revision: string; promise: Promise<void> } | null>(null);
+  const documentSessionRevision = useRef(cmsSessionRevision());
   const [sessionChange, setSessionChange] = useState(0);
   const [authError, setAuthError] = useState<string | null>(null);
   
@@ -73,7 +71,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const clearAppSession = useCallback(() => {
     signedOut.current = true;
-    sharedCacheReady.current = null;
     authGeneration.current += 1;
     clearRoleCache(previousEmail.current ?? null);
     clearProjectsCache();
@@ -92,41 +89,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     router.replace('/sign-in');
   }, [clearAppSession, router]);
 
+  const refreshChangedSession = useCallback(() => {
+    if (cmsSessionRevision() === documentSessionRevision.current) return;
+    // Import the completed sign-in cache through a fresh SDK instance. A lookup
+    // during cross-tab synchronization can remove keys absent from memory.
+    clearAppSession();
+    setIsAuthReady(false);
+    window.location.reload();
+  }, [clearAppSession]);
+
   useEffect(() => {
-    let disposed = false;
-    const restoreSharedSignIn = () => {
-      const session = readCmsSession();
-      if (!session?.accountId || session.signedOut || sharedCacheReady.current?.revision === session.revision) return;
-      const revision = session.revision;
-      // MSAL v5 LOGIN_SUCCESS contains AccountInfo, not tokens. Its cache
-      // broadcasts can arrive later than session/event notifications.
-      const promise = (async () => {
-        await withAuthTimeout(instance.initialize());
-        const deadline = Date.now() + 15000;
-        while (!disposed && cmsSessionRevision() === revision && !readCmsSession()?.signedOut) {
-          const account = instance.getAllAccounts().find(account => account.homeAccountId === session.accountId);
-          if (account) {
-            try {
-              // Cache-only lookup avoids a premature renewal or interaction
-              // while another tab's successful sign-in is still synchronizing.
-              await withAuthTimeout(instance.acquireTokenSilent({
-                account, scopes: ['User.Read'], cacheLookupPolicy: CacheLookupPolicy.AccessToken,
-              }), Math.max(1, deadline - Date.now()));
-              return;
-            } catch { /* Wait for the remaining SDK cache broadcasts. */ }
-          }
-          if (Date.now() >= deadline) throw new Error('Shared sign-in cache timed out');
-          await new Promise(resolve => window.setTimeout(resolve, 50));
-        }
-        throw new DOMException('Authentication session changed', 'AbortError');
-      })();
-      sharedCacheReady.current = { revision, promise };
-      void promise.then(() => {
-        if (!disposed && cmsSessionRevision() === revision) setSessionChange(value => value + 1);
-      }).catch(() => {
-        if (!disposed && cmsSessionRevision() === revision) setAuthError('We could not restore your sign-in. Please retry.');
-      });
-    };
     const onStorage = (event: StorageEvent) => {
       if (event.key !== CMS_SESSION_KEY && event.key !== null) return;
       if (readCmsSession()?.signedOut) {
@@ -139,40 +111,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             await instance.clearCache();
           }
         }).catch(() => { /* The durable sign-out marker still blocks restoration. */ });
-      } else {
-        signedOut.current = false;
-        authGeneration.current += 1;
-        // Hide the previous account while the new shared session is validated.
-        setAuthToken(null);
-        setUser(null);
-        setIsLoggedIn(false);
-        setIsAuthReady(false);
-        setAuthError(null);
-        restoreSharedSignIn();
-        setSessionChange(value => value + 1);
-      }
+      } else refreshChangedSession();
     };
     const onPageShow = () => {
       if (readCmsSession()?.signedOut) requireSignIn();
+      else if (cmsSessionRevision() !== documentSessionRevision.current) refreshChangedSession();
       else setSessionChange(value => value + 1);
     };
-    // MSAL v5 broadcasts active-account changes; account arrays alone do not
-    // change when switching between two accounts already in the cache.
-    const callbackId = instance.addEventCallback(message => {
-      if (message.eventType === EventType.LOGIN_SUCCESS || message.eventType === EventType.ACTIVE_ACCOUNT_CHANGED) {
-        restoreSharedSignIn();
-        setSessionChange(value => value + 1);
-      }
-    });
     window.addEventListener('storage', onStorage);
     window.addEventListener('pageshow', onPageShow);
     return () => {
-      disposed = true;
       window.removeEventListener('storage', onStorage);
       window.removeEventListener('pageshow', onPageShow);
-      if (callbackId) instance.removeEventCallback(callbackId);
     };
-  }, [instance, requireSignIn]);
+  }, [instance, requireSignIn, refreshChangedSession]);
 
   useEffect(() => {
     if (isAuthReady) return;
@@ -203,14 +155,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           }
           signedOut.current = false;
           revision = cmsSessionRevision();
+          documentSessionRevision.current = revision;
         }
         if (!isCurrent()) return;
         if (signedOut.current || readCmsSession()?.signedOut) {
           clearAppSession();
           return;
         }
-        if (sharedCacheReady.current) await withAuthTimeout(sharedCacheReady.current.promise);
-        if (!isCurrent()) return;
+        if (revision !== documentSessionRevision.current) {
+          refreshChangedSession();
+          return;
+        }
         const preferred = readCmsSession()?.accountId;
         const account = preferred
           ? instance.getAllAccounts().find(account => account.homeAccountId === preferred)
@@ -241,12 +196,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (error instanceof InteractionRequiredAuthError) requireSignIn();
         else setAuthError('We could not restore your sign-in. Please retry.');
       } finally {
-        if (!cancelled) setIsAuthReady(true);
+        if (!cancelled && generation === authGeneration.current) setIsAuthReady(true);
       }
     };
     void checkAuth();
     return () => { cancelled = true; };
-  }, [instance, accounts, inProgress, sessionChange, clearAppSession, requireSignIn, scopeCaches]);
+  }, [instance, accounts, inProgress, sessionChange, clearAppSession, requireSignIn, scopeCaches, refreshChangedSession]);
 
   const login = useCallback(async () => {
     await withAuthTimeout(instance.initialize());
@@ -272,12 +227,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const generation = authGeneration.current;
     const revision = cmsSessionRevision();
     const isCurrent = () => !signedOut.current && !readCmsSession()?.signedOut &&
-      generation === authGeneration.current && revision === cmsSessionRevision();
+      generation === authGeneration.current && revision === cmsSessionRevision() &&
+      revision === documentSessionRevision.current;
     // Reject cancelled work so callers cannot turn a null token into an email credential.
     const cancelledRequest = () => new DOMException('Authentication session changed', 'AbortError');
     if (!isCurrent()) throw cancelledRequest();
     await withAuthTimeout(instance.initialize());
-    if (sharedCacheReady.current) await withAuthTimeout(sharedCacheReady.current.promise);
     if (!isCurrent()) throw cancelledRequest();
     const preferredAccount = readCmsSession()?.accountId;
     // The shared CMS selection is authoritative while SDK active-account
@@ -319,6 +274,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             <h1 className="text-xl font-semibold">Unable to finish sign-in</h1>
             <p className="my-4">{authError}</p>
             <button type="button" onClick={() => window.location.reload()} className="rounded bg-[#003360] px-5 py-2 text-white">Retry sign-in</button>
+            <button type="button" onClick={() => void logout()} className="ml-3 rounded border px-5 py-2">Return to sign-in</button>
           </section>
         </main>
       ) : isLoading ? (

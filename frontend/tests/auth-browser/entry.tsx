@@ -80,6 +80,9 @@ instance.logoutPopup = async () => { throw new Error('Must not sign out of Micro
 if (new URLSearchParams(location.search).has('expired')) {
   instance.acquireTokenSilent = async () => { throw new InteractionRequiredAuthError('login_required'); };
 }
+if (new URLSearchParams(location.search).has('unavailable')) {
+  instance.acquireTokenSilent = async () => { throw new Error('Synthetic token service failure'); };
+}
 if (new URLSearchParams(location.search).has('slow')) {
   const initialize = instance.initialize.bind(instance);
   instance.initialize = async request => { await new Promise(resolve => setTimeout(resolve, 500)); await initialize(request); };
