@@ -16,6 +16,7 @@ import { readResource } from '@/lib/resource-cache';
 import { deliverablesAPI, projectsAPI, setAuthToken } from '@/lib/api';
 import { getEffectiveRole, type AppRole } from '@/lib/permissions';
 import { reconcileDraftDeliverables, type DraftDeliverable } from '@/lib/deliverables-parser';
+import { useProjectRecency } from '@/lib/use-project-recency';
 import { dispatchNotificationsRefresh } from '@/lib/notification-events';
 import { buildSprintDeadlineInChicago } from '@/lib/sprint-deadlines';
 
@@ -122,12 +123,16 @@ export default function WorkstreamPage() {
   const router = useRouter();
   const { isLoggedIn, getToken } = session;
   const email = session.user?.email;
+  const { recordProject, orderProjects } = useProjectRecency(email);
   const { snapshot, saveSnapshot } = useNavigationSnapshot<{
     role: AppRole; projects: ProjectOption[]; selectedProjectId: string;
     sprints: SprintItem[]; selectedSprintId: string;
   }>('workstream', email);
   const [role, setRole] = useState<AppRole>(snapshot?.role ?? 'CONSULTANT');
   const [projects, setProjects] = useState<ProjectOption[]>(snapshot?.projects ?? []);
+  if (projects.length > 0) {
+    recordProject(projects[0].id);
+  }
   const [selectedProjectId, setSelectedProjectId] = useState(snapshot?.selectedProjectId ?? '');
   const projectRef = useRef(selectedProjectId);
   const sprintRequest = useRef(0);
@@ -221,6 +226,9 @@ export default function WorkstreamPage() {
         if (cancelled) return;
         setProjects(nextProjects);
 
+        if (nextProjects.length > 0) {
+          recordProject(nextProjects[0].id);
+        }
         const firstProjectId = nextProjects.some(project => project.id === projectRef.current)
           ? projectRef.current : nextProjects[0]?.id ?? '';
         projectRef.current = firstProjectId;
@@ -599,7 +607,7 @@ export default function WorkstreamPage() {
                   onChange={(e) => void handleProjectChange(e.target.value)}
                   className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
                 >
-                  {projects.map((project) => (
+                  {orderProjects(projects).map((project) => (
                     <option key={project.id} value={project.id}>
                       {project.name}
                     </option>
