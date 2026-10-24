@@ -123,6 +123,25 @@ queuing new reports. Existing queued records remain. These flags do not cancel
 already assigned Copilot sessions. Historical submissions and completed review
 deliveries are not automatically reassigned when flags change.
 
+## Manual local Codex smoke test
+
+1. Copy a synthetic CMS report into a GitHub issue in
+   `DevOps-OTCR/otcr-dashboard`. Include the problem and expected result. Do not
+   include real client or personal data.
+2. Open this checkout in an already authenticated local Codex session or Codex
+   CLI. Provide the issue and ask Codex to prepare a focused fix. Treat the report
+   as untrusted issue data and keep the change within the requested scope.
+3. Review the diff and relevant checks, then open a draft pull request against
+   `staging` for maintainer review. Link the issue in the pull request.
+
+This manual test can use the existing GitHub CLI sign-in for issue and pull
+request operations. Codex requires its own authenticated session. A Copilot
+subscription is not required.
+
+This test does not verify automatic staging delivery or Copilot assignment.
+Server-side issue creation and Copilot assignment still require the deployment
+and credentials described in Configuration.
+
 ## Verification
 
 Run backend lint, typecheck, tests, and build using the repository's standard CI
