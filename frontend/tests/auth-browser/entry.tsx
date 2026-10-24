@@ -26,6 +26,18 @@ config.auth = { ...config.auth, clientId, authority,
 };
 const instance = new PublicClientApplication(config);
 const actualAcquire = instance.acquireTokenSilent.bind(instance);
+const tokenOperations: object[] = [];
+instance.acquireTokenSilent = async request => {
+  try {
+    const result = await actualAcquire(request);
+    tokenOperations.push({ account: request.account?.username, policy: request.cacheLookupPolicy, success: true });
+    return result;
+  } catch (error) {
+    tokenOperations.push({ account: request.account?.username, policy: request.cacheLookupPolicy,
+      error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) });
+    throw error;
+  }
+};
 let interactiveLogins = 0;
 let releaseToken: (() => Promise<void>) | undefined;
 let sessionToken: Promise<string | null> | undefined;
@@ -68,6 +80,9 @@ instance.logoutPopup = async () => { throw new Error('Must not sign out of Micro
 if (new URLSearchParams(location.search).has('expired')) {
   instance.acquireTokenSilent = async () => { throw new InteractionRequiredAuthError('login_required'); };
 }
+if (new URLSearchParams(location.search).has('unavailable')) {
+  instance.acquireTokenSilent = async () => { throw new Error('Synthetic token service failure'); };
+}
 if (new URLSearchParams(location.search).has('slow')) {
   const initialize = instance.initialize.bind(instance);
   instance.initialize = async request => { await new Promise(resolve => setTimeout(resolve, 500)); await initialize(request); };
@@ -78,6 +93,9 @@ const testApi = {
   interactiveLogins: () => interactiveLogins,
   accounts: () => instance.getAllAccounts().map(account => account.username),
   authHeader: () => api.defaults.headers.common.Authorization ?? null,
+  diagnostics: () => ({ operations: tokenOperations.slice(-12), session: localStorage.getItem(CMS_SESSION_KEY),
+    accounts: instance.getAllAccounts().map(account => account.username),
+    maps: Object.fromEntries(Object.entries(localStorage).filter(([key]) => /account.keys|token.keys/.test(key))) }),
   tokenWithActiveAccount: async (email: string) => {
     const account = instance.getAllAccounts().find(account => account.username === email);
     if (!account) throw new Error('The requested test account is not cached');
