@@ -1,14 +1,18 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 
+import { DeadlineRemindersService } from '../jobs/deadline-reminders.service';
+
 @Injectable()
 export class SlideSubmissionsService {
+  private readonly logger = new Logger(SlideSubmissionsService.name);
   private static readonly SLIDE_TASK_MARKER_PREFIX = '[[SLIDE_DELIVERABLE_ID:';
 
   constructor(
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
+    private deadlineRemindersService: DeadlineRemindersService,
   ) {}
 
   private getDisplayName(firstName?: string | null, lastName?: string | null, email?: string | null): string {
@@ -109,6 +113,13 @@ export class SlideSubmissionsService {
       where: { id: deliverableId },
       data: { status: 'SUBMITTED' },
     });
+
+    try {
+      await this.deadlineRemindersService.cancelRemindersForDeliverable(deliverableId, 'Slide submitted');
+    } catch (error: unknown) {
+      this.logger.warn('Could not cancel submission reminders: ' +
+        (error instanceof Error ? error.message : String(error)));
+    }
 
     await this.notifyPMsAndLCs(submission, {
       deadline: deliverable.deadline,

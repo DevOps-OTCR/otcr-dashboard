@@ -315,6 +315,114 @@ test('Teams first visit keeps the navbar visible and return visits restore the s
   assert.ok(requests > 0);
 });
 
+for (const width of [375, 1280]) {
+  test(`Team attendance actions align and history errors stay above the backdrop at ${width}px`, async t => {
+    const { page, open } = await setup(t, '/teams');
+    await page.setViewportSize({ width, height: 900 });
+    const members = [
+      { user: { id: 'member-1', email: 'short@example.test', firstName: 'Alex', lastName: 'Li' } },
+      { user: { id: 'member-2', email: 'long@example.test', firstName: 'Alexandria', lastName: 'Longfamilyname' } },
+    ];
+    await page.route(url => url.pathname === '/api/projects', route => route.fulfill({
+      contentType: 'application/json', body: JSON.stringify({ projects: [{ id: 'team-1', name: 'Team One', members }] }),
+    }));
+    let failHistory = true;
+    await page.route('**/api/attendance/members/*/history*', route => route.fulfill({
+      status: failHistory ? 503 : 200, contentType: 'application/json',
+      body: JSON.stringify(failHistory ? { message: 'Attendance history is temporarily unavailable.' } : {
+        member: { id: 'member-2', email: 'long@example.test', name: 'Alexandria Longfamilyname' },
+        team: { attended: [], missed: [] }, firmwide: { attended: [], missed: [] },
+      }),
+    }));
+    await open();
+    await page.getByRole('button', { name: /Team One/ }).click();
+    const buttons = page.getByRole('button', { name: 'View attendance', exact: true });
+    await buttons.first().waitFor();
+    await page.addStyleTag({ content: styles });
+    const positions = await buttons.evaluateAll(elements => elements.map(element => {
+      const rect = element.getBoundingClientRect();
+      const row = element.closest('li').getBoundingClientRect();
+      return { x: rect.x, right: rect.right, rowRight: row.right };
+    }));
+    assert.equal(positions.length, 2);
+    assert.ok(Math.abs(positions[0].x - positions[1].x) < 1, 'Attendance actions share a column');
+    assert.ok(positions.every(position => position.right <= position.rowRight), 'Actions fit inside their rows');
+
+    await buttons.first().click();
+    const error = page.getByRole('alert');
+    await error.waitFor();
+    assert.equal(await error.textContent(), 'Attendance history is temporarily unavailable.');
+    assert.equal(await error.evaluate(element => {
+      const rect = element.getBoundingClientRect();
+      return element.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+    }), true, 'The error is visible above the modal backdrop');
+    assert.equal(await page.getByText('No attendance history available.', { exact: true }).count(), 0);
+
+    await page.keyboard.press('Escape');
+    await page.getByRole('heading', { name: 'Member attendance', exact: true }).waitFor({ state: 'hidden' });
+    failHistory = false;
+    await buttons.nth(1).click();
+    await page.getByRole('heading', { name: 'Alexandria Longfamilyname attendance', exact: true }).waitFor();
+    assert.equal(await page.getByRole('alert').count(), 0);
+    assert.equal(await page.getByText('No attended events in this filter.', { exact: true }).isVisible(), true);
+  });
+}
+
+test('Reminder overrides load saved recipients, retain failed edits, and reset to project defaults', async t => {
+  const { page, open } = await setup(t, '/teams');
+  let override = { enabled: true, offsetMinutes: [60], explicitRecipientUserIds: ['u-1'] };
+  let failSave = false;
+  const saves = [];
+  await page.route('**/api/projects/deliverables/*/reminders/config', async route => {
+    if (route.request().method() === 'PATCH') {
+      const input = route.request().postDataJSON();
+      saves.push(input);
+      if (failSave) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ message: 'Temporary outage' }) });
+      override = input;
+    }
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+      enabled: override.enabled ?? true, offsetsMinutes: override.offsetMinutes.length ? override.offsetMinutes : [60],
+      timezone: 'America/Chicago', override,
+      eligibleRecipients: [{ userId: 'u-1', name: 'Test Consultant', email: 'consultant@example.test', slackConnected: false }],
+    }) });
+  });
+  await page.route('**/api/projects/team-1/reminders/status*', route => route.fulfill({
+    contentType: 'application/json', body: JSON.stringify([{ id: 'failed-1', status: 'FAILED', fireAt: '2026-10-24T17:00:00Z',
+      attempts: 3, lastError: 'Sample delivery failure', user: { id: 'u-1', email: 'consultant@example.test' },
+      deliverable: { id: 'team-1-research', title: 'team-1 Research', deadline: '2026-10-25T17:00:00Z' } }]),
+  }));
+  await open();
+  await page.getByRole('button', { name: /Team One/ }).click();
+  await page.getByText('Deadline reminders', { exact: true }).waitFor();
+  assert.equal(await page.getByLabel('Timezone', { exact: true }).count(), 0);
+  assert.equal(await page.getByLabel('Enable automatic deadline reminders for this team').isVisible(), false);
+  assert.equal(await page.getByText('Google Calendar secret / ID', { exact: true }).isVisible(), false);
+  await page.getByText('Deadline reminders', { exact: true }).click();
+  await page.getByLabel('Enable automatic deadline reminders for this team').waitFor();
+  assert.equal(await page.getByRole('table').isVisible(), false);
+  await page.getByText('Per-deliverable settings', { exact: true }).click();
+  await page.getByRole('button', { name: 'team-1 Research', exact: true }).click();
+  assert.equal(await page.getByLabel('Use project defaults').isChecked(), false);
+  assert.equal(await page.getByRole('checkbox', { name: /Test Consultant/ }).isChecked(), true);
+  await page.getByLabel('Add custom reminder (minutes before deadline)').fill('30');
+  await page.getByLabel('Add custom reminder (minutes before deadline)').press('Enter');
+  failSave = true;
+  await page.getByRole('button', { name: 'Save override', exact: true }).click();
+  await page.getByRole('alert').filter({ hasText: 'Your changes are still here' }).waitFor();
+  assert.equal(await page.getByLabel('30 minutes before', { exact: true }).isChecked(), true);
+  failSave = false;
+  await page.getByLabel('Use project defaults').check();
+  const resetSaved = page.waitForResponse(response => response.url().includes('/reminders/config')
+    && response.request().method() === 'PATCH' && response.status() === 200);
+  await page.getByRole('button', { name: 'Save override', exact: true }).click();
+  await resetSaved;
+  await page.waitForFunction(() => !document.querySelector('fieldset[disabled]'));
+  assert.deepEqual(saves.at(-1), { enabled: null, offsetMinutes: [], explicitRecipientUserIds: [] });
+  assert.equal(await page.getByLabel('Use project defaults').isChecked(), true);
+  await page.getByText('Delivery history', { exact: true }).click();
+  await page.getByText('Sample delivery failure', { exact: true }).waitFor();
+});
+
 test('Deliverables and Client Notes keep restored content when an expired refresh fails', async t => {
   const { page, state, nav, open } = await setup(t, '/deliverables');
   let failNotes = false;
@@ -372,7 +480,8 @@ test('Client Notes discards restored data after a confirmed role change, includi
   state.role = 'PM';
   const refresh = page.waitForRequest(request => new URL(request.url()).pathname === '/api/deliverables');
   await nav('Client Call Notes').click();
-  await page.waitForFunction(() => JSON.parse(localStorage.getItem('otcr_role_cache:pm@example.test')).role === 'PM');
+  // An expired role is removed before the refreshed value is written.
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('otcr_role_cache:pm@example.test'))?.role === 'PM');
   await refresh;
   assert.equal(await page.getByRole('heading', { name: 'Admin client note', exact: true }).count(), 0);
   assert.equal(await page.evaluate(() => window.navigationTest.readSnapshot(JSON.stringify(['client-notes', 'pm@example.test', null]))), undefined);

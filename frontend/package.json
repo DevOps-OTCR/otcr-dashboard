@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "eslint .",
     "lint:prune": "eslint . --prune-suppressions",
-    "test": "node --test tests/alumni-data.test.cjs tests/permissions.test.cjs tests/unit/*.test.cjs",
+    "test": "node --test tests/alumni-data.test.cjs tests/permissions.test.cjs tests/reminders.test.cjs tests/unit/*.test.cjs",
     "test:roles": "node --test tests/permissions.test.cjs",
     "test:navigation:browser": "node --test --test-concurrency=1 tests/*-browser.test.cjs",
     "import-alumni": "node scripts/import-alumni.cjs",

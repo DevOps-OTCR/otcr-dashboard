@@ -11,9 +11,9 @@ import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
-  CalendarDays,
   RefreshCw,
   FileText,
+  Bell,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -23,11 +23,19 @@ import { cn } from '@/lib/utils';
 import { getEffectiveRole, getUserRole, type AppRole } from '@/lib/permissions';
 import { AppNavbar } from '@/components/AppNavbar';
 import { useRouter } from 'next/navigation';
-import { projectsAPI, authAPI, attendanceAPI, deliverablesAPI, setAuthToken, type AttendanceEventCategory } from '@/lib/api';
+import { projectsAPI, authAPI, attendanceAPI, deliverablesAPI, remindersAPI, setAuthToken, type AttendanceEventCategory } from '@/lib/api';
+import {
+  summarizeReminderRecipients,
+  validateReminderOffsets,
+  type ReminderRecipientGroup,
+  type ReminderConfig,
+  type ReminderOffsetPreset,
+} from '@/lib/reminders-config';
 import { useAuth } from '@/components/AuthContext';
 import { PageLoading } from '@/components/PageLoading';
 import { parseDashPrefixedDeliverables } from '@/lib/deliverables-parser';
 import { buildSprintDeadlineInChicago } from '@/lib/sprint-deadlines';
+import { DeliveryReminderOverrides } from './DeliveryReminderOverrides';
 import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
 
 type ProjectMember = { user: { id: string; email: string; firstName?: string; lastName?: string; role?: string } };
@@ -247,9 +255,22 @@ export default function TeamsPage() {
   const [draftDeliverablesSaving, setDraftDeliverablesSaving] = useState(false);
   const [memberHistoryOpen, setMemberHistoryOpen] = useState(false);
   const [memberHistoryLoading, setMemberHistoryLoading] = useState(false);
+  const [memberHistoryError, setMemberHistoryError] = useState<string | null>(null);
   const [memberHistoryFilter, setMemberHistoryFilter] = useState<HistoryFilter>('TEAM');
   const [memberHistory, setMemberHistory] = useState<MemberAttendanceHistory | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{ message: string; tone: 'success' | 'warning' | 'info' } | null>(null);
+
+  const [reminderPresets, setReminderPresets] = useState<ReminderOffsetPreset[]>([]);
+  const [reminderConfig, setReminderConfig] = useState<ReminderConfig | null>(null);
+  const [reminderDraft, setReminderDraft] = useState<{ enabled: boolean; offsetsMinutes: number[] }>({
+    enabled: false,
+    offsetsMinutes: [],
+  });
+  const [reminderRecipients, setReminderRecipients] = useState<ReminderRecipientGroup[]>([]);
+  const [reminderLoading, setReminderLoading] = useState(false);
+  const [reminderSaving, setReminderSaving] = useState(false);
+  const reminderScope = useRef<string | null>(null);
+  const [loadedReminderProject, setLoadedReminderProject] = useState<string | null>(null);
 
   const fetchProjects = useCallback(async () => {
     try {
@@ -421,6 +442,99 @@ export default function TeamsPage() {
     void loadSelectedTeamSprintData(selectedTeamId);
   }, [session.loading, session.isLoggedIn, selectedTeamId, canManageTeams, loadSelectedTeamSprintData]);
 
+  const fetchReminderData = useCallback(async (projectId: string) => {
+    const token = await session.getToken();
+    if (token) setAuthToken(token);
+    return Promise.all([
+      remindersAPI.getPresets(projectId),
+      remindersAPI.getConfig(projectId),
+      remindersAPI.getRecipients(projectId),
+      // Warm the status cache before the child mounts or the user navigates away.
+      remindersAPI.getStatus(projectId).catch(() => undefined),
+    ]);
+  }, [session]);
+
+  const applyReminderData = useCallback((projectId: string, [presetsRes, configRes, recipientsRes]: Awaited<ReturnType<typeof fetchReminderData>>) => {
+    if (reminderScope.current !== projectId) return;
+    const config = configRes.data;
+    setLoadedReminderProject(projectId);
+    setReminderPresets(presetsRes.data.presets);
+    setReminderConfig(config);
+    setReminderDraft({ enabled: config.enabled, offsetsMinutes: config.offsetsMinutes });
+    setReminderRecipients(recipientsRes.data);
+  }, []);
+
+  const loadReminderData = useCallback(async (projectId: string) => {
+    setReminderLoading(true);
+    try { applyReminderData(projectId, await fetchReminderData(projectId)); }
+    catch (error) { setActionFeedback({ message: parseApiError(error, 'Failed to load reminder settings'), tone: 'warning' }); }
+    finally { setReminderLoading(false); }
+  }, [fetchReminderData, applyReminderData]);
+
+  useEffect(() => {
+    reminderScope.current = selectedTeamId;
+    if (session.loading || !session.isLoggedIn || !selectedTeamId || !canManageTeams) return;
+    let current = true;
+    fetchReminderData(selectedTeamId).then(data => {
+      if (current) applyReminderData(selectedTeamId, data);
+    }).catch(error => {
+      if (current) setActionFeedback({ message: parseApiError(error, 'Failed to load reminder settings'), tone: 'warning' });
+    });
+    return () => { current = false; };
+  }, [session.loading, session.isLoggedIn, selectedTeamId, canManageTeams, fetchReminderData, applyReminderData]);
+
+  const handleToggleReminderOffset = (minutes: number) => {
+    setReminderDraft((prev) => {
+      const has = prev.offsetsMinutes.includes(minutes);
+      return {
+        ...prev,
+        offsetsMinutes: has
+          ? prev.offsetsMinutes.filter((m) => m !== minutes)
+          : [...prev.offsetsMinutes, minutes],
+      };
+    });
+  };
+
+  const handleSaveReminderConfig = async () => {
+    if (!selectedTeam || loadedReminderProject !== selectedTeam.id) return;
+
+    // Client-side validation: enabling requires at least one timing, and the
+    // selection must survive preset validation (mirrors the backend rules).
+    const offsets = validateReminderOffsets(reminderDraft.offsetsMinutes, reminderPresets);
+    if (reminderDraft.enabled && offsets.length === 0) {
+      setActionFeedback({
+        message: 'Select at least one reminder time before enabling reminders.',
+        tone: 'warning',
+      });
+      return;
+    }
+
+    setReminderSaving(true);
+    try {
+      const res = await remindersAPI.updateConfig(selectedTeam.id, {
+        enabled: reminderDraft.enabled,
+        offsetsMinutes: offsets,
+      });
+      if (reminderScope.current !== selectedTeam.id) return;
+      const saved = res.data;
+      setReminderConfig(saved);
+      setReminderDraft({
+        enabled: Boolean(saved?.enabled),
+        offsetsMinutes: Array.isArray(saved?.offsetsMinutes) ? saved.offsetsMinutes : [],
+      });
+      // Refresh recipients so the preview reflects the saved state.
+      await loadReminderData(selectedTeam.id);
+      setActionFeedback({ message: 'Deadline reminders saved', tone: 'success' });
+    } catch (err) {
+      setActionFeedback({
+        message: parseApiError(err, 'Failed to save reminder settings'),
+        tone: 'warning',
+      });
+    } finally {
+      setReminderSaving(false);
+    }
+  };
+
   const filterEmailsBySearch = (emails: string[], query: string) => {
     if (!query.trim()) return emails;
     const q = query.trim().toLowerCase();
@@ -541,6 +655,7 @@ export default function TeamsPage() {
 
     setMemberHistoryOpen(true);
     setMemberHistoryLoading(true);
+    setMemberHistoryError(null);
     setMemberHistoryFilter('TEAM');
     setMemberHistory(null);
 
@@ -549,10 +664,7 @@ export default function TeamsPage() {
       setMemberHistory(response.data as MemberAttendanceHistory);
     } catch (err) {
       setMemberHistory(null);
-      setActionFeedback({
-        message: parseApiError(err, 'Failed to load member attendance history'),
-        tone: 'warning',
-      });
+      setMemberHistoryError(parseApiError(err, 'Failed to load member attendance history'));
     } finally {
       setMemberHistoryLoading(false);
     }
@@ -800,203 +912,321 @@ export default function TeamsPage() {
                         )}
                       </div>
                       {canManageTeams && (
-                        <div className="mb-4 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] space-y-4">
+                        <>
+                          <details className="group mb-4 rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
+                            <summary className="flex cursor-pointer items-center gap-2 text-sm font-semibold">
+                              <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90" />
+                              Sprint schedule
+                            </summary>
+                            <div className="mt-4 space-y-4">
+                              {sprintDataLoading ? (
+                                <div className="text-sm text-[var(--foreground)]/60">
+                                  Loading sprint settings...
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="grid gap-3 md:grid-cols-2">
+                                    <label className="space-y-1 text-sm">
+                                      <span className="font-medium text-[var(--foreground)]">
+                                        Sprint starts on
+                                      </span>
+                                      <select
+                                        value={sprintConfigDraft.sprintStartDay}
+                                        onChange={(e) =>
+                                          setSprintConfigDraft((prev) => ({
+                                            ...prev,
+                                            sprintStartDay: e.target.value,
+                                          }))
+                                        }
+                                        className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
+                                      >
+                                        {WEEKDAY_OPTIONS.map((day) => (
+                                          <option key={day} value={day}>
+                                            {labelForWeekday(day)}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </label>
 
-                          <div className="flex items-start justify-between gap-4">
-                            <div>
-                              <p className="text-sm font-semibold flex items-center gap-2">
-                                <CalendarDays className="w-4 h-4 text-[var(--primary)]" />
-                                Sprint deliverables schedule
-                              </p>
-                              <p className="text-xs text-[var(--foreground)]/60 mt-1">
-                                Configure weekly due days here for this team. New sprints auto-fill Initial and Final Slides from these settings.
-                              </p>
+                                    <label className="space-y-1 text-sm">
+                                      <span className="font-medium text-[var(--foreground)]">
+                                        Default due time
+                                      </span>
+                                      <input
+                                        type="time"
+                                        value={sprintConfigDraft.defaultDueTime}
+                                        onChange={(e) =>
+                                          setSprintConfigDraft((prev) => ({
+                                            ...prev,
+                                            defaultDueTime: e.target.value,
+                                          }))
+                                        }
+                                        className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
+                                      />
+                                    </label>
+
+                                    <label className="space-y-1 text-sm">
+                                      <span className="font-medium text-[var(--foreground)]">
+                                        Initial Slides due day
+                                      </span>
+                                      <select
+                                        value={sprintConfigDraft.initialSlideDueDay}
+                                        onChange={(e) =>
+                                          setSprintConfigDraft((prev) => ({
+                                            ...prev,
+                                            initialSlideDueDay: e.target.value,
+                                          }))
+                                        }
+                                        className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
+                                      >
+                                        {WEEKDAY_OPTIONS.map((day) => (
+                                          <option key={day} value={day}>
+                                            {labelForWeekday(day)}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </label>
+
+                                    <label className="space-y-1 text-sm">
+                                      <span className="font-medium text-[var(--foreground)]">
+                                        Final Slides due day
+                                      </span>
+                                      <select
+                                        value={sprintConfigDraft.finalSlideDueDay}
+                                        onChange={(e) =>
+                                          setSprintConfigDraft((prev) => ({
+                                            ...prev,
+                                            finalSlideDueDay: e.target.value,
+                                          }))
+                                        }
+                                        className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
+                                      >
+                                        {WEEKDAY_OPTIONS.map((day) => (
+                                          <option key={day} value={day}>
+                                            {labelForWeekday(day)}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </label>
+                                  </div>
+
+                                  <label className="flex items-center gap-2 text-sm text-[var(--foreground)]">
+                                    <input
+                                      type="checkbox"
+                                      checked={sprintConfigDraft.autoGenerateSprints}
+                                      onChange={(e) =>
+                                        setSprintConfigDraft((prev) => ({
+                                          ...prev,
+                                          autoGenerateSprints: e.target.checked,
+                                        }))
+                                      }
+                                      className="rounded border-[var(--border)]"
+                                    />
+                                    Auto-generate weekly sprint templates for this team
+                                  </label>
+
+                                  <div className="flex flex-wrap items-center gap-3">
+                                    <Button
+                                      size="sm"
+                                      onClick={handleSaveSprintConfig}
+                                      disabled={sprintConfigSaving}
+                                    >
+                                      {sprintConfigSaving ? 'Saving...' : 'Save sprint schedule'}
+                                    </Button>
+                                    <p className="text-xs text-[var(--foreground)]/60">
+                                      Current pattern: Initial Slides every{' '}
+                                      {labelForWeekday(sprintConfigDraft.initialSlideDueDay)} at{' '}
+                                      {sprintConfigDraft.defaultDueTime}, Final Slides every{' '}
+                                      {labelForWeekday(sprintConfigDraft.finalSlideDueDay)} at{' '}
+                                      {sprintConfigDraft.defaultDueTime}.
+                                    </p>
+                                  </div>
+
+                                  <div className="rounded-lg border border-dashed border-[var(--border)] p-3 text-sm text-[var(--foreground)]/60">
+                                    {teamSprints.length === 0
+                                      ? 'No sprints generated yet. Use the Deliverables page when you are ready to create the first sprint.'
+                                      : `${teamSprints.length} sprint${teamSprints.length === 1 ? '' : 's'} already exist for this team. Use the Deliverables page to manage them.`}
+                                  </div>
+                                </>
+                              )}
                             </div>
-                            <p className="max-w-[280px] text-right text-xs text-[var(--foreground)]/60">
-                              Generate sprints, manage draft deliverables, and release weeks from the Deliverables page.
-                            </p>
-                          </div>
+                          </details>
 
-                          {sprintDataLoading ? (
-                            <div className="text-sm text-[var(--foreground)]/60">Loading sprint settings...</div>
-                          ) : (
-                            <>
-                              <div className="grid gap-3 md:grid-cols-2">
-                                <label className="space-y-1 text-sm">
-                                  <span className="font-medium text-[var(--foreground)]">Sprint starts on</span>
-                                  <select
-                                    value={sprintConfigDraft.sprintStartDay}
-                                    onChange={(e) =>
-                                      setSprintConfigDraft((prev) => ({
-                                        ...prev,
-                                        sprintStartDay: e.target.value,
-                                      }))
-                                    }
-                                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
+                          <details
+                            key={selectedTeamId}
+                            className="group mb-4 rounded-xl border border-[var(--border)] bg-[var(--card)] p-4"
+                          >
+                            <summary className="flex cursor-pointer items-center gap-2 text-sm font-semibold">
+                              <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90" />
+                              <Bell className="h-4 w-4 text-[var(--primary)]" />
+                              <span>Deadline reminders</span>
+                              <span className="ml-auto text-xs font-normal text-[var(--foreground)]/60">
+                                {loadedReminderProject !== selectedTeamId
+                                  ? 'Loading...'
+                                  : reminderConfig?.enabled
+                                    ? 'On · ' + reminderConfig.offsetsMinutes.length + ' times'
+                                    : 'Off'}
+                              </span>
+                            </summary>
+                            <div className="mt-4 space-y-4">
+                              {reminderLoading || loadedReminderProject !== selectedTeamId ? (
+                                <p className="text-sm text-[var(--foreground)]/60">
+                                  Loading reminder settings...
+                                </p>
+                              ) : (
+                                <>
+                                  <label className="flex items-center gap-2 text-sm">
+                                    <input
+                                      type="checkbox"
+                                      checked={reminderDraft.enabled}
+                                      onChange={(event) =>
+                                        setReminderDraft((previous) => ({
+                                          ...previous,
+                                          enabled: event.target.checked,
+                                        }))
+                                      }
+                                    />
+                                    Enable automatic deadline reminders for this team
+                                  </label>
+                                  <fieldset
+                                    disabled={!reminderDraft.enabled}
+                                    className="space-y-2"
                                   >
-                                    {WEEKDAY_OPTIONS.map((day) => (
-                                      <option key={day} value={day}>
-                                        {labelForWeekday(day)}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </label>
-
-                                <label className="space-y-1 text-sm">
-                                  <span className="font-medium text-[var(--foreground)]">Default due time</span>
-                                  <input
-                                    type="time"
-                                    value={sprintConfigDraft.defaultDueTime}
-                                    onChange={(e) =>
-                                      setSprintConfigDraft((prev) => ({
-                                        ...prev,
-                                        defaultDueTime: e.target.value,
-                                      }))
-                                    }
-                                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
-                                  />
-                                </label>
-
-                                <label className="space-y-1 text-sm">
-                                  <span className="font-medium text-[var(--foreground)]">Initial Slides due day</span>
-                                  <select
-                                    value={sprintConfigDraft.initialSlideDueDay}
-                                    onChange={(e) =>
-                                      setSprintConfigDraft((prev) => ({
-                                        ...prev,
-                                        initialSlideDueDay: e.target.value,
-                                      }))
-                                    }
-                                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
+                                    <legend className="mb-2 text-sm font-medium">
+                                      Remind before the deadline
+                                    </legend>
+                                    <div className="flex flex-wrap gap-x-5 gap-y-2">
+                                      {reminderPresets.map((preset) => (
+                                        <label
+                                          key={preset.minutes}
+                                          className="flex items-center gap-2 text-sm"
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={reminderDraft.offsetsMinutes.includes(
+                                              preset.minutes,
+                                            )}
+                                            onChange={() =>
+                                              handleToggleReminderOffset(preset.minutes)
+                                            }
+                                          />
+                                          {preset.label}
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </fieldset>
+                                  {reminderDraft.enabled &&
+                                    !reminderDraft.offsetsMinutes.length && (
+                                      <p className="text-xs text-amber-600">
+                                        Select at least one reminder time.
+                                      </p>
+                                    )}
+                                  <Button
+                                    size="sm"
+                                    onClick={handleSaveReminderConfig}
+                                    disabled={reminderSaving}
                                   >
-                                    {WEEKDAY_OPTIONS.map((day) => (
-                                      <option key={day} value={day}>
-                                        {labelForWeekday(day)}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </label>
-
-                                <label className="space-y-1 text-sm">
-                                  <span className="font-medium text-[var(--foreground)]">Final Slides due day</span>
-                                  <select
-                                    value={sprintConfigDraft.finalSlideDueDay}
-                                    onChange={(e) =>
-                                      setSprintConfigDraft((prev) => ({
-                                        ...prev,
-                                        finalSlideDueDay: e.target.value,
-                                      }))
-                                    }
-                                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
-                                  >
-                                    {WEEKDAY_OPTIONS.map((day) => (
-                                      <option key={day} value={day}>
-                                        {labelForWeekday(day)}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </label>
-
-                                <label className="space-y-1 text-sm md:col-span-2">
-                                  <span className="font-medium text-[var(--foreground)]">Timezone</span>
-                                  <input
-                                    type="text"
-                                    value={sprintConfigDraft.sprintTimezone}
-                                    onChange={(e) =>
-                                      setSprintConfigDraft((prev) => ({
-                                        ...prev,
-                                        sprintTimezone: e.target.value,
-                                      }))
-                                    }
-                                    placeholder="America/Chicago"
-                                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
-                                  />
-                                </label>
-                              </div>
-
-                              <label className="flex items-center gap-2 text-sm text-[var(--foreground)]">
-                                <input
-                                  type="checkbox"
-                                  checked={sprintConfigDraft.autoGenerateSprints}
-                                  onChange={(e) =>
-                                    setSprintConfigDraft((prev) => ({
-                                      ...prev,
-                                      autoGenerateSprints: e.target.checked,
-                                    }))
-                                  }
-                                  className="rounded border-[var(--border)]"
+                                    {reminderSaving ? 'Saving...' : 'Save reminder settings'}
+                                  </Button>
+                                </>
+                              )}
+                              <details className="border-t border-[var(--border)] pt-3">
+                                <summary className="cursor-pointer text-sm">Recipients</summary>
+                                <div className="mt-3 space-y-2 text-sm">
+                                  {summarizeReminderRecipients(reminderRecipients)
+                                    .totalRecipients === 0 ? (
+                                    <p className="text-[var(--foreground)]/60">
+                                      No recipients are currently scheduled.
+                                    </p>
+                                  ) : (
+                                    reminderRecipients
+                                      .filter((group) => group.recipients.length)
+                                      .map((group) => (
+                                        <div key={group.deliverableId}>
+                                          <p className="font-medium">{group.title}</p>
+                                          <ul className="mt-1 space-y-1">
+                                            {group.recipients.map((person) => (
+                                              <li
+                                                key={person.userId}
+                                                className="flex items-center gap-2"
+                                              >
+                                                {person.name}
+                                                <Badge
+                                                  variant={
+                                                    person.slackConnected ? 'success' : 'warning'
+                                                  }
+                                                  size="sm"
+                                                >
+                                                  {person.slackConnected ? 'Slack' : 'No Slack'}
+                                                </Badge>
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                      ))
+                                  )}
+                                </div>
+                              </details>
+                              {loadedReminderProject === selectedTeamId && reminderConfig && (
+                                <DeliveryReminderOverrides
+                                  key={selectedTeamId}
+                                  projectId={selectedTeamId ?? ''}
+                                  projectTimezone={reminderConfig.timezone}
+                                  presets={reminderPresets}
+                                  deliverables={teamSprints.flatMap(
+                                    (sprint) => sprint.deliverables ?? [],
+                                  )}
+                                  onConfigChange={() => {
+                                    void loadReminderData(selectedTeamId ?? '');
+                                  }}
                                 />
-                                Auto-generate weekly sprint templates for this team
+                              )}
+                            </div>
+                          </details>
+                        </>
+                      )}
+                      <details className="group mb-4 rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
+                        <summary className="flex cursor-pointer items-center gap-2 text-sm font-semibold">
+                          <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90" />
+                          Team calendar
+                        </summary>
+                        <div className="mt-4 space-y-4">
+                          {canEditTeamCalendar ? (
+                            <>
+                              <label className="space-y-1 text-sm block">
+                                <span className="font-medium text-[var(--foreground)]">
+                                  Google Calendar secret / ID
+                                </span>
+                                <input
+                                  type="text"
+                                  value={teamCalendarIdDraft}
+                                  onChange={(e) => setTeamCalendarIdDraft(e.target.value)}
+                                  placeholder="team-calendar@group.calendar.google.com"
+                                  className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
+                                />
                               </label>
-
                               <div className="flex flex-wrap items-center gap-3">
                                 <Button
                                   size="sm"
-                                  onClick={handleSaveSprintConfig}
-                                  disabled={sprintConfigSaving}
+                                  onClick={handleSaveTeamCalendarId}
+                                  disabled={teamCalendarIdSaving}
                                 >
-                                  {sprintConfigSaving ? 'Saving...' : 'Save sprint schedule'}
+                                  {teamCalendarIdSaving ? 'Saving...' : 'Save team calendar'}
                                 </Button>
                                 <p className="text-xs text-[var(--foreground)]/60">
-                                  Current pattern: Initial Slides every {labelForWeekday(sprintConfigDraft.initialSlideDueDay)} at {sprintConfigDraft.defaultDueTime}, Final Slides every {labelForWeekday(sprintConfigDraft.finalSlideDueDay)} at {sprintConfigDraft.defaultDueTime}.
+                                  Use the calendar secret/ID, not the public embed URL.
                                 </p>
                               </div>
-
-                              <div className="rounded-lg border border-dashed border-[var(--border)] p-3 text-sm text-[var(--foreground)]/60">
-                                {teamSprints.length === 0
-                                  ? 'No sprints generated yet. Use the Deliverables page when you are ready to create the first sprint.'
-                                  : `${teamSprints.length} sprint${teamSprints.length === 1 ? '' : 's'} already exist for this team. Use the Deliverables page to manage them.`}
-                              </div>
                             </>
+                          ) : (
+                            <div className="rounded-lg border border-dashed border-[var(--border)] p-3 text-sm text-[var(--foreground)]/60">
+                              {selectedTeam.googleCalendarId
+                                ? 'A team calendar is configured for this team.'
+                                : 'No team calendar has been configured yet.'}
+                            </div>
                           )}
                         </div>
-                      )}
-                      <div className="mb-4 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] space-y-4">
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <p className="text-sm font-semibold flex items-center gap-2">
-                              <CalendarDays className="w-4 h-4 text-[var(--primary)]" />
-                              Team calendar
-                            </p>
-                            <p className="text-xs text-[var(--foreground)]/60 mt-1">
-                              Store the team Google Calendar secret/ID here. Team-specific attendance events sync to this calendar automatically.
-                            </p>
-                          </div>
-                        </div>
-
-                        {canEditTeamCalendar ? (
-                          <>
-                            <label className="space-y-1 text-sm block">
-                              <span className="font-medium text-[var(--foreground)]">Google Calendar secret / ID</span>
-                              <input
-                                type="text"
-                                value={teamCalendarIdDraft}
-                                onChange={(e) => setTeamCalendarIdDraft(e.target.value)}
-                                placeholder="team-calendar@group.calendar.google.com"
-                                className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
-                              />
-                            </label>
-                            <div className="flex flex-wrap items-center gap-3">
-                              <Button
-                                size="sm"
-                                onClick={handleSaveTeamCalendarId}
-                                disabled={teamCalendarIdSaving}
-                              >
-                                {teamCalendarIdSaving ? 'Saving...' : 'Save team calendar'}
-                              </Button>
-                              <p className="text-xs text-[var(--foreground)]/60">
-                                Use the calendar secret/ID, not the public embed URL.
-                              </p>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="rounded-lg border border-dashed border-[var(--border)] p-3 text-sm text-[var(--foreground)]/60">
-                            {selectedTeam.googleCalendarId
-                              ? 'A team calendar is configured for this team.'
-                              : 'No team calendar has been configured yet.'}
-                          </div>
-                        )}
-                      </div>
+                      </details>
                       <p className="text-xs font-medium text-[var(--foreground)]/70 mb-2">Members and roles</p>
                       <ul className="space-y-2 mb-4">
                         {(selectedTeam.members ?? []).map((m) => (
@@ -1004,27 +1234,29 @@ export default function TeamsPage() {
                             key={m.user.id}
                             className="flex items-center justify-between py-2 px-3 rounded-lg bg-[var(--card)] border border-[var(--border)]"
                           >
-                            <span className="text-sm">
+                            <span className="min-w-0 flex-1 break-words text-sm">
                               <span className="font-medium text-[var(--foreground)]">{formatMemberName(m.user)}</span>
                               <span className="text-[var(--foreground)]/60 ml-2">({getUserRole(m.user.email)})</span>
                             </span>
-                            {canInspectMemberAttendance && (
+                            <div className="ml-3 flex shrink-0 items-center gap-3">
+                              {canInspectMemberAttendance && (
+                                <button
+                                  type="button"
+                                  onClick={() => void handleOpenMemberHistory(m.user)}
+                                  className="whitespace-nowrap text-xs font-medium text-[var(--primary)] hover:underline"
+                                >
+                                  View attendance
+                                </button>
+                              )}
                               <button
                                 type="button"
-                                onClick={() => void handleOpenMemberHistory(m.user)}
-                                className="ml-3 text-xs font-medium text-[var(--primary)] hover:underline"
+                                onClick={() => handleRemoveMemberFromTeam(selectedTeam.id, m.user.id)}
+                                className="p-1.5 rounded hover:bg-rose-500/20 text-rose-600 dark:text-rose-400"
+                                title="Remove member"
                               >
-                                View attendance
+                                <UserMinus className="w-4 h-4" />
                               </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveMemberFromTeam(selectedTeam.id, m.user.id)}
-                              className="p-1.5 rounded hover:bg-rose-500/20 text-rose-600 dark:text-rose-400"
-                              title="Remove member"
-                            >
-                              <UserMinus className="w-4 h-4" />
-                            </button>
+                            </div>
                           </li>
                         ))}
                       </ul>
@@ -1189,7 +1421,7 @@ export default function TeamsPage() {
                             key={m.user.id}
                             className="flex items-center justify-between py-2 px-3 rounded-lg bg-[var(--card)] border border-[var(--border)]"
                           >
-                            <span className="text-sm">
+                            <span className="min-w-0 flex-1 break-words text-sm">
                               <span className="font-medium text-[var(--foreground)]">{formatMemberName(m.user)}</span>
                               <span className="text-[var(--foreground)]/60 ml-2">({getUserRole(m.user.email)})</span>
                             </span>
@@ -1197,7 +1429,7 @@ export default function TeamsPage() {
                               <button
                                 type="button"
                                 onClick={() => void handleOpenMemberHistory(m.user)}
-                                className="ml-3 text-xs font-medium text-[var(--primary)] hover:underline"
+                                className="ml-3 shrink-0 whitespace-nowrap text-xs font-medium text-[var(--primary)] hover:underline"
                               >
                                 View attendance
                               </button>
@@ -1362,6 +1594,8 @@ export default function TeamsPage() {
       >
         {memberHistoryLoading ? (
           <p className="text-sm text-[var(--foreground)]/65">Loading attendance history...</p>
+        ) : memberHistoryError ? (
+          <p role="alert" className="text-sm text-rose-600 dark:text-rose-400">{memberHistoryError}</p>
         ) : !memberHistory ? (
           <p className="text-sm text-[var(--foreground)]/65">No attendance history available.</p>
         ) : (

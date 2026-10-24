@@ -1,3 +1,5 @@
+import type { ReminderOffsetPreset, ReminderConfig, ReminderRecipientGroup,
+  DeliverableReminderSettings, DeliverableReminderInput, ReminderDeliveryStatus } from './reminders-config';
 import axios, { type AxiosRequestConfig } from 'axios';
 import type { AlumniDataset } from './alumni-data';
 import { clearNavigationSnapshots } from './navigation-cache';
@@ -380,6 +382,31 @@ export const projectsAPI = {
     api.patch(`/projects/${projectId}/sprints/${sprintId}/status`, { status }),
   deleteSprint: (projectId: string, sprintId: string) =>
     api.delete(`/projects/${projectId}/sprints/${sprintId}`),
+};
+
+export const remindersAPI = {
+  getPresets: (projectId: string) => cachedRequest(`/projects/${projectId}/reminders/presets`,
+    () => api.get<{ presets: ReminderOffsetPreset[] }>(`/projects/${projectId}/reminders/presets`)),
+  getConfig: (projectId: string) => cachedRequest(`/projects/${projectId}/reminders/config`,
+    () => api.get<ReminderConfig>(`/projects/${projectId}/reminders/config`)),
+  updateConfig: (projectId: string, data: { enabled: boolean; offsetsMinutes: number[] }) =>
+    api.patch<ReminderConfig>(`/projects/${projectId}/reminders/config`, data),
+  getRecipients: (projectId: string) => cachedRequest(`/projects/${projectId}/reminders/recipients`,
+    () => api.get<ReminderRecipientGroup[]>(`/projects/${projectId}/reminders/recipients`)),
+  getStatus: (projectId: string, status?: string, refresh = false) =>
+    cachedRequest(
+      '/projects/' + projectId + '/reminders/status' + (status ? '?status=' + status : ''),
+      () => api.get<ReminderDeliveryStatus[]>(
+        '/projects/' + projectId + '/reminders/status', { params: status ? { status } : {} }),
+      refresh ? 0 : FRESHNESS.live,
+    ),
+  getDeliverableConfig: (deliverableId: string) =>
+    cachedRequest(`/projects/deliverables/${deliverableId}/reminders/config`,
+      () => api.get<DeliverableReminderSettings>(`/projects/deliverables/${deliverableId}/reminders/config`)),
+  updateDeliverableConfig: (
+    deliverableId: string,
+    data: DeliverableReminderInput,
+  ) => api.patch<DeliverableReminderSettings>(`/projects/deliverables/${deliverableId}/reminders/config`, data),
 };
 
 export type TaskAssigneeType = 'PERSON' | 'ALL' | 'ALL_PMS' | 'ALL_TEAM';

@@ -29,6 +29,13 @@ exports.responseFor = (pathname, role) => {
   if (pathname === '/projects') return { projects };
   const sprintMatch = pathname.match(/^\/projects\/(.+)\/sprints$/);
   if (sprintMatch) return sprints(sprintMatch[1]);
+  if (/^\/projects\/[^/]+\/reminders\/presets$/.test(pathname)) return {
+    presets: [{ minutes: 1440, label: '24 hours before' }, { minutes: 60, label: '1 hour before' }],
+  };
+  if (/^\/projects\/[^/]+\/reminders\/config$/.test(pathname)) return {
+    enabled: true, offsetsMinutes: [60], timezone: 'America/Chicago',
+  };
+  if (/^\/projects\/[^/]+\/reminders\/(recipients|status)$/.test(pathname)) return [];
   if (pathname.startsWith('/projects/')) return { pm: { id: 'u-1', firstName: 'Test', email: 'pm@example.test' }, members: [] };
   if (pathname === '/attendance/events') return { events };
   if (pathname === '/deliverables') return [{ id: 'note-1', title: 'Client kickoff notes', type: 'REPORT',

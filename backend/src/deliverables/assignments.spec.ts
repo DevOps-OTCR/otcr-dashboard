@@ -17,7 +17,7 @@ function fixture() {
     },
   };
   const prisma = { $transaction: jest.fn().mockImplementation(action => action(tx)) };
-  const service = new DeliverablesService(prisma as unknown as PrismaService, {} as NotificationsService);
+  const service = new DeliverablesService(prisma as unknown as PrismaService, {} as NotificationsService, { rescheduleDeliverable: jest.fn().mockResolvedValue(undefined) } as unknown as ConstructorParameters<typeof DeliverablesService>[2]);
   return { tx, prisma, service };
 }
 

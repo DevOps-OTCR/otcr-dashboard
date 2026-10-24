@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   BadRequestException,
   NotFoundException,
   InternalServerErrorException,
@@ -7,6 +8,8 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+
+import { DeadlineRemindersService } from '../jobs/deadline-reminders.service';
 
 const CHICAGO_TIMEZONE = 'America/Chicago';
 
@@ -34,10 +37,21 @@ type SprintSubmission = {
 
 @Injectable()
 export class ProjectsService {
+  private readonly logger = new Logger(ProjectsService.name);
   constructor(
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
+    private deadlineRemindersService: DeadlineRemindersService,
   ) {}
+
+  private async syncProjectReminders(projectId: string): Promise<void> {
+    try {
+      const deliverables = await this.prisma.deliverable.findMany({ where: { projectId }, select: { id: true } });
+      for (const deliverable of deliverables) await this.deadlineRemindersService.rescheduleDeliverable(deliverable.id);
+    } catch (error: unknown) {
+      this.logger.warn('Could not synchronize project reminders: ' + (error instanceof Error ? error.message : String(error)));
+    }
+  }
 
   private splitNameParts(name?: string | null): { firstName: string | null; lastName: string | null } {
     const normalized = (name || '').trim().replace(/\s+/g, ' ');
@@ -604,6 +618,17 @@ export class ProjectsService {
     return this.attachProjectCalendarSetting(project);
   }
 
+  async findDeliverable(id: string) {
+    const deliverable = await this.prisma.deliverable.findUnique({
+      where: { id },
+      include: { project: true },
+    });
+    if (!deliverable) {
+      throw new NotFoundException('Deliverable not found');
+    }
+    return deliverable;
+  }
+
   async update(
     id: string,
     data: {
@@ -864,10 +889,12 @@ export class ProjectsService {
       throw new BadRequestException('User is not a member of this project');
     }
 
-    return this.prisma.projectMember.update({
+    const updated = await this.prisma.projectMember.update({
       where: { id: member.id },
       data: { leftAt: new Date() },
     });
+    await this.syncProjectReminders(projectId);
+    return updated;
   }
 
   async getMembers(projectId: string) {
@@ -943,7 +970,7 @@ export class ProjectsService {
       data.autoGenerateSprints = input.autoGenerateSprints;
     }
 
-    return this.prisma.project.update({
+    const updated = await this.prisma.project.update({
       where: { id: projectId },
       data,
       select: {
@@ -957,6 +984,8 @@ export class ProjectsService {
         updatedAt: true,
       },
     });
+    await this.syncProjectReminders(projectId);
+    return updated;
   }
 
   async listSprints(projectId: string) {
@@ -1345,6 +1374,7 @@ export class ProjectsService {
       throw new BadRequestException('Sprint not found');
     }
 
+    await this.syncProjectReminders(projectId);
     return updated;
   }
 

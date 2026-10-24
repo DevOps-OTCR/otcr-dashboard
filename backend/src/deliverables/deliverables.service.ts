@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationJob, NotificationsService } from '../notifications/notifications.service';
+import { DeadlineRemindersService } from '../jobs/deadline-reminders.service';
 
 const REVIEWER_NOTIFICATION_MAX_ATTEMPTS = 5;
 const REVIEWER_NOTIFICATION_RETRY_DELAY_MS = 5 * 60 * 1000;
@@ -14,6 +15,7 @@ export class DeliverablesService {
   constructor(
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
+    private deadlineReminders: DeadlineRemindersService,
   ) {}
 
   private get deliverableSubtaskModel() {
@@ -33,6 +35,25 @@ export class DeliverablesService {
 
   private getLateByMinutes(deadline: Date, submittedAt: Date): number {
     return Math.max(0, Math.floor((submittedAt.getTime() - deadline.getTime()) / 60000));
+  }
+
+  /** Synchronize after commit without failing the saved deliverable mutation. */
+  private async syncReminders(deliverableId: string): Promise<void> {
+    try {
+      await this.deadlineReminders.rescheduleDeliverable(deliverableId);
+    } catch (error: unknown) {
+      this.logger.warn('Failed to reschedule reminders for ' + deliverableId + ': ' +
+        (error instanceof Error ? error.message : String(error)));
+    }
+  }
+
+  private async cancelReminders(deliverableId: string, reason: string): Promise<void> {
+    try {
+      await this.deadlineReminders.cancelRemindersForDeliverable(deliverableId, reason);
+    } catch (error: unknown) {
+      this.logger.warn('Failed to cancel reminders for ' + deliverableId + ': ' +
+        (error instanceof Error ? error.message : String(error)));
+    }
   }
 
   async create(
@@ -134,6 +155,10 @@ export class DeliverablesService {
     if (data.type === 'REPORT' && actorUserId) {
       await this.notifyClientNoteCreated(created.id, actorUserId);
     }
+
+    // New deliverable: schedule reminders if the project has them enabled and
+    // assignees exist (assignProjectMembers assignment happens inside the tx).
+    await this.syncReminders(created.id);
 
     return created;
   }
@@ -349,7 +374,7 @@ export class DeliverablesService {
       status?: string;
     },
   ) {
-    return this.prisma.deliverable.update({
+    const updated = await this.prisma.deliverable.update({
       where: { id },
       data: {
         ...(data.title && { title: data.title }),
@@ -390,16 +415,29 @@ export class DeliverablesService {
         },
       },
     } as any);
+
+    // Deadline or status changed: reschedule (or cancel if now finalized).
+    if (data.deadline || data.status) {
+      if (['SUBMITTED', 'APPROVED'].includes((data.status ?? '').toUpperCase())) {
+        await this.cancelReminders(id, 'Deliverable finalized');
+      } else {
+        await this.syncReminders(id);
+      }
+    }
+
+    return updated;
   }
 
   async remove(id: string) {
-    return this.prisma.deliverable.delete({
+    const deleted = await this.prisma.deliverable.delete({
       where: { id },
     });
+    await this.cancelReminders(id, 'Deliverable deleted');
+    return deleted;
   }
 
   async updateDeadline(id: string, deadline: string) {
-    return this.prisma.deliverable.update({
+    const updated = await this.prisma.deliverable.update({
       where: { id },
       data: {
         deadline: new Date(deadline),
@@ -428,6 +466,9 @@ export class DeliverablesService {
         },
       },
     });
+    // Deadline moved: recompute reminder fire times.
+    await this.syncReminders(id);
+    return updated;
   }
 
   private async validateAssignees(tx: Prisma.TransactionClient, projectId: string, value: unknown) {
@@ -453,7 +494,7 @@ export class DeliverablesService {
   }
 
   async setAssignments(id: string, projectId: string, value: unknown) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const ids = await this.validateAssignees(tx, projectId, value);
       // Keep retained assignments (and their assignedAt timestamps) intact.
       // Submissions belong to users independently and are never removed here.
@@ -471,6 +512,8 @@ export class DeliverablesService {
       });
       return assignments.map(({ user }) => user);
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    await this.syncReminders(id);
+    return result;
   }
 
   async updateAssignment(id: string, userId: string, assigned: boolean) {
@@ -491,11 +534,14 @@ export class DeliverablesService {
       );
     }
 
+    // Recipient set changed: rebuild reminders for the new assignee set.
+    await this.syncReminders(id);
+
     return this.getAssignmentUsers(id);
   }
 
   async updateCompletion(id: string, completed: boolean) {
-    return this.prisma.deliverable.update({
+    const updated = await this.prisma.deliverable.update({
       where: { id },
       data: {
         completed,
@@ -521,7 +567,9 @@ export class DeliverablesService {
           },
         },
       },
-    } as any);
+    });
+    await this.syncReminders(id);
+    return updated;
   }
 
   async submitLink(id: string, userId: string, link: string) {
@@ -599,6 +647,9 @@ export class DeliverablesService {
         status: 'SUBMITTED',
       },
     });
+
+    // Submitted: no more deadline reminders for this deliverable.
+    await this.cancelReminders(id, 'Deliverable submitted');
 
     // The submission is already saved, so a notification failure must not fail the request.
     // It stays PENDING and retryPendingReviewerNotifications picks it up later.

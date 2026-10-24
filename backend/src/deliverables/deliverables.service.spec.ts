@@ -47,6 +47,10 @@ function createPrismaMock() {
 describe('DeliverablesService reviewer notifications', () => {
   let prisma: ReturnType<typeof createPrismaMock>;
   let notificationsService: { queueNotification: jest.Mock };
+  let deadlineReminders: {
+    rescheduleDeliverable: jest.Mock;
+    cancelRemindersForDeliverable: jest.Mock;
+  };
   let service: DeliverablesService;
 
   const notifiedUserIds = () =>
@@ -56,7 +60,15 @@ describe('DeliverablesService reviewer notifications', () => {
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     prisma = createPrismaMock();
     notificationsService = { queueNotification: jest.fn().mockResolvedValue(undefined) };
-    service = new DeliverablesService(prisma as any, notificationsService as any);
+    deadlineReminders = {
+      rescheduleDeliverable: jest.fn().mockResolvedValue(undefined),
+      cancelRemindersForDeliverable: jest.fn().mockResolvedValue(undefined),
+    };
+    service = new DeliverablesService(
+      prisma as unknown as ConstructorParameters<typeof DeliverablesService>[0],
+      notificationsService as unknown as ConstructorParameters<typeof DeliverablesService>[1],
+      deadlineReminders as unknown as ConstructorParameters<typeof DeliverablesService>[2],
+    );
   });
 
   afterEach(() => {
