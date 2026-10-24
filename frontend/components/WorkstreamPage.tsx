@@ -15,7 +15,7 @@ import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
 import { readResource } from '@/lib/resource-cache';
 import { deliverablesAPI, projectsAPI, setAuthToken } from '@/lib/api';
 import { getEffectiveRole, type AppRole } from '@/lib/permissions';
-import { reconcileDraftDeliverables, type DraftDeliverable } from '@/lib/deliverables-parser';
+import { createDraftDeliverable, type DraftDeliverable } from '@/lib/deliverables-parser';
 import { dispatchNotificationsRefresh } from '@/lib/notification-events';
 import { buildSprintDeadlineInChicago } from '@/lib/sprint-deadlines';
 
@@ -794,7 +794,6 @@ export default function WorkstreamPage() {
                           onChange={(e) => {
                             const input = e.target.value;
                             setDraftInput(input);
-                            setParsedDrafts(current => reconcileDraftDeliverables(current, input));
                           }}
                           disabled={savingDrafts}
                           rows={5}
