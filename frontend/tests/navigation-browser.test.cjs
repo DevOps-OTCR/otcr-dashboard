@@ -372,7 +372,8 @@ test('Client Notes discards restored data after a confirmed role change, includi
   state.role = 'PM';
   const refresh = page.waitForRequest(request => new URL(request.url()).pathname === '/api/deliverables');
   await nav('Client Call Notes').click();
-  await page.waitForFunction(() => JSON.parse(localStorage.getItem('otcr_role_cache:pm@example.test')).role === 'PM');
+  // An expired role is removed before the refreshed value is written.
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('otcr_role_cache:pm@example.test'))?.role === 'PM');
   await refresh;
   assert.equal(await page.getByRole('heading', { name: 'Admin client note', exact: true }).count(), 0);
   assert.equal(await page.evaluate(() => window.navigationTest.readSnapshot(JSON.stringify(['client-notes', 'pm@example.test', null]))), undefined);

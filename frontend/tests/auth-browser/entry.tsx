@@ -29,6 +29,7 @@ const actualAcquire = instance.acquireTokenSilent.bind(instance);
 let interactiveLogins = 0;
 let releaseToken: (() => Promise<void>) | undefined;
 let sessionToken: Promise<string | null> | undefined;
+let restorePending = false;
 
 function resultFor(email = 'pm@example.test'): AuthenticationResult {
   const now = Math.floor(Date.now() / 1000);
@@ -72,7 +73,10 @@ if (new URLSearchParams(location.search).has('unavailable')) {
   instance.acquireTokenSilent = async () => { throw new Error('Synthetic token service failure'); };
 }
 if (new URLSearchParams(location.search).has('stalled')) {
-  instance.acquireTokenSilent = () => new Promise<AuthenticationResult>(() => {});
+  instance.acquireTokenSilent = () => {
+    restorePending = true;
+    return new Promise<AuthenticationResult>(() => {});
+  };
 }
 if (new URLSearchParams(location.search).has('slow')) {
   const initialize = instance.initialize.bind(instance);
@@ -84,6 +88,7 @@ const testApi = {
   interactiveLogins: () => interactiveLogins,
   accounts: () => instance.getAllAccounts().map(account => account.username),
   authHeader: () => api.defaults.headers.common.Authorization ?? null,
+  restoreIsPending: () => restorePending,
   getToken: async (): Promise<string | null> => null,
   holdToken: () => {
     instance.acquireTokenSilent = async () => new Promise(resolve => {

@@ -11,17 +11,18 @@ before(async () => {
 });
 after(() => browser?.close());
 
-async function setup(t, delayCacheUpdates = false) {
+async function setup(t, slowCacheOperations = false) {
   const context = await browser.newContext();
   t.after(() => context.close());
-  if (delayCacheUpdates) await context.addInitScript(() => {
-    const addListener = BroadcastChannel.prototype.addEventListener;
-    BroadcastChannel.prototype.addEventListener = function (type, listener, options) {
-      if (this.name === 'msal.broadcast.cache' && type === 'message') {
-        return addListener.call(this, type, event => setTimeout(() => listener.call(this, event), 200), options);
-      }
-      return addListener.call(this, type, listener, options);
-    };
+  if (slowCacheOperations) await context.addInitScript(() => {
+    // Delay cache work without reordering MSAL's private broadcast handlers.
+    for (const method of ['encrypt', 'decrypt']) {
+      const operation = SubtleCrypto.prototype[method];
+      SubtleCrypto.prototype[method] = async function (...args) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+        return operation.apply(this, args);
+      };
+    }
   });
   const externalRequests = [];
   await context.route('**/*', route => {
@@ -47,6 +48,7 @@ async function setup(t, delayCacheUpdates = false) {
   const first = await page();
   await Promise.all([first.waitForEvent('load'), first.getByRole('button', { name: 'Sign in with Microsoft' }).click()]);
   await first.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
+  await first.waitForFunction(() => window.authTest.authHeader() === 'Bearer synthetic-token-for-pm@example.test');
   t.after(() => assert.deepEqual(externalRequests, []));
   return { first, page };
 }
@@ -106,6 +108,7 @@ test('a newly selected account replaces the previous account across tabs', async
   const { first, page } = await setup(t, true);
   const second = await page('/deliverables');
   await second.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
+  await second.waitForFunction(() => window.authTest.authHeader() === 'Bearer synthetic-token-for-pm@example.test');
   await Promise.all([first.waitForEvent('load'), first.evaluate(() => window.authTest.seed('consultant@example.test'))]);
   for (const current of [first, second, await page('/deliverables')]) {
     await current.waitForFunction(() => document.querySelector('[data-testid="account"]')?.textContent === 'consultant@example.test');
@@ -127,6 +130,7 @@ for (const failure of ['unavailable', 'stalled']) {
     const { first, page } = await setup(t);
     const unavailable = await page(`/deliverables?${failure}`);
     if (failure === 'stalled') {
+      await unavailable.waitForFunction(() => window.authTest.restoreIsPending());
       await unavailable.clock.install();
       await unavailable.clock.fastForward(21000);
     }
