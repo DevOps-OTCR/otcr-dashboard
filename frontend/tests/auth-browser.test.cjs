@@ -35,8 +35,9 @@ async function setup(t, slowCacheOperations = false) {
     return route.fulfill({ contentType: url.pathname === '/bundle.js' ? 'text/javascript' : 'text/html',
       body: url.pathname === '/bundle.js' ? bundle : document });
   });
-  const page = async (route = '/sign-in') => {
+  const page = async (route = '/sign-in', options = {}) => {
     const result = await context.newPage();
+    if (options.clock) await result.clock.install();
     result.setDefaultTimeout(10000);
     const errors = [];
     result.on('pageerror', error => errors.push(error.message));
@@ -128,10 +129,9 @@ test('expired sessions requiring interaction reach the normal sign-in screen wit
 for (const failure of ['unavailable', 'stalled']) {
   test(`a ${failure} session restore can return to sign-in and clear cached credentials`, async t => {
     const { first, page } = await setup(t);
-    const unavailable = await page(`/deliverables?${failure}`);
+    const unavailable = await page(`/deliverables?${failure}`, { clock: failure === 'stalled' });
     if (failure === 'stalled') {
       await unavailable.waitForFunction(() => window.authTest.restoreIsPending());
-      await unavailable.clock.install();
       await unavailable.clock.fastForward(21000);
     }
     await unavailable.getByRole('heading', { name: 'Unable to finish sign-in' }).waitFor();
