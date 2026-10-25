@@ -45,7 +45,7 @@ async function setup(t, delayCacheUpdates = false) {
     return result;
   };
   const first = await page();
-  await first.getByRole('button', { name: 'Sign in with Microsoft' }).click();
+  await Promise.all([first.waitForEvent('load'), first.getByRole('button', { name: 'Sign in with Microsoft' }).click()]);
   await first.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
   t.after(() => assert.deepEqual(externalRequests, []));
   return { first, page };
@@ -75,7 +75,7 @@ test('explicit CMS sign-out propagates, remains signed out after refresh, and al
     await current.getByRole('heading', { name: 'CMS sign-in' }).waitFor();
     assert.equal(await current.evaluate(() => window.authTest.authHeader()), null);
   }
-  await second.getByRole('button', { name: 'Sign in with Microsoft' }).click();
+  await Promise.all([second.waitForEvent('load'), second.getByRole('button', { name: 'Sign in with Microsoft' }).click()]);
   await first.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
   await second.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
 });
@@ -106,7 +106,7 @@ test('a newly selected account replaces the previous account across tabs', async
   const { first, page } = await setup(t, true);
   const second = await page('/deliverables');
   await second.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
-  await first.evaluate(() => window.authTest.seed('consultant@example.test'));
+  await Promise.all([first.waitForEvent('load'), first.evaluate(() => window.authTest.seed('consultant@example.test'))]);
   for (const current of [first, second, await page('/deliverables')]) {
     await current.waitForFunction(() => document.querySelector('[data-testid="account"]')?.textContent === 'consultant@example.test');
     await current.waitForFunction(() => window.authTest.authHeader() === 'Bearer synthetic-token-for-consultant@example.test');
@@ -121,3 +121,22 @@ test('expired sessions requiring interaction reach the normal sign-in screen wit
   assert.equal(await expired.evaluate(() => window.authTest.interactiveLogins()), 0);
   assert.equal(await expired.evaluate(() => window.authTest.authHeader()), null);
 });
+
+for (const failure of ['unavailable', 'stalled']) {
+  test(`a ${failure} session restore can return to sign-in and clear cached credentials`, async t => {
+    const { first, page } = await setup(t);
+    const unavailable = await page(`/deliverables?${failure}`);
+    if (failure === 'stalled') {
+      await unavailable.clock.install();
+      await unavailable.clock.fastForward(21000);
+    }
+    await unavailable.getByRole('heading', { name: 'Unable to finish sign-in' }).waitFor();
+    await unavailable.getByRole('button', { name: 'Return to sign-in' }).click();
+    await unavailable.getByRole('heading', { name: 'CMS sign-in' }).waitFor();
+    await first.getByRole('heading', { name: 'CMS sign-in' }).waitFor();
+    assert.equal(await unavailable.evaluate(() => window.authTest.authHeader()), null);
+    assert.deepEqual(await unavailable.evaluate(() => window.authTest.accounts()), []);
+    await Promise.all([unavailable.waitForEvent('load'), unavailable.getByRole('button', { name: 'Sign in with Microsoft' }).click()]);
+    await unavailable.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
+  });
+}

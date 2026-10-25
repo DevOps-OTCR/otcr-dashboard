@@ -53,8 +53,9 @@ async function seed(email = 'pm@example.test') {
   const result = resultFor(email);
   await instance.hydrateCache(result, { scopes: ['User.Read'], account: result.account });
   const events = new BroadcastChannel('msal.broadcast.event');
+  // MSAL v5 broadcasts AccountInfo, without an AuthenticationResult or tokens.
   events.postMessage({ eventType: EventType.LOGIN_SUCCESS, interactionType: InteractionType.Redirect,
-    payload: result, error: null, correlationId: result.correlationId, timestamp: Date.now() });
+    payload: result.account, error: null, correlationId: result.correlationId, timestamp: Date.now() });
   events.close();
   completeCmsSignIn(result.account.homeAccountId);
   instance.setActiveAccount(result.account);
@@ -66,6 +67,12 @@ instance.logoutPopup = async () => { throw new Error('Must not sign out of Micro
 
 if (new URLSearchParams(location.search).has('expired')) {
   instance.acquireTokenSilent = async () => { throw new InteractionRequiredAuthError('login_required'); };
+}
+if (new URLSearchParams(location.search).has('unavailable')) {
+  instance.acquireTokenSilent = async () => { throw new Error('Synthetic token service failure'); };
+}
+if (new URLSearchParams(location.search).has('stalled')) {
+  instance.acquireTokenSilent = () => new Promise<AuthenticationResult>(() => {});
 }
 if (new URLSearchParams(location.search).has('slow')) {
   const initialize = instance.initialize.bind(instance);
