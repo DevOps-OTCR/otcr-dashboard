@@ -229,9 +229,6 @@ export default function ConsultantDashboard() {
     if (selectedWeek !== 'All Weeks' && !availableWeeks.includes(selectedWeek)) {
       setSelectedWeek(availableWeeks[availableWeeks.length - 1] ?? 'All Weeks');
     }
-    if (selectedWeek === 'All Weeks') {
-      setSelectedWeek(availableWeeks[availableWeeks.length - 1] ?? 'All Weeks');
-    }
   }, [availableWeeks, selectedWeek]);
 
   const visibleActionItems = useMemo(() => {
