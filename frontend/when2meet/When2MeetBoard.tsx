@@ -97,7 +97,25 @@ export function When2MeetBoard({
   const popupId = useId();
   const availability = useMemo(() => pollAvailability(detail), [detail]);
 
+  // The details are drawn over the left column, across the gap from the group calendar, so a
+  // mouse leaving the calendar closes them only if it does not reach the details shortly after.
+  const mouseLeaveTimerRef = useRef<number | null>(null);
+  const cancelMouseLeaveClose = useCallback(() => {
+    if (mouseLeaveTimerRef.current != null) window.clearTimeout(mouseLeaveTimerRef.current);
+    mouseLeaveTimerRef.current = null;
+  }, []);
+  const scheduleMouseLeaveClose = (event: ReactPointerEvent) => {
+    if (event.pointerType !== 'mouse') return;
+    cancelMouseLeaveClose();
+    mouseLeaveTimerRef.current = window.setTimeout(() => {
+      mouseLeaveTimerRef.current = null;
+      setHoveredGroupSlot(null);
+    }, 300);
+  };
+  useEffect(() => cancelMouseLeaveClose, [cancelMouseLeaveClose]);
+
   const closeAvailability = () => {
+    cancelMouseLeaveClose();
     // Restore focus before clearing the selection so onFocus does not reopen it.
     groupGridRef.current?.querySelector<HTMLButtonElement>(`[data-group-slot="${hoveredGroupSlot}"]`)
       ?.focus({ preventScroll: true });
@@ -293,9 +311,13 @@ export function When2MeetBoard({
             gridColumn: col + 1,
             backgroundColor: bg,
           }}
-          onPointerEnter={event => { if (event.pointerType === 'mouse') setHoveredGroupSlot(slotIdx); }}
-          onFocus={() => setHoveredGroupSlot(slotIdx)}
-          onClick={() => setHoveredGroupSlot(slotIdx)}
+          onPointerEnter={event => {
+            if (event.pointerType !== 'mouse') return;
+            cancelMouseLeaveClose();
+            setHoveredGroupSlot(slotIdx);
+          }}
+          onFocus={() => { cancelMouseLeaveClose(); setHoveredGroupSlot(slotIdx); }}
+          onClick={() => { cancelMouseLeaveClose(); setHoveredGroupSlot(slotIdx); }}
         />,
       );
     }
@@ -311,11 +333,12 @@ export function When2MeetBoard({
         <p className="text-center text-red-600 dark:text-red-400 text-sm mt-2">{saveError}</p>
       ) : null}
 
-      <div className="w2m-split" onPointerLeave={event => { if (event.pointerType === 'mouse') setHoveredGroupSlot(null); }}
-        onKeyDown={event => { if (event.key === 'Escape') closeAvailability(); }}>
+      <div className="w2m-split" onKeyDown={event => { if (event.key === 'Escape') closeAvailability(); }}>
         <div className="w2m-left">
           <div ref={overlayRef} id={popupId} role="region" aria-label="Time slot availability" aria-hidden={!hideLeftCal}
-            className={`w2m-available-overlay${hideLeftCal ? '' : ' w2m-hide'}`}>
+            className={`w2m-available-overlay${hideLeftCal ? '' : ' w2m-hide'}`}
+            onPointerEnter={event => { if (event.pointerType === 'mouse') cancelMouseLeaveClose(); }}
+            onPointerLeave={scheduleMouseLeaveClose}>
             <div className="w2m-availability-header">
               <p className="w2m-slot-label">{hoveredLabel}</p>
               <button type="button" className="w2m-availability-close" aria-label="Close availability details"
@@ -401,9 +424,7 @@ export function When2MeetBoard({
             <p>{`${teamSize}/${teamSize} available`}</p>
           </div>
           <p className="w2m-emphasis">Hover, focus, or tap a time to compare availability</p>
-          <div
-            className="w2m-schedule"
-          >
+          <div className="w2m-schedule" onPointerLeave={scheduleMouseLeaveClose}>
             <div className="w2m-times">
               {rowStartLabels.map((label, i) => (
                 <p key={`lr-${label}-${i}`} className="w2m-time-row">
