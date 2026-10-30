@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { CheckSquare, ChevronDown, Square, Users, Link as LinkIcon } from 'lucide-react';
 import { AssigneeChecklist, projectAssignees } from '@/components/AssigneeChecklist';
 import { AppNavbar } from '@/components/AppNavbar';
@@ -151,6 +151,9 @@ export default function DeliverablesPage() {
   }>('deliverables', email);
   const [roleLookupFailed, setRoleLookupFailed] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const queryProjectId = searchParams.get('projectId') ?? '';
+  const targetDeliverableId = searchParams.get('deliverableId') ?? '';
   const [role, setRole] = useState<AppRole>(() => snapshot?.role ?? getUserRole(email));
   const [projects, setProjects] = useState<ProjectOption[]>(snapshot?.projects ?? []);
   const [selectedProjectId, setSelectedProjectId] = useState(snapshot?.selectedProjectId ?? '');
@@ -178,19 +181,24 @@ export default function DeliverablesPage() {
   // A failed refresh keeps content that belongs to the selected project.
   const shownSprintsFor = useRef(snapshot?.selectedProjectId);
   const shownMembersFor = useRef(snapshot?.selectedProjectId);
+  // Scroll to a deliverable linked from Overview once, not after every refresh.
+  const scrolledToTarget = useRef('');
 
   const canManage = role === 'PM' || role === 'LC' || role === 'ADMIN';
   const currentEmail = (session.user?.email ?? '').toLowerCase();
 
-  const loadSprints = useCallback(async (projectId: string) => {
+  const loadSprints = useCallback(async (projectId: string, focusDeliverableId?: string) => {
     try {
       setLoadError(null);
       const res = await projectsAPI.getSprints(projectId);
       const sprintList = (res.data ?? []) as SprintItem[];
       shownSprintsFor.current = projectId;
       setSprints(sprintList);
+      const focusSprintId = focusDeliverableId
+        ? sprintList.find((item) => item.deliverables?.some((deliverable) => deliverable.id === focusDeliverableId))?.id
+        : undefined;
       setSelectedSprintId((current) =>
-        current && sprintList.some((item) => item.id === current) ? current : sprintList[0]?.id ?? '',
+        focusSprintId ?? (current && sprintList.some((item) => item.id === current) ? current : sprintList[0]?.id ?? ''),
       );
     } catch (error: any) {
       if (shownSprintsFor.current !== projectId) {
@@ -258,11 +266,12 @@ export default function DeliverablesPage() {
         );
         setProjects(nextProjects);
 
-        const firstProjectId = nextProjects.some(project => project.id === snapshot?.selectedProjectId)
-          ? snapshot!.selectedProjectId : nextProjects[0]?.id ?? '';
+        const preferredProjectId = queryProjectId || snapshot?.selectedProjectId;
+        const firstProjectId = preferredProjectId && nextProjects.some(project => project.id === preferredProjectId)
+          ? preferredProjectId : nextProjects[0]?.id ?? '';
         setSelectedProjectId(firstProjectId);
         if (firstProjectId) {
-          await Promise.all([loadSprints(firstProjectId), loadTeamMembers(firstProjectId)]);
+          await Promise.all([loadSprints(firstProjectId, targetDeliverableId), loadTeamMembers(firstProjectId)]);
         }
       } catch (error: any) {
         if (!cancelled) setLoadError(error?.message ?? 'Failed to load deliverables.');
@@ -276,7 +285,7 @@ export default function DeliverablesPage() {
 
     void init();
     return () => { cancelled = true; };
-  }, [isLoggedIn, email, getToken, loadSprints, loadTeamMembers, roleLookupFailed, snapshot]);
+  }, [isLoggedIn, email, getToken, loadSprints, loadTeamMembers, roleLookupFailed, snapshot, queryProjectId, targetDeliverableId]);
 
   useEffect(() => {
     if (!loading && !refreshing && !loadError && !roleLookupFailed) {
@@ -312,6 +321,14 @@ export default function DeliverablesPage() {
     () => visibleSprints.find((sprint) => sprint.id === selectedSprintId) ?? visibleSprints[0] ?? null,
     [visibleSprints, selectedSprintId],
   );
+
+  useEffect(() => {
+    if (loading || !targetDeliverableId || scrolledToTarget.current === targetDeliverableId) return;
+    const element = document.getElementById(`deliverable-${targetDeliverableId}`);
+    if (!element) return;
+    scrolledToTarget.current = targetDeliverableId;
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [loading, targetDeliverableId, selectedSprint]);
 
   useEffect(() => {
     setDeadlineInputs(
@@ -712,7 +729,13 @@ export default function DeliverablesPage() {
                       return (
                         <div
                           key={deliverable.id}
-                          className="min-w-0 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/70 p-4"
+                          id={`deliverable-${deliverable.id}`}
+                          className={cn(
+                            'min-w-0 rounded-xl border bg-[var(--secondary)]/70 p-4',
+                            targetDeliverableId === deliverable.id
+                              ? 'border-[var(--primary)] ring-2 ring-[var(--primary)]/30'
+                              : 'border-[var(--border)]',
+                          )}
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div>
