@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -92,6 +92,7 @@ export default function ConsultantDashboard() {
   const [loading, setLoading] = useState(!snapshot);
   const [loadError, setLoadError] = useState(false);
   const [refreshing, setRefreshing] = useState(true);
+  const initialWeekAppliedRef = useRef(Boolean(snapshot));
 
   useEffect(() => {
     if (!session.loading && !session.isLoggedIn) {
@@ -224,6 +225,12 @@ export default function ConsultantDashboard() {
   useEffect(() => {
     if (availableWeeks.length === 0) {
       if (selectedWeek !== 'All Weeks') setSelectedWeek('All Weeks');
+      return;
+    }
+    // Default to the latest week once on first load; a restored snapshot or later user choice wins.
+    if (!initialWeekAppliedRef.current) {
+      initialWeekAppliedRef.current = true;
+      setSelectedWeek(availableWeeks[availableWeeks.length - 1]);
       return;
     }
     if (selectedWeek !== 'All Weeks' && !availableWeeks.includes(selectedWeek)) {
