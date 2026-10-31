@@ -98,6 +98,16 @@ test('invalid fields prevent navigation without stopping valid independent field
   assert.deepEqual(writes, ['valid']); assert.equal(store.get('title').value, ' ');
   store.edit('title', 'Title'); assert.equal(store.pending().length, 0);
 });
+test('blur-committed fields show validation errors only on commit', async () => {
+  const { store, writes } = fixture();
+  store.connect({ id: 'tz', resource: 'schedule', label: '', href: '', value: 'America/Chicago', delay: null,
+    validate: validation.validTimezone, save: async value => { writes.push(value); } });
+  store.edit('tz', 'America/Chi'); assert.equal(store.get('tz').status, 'dirty');
+  assert.equal(await store.flush('tz'), false); assert.equal(store.get('tz').status, 'invalid');
+  assert.deepEqual(writes, []);
+  store.edit('tz', 'America/Denver'); assert.equal(await store.flush('tz'), true);
+  assert.deepEqual(writes, ['America/Denver']); assert.equal(store.get('tz').status, 'saved');
+});
 test('unmount flushes against the original record, preserves failures, and account disposal stops queued writes', async () => {
   const { store, options, writes, tick } = fixture();
   const detach = store.connect({ ...options, id: 'old-record' });

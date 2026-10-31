@@ -77,7 +77,7 @@ export function ScheduleEditors({ projectId, config, onSaved }: { projectId: str
     </label>
     <label className="space-y-1 text-sm"><span>Timezone</span>
       <AutosaveInput {...base} id={`${base.resource}:sprintTimezone`} label="Timezone" value={config.sprintTimezone}
-        validate={validTimezone} normalize={value => value.trim()} save={value => save({ sprintTimezone: value.trim() })} />
+        delay={null} validate={validTimezone} normalize={value => value.trim()} save={value => save({ sprintTimezone: value.trim() })} />
     </label>
     <AutosaveField {...base} id={`${base.resource}:autoGenerateSprints`} label="Auto-generate sprint templates" value={config.autoGenerateSprints}
       delay={0} save={value => save({ autoGenerateSprints: value })}>

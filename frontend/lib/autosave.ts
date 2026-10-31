@@ -95,7 +95,8 @@ export class AutosaveStore {
     clearTimeout(e.timer);
     e.value = value;
     e.version++;
-    e.error = inputError ?? e.validate?.(value);
+    // Blur-committed fields validate on commit, so partial typing shows no error.
+    e.error = inputError ?? (e.delay === null ? undefined : e.validate?.(value));
     e.status = e.error ? 'invalid' : !equal(this.normalized(e), e.acknowledged) || e.uncertain || e.inFlight ? 'dirty' : 'idle';
     this.emit();
     if (!e.error && e.delay !== null) {
@@ -107,6 +108,8 @@ export class AutosaveStore {
     clearTimeout(e.timer);
     e.timer = undefined;
     if (this.disposed) return Promise.resolve();
+    const error = e.status === 'invalid' ? undefined : e.validate?.(e.value);
+    if (error) { e.error = error; e.status = 'invalid'; this.emit(); }
     e.requested = true;
     if (e.task) return e.task;
     const predecessor = this.queues.get(e.resource) ?? Promise.resolve();
