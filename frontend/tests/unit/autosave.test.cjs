@@ -110,13 +110,24 @@ test('validates complete dates, local datetimes, titles, schedule times, and IAN
   assert.equal(validation.validTimezone('America/Chicago'), undefined);
 });
 
-test('an acknowledged server prop keeps Saved visible; normalization happens only after acknowledgment', async () => {
+test('an acknowledged server prop keeps Saved visible; normalization is shown only on commit', async () => {
+  const { store, options, writes, tick } = fixture();
+  const trimmed = { ...options, normalize: value => value.trim() };
+  store.sync(trimmed);
+  store.edit('notes', '  Trim me  '); assert.equal(store.get('notes').value, '  Trim me  ');
+  await tick(650); store.sync({ ...trimmed, value: 'Trim me' });
+  assert.deepEqual(writes, ['Trim me']); assert.equal(store.get('notes').value, '  Trim me  ');
+  assert.equal(store.get('notes').status, 'saved'); assert.equal(store.pending().length, 0);
+  assert.equal(await store.flush('notes'), true);
+  assert.deepEqual(writes, ['Trim me']); assert.equal(store.get('notes').value, 'Trim me');
+});
+test('a debounced save keeps a trailing space the user is still typing', async () => {
   const { store, options, writes, tick } = fixture();
   store.sync({ ...options, normalize: value => value.trim() });
-  store.edit('notes', '  Trim me  '); assert.equal(store.get('notes').value, '  Trim me  ');
-  await tick(650); store.sync({ ...options, value: 'Trim me' });
-  assert.deepEqual(writes, ['Trim me']); assert.equal(store.get('notes').value, 'Trim me');
-  assert.equal(store.get('notes').status, 'saved');
+  store.edit('notes', 'Draft slides '); await tick(650);
+  assert.deepEqual(writes, ['Draft slides']); assert.equal(store.get('notes').value, 'Draft slides ');
+  store.edit('notes', 'Draft slides for'); await tick(650);
+  assert.deepEqual(writes, ['Draft slides', 'Draft slides for']);
 });
 test('an ambiguous network failure still needs a write when the user reverted during the request', async () => {
   const { store, options, writes, tick } = fixture(), first = deferred();

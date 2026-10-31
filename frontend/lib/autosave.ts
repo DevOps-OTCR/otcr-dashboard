@@ -41,7 +41,8 @@ export class AutosaveStore {
   private emit() { this.tick++; this.listeners.forEach(listener => listener()); }
   get(id: string) { return this.fields.get(id); }
   pending() { return [...this.fields.values()].filter(e => this.dirty(e) || e.inFlight); }
-  private dirty(e: Entry) { return !equal(e.value, e.acknowledged) || e.status === 'invalid' || e.uncertain; }
+  private dirty(e: Entry) { return !equal(this.normalized(e), e.acknowledged) || e.status === 'invalid' || e.uncertain; }
+  private normalized(e: Entry) { return e.normalize?.(e.value) ?? e.value; }
 
   connect<T extends SaveValue>(options: FieldOptions<T>) {
     this.sync(options);
@@ -95,7 +96,7 @@ export class AutosaveStore {
     e.value = value;
     e.version++;
     e.error = inputError ?? e.validate?.(value);
-    e.status = e.error ? 'invalid' : !equal(e.value, e.acknowledged) || e.uncertain || e.inFlight ? 'dirty' : 'idle';
+    e.status = e.error ? 'invalid' : !equal(this.normalized(e), e.acknowledged) || e.uncertain || e.inFlight ? 'dirty' : 'idle';
     this.emit();
     if (!e.error && e.delay !== null) {
       e.timer = setTimeout(() => { e.timer = undefined; void this.enqueue(e); }, e.delay ?? 650);
@@ -112,7 +113,7 @@ export class AutosaveStore {
     const task = predecessor.then(async () => {
       e.requested = false;
       if (this.disposed || !this.dirty(e) || e.status === 'invalid') return;
-      const value = e.normalize?.(e.value) ?? e.value;
+      const value = this.normalized(e);
       const version = e.version;
       // Capture the writer too: an async request must never inherit another editor's IDs.
       const save = e.save;
@@ -125,7 +126,8 @@ export class AutosaveStore {
         e.acknowledged = value;
         e.uncertain = false;
         this.writeRevision++;
-        if (e.version === version) { e.value = value; e.status = 'saved'; e.error = undefined; }
+        // Keep the raw draft: a debounced save must not strip a space the user is still typing.
+        if (e.version === version) { e.status = 'saved'; e.error = undefined; }
         else if ((e.status as SaveStatus) !== 'invalid') e.status = 'dirty';
       } catch {
         e.uncertain = true;
@@ -150,6 +152,8 @@ export class AutosaveStore {
   async flush(id: string): Promise<boolean> {
     const e = this.fields.get(id);
     if (!e || this.disposed) return true;
+    // Blur, Retry and navigation commit the field, so show its normalized form now.
+    if (e.status !== 'invalid' && !equal(this.normalized(e), e.value)) { e.value = this.normalized(e); this.emit(); }
     // One attempt per failure. New edits, Retry, or a deliberate navigation attempt
     // may try again; a failed request never starts an automatic retry loop.
     await this.enqueue(e);
