@@ -128,7 +128,8 @@ export class AutosaveStore {
         this.writeRevision++;
         // Keep the raw draft: a debounced save must not strip a space the user is still typing.
         if (e.version === version) { e.status = 'saved'; e.error = undefined; }
-        else if ((e.status as SaveStatus) !== 'invalid') e.status = 'dirty';
+        // A newer edit may have returned to the value just saved.
+        else if ((e.status as SaveStatus) !== 'invalid') e.status = this.dirty(e) ? 'dirty' : 'saved';
       } catch {
         e.uncertain = true;
         if ((e.status as SaveStatus) !== 'invalid') {

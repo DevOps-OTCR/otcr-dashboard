@@ -53,6 +53,14 @@ test('in-flight edits never get marked Saved by an old response; latest value fo
   assert.notEqual(store.get('notes').status, 'saved'); assert.equal(store.get('notes').value, 'latest');
   second.resolve(); await drain(); assert.equal(store.get('notes').status, 'saved');
 });
+test('editing back to the in-flight value shows Saved, not Unsaved changes', async () => {
+  const { store, options, writes } = fixture(), first = deferred();
+  store.sync({ ...options, delay: null, save: async value => { writes.push(value); await first.promise; } });
+  store.edit('notes', 'saved'); const flushed = store.flush('notes'); await drain();
+  store.edit('notes', 'other'); store.edit('notes', 'saved'); first.resolve();
+  assert.equal(await flushed, true); assert.deepEqual(writes, ['saved']);
+  assert.equal(store.get('notes').status, 'saved'); assert.equal(store.pending().length, 0);
+});
 test('reverting to the original value while a write is in flight still restores it on the server', async () => {
   const { store, options, writes, tick } = fixture(), first = deferred();
   store.sync({ ...options, save: async value => { writes.push(value); if (value === 'first') await first.promise; } });
