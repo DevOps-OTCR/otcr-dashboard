@@ -11,12 +11,15 @@ export type DraftDeliverable = {
   deadline: string;
 };
 
+let nextDraftId = 1;
+
 export function createDraftDeliverable(initial?: Partial<DraftDeliverable>): DraftDeliverable {
   return {
-    id: 1,
+    id: nextDraftId++,
     title: '',
     description: '',
     assigneeIds: [],
+    // Empty means "use the sprint's default deadline" so drafts follow sprint changes.
     deadline: '',
     ...initial,
   };
