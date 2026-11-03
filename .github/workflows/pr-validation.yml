@@ -144,6 +144,10 @@ jobs:
         run: npx tsc --noEmit
       - name: Run unit tests
         run: npm test -- --runInBand
+      - name: Enforce Agentic CMS feature boundaries
+        run: |
+          node ../scripts/check-agentic-boundaries.cjs
+          node --test ../scripts/check-agentic-boundaries.test.cjs
       - name: Build backend
         run: npm run build
 

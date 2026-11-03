@@ -2,6 +2,7 @@
 
 import { DashboardShell } from '@/components/DashboardShell';
 import { AuthApiSync } from '@/components/AuthApiSync';
+import { AgenticCmsFeature } from '@/components/AgenticCmsFeature';
 import "./globals.css";
 import { PublicClientApplication } from "@azure/msal-browser";
 import { MsalProvider } from "@azure/msal-react";
@@ -32,6 +33,7 @@ export default function MsalWrapper({ children }: { children: ReactNode }) {
             <AuthProvider>
               <AuthApiSync />
               <DashboardShell>{children}</DashboardShell>
+              <AgenticCmsFeature />
             </AuthProvider>
           </MsalProvider>
         </ThemeProvider>

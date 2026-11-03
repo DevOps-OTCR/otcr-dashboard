@@ -36,6 +36,7 @@ exports.buildBundle = async (options = {}) => {
     entry: options.entry ?? path.join(__dirname, 'entry.tsx'),
     output: { path: output, filename: 'bundle.js' },
     resolve: { extensions: ['.tsx', '.ts', '.js', '.cjs'], alias: {
+      ...(options.aliases ?? {}),
       '@': root, 'next/navigation$': path.join(__dirname, 'routing.cjs'),
       'next/link$': path.join(output, 'link.cjs'), 'next/image$': path.join(output, 'image.cjs'),
       'next/font/google$': path.join(output, 'fonts.cjs'),
