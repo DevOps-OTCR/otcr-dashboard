@@ -32,6 +32,8 @@ services:
           property: connectionString
       - key: REDIS_ENABLED
         value: "false"
+      - key: AGENTIC_CMS_ENABLED
+        value: "false"
       # Set to the staging site's assigned HTTPS URL for CORS and deep links.
       - key: FRONTEND_URL
         sync: false

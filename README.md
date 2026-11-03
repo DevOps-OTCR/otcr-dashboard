@@ -92,6 +92,13 @@ Then run:
 npm run dev
 ```
 
+## Agentic CMS development
+
+All Agentic CMS work must use the backend-controlled release flag, which
+defaults to off. Read [the integration guide](docs/agentic-cms.md) before adding
+bot UI, MCP tools, context uploads, reviews or skills. It documents local Lumen
+setup, pilot access, required code boundaries, rollback and CI checks.
+
 ## Linting
 
 Run the same lint commands used by PR Validation from the repository root:

@@ -15,6 +15,7 @@ import { AttendanceModule } from './attendance/attendance.module';
 import { AlumniModule } from './alumni/alumni.module';
 import { When2MeetModule } from './when2meet/when2meet.module';
 import { MetaModule } from './meta/meta.module';
+import { AgenticCmsModule } from './agentic-cms/agentic-cms.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { MetaModule } from './meta/meta.module';
     AlumniModule,
     When2MeetModule,
     MetaModule,
+    AgenticCmsModule,
   ],
   controllers: [DeliverablesController],
   providers: [DeliverablesService],
