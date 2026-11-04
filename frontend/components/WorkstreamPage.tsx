@@ -14,7 +14,7 @@ import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
 import { readResource } from '@/lib/resource-cache';
 import { deliverablesAPI, projectsAPI, setAuthToken } from '@/lib/api';
 import { getEffectiveRole, type AppRole } from '@/lib/permissions';
-import { reconcileDraftDeliverables, type DraftDeliverable } from '@/lib/deliverables-parser';
+import { createDraftDeliverable, parseDashPrefixedDeliverables, type DraftDeliverable } from '@/lib/deliverables-parser';
 import { dispatchNotificationsRefresh } from '@/lib/notification-events';
 import { buildSprintDeadlineInChicago } from '@/lib/sprint-deadlines';
 
@@ -297,6 +297,22 @@ export default function WorkstreamPage() {
 
     return items;
   }, [addWhitepaperSubmission, selectedSprint, sprintIndex]);
+  const defaultDraftDeadline = useMemo(
+    () => (selectedSprint ? toDateTimeLocalValue(buildDraftDeliverableDeadline(selectedSprint)) : ''),
+    [selectedSprint],
+  );
+  const draftsMissingTitle = parsedDrafts.some(draft => !draft.title.trim());
+
+  const updateDraft = (id: number, changes: Partial<DraftDeliverable>) => {
+    setParsedDrafts(current => current.map(draft => (draft.id === id ? { ...draft, ...changes } : draft)));
+  };
+
+  const handleAddPastedDrafts = () => {
+    const parsed = parseDashPrefixedDeliverables(draftInput);
+    if (parsed.length === 0) return;
+    setParsedDrafts(current => [...current, ...parsed.map(({ title }) => createDraftDeliverable({ title }))]);
+    setDraftInput('');
+  };
   const selectedSprintDeliverables = useMemo(() => {
     if (!selectedSprint) return [];
     return (selectedSprint.deliverables ?? []).filter((deliverable) =>
@@ -386,18 +402,25 @@ export default function WorkstreamPage() {
   const handleSaveDrafts = async () => {
     if (!selectedProjectId || !selectedSprint || teamMembersStatus !== 'ready' || savingDrafts) return;
     if (parsedDrafts.length === 0 && !addWhitepaperSubmission) return;
+    if (draftsMissingTitle) {
+      setLoadError('Every draft deliverable needs a name.');
+      return;
+    }
 
     setSavingDrafts(true);
     try {
+      setLoadError(null);
       const requests = parsedDrafts.map((item) =>
         deliverablesAPI.create({
           projectId: selectedProjectId,
           sprintId: selectedSprint.id,
-          title: item.title,
-          description: 'Draft deliverable created from the Workstream page.',
+          title: item.title.trim(),
+          description: item.description.trim() || 'Draft deliverable created from the Workstream page.',
           assigneeIds: item.assigneeIds,
           type: 'OTHER',
-          deadline: buildDraftDeliverableDeadline(selectedSprint),
+          deadline: item.deadline
+            ? new Date(item.deadline).toISOString()
+            : buildDraftDeliverableDeadline(selectedSprint),
         }),
       );
 
@@ -786,20 +809,34 @@ export default function WorkstreamPage() {
                           <p className="text-sm font-semibold text-[var(--foreground)]">Add Draft Deliverables</p>
                         </div>
                         <p className="mt-1 text-xs text-[var(--foreground)]/60">
-                          Paste lines that start with `-`. Each one becomes a deliverable in this sprint.
+                          Add deliverables one at a time, or paste lines that start with `-` to add several at once.
                         </p>
                         <textarea
                           value={draftInput}
-                          onChange={(e) => {
-                            const input = e.target.value;
-                            setDraftInput(input);
-                            setParsedDrafts(current => reconcileDraftDeliverables(current, input));
-                          }}
+                          onChange={(e) => setDraftInput(e.target.value)}
                           disabled={savingDrafts}
                           rows={5}
                           placeholder={'- Add week function\n- Get it hosted\n- Redesign deliverables'}
                           className="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
                         />
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={handleAddPastedDrafts}
+                            disabled={savingDrafts || parseDashPrefixedDeliverables(draftInput).length === 0}
+                          >
+                            Add Pasted Lines
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setParsedDrafts(current => [...current, createDraftDeliverable()])}
+                            disabled={savingDrafts}
+                          >
+                            Add Deliverable
+                          </Button>
+                        </div>
                         {teamMembersStatus === 'loading' && (
                           <p role="status" className="mt-3 text-sm">Loading team members...</p>
                         )}
@@ -821,7 +858,9 @@ export default function WorkstreamPage() {
                           Add whitepaper submission
                         </label>
                         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                          <span className="text-xs text-[var(--foreground)]/60">{parsedDrafts.length} parsed</span>
+                          <span className="text-xs text-[var(--foreground)]/60">
+                            {parsedDrafts.length} draft{parsedDrafts.length === 1 ? '' : 's'}
+                          </span>
                           <div className="flex gap-2">
                             <Button size="sm" variant="ghost" onClick={() => void handleDeleteSprint()}>
                               Delete Week
@@ -832,7 +871,12 @@ export default function WorkstreamPage() {
                             <Button
                               size="sm"
                               onClick={() => void handleSaveDrafts()}
-                              disabled={savingDrafts || teamMembersStatus !== 'ready' || (parsedDrafts.length === 0 && !addWhitepaperSubmission)}
+                              disabled={
+                                savingDrafts ||
+                                teamMembersStatus !== 'ready' ||
+                                draftsMissingTitle ||
+                                (parsedDrafts.length === 0 && !addWhitepaperSubmission)
+                              }
                             >
                               Save Deliverables
                             </Button>
@@ -841,33 +885,77 @@ export default function WorkstreamPage() {
                       </div>
 
                       <div className="rounded-xl border border-[var(--border)] bg-[var(--secondary)]/60 p-4">
-                        <p className="text-sm font-semibold text-[var(--foreground)]">Parsed Deliverables</p>
+                        <p className="text-sm font-semibold text-[var(--foreground)]">Draft Deliverables</p>
                         <div className="mt-3 space-y-2">
                           {parsedDrafts.length === 0 && whitepaperPreviewItems.length === 0 ? (
                             <div className="rounded-xl border border-dashed border-[var(--border)] p-3 text-sm text-[var(--foreground)]/60">
-                              Paste lines starting with `-` to preview deliverables.
+                              Add a deliverable or paste lines starting with `-` to start drafting.
                             </div>
                           ) : (
                             <>
-                              {parsedDrafts.map((item) => (
-                                <div
-                                  key={item.id}
-                                  className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2"
-                                >
-                                  {teamMembersStatus !== 'ready' && (
-                                    <p className="text-sm font-semibold text-[var(--foreground)]">Assignees for {item.title}</p>
-                                  )}
-                                  {teamMembersStatus === 'ready' && (
-                                    <AssigneeChecklist label={`Assignees for ${item.title}`} options={teamMembers}
-                                      selected={item.assigneeIds} disabled={savingDrafts}
-                                      onChange={ids => setParsedDrafts(current => current.map(draft =>
-                                        draft.id === item.id ? { ...draft, assigneeIds: ids } : draft))} />
-                                  )}
-                                  <p className="mt-1 text-[11px] uppercase tracking-wide text-amber-700 dark:text-amber-300">
-                                    Draft
-                                  </p>
-                                </div>
-                              ))}
+                              {parsedDrafts.map((item, index) => {
+                                const label = item.title.trim() || `deliverable ${index + 1}`;
+                                return (
+                                  <div
+                                    key={item.id}
+                                    className="space-y-2 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2"
+                                  >
+                                    <div className="flex items-start justify-between gap-2">
+                                      <p className="text-[11px] uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                                        Draft
+                                      </p>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => setParsedDrafts(current => current.filter(draft => draft.id !== item.id))}
+                                        disabled={savingDrafts}
+                                      >
+                                        Remove
+                                      </Button>
+                                    </div>
+                                    <input
+                                      type="text"
+                                      value={item.title}
+                                      onChange={(e) => updateDraft(item.id, { title: e.target.value })}
+                                      disabled={savingDrafts}
+                                      placeholder="Deliverable name"
+                                      aria-label={`Name for ${label}`}
+                                      aria-invalid={!item.title.trim()}
+                                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
+                                    />
+                                    {!item.title.trim() && (
+                                      <p className="text-xs text-red-600 dark:text-red-400">Name is required.</p>
+                                    )}
+                                    <textarea
+                                      value={item.description}
+                                      onChange={(e) => updateDraft(item.id, { description: e.target.value })}
+                                      disabled={savingDrafts}
+                                      rows={2}
+                                      placeholder="Description (optional)"
+                                      aria-label={`Description for ${label}`}
+                                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
+                                    />
+                                    <label className="flex flex-col gap-1 text-xs font-medium text-[var(--foreground)]/70">
+                                      Deadline
+                                      <input
+                                        type="datetime-local"
+                                        value={item.deadline || defaultDraftDeadline}
+                                        onChange={(e) => updateDraft(item.id, { deadline: e.target.value })}
+                                        disabled={savingDrafts}
+                                        className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
+                                      />
+                                    </label>
+                                    {teamMembersStatus !== 'ready' && (
+                                      <p className="text-sm font-semibold text-[var(--foreground)]">Assignees for {label}</p>
+                                    )}
+                                    {teamMembersStatus === 'ready' && (
+                                      <AssigneeChecklist label={`Assignees for ${label}`} options={teamMembers}
+                                        selected={item.assigneeIds} disabled={savingDrafts}
+                                        onChange={ids => updateDraft(item.id, { assigneeIds: ids })} />
+                                    )}
+                                  </div>
+                                );
+                              })}
                               {whitepaperPreviewItems.map((title) => (
                                 <div
                                   key={title}
