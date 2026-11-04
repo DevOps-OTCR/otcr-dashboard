@@ -96,6 +96,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     let sharedSignIn: AuthenticationResult | null = null;
     let finishSharedSignIn: (() => void) | undefined;
+    let waitingAccountId: string | undefined;
     // A result can arrive before this tab sees the new session marker. Its import
     // is kept for that session's storage notification to wait on.
     let earlyImport: { accountId: string; promise: Promise<void> } | null = null;
@@ -121,19 +122,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const revision = session.revision;
       // Storage notifications can precede MSAL's cache broadcast. Import the
       // completed result before reading this tab's cache.
-      const waiting = Boolean(finishSharedSignIn);
+      const accountId = result.account.homeAccountId;
+      const waiting = Boolean(finishSharedSignIn) && waitingAccountId === accountId;
       const promise = withAuthTimeout(importSharedSignIn(result));
       sharedCacheReady.current = { revision, promise };
-      earlyImport = waiting ? null : { accountId: result.account.homeAccountId, promise };
+      earlyImport = waiting ? null : { accountId, promise };
       void promise.then(async () => {
         if (readCmsSession()?.signedOut) await instance.clearCache();
         else if (!disposed && cmsSessionRevision() === revision) setSessionChange(value => value + 1);
       }).catch(() => {
         if (!disposed && cmsSessionRevision() === revision) setAuthError('We could not restore your sign-in. Please retry.');
       }).finally(() => {
-        // Release whichever session is waiting now, including one that arrived mid-import.
+        // Release the session waiting for this account, even if it arrived mid-import.
+        if (waitingAccountId !== accountId) return;
         finishSharedSignIn?.();
         finishSharedSignIn = undefined;
+        waitingAccountId = undefined;
       });
     };
     const onStorage = (event: StorageEvent) => {
@@ -164,6 +168,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (earlyImport && earlyImport.accountId === session?.accountId) {
           sharedCacheReady.current = { revision, promise: earlyImport.promise };
         } else if (sharedCacheReady.current?.revision !== revision) {
+          waitingAccountId = session?.accountId;
           sharedCacheReady.current = { revision, promise: new Promise(resolve => { finishSharedSignIn = resolve; }) };
         }
         earlyImport = null;
