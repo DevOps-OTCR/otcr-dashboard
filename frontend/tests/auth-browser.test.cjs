@@ -14,7 +14,22 @@ after(() => browser?.close());
 async function setup(t, delayCacheUpdates = false) {
   const context = await browser.newContext();
   t.after(() => context.close());
-  if (delayCacheUpdates) await context.addInitScript(() => {
+  // 'session' makes this tab see the CMS session marker 300ms late, as a lagging
+  // storage event would, so the shared sign-in message arrives first.
+  if (delayCacheUpdates === 'session') await context.addInitScript(() => {
+    const addListener = window.addEventListener;
+    window.addEventListener = function (type, listener, options) {
+      if (type !== 'storage') return addListener.call(this, type, listener, options);
+      return addListener.call(this, type, event => setTimeout(() => { window.staleSession = undefined; listener(event); }, 300), options);
+    };
+    const getItem = Storage.prototype.getItem;
+    Storage.prototype.getItem = function (key) {
+      if (this === window.localStorage && key === 'otcr_cms_session' && window.staleSession !== undefined) return window.staleSession;
+      return getItem.call(this, key);
+    };
+    window.freezeSession = () => { window.staleSession = getItem.call(localStorage, 'otcr_cms_session'); };
+  });
+  else if (delayCacheUpdates) await context.addInitScript(() => {
     const addListener = BroadcastChannel.prototype.addEventListener;
     BroadcastChannel.prototype.addEventListener = function (type, listener, options) {
       if (this.name === 'msal.broadcast.cache' && type === 'message') {
@@ -111,6 +126,19 @@ test('a newly selected account replaces the previous account across tabs', async
     await current.waitForFunction(() => document.querySelector('[data-testid="account"]')?.textContent === 'consultant@example.test');
     await current.waitForFunction(() => window.authTest.authHeader() === 'Bearer synthetic-token-for-consultant@example.test');
   }
+});
+
+test('signing in again as the same account restores other tabs when the shared result arrives first', async t => {
+  const { first, page } = await setup(t, 'session');
+  const second = await page('/deliverables');
+  await second.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
+  await second.evaluate(() => window.freezeSession());
+  await first.evaluate(() => window.authTest.seed('pm@example.test'));
+  await second.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
+  await second.waitForFunction(() => window.authTest.authHeader() === 'Bearer synthetic-token-for-pm@example.test');
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  assert.equal(await second.getByText('Unable to finish sign-in').count(), 0);
+  assert.equal(await second.getByTestId('account').textContent(), 'pm@example.test');
 });
 
 test('first sign-in through the real MSAL redirect reaches the CMS', async t => {
