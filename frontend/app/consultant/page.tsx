@@ -56,6 +56,7 @@ type AssignmentItem = {
   deadline: string;
   completed: boolean;
   consultantTaskStatus: string | null;
+  isSlideDeliverable?: boolean;
 };
 
 function normalizeWeekLabel(value: string) {
@@ -179,6 +180,7 @@ export default function ConsultantDashboard() {
                   deadline: deliverable.deadline,
                   completed: Boolean(deliverable.completed),
                   consultantTaskStatus,
+                  isSlideDeliverable,
                 });
               });
             });
@@ -314,7 +316,8 @@ export default function ConsultantDashboard() {
                       whileHover={{ y: -2 }}
                       onClick={() =>
                         router.push(
-                          `/slides?projectId=${encodeURIComponent(item.projectId)}&deliverableId=${encodeURIComponent(item.id)}`,
+                          // Slide and whitepaper work only appears on the Slides page.
+                          `/${item.isSlideDeliverable ? 'slides' : 'deliverables'}?projectId=${encodeURIComponent(item.projectId)}&deliverableId=${encodeURIComponent(item.id)}`,
                         )
                       }
                       className={cn(
