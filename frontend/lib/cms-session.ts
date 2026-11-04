@@ -1,3 +1,5 @@
+import type { AuthenticationResult } from '@azure/msal-browser';
+
 // App-owned coordination only. Accounts and tokens remain managed by MSAL.
 export const CMS_SESSION_KEY = 'otcr_cms_session';
 const LOGIN_ATTEMPT_KEY = 'otcr_cms_login_attempt';
@@ -32,6 +34,24 @@ export function completeCmsSignIn(accountId: string): boolean {
   if (startedAt === null && readCmsSession()?.signedOut) return false;
   saveSession(false, accountId);
   return true;
+}
+
+// MSAL v5's LOGIN_SUCCESS event carries only the account, so the tab that finishes
+// sign-in shares its result with open tabs, itself included (same origin only).
+const SIGN_IN_CHANNEL = 'otcr_cms_sign_in';
+
+export function shareCmsSignIn(result: AuthenticationResult) {
+  if (typeof BroadcastChannel === 'undefined') return;
+  const channel = new BroadcastChannel(SIGN_IN_CHANNEL);
+  channel.postMessage(result);
+  channel.close();
+}
+
+export function onSharedCmsSignIn(listener: (result: AuthenticationResult) => void) {
+  if (typeof BroadcastChannel === 'undefined') return () => {};
+  const channel = new BroadcastChannel(SIGN_IN_CHANNEL);
+  channel.onmessage = (event: MessageEvent<AuthenticationResult>) => listener(event.data);
+  return () => channel.close();
 }
 
 export async function withAuthTimeout<T>(operation: Promise<T>, milliseconds = 15000): Promise<T> {

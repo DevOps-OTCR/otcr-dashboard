@@ -18,7 +18,7 @@ import {
   useRef,
   Fragment,
 } from "react";
-import { CMS_SESSION_KEY, readCmsSession, cmsSessionRevision, beginCmsSignIn, completeCmsSignIn, markCmsSignedOut, withAuthTimeout } from '@/lib/cms-session';
+import { CMS_SESSION_KEY, readCmsSession, cmsSessionRevision, beginCmsSignIn, completeCmsSignIn, markCmsSignedOut, onSharedCmsSignIn, shareCmsSignIn, withAuthTimeout } from '@/lib/cms-session';
 import FullScreenLoader from "./LoadingScreen";
 import { clearRoleCache } from "@/lib/permissions";
 import { clearProjectsCache, setAuthToken } from "@/lib/api";
@@ -99,7 +99,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const restoreSharedSignIn = () => {
       const session = readCmsSession();
       const result = sharedSignIn;
-      if (!result || session?.signedOut || session?.accountId !== result.account.homeAccountId) return;
+      if (!result?.account || session?.signedOut || session?.accountId !== result.account.homeAccountId) return;
       sharedSignIn = null;
       const revision = session.revision;
       // LOGIN_SUCCESS and storage notifications can precede MSAL's cache
@@ -150,11 +150,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
     // MSAL v5 broadcasts active-account changes; account arrays alone do not
     // change when switching between two accounts already in the cache.
+    // MSAL's own LOGIN_SUCCESS is not used here: in v5 its payload is only the
+    // account, and it fires inside handleRedirectPromise, so a throw fails sign-in.
+    const stopSharedSignIn = onSharedCmsSignIn(result => {
+      sharedSignIn = result;
+      restoreSharedSignIn();
+    });
     const callbackId = instance.addEventCallback(message => {
-      if (message.eventType === EventType.LOGIN_SUCCESS) {
-        sharedSignIn = message.payload as AuthenticationResult;
-        restoreSharedSignIn();
-      }
       if (message.eventType === EventType.ACTIVE_ACCOUNT_CHANGED) {
         setSessionChange(value => value + 1);
       }
@@ -163,6 +165,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     window.addEventListener('pageshow', onPageShow);
     return () => {
       disposed = true;
+      stopSharedSignIn();
       window.removeEventListener('storage', onStorage);
       window.removeEventListener('pageshow', onPageShow);
       if (callbackId) instance.removeEventCallback(callbackId);
@@ -198,6 +201,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           }
           signedOut.current = false;
           revision = cmsSessionRevision();
+          shareCmsSignIn(result);
         }
         if (!isCurrent()) return;
         if (signedOut.current || readCmsSession()?.signedOut) {
