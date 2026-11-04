@@ -13,7 +13,7 @@ function makeService(opts: {exists?: boolean; members?: string[]} = {}) {
     const { exists = true, members = [] } = opts;
     const prisma = {
         project: { findUnique: jest.fn(async () => (exists ? project : null))},
-        projectMember: { findFirst: jest.fn(async ({ where }: any) => members.includes(where.userId) && where.leftAt === null ? { id: 'm' } : null), },
+        projectMember: { findFirst: jest.fn(async ({ where }: { where: { userId: string; leftAt: Date | null } }) => members.includes(where.userId) && where.leftAt === null ? { id: 'm' } : null), },
     };
 
     const service = new ProjectsService(prisma as unknown as PrismaService, {} as NotificationsService);
