@@ -4,17 +4,19 @@ import {
 } from '@nestjs/common';
 
 import { ProjectsService } from './projects.service';
+import { PrismaService } from '@/prisma/prisma.service';
+import { NotificationsService } from '@/notifications/notifications.service';
 
 const project = { id: 'p1', pmId: 'pm-owner'};
 
 function makeService(opts: {exists?: boolean; members?: string[]} = {}) {
     const { exists = true, members = [] } = opts;
-    const prisma: any = {
+    const prisma = {
         project: { findUnique: jest.fn(async () => (exists ? project : null))},
         projectMember: { findFirst: jest.fn(async ({ where }: any) => members.includes(where.userId) && where.leftAt === null ? { id: 'm' } : null), },
     };
 
-    const service = new ProjectsService(prisma, {} as any);
+    const service = new ProjectsService(prisma as unknown as PrismaService, {} as NotificationsService);
     return { service, prisma };
 }
 
@@ -45,7 +47,7 @@ describe('ProjectsService.assertProjectAccess', () => {
     const { service } = makeService({ members: ['c1'] });
     await expect(service.assertProjectAccess('p1', user('c1', 'CONSULTANT'))).resolves.toEqual(project);
   });
-  
+
   it.each(['CONSULTANT', 'PARTNER'])('blocks a %s who is not a member', async (role) => {
     const { service } = makeService({ members: ['someone-else'] });
     await expect(service.assertProjectAccess('p1', user('c2', role))).rejects.toBeInstanceOf(ForbiddenException);
