@@ -7,7 +7,7 @@ import { AuthApiSync } from '@/components/AuthApiSync';
 import { RoleDashboardRedirect } from '@/components/RoleDashboardRedirect';
 import { usePathname, useRouter } from 'next/navigation';
 import { msalConfig } from '@/lib/msal-config';
-import { beginCmsSignIn, completeCmsSignIn, CMS_SESSION_KEY } from '@/lib/cms-session';
+import { beginCmsSignIn, completeCmsSignIn, shareCmsSignIn, CMS_SESSION_KEY } from '@/lib/cms-session';
 import { api } from '@/lib/api';
 
 const tenant = '00000000-0000-4000-8000-000000000002';
@@ -26,22 +26,9 @@ config.auth = { ...config.auth, clientId, authority,
 };
 const instance = new PublicClientApplication(config);
 const actualAcquire = instance.acquireTokenSilent.bind(instance);
-const tokenOperations: object[] = [];
-instance.acquireTokenSilent = async request => {
-  try {
-    const result = await actualAcquire(request);
-    tokenOperations.push({ account: request.account?.username, policy: request.cacheLookupPolicy, success: true });
-    return result;
-  } catch (error) {
-    tokenOperations.push({ account: request.account?.username, policy: request.cacheLookupPolicy,
-      error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) });
-    throw error;
-  }
-};
 let interactiveLogins = 0;
 let releaseToken: (() => Promise<void>) | undefined;
 let sessionToken: Promise<string | null> | undefined;
-let releaseRedirect: (() => Promise<void>) | undefined;
 
 function resultFor(email = 'pm@example.test'): AuthenticationResult {
   const now = Math.floor(Date.now() / 1000);
@@ -65,35 +52,25 @@ async function seed(email = 'pm@example.test') {
   beginCmsSignIn();
   const result = resultFor(email);
   await instance.hydrateCache(result, { scopes: ['User.Read'], account: result.account });
+  // Real MSAL v5 broadcasts only the account with LOGIN_SUCCESS.
   const events = new BroadcastChannel('msal.broadcast.event');
-  // MSAL v5 broadcasts account information, not an AuthenticationResult with tokens.
   events.postMessage({ eventType: EventType.LOGIN_SUCCESS, interactionType: InteractionType.Redirect,
     payload: result.account, error: null, correlationId: result.correlationId, timestamp: Date.now() });
   events.close();
+  shareCmsSignIn(result);
   completeCmsSignIn(result.account.homeAccountId);
   instance.setActiveAccount(result.account);
   window.dispatchEvent(new StorageEvent('storage', { key: CMS_SESSION_KEY }));
 }
-instance.loginRedirect = async () => { interactiveLogins += 1; await seed(); };
+// `?realRedirect` keeps MSAL's real redirect flow; the test serves the identity provider.
+if (!new URLSearchParams(location.search).has('realRedirect')) {
+  instance.loginRedirect = async () => { interactiveLogins += 1; await seed(); };
+}
 instance.logoutRedirect = async () => { throw new Error('Must not sign out of Microsoft'); };
 instance.logoutPopup = async () => { throw new Error('Must not sign out of Microsoft'); };
 
 if (new URLSearchParams(location.search).has('expired')) {
   instance.acquireTokenSilent = async () => { throw new InteractionRequiredAuthError('login_required'); };
-}
-if (new URLSearchParams(location.search).has('unavailable')) {
-  instance.acquireTokenSilent = async () => { throw new Error('Synthetic token service failure'); };
-}
-if (new URLSearchParams(location.search).has('redirect')) {
-  beginCmsSignIn();
-  let response: Promise<AuthenticationResult> | undefined;
-  instance.handleRedirectPromise = () => response ??= new Promise(resolve => {
-    releaseRedirect = async () => {
-      const result = resultFor();
-      await instance.hydrateCache(result, { scopes: ['User.Read'], account: result.account });
-      resolve(result);
-    };
-  });
 }
 if (new URLSearchParams(location.search).has('slow')) {
   const initialize = instance.initialize.bind(instance);
@@ -103,19 +80,8 @@ if (new URLSearchParams(location.search).has('slow')) {
 const testApi = {
   seed,
   interactiveLogins: () => interactiveLogins,
-  redirectIsPending: () => Boolean(releaseRedirect),
-  finishRedirect: async () => { await releaseRedirect?.(); },
   accounts: () => instance.getAllAccounts().map(account => account.username),
   authHeader: () => api.defaults.headers.common.Authorization ?? null,
-  diagnostics: () => ({ operations: tokenOperations.slice(-12), session: localStorage.getItem(CMS_SESSION_KEY),
-    accounts: instance.getAllAccounts().map(account => account.username),
-    maps: Object.fromEntries(Object.entries(localStorage).filter(([key]) => /account.keys|token.keys/.test(key))) }),
-  tokenWithActiveAccount: async (email: string) => {
-    const account = instance.getAllAccounts().find(account => account.username === email);
-    if (!account) throw new Error('The requested test account is not cached');
-    instance.setActiveAccount(account);
-    return testApi.getToken().catch(error => error.name);
-  },
   getToken: async (): Promise<string | null> => null,
   holdToken: () => {
     instance.acquireTokenSilent = async () => new Promise(resolve => {

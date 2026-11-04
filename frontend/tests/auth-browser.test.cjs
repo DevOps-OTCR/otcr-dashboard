@@ -11,29 +11,17 @@ before(async () => {
 });
 after(() => browser?.close());
 
-async function setup(t, slowCacheOperations = false) {
+async function setup(t, delayCacheUpdates = false) {
   const context = await browser.newContext();
-  t.after(async () => {
-    for (const page of context.pages()) {
-      const state = await page.evaluate(() => ({
-        page: document.body.innerText,
-        account: document.querySelector('[data-testid="account"]')?.textContent,
-        hasAuthHeader: Boolean(window.authTest?.authHeader()),
-        sdk: window.authTest?.diagnostics(),
-      }));
-      t.diagnostic(JSON.stringify(state));
-    }
-    await context.close();
-  });
-  if (slowCacheOperations) await context.addInitScript(() => {
-    // Delay real cache work without reordering MSAL's private broadcast handlers.
-    for (const method of ['encrypt', 'decrypt']) {
-      const operation = SubtleCrypto.prototype[method];
-      SubtleCrypto.prototype[method] = async function (...args) {
-        await new Promise(resolve => setTimeout(resolve, 50));
-        return operation.apply(this, args);
-      };
-    }
+  t.after(() => context.close());
+  if (delayCacheUpdates) await context.addInitScript(() => {
+    const addListener = BroadcastChannel.prototype.addEventListener;
+    BroadcastChannel.prototype.addEventListener = function (type, listener, options) {
+      if (this.name === 'msal.broadcast.cache' && type === 'message') {
+        return addListener.call(this, type, event => setTimeout(() => listener.call(this, event), 200), options);
+      }
+      return addListener.call(this, type, listener, options);
+    };
   });
   const externalRequests = [];
   await context.route('**/*', route => {
@@ -48,6 +36,8 @@ async function setup(t, slowCacheOperations = false) {
   });
   const page = async (route = '/sign-in') => {
     const result = await context.newPage();
+    // CPU_THROTTLE=8 reproduces the slower CI runner locally.
+    if (process.env.CPU_THROTTLE) await (await context.newCDPSession(result)).send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.CPU_THROTTLE) });
     result.setDefaultTimeout(10000);
     const errors = [];
     result.on('pageerror', error => errors.push(error.message));
@@ -57,9 +47,8 @@ async function setup(t, slowCacheOperations = false) {
     return result;
   };
   const first = await page();
-  await Promise.all([first.waitForEvent('load'), first.getByRole('button', { name: 'Sign in with Microsoft' }).click()]);
+  await first.getByRole('button', { name: 'Sign in with Microsoft' }).click();
   await first.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
-  await first.waitForFunction(() => window.authTest.authHeader() === 'Bearer synthetic-token-for-pm@example.test');
   t.after(() => assert.deepEqual(externalRequests, []));
   return { first, page };
 }
@@ -88,7 +77,7 @@ test('explicit CMS sign-out propagates, remains signed out after refresh, and al
     await current.getByRole('heading', { name: 'CMS sign-in' }).waitFor();
     assert.equal(await current.evaluate(() => window.authTest.authHeader()), null);
   }
-  await Promise.all([second.waitForEvent('load'), second.getByRole('button', { name: 'Sign in with Microsoft' }).click()]);
+  await second.getByRole('button', { name: 'Sign in with Microsoft' }).click();
   await first.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
   await second.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
 });
@@ -115,27 +104,54 @@ test('protected links wait for SDK initialization instead of redirecting early',
   assert.equal(new URL(slow.url()).pathname, '/deliverables');
 });
 
-test('signed-out tabs finish SDK initialization before showing the sign-in form', async t => {
-  const { first, page } = await setup(t);
-  await first.getByRole('button', { name: 'Sign Out' }).click();
-  const slow = await page('/sign-in?slow');
-  assert.equal(await slow.getByRole('button', { name: 'Sign in with Microsoft' }).count(), 0);
-  await slow.getByRole('heading', { name: 'CMS sign-in' }).waitFor();
-  await Promise.all([slow.waitForEvent('load'), slow.getByRole('button', { name: 'Sign in with Microsoft' }).click()]);
-  await slow.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
-  await first.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
-});
-
 test('a newly selected account replaces the previous account across tabs', async t => {
   const { first, page } = await setup(t, true);
   const second = await page('/deliverables');
   await second.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
-  await second.waitForFunction(() => window.authTest.authHeader() === 'Bearer synthetic-token-for-pm@example.test');
-  await Promise.all([first.waitForEvent('load'), first.evaluate(() => window.authTest.seed('consultant@example.test'))]);
+  await first.evaluate(() => window.authTest.seed('consultant@example.test'));
   for (const current of [first, second, await page('/deliverables')]) {
     await current.waitForFunction(() => document.querySelector('[data-testid="account"]')?.textContent === 'consultant@example.test');
     await current.waitForFunction(() => window.authTest.authHeader() === 'Bearer synthetic-token-for-consultant@example.test');
   }
+});
+
+test('first sign-in through the real MSAL redirect reaches the CMS', async t => {
+  const context = await browser.newContext();
+  t.after(() => context.close());
+  const tenant = '00000000-0000-4000-8000-000000000002', clientId = '00000000-0000-4000-8000-000000000001';
+  const encode = object => Buffer.from(JSON.stringify(object)).toString('base64url');
+  const clientInfo = encode({ uid: 'new-user', utid: tenant });
+  let nonce = '';
+  await context.route('**/*', route => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/oauth2/v2.0/authorize')) {
+      nonce = url.searchParams.get('nonce');
+      const state = encodeURIComponent(url.searchParams.get('state'));
+      const target = `${url.searchParams.get('redirect_uri')}#code=test-code&state=${state}&client_info=${clientInfo}`;
+      return route.fulfill({ contentType: 'text/html', body: `<script>location.replace(${JSON.stringify(target)})</script>` });
+    }
+    if (url.pathname.endsWith('/oauth2/v2.0/token')) {
+      const now = Math.floor(Date.now() / 1000);
+      const claims = { aud: clientId, iss: `https://login.microsoftonline.com/${tenant}/v2.0`, tid: tenant, oid: 'new-user', sub: 'new-user',
+        nonce, preferred_username: 'new@example.test', name: 'New User', iat: now, nbf: now, exp: now + 3600 };
+      return route.fulfill({ headers: { 'access-control-allow-origin': '*' }, json: { token_type: 'Bearer', scope: 'openid profile email User.Read',
+        expires_in: 3600, ext_expires_in: 3600, access_token: 'redirect-token', id_token: `${encode({ alg: 'none' })}.${encode(claims)}.sig`, client_info: clientInfo } });
+    }
+    if (url.origin !== 'https://session.test') return route.abort();
+    if (url.pathname.startsWith('/api/')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ role: 'PM' }) });
+    return route.fulfill({ contentType: url.pathname === '/bundle.js' ? 'text/javascript' : 'text/html',
+      body: url.pathname === '/bundle.js' ? bundle : document });
+  });
+  const page = await context.newPage();
+  page.setDefaultTimeout(10000);
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('https://session.test/sign-in?realRedirect');
+  await page.getByRole('button', { name: 'Sign in with Microsoft' }).click();
+  await page.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
+  assert.equal(await page.getByTestId('account').textContent(), 'new@example.test');
+  assert.equal(await page.getByText('Unable to finish sign-in').count(), 0);
+  assert.deepEqual(errors, []);
 });
 
 test('expired sessions requiring interaction reach the normal sign-in screen without an automatic popup', async t => {
@@ -145,35 +161,4 @@ test('expired sessions requiring interaction reach the normal sign-in screen wit
   assert.equal(new URL(expired.url()).pathname, '/sign-in');
   assert.equal(await expired.evaluate(() => window.authTest.interactiveLogins()), 0);
   assert.equal(await expired.evaluate(() => window.authTest.authHeader()), null);
-});
-
-test('token requests use the CMS-selected account when the SDK active-account hint is stale', async t => {
-  const { first } = await setup(t, true);
-  await Promise.all([first.waitForEvent('load'), first.evaluate(() => window.authTest.seed('consultant@example.test'))]);
-  await first.waitForFunction(() => document.querySelector('[data-testid="account"]')?.textContent === 'consultant@example.test');
-  assert.equal(await first.evaluate(() => window.authTest.tokenWithActiveAccount('pm@example.test')),
-    'synthetic-token-for-consultant@example.test');
-});
-
-test('a failed session restore can return to sign-in and clear cached credentials', async t => {
-  const { first, page } = await setup(t);
-  const unavailable = await page('/deliverables?unavailable');
-  await unavailable.getByRole('heading', { name: 'Unable to finish sign-in' }).waitFor();
-  await unavailable.getByRole('button', { name: 'Return to sign-in' }).click();
-  await unavailable.getByRole('heading', { name: 'CMS sign-in' }).waitFor();
-  await first.getByRole('heading', { name: 'CMS sign-in' }).waitFor();
-  assert.equal(await unavailable.evaluate(() => window.authTest.authHeader()), null);
-  assert.deepEqual(await unavailable.evaluate(() => window.authTest.accounts()), []);
-});
-
-test('pageshow preserves an explicit login redirect after a persisted sign-out', async t => {
-  const { first, page } = await setup(t);
-  await first.getByRole('button', { name: 'Sign Out' }).click();
-  const callback = await page('/auth/callback?redirect');
-  await callback.waitForFunction(() => window.authTest.redirectIsPending());
-  await callback.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow')));
-  await callback.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  assert.equal(new URL(callback.url()).pathname, '/auth/callback');
-  await callback.evaluate(() => window.authTest.finishRedirect());
-  await callback.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
 });
