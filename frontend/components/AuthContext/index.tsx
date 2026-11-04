@@ -49,6 +49,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const authGeneration = useRef(0);
   const handledRedirect = useRef(false);
   const sharedCacheReady = useRef<{ revision: string; promise: Promise<void> } | null>(null);
+  // A shared result can arrive before this tab sees the new session marker. Its import
+  // is kept for that session's storage notification to wait on, until sign-out.
+  const earlyImport = useRef<{ accountId: string; promise: Promise<void> } | null>(null);
   const [sessionChange, setSessionChange] = useState(0);
   const [authError, setAuthError] = useState<string | null>(null);
   
@@ -74,6 +77,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const clearAppSession = useCallback(() => {
     signedOut.current = true;
     sharedCacheReady.current = null;
+    earlyImport.current = null;
     authGeneration.current += 1;
     clearRoleCache(previousEmail.current ?? null);
     clearProjectsCache();
@@ -96,9 +100,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     let sharedSignIn: { result: AuthenticationResult; fromThisTab: boolean } | null = null;
     let finishSharedSignIn: (() => void) | undefined;
     let waitingAccountId: string | undefined;
-    // A result can arrive before this tab sees the new session marker. Its import
-    // is kept for that session's storage notification to wait on.
-    let earlyImport: { accountId: string; promise: Promise<void> } | null = null;
     let disposed = false;
     const restoreSharedSignIn = () => {
       const session = readCmsSession();
@@ -117,7 +118,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const promise = fromThisTab ? Promise.resolve()
         : withAuthTimeout(instance.hydrateCache(result, { account: result.account, scopes: result.scopes }));
       sharedCacheReady.current = { revision, promise };
-      earlyImport = waiting ? null : { accountId, promise };
+      earlyImport.current = waiting ? null : { accountId, promise };
       void promise.then(async () => {
         if (readCmsSession()?.signedOut) await instance.clearCache();
         else if (!disposed && cmsSessionRevision() === revision) setSessionChange(value => value + 1);
@@ -135,7 +136,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (event.key !== CMS_SESSION_KEY && event.key !== null) return;
       if (readCmsSession()?.signedOut) {
         sharedSignIn = null;
-        earlyImport = null;
+        earlyImport.current = null;
         const revision = cmsSessionRevision();
         requireSignIn();
         // Clear this tab's in-memory MSAL cache too, without contacting Microsoft.
@@ -156,13 +157,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setAuthError(null);
         const session = readCmsSession();
         const revision = session?.revision ?? '';
-        if (earlyImport && earlyImport.accountId === session?.accountId) {
-          sharedCacheReady.current = { revision, promise: earlyImport.promise };
+        if (earlyImport.current && earlyImport.current.accountId === session?.accountId) {
+          sharedCacheReady.current = { revision, promise: earlyImport.current.promise };
         } else if (sharedCacheReady.current?.revision !== revision) {
           waitingAccountId = session?.accountId;
           sharedCacheReady.current = { revision, promise: new Promise(resolve => { finishSharedSignIn = resolve; }) };
         }
-        earlyImport = null;
+        earlyImport.current = null;
         restoreSharedSignIn();
         setSessionChange(value => value + 1);
       }

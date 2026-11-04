@@ -44,9 +44,12 @@ const sharedFromThisTab = new Set<string>();
 export function shareCmsSignIn(result: AuthenticationResult) {
   if (typeof BroadcastChannel === 'undefined') return;
   sharedFromThisTab.add(result.correlationId);
-  const channel = new BroadcastChannel(SIGN_IN_CHANNEL);
-  channel.postMessage(result);
-  channel.close();
+  // Best effort: other tabs still recover on their own, and this sign-in must not fail.
+  try {
+    const channel = new BroadcastChannel(SIGN_IN_CHANNEL);
+    channel.postMessage(result);
+    channel.close();
+  } catch { /* Other tabs fall back to their own session checks. */ }
 }
 
 /** `fromThisTab` is true when this tab produced the result and already has its tokens. */
