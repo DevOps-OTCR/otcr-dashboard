@@ -7,7 +7,7 @@ import { AuthApiSync } from '@/components/AuthApiSync';
 import { RoleDashboardRedirect } from '@/components/RoleDashboardRedirect';
 import { usePathname, useRouter } from 'next/navigation';
 import { msalConfig } from '@/lib/msal-config';
-import { beginCmsSignIn, completeCmsSignIn, CMS_SESSION_KEY } from '@/lib/cms-session';
+import { beginCmsSignIn, completeCmsSignIn, shareCmsSignIn, CMS_SESSION_KEY } from '@/lib/cms-session';
 import { api } from '@/lib/api';
 
 const tenant = '00000000-0000-4000-8000-000000000002';
@@ -52,15 +52,20 @@ async function seed(email = 'pm@example.test') {
   beginCmsSignIn();
   const result = resultFor(email);
   await instance.hydrateCache(result, { scopes: ['User.Read'], account: result.account });
+  // Real MSAL v5 broadcasts only the account with LOGIN_SUCCESS.
   const events = new BroadcastChannel('msal.broadcast.event');
   events.postMessage({ eventType: EventType.LOGIN_SUCCESS, interactionType: InteractionType.Redirect,
-    payload: result, error: null, correlationId: result.correlationId, timestamp: Date.now() });
+    payload: result.account, error: null, correlationId: result.correlationId, timestamp: Date.now() });
   events.close();
+  shareCmsSignIn(result);
   completeCmsSignIn(result.account.homeAccountId);
   instance.setActiveAccount(result.account);
   window.dispatchEvent(new StorageEvent('storage', { key: CMS_SESSION_KEY }));
 }
-instance.loginRedirect = async () => { interactiveLogins += 1; await seed(); };
+// `?realRedirect` keeps MSAL's real redirect flow; the test serves the identity provider.
+if (!new URLSearchParams(location.search).has('realRedirect')) {
+  instance.loginRedirect = async () => { interactiveLogins += 1; await seed(); };
+}
 instance.logoutRedirect = async () => { throw new Error('Must not sign out of Microsoft'); };
 instance.logoutPopup = async () => { throw new Error('Must not sign out of Microsoft'); };
 

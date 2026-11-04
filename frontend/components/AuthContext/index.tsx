@@ -18,7 +18,7 @@ import {
   useRef,
   Fragment,
 } from "react";
-import { CMS_SESSION_KEY, readCmsSession, cmsSessionRevision, beginCmsSignIn, completeCmsSignIn, markCmsSignedOut, withAuthTimeout } from '@/lib/cms-session';
+import { CMS_SESSION_KEY, readCmsSession, cmsSessionRevision, beginCmsSignIn, completeCmsSignIn, markCmsSignedOut, onSharedCmsSignIn, shareCmsSignIn, withAuthTimeout } from '@/lib/cms-session';
 import FullScreenLoader from "./LoadingScreen";
 import { clearRoleCache } from "@/lib/permissions";
 import { clearProjectsCache, setAuthToken } from "@/lib/api";
@@ -148,13 +148,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (readCmsSession()?.signedOut) requireSignIn();
       else setSessionChange(value => value + 1);
     };
+    // MSAL v5's LOGIN_SUCCESS payload is only the account, and the event fires inside
+    // handleRedirectPromise, so reading it as a full result failed sign-in. The tab that
+    // finishes sign-in shares the full result on the app's own channel instead.
+    const stopSharedSignIn = onSharedCmsSignIn(result => {
+      sharedSignIn = result;
+      restoreSharedSignIn();
+    });
     // MSAL v5 broadcasts active-account changes; account arrays alone do not
     // change when switching between two accounts already in the cache.
     const callbackId = instance.addEventCallback(message => {
-      if (message.eventType === EventType.LOGIN_SUCCESS) {
-        sharedSignIn = message.payload as AuthenticationResult;
-        restoreSharedSignIn();
-      }
       if (message.eventType === EventType.ACTIVE_ACCOUNT_CHANGED) {
         setSessionChange(value => value + 1);
       }
@@ -163,6 +166,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     window.addEventListener('pageshow', onPageShow);
     return () => {
       disposed = true;
+      stopSharedSignIn();
       window.removeEventListener('storage', onStorage);
       window.removeEventListener('pageshow', onPageShow);
       if (callbackId) instance.removeEventCallback(callbackId);
@@ -191,6 +195,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (cancelled || generation !== authGeneration.current) return;
         if (result?.account && !handledRedirect.current) {
           handledRedirect.current = true;
+          // Share before publishing the session marker, the order MSAL's event used.
+          shareCmsSignIn(result);
           if (!completeCmsSignIn(result.account.homeAccountId)) {
             requireSignIn();
             if (readCmsSession()?.signedOut) await instance.clearCache();
