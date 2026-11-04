@@ -101,6 +101,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const result = sharedSignIn;
       if (!result || session?.signedOut || session?.accountId !== result.account.homeAccountId) return;
       sharedSignIn = null;
+      // The shared result can arrive before the storage event clears this flag.
+      signedOut.current = false;
       const revision = session.revision;
       // LOGIN_SUCCESS and storage notifications can precede MSAL's cache
       // broadcast. Import the completed result before reading this tab's cache.

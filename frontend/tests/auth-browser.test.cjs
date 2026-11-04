@@ -11,17 +11,18 @@ before(async () => {
 });
 after(() => browser?.close());
 
-async function setup(t, delayCacheUpdates = false) {
+async function setup(t, slowCacheOperations = false) {
   const context = await browser.newContext();
   t.after(() => context.close());
-  if (delayCacheUpdates) await context.addInitScript(() => {
-    const addListener = BroadcastChannel.prototype.addEventListener;
-    BroadcastChannel.prototype.addEventListener = function (type, listener, options) {
-      if (this.name === 'msal.broadcast.cache' && type === 'message') {
-        return addListener.call(this, type, event => setTimeout(() => listener.call(this, event), 200), options);
-      }
-      return addListener.call(this, type, listener, options);
-    };
+  if (slowCacheOperations) await context.addInitScript(() => {
+    // Slow real cache work while preserving MSAL's broadcast delivery order.
+    for (const method of ['encrypt', 'decrypt']) {
+      const operation = SubtleCrypto.prototype[method];
+      SubtleCrypto.prototype[method] = async function (...args) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+        return operation.apply(this, args);
+      };
+    }
   });
   const externalRequests = [];
   await context.route('**/*', route => {
@@ -94,6 +95,29 @@ test('a late token response in another tab cannot restore the signed-out session
   const third = await page('/deliverables');
   await third.getByRole('heading', { name: 'CMS sign-in' }).waitFor();
   assert.deepEqual(await third.evaluate(() => window.authTest.accounts()), []);
+});
+
+test('a shared sign-in restores a signed-out tab before its storage notification arrives', async t => {
+  const { first, page } = await setup(t);
+  const second = await page('/deliverables');
+  await second.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
+  await first.getByRole('button', { name: 'Sign Out' }).click();
+  for (const current of [first, second]) {
+    await current.getByRole('heading', { name: 'CMS sign-in' }).waitFor();
+    await current.reload();
+    await current.getByRole('heading', { name: 'CMS sign-in' }).waitFor();
+  }
+  // These notifications use independent browser task queues. Hold storage so
+  // the completed sign-in result is imported before that notification runs.
+  await first.evaluate(() => window.authTest.holdSessionNotifications());
+  await second.evaluate(() => window.authTest.seed('pm@example.test', true));
+  await first.waitForFunction(() => window.authTest.pendingSessionNotifications() > 0);
+  await first.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
+  await first.evaluate(() => window.authTest.releaseSessionNotifications());
+  for (const current of [first, second]) {
+    await current.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
+    await current.waitForFunction(() => window.authTest.authHeader() === 'Bearer synthetic-token-for-pm@example.test');
+  }
 });
 
 test('protected links wait for SDK initialization instead of redirecting early', async t => {
