@@ -57,8 +57,8 @@ async function seed(email = 'pm@example.test') {
   events.postMessage({ eventType: EventType.LOGIN_SUCCESS, interactionType: InteractionType.Redirect,
     payload: result.account, error: null, correlationId: result.correlationId, timestamp: Date.now() });
   events.close();
-  completeCmsSignIn(result.account.homeAccountId);
   shareCmsSignIn(result);
+  completeCmsSignIn(result.account.homeAccountId);
   instance.setActiveAccount(result.account);
   window.dispatchEvent(new StorageEvent('storage', { key: CMS_SESSION_KEY }));
 }

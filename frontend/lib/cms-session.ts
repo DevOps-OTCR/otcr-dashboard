@@ -39,11 +39,9 @@ export function completeCmsSignIn(accountId: string): boolean {
 // MSAL v5's LOGIN_SUCCESS event carries only the account, so the tab that finishes
 // sign-in shares its result with open tabs, itself included (same origin only).
 const SIGN_IN_CHANNEL = 'otcr_cms_sign_in';
-const sharedFromThisTab = new Set<string>();
 
 export function shareCmsSignIn(result: AuthenticationResult) {
   if (typeof BroadcastChannel === 'undefined') return;
-  sharedFromThisTab.add(result.correlationId);
   // Best effort: other tabs still recover on their own, and this sign-in must not fail.
   try {
     const channel = new BroadcastChannel(SIGN_IN_CHANNEL);
@@ -52,12 +50,10 @@ export function shareCmsSignIn(result: AuthenticationResult) {
   } catch { /* Other tabs fall back to their own session checks. */ }
 }
 
-/** `fromThisTab` is true when this tab produced the result and already has its tokens. */
-export function onSharedCmsSignIn(listener: (result: AuthenticationResult, fromThisTab: boolean) => void) {
+export function onSharedCmsSignIn(listener: (result: AuthenticationResult) => void) {
   if (typeof BroadcastChannel === 'undefined') return () => {};
   const channel = new BroadcastChannel(SIGN_IN_CHANNEL);
-  channel.onmessage = (event: MessageEvent<AuthenticationResult>) =>
-    listener(event.data, sharedFromThisTab.has(event.data?.correlationId));
+  channel.onmessage = (event: MessageEvent<AuthenticationResult>) => listener(event.data);
   return () => channel.close();
 }
 

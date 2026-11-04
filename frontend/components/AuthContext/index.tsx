@@ -49,9 +49,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const authGeneration = useRef(0);
   const handledRedirect = useRef(false);
   const sharedCacheReady = useRef<{ revision: string; promise: Promise<void> } | null>(null);
-  // A shared result can arrive before this tab sees the new session marker. Its import
-  // is kept for that session's storage notification to wait on, until a sign-out.
-  const earlyImport = useRef<{ accountId: string; promise: Promise<void> } | null>(null);
   const [sessionChange, setSessionChange] = useState(0);
   const [authError, setAuthError] = useState<string | null>(null);
   
@@ -96,45 +93,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [clearAppSession, router]);
 
   useEffect(() => {
-    let sharedSignIn: { result: AuthenticationResult; fromThisTab: boolean } | null = null;
+    let sharedSignIn: AuthenticationResult | null = null;
     let finishSharedSignIn: (() => void) | undefined;
-    let waitingAccountId: string | undefined;
     let disposed = false;
     const restoreSharedSignIn = () => {
       const session = readCmsSession();
-      const result = sharedSignIn?.result;
-      const fromThisTab = Boolean(sharedSignIn?.fromThisTab);
-      if (!result?.account || session?.signedOut || session?.accountId !== result.account.homeAccountId) return;
+      const result = sharedSignIn;
+      if (!result || session?.signedOut || session?.accountId !== result.account.homeAccountId) return;
       sharedSignIn = null;
       const revision = session.revision;
-      // Storage notifications can precede MSAL's cache broadcast. Import the
-      // completed result before reading this tab's cache.
-      const accountId = result.account.homeAccountId;
-      const waiting = Boolean(finishSharedSignIn) && waitingAccountId === accountId;
-      // The signing tab already holds these tokens. Rewriting them while another tab
-      // imports can drop them from MSAL's read-modify-write token index.
-      const promise = fromThisTab ? Promise.resolve()
-        : withAuthTimeout(instance.hydrateCache(result, { account: result.account, scopes: result.scopes }));
+      // LOGIN_SUCCESS and storage notifications can precede MSAL's cache
+      // broadcast. Import the completed result before reading this tab's cache.
+      const finish = finishSharedSignIn;
+      const promise = withAuthTimeout(instance.hydrateCache(result, { account: result.account, scopes: result.scopes }));
       sharedCacheReady.current = { revision, promise };
-      earlyImport.current = waiting ? null : { accountId, promise };
       void promise.then(async () => {
         if (readCmsSession()?.signedOut) await instance.clearCache();
         else if (!disposed && cmsSessionRevision() === revision) setSessionChange(value => value + 1);
       }).catch(() => {
         if (!disposed && cmsSessionRevision() === revision) setAuthError('We could not restore your sign-in. Please retry.');
-      }).finally(() => {
-        // Release the session waiting for this account, even if it arrived mid-import.
-        if (waitingAccountId !== accountId) return;
-        finishSharedSignIn?.();
-        finishSharedSignIn = undefined;
-        waitingAccountId = undefined;
-      });
+      }).finally(finish);
     };
     const onStorage = (event: StorageEvent) => {
       if (event.key !== CMS_SESSION_KEY && event.key !== null) return;
       if (readCmsSession()?.signedOut) {
         sharedSignIn = null;
-        earlyImport.current = null;
         const revision = cmsSessionRevision();
         requireSignIn();
         // Clear this tab's in-memory MSAL cache too, without contacting Microsoft.
@@ -153,15 +136,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setIsLoggedIn(false);
         setIsAuthReady(false);
         setAuthError(null);
-        const session = readCmsSession();
-        const revision = session?.revision ?? '';
-        if (earlyImport.current && earlyImport.current.accountId === session?.accountId) {
-          sharedCacheReady.current = { revision, promise: earlyImport.current.promise };
-        } else if (sharedCacheReady.current?.revision !== revision) {
-          waitingAccountId = session?.accountId;
+        const revision = cmsSessionRevision();
+        if (sharedCacheReady.current?.revision !== revision) {
           sharedCacheReady.current = { revision, promise: new Promise(resolve => { finishSharedSignIn = resolve; }) };
         }
-        earlyImport.current = null;
         restoreSharedSignIn();
         setSessionChange(value => value + 1);
       }
@@ -170,10 +148,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (readCmsSession()?.signedOut) requireSignIn();
       else setSessionChange(value => value + 1);
     };
-    // MSAL's own LOGIN_SUCCESS is not used here: in v5 its payload is only the
-    // account, and it fires inside handleRedirectPromise, so a throw fails sign-in.
-    const stopSharedSignIn = onSharedCmsSignIn((result, fromThisTab) => {
-      sharedSignIn = { result, fromThisTab };
+    // MSAL v5's LOGIN_SUCCESS payload is only the account, and the event fires inside
+    // handleRedirectPromise, so reading it as a full result failed sign-in. The tab that
+    // finishes sign-in shares the full result on the app's own channel instead.
+    const stopSharedSignIn = onSharedCmsSignIn(result => {
+      sharedSignIn = result;
       restoreSharedSignIn();
     });
     // MSAL v5 broadcasts active-account changes; account arrays alone do not
@@ -216,6 +195,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (cancelled || generation !== authGeneration.current) return;
         if (result?.account && !handledRedirect.current) {
           handledRedirect.current = true;
+          // Share before publishing the session marker, the order MSAL's event used.
+          shareCmsSignIn(result);
           if (!completeCmsSignIn(result.account.homeAccountId)) {
             requireSignIn();
             if (readCmsSession()?.signedOut) await instance.clearCache();
@@ -223,7 +204,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           }
           signedOut.current = false;
           revision = cmsSessionRevision();
-          shareCmsSignIn(result);
         }
         if (!isCurrent()) return;
         if (signedOut.current || readCmsSession()?.signedOut) {
@@ -278,9 +258,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [instance]);
 
   const logout = useCallback(async () => {
-    // Only an explicit sign-out forgets an early import; routine signed-out
-    // checks can run while another tab's sign-in is still arriving.
-    earlyImport.current = null;
     clearAppSession();
     try {
       try { markCmsSignedOut(); } catch { /* Local cleanup must still run if storage is unavailable. */ }
