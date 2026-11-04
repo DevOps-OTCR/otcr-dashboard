@@ -95,6 +95,20 @@ test('explicit CMS sign-out propagates, remains signed out after refresh, and al
   await second.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
 });
 
+test('signing in again after sign-out restores a tab that sees the session marker late', async t => {
+  const { first, page } = await setup(t, 'session');
+  const second = await page('/deliverables');
+  await second.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
+  await first.getByRole('button', { name: 'Sign Out' }).click();
+  await first.getByRole('heading', { name: 'CMS sign-in' }).waitFor();
+  await second.getByRole('heading', { name: 'CMS sign-in' }).waitFor();
+  await first.evaluate(() => window.freezeSession());
+  await second.getByRole('button', { name: 'Sign in with Microsoft' }).click();
+  await second.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
+  await first.getByRole('heading', { name: 'Protected CMS page' }).waitFor();
+  assert.equal(await first.getByTestId('account').textContent(), 'pm@example.test');
+});
+
 test('a late token response in another tab cannot restore the signed-out session', async t => {
   const { first, page } = await setup(t);
   const second = await page('/deliverables');

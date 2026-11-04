@@ -50,7 +50,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const handledRedirect = useRef(false);
   const sharedCacheReady = useRef<{ revision: string; promise: Promise<void> } | null>(null);
   // A shared result can arrive before this tab sees the new session marker. Its import
-  // is kept for that session's storage notification to wait on, until sign-out.
+  // is kept for that session's storage notification to wait on, until a sign-out.
   const earlyImport = useRef<{ accountId: string; promise: Promise<void> } | null>(null);
   const [sessionChange, setSessionChange] = useState(0);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -77,7 +77,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const clearAppSession = useCallback(() => {
     signedOut.current = true;
     sharedCacheReady.current = null;
-    earlyImport.current = null;
     authGeneration.current += 1;
     clearRoleCache(previousEmail.current ?? null);
     clearProjectsCache();
@@ -105,7 +104,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const session = readCmsSession();
       const result = sharedSignIn?.result;
       const fromThisTab = Boolean(sharedSignIn?.fromThisTab);
-      if (session?.signedOut) sharedSignIn = null;
       if (!result?.account || session?.signedOut || session?.accountId !== result.account.homeAccountId) return;
       sharedSignIn = null;
       const revision = session.revision;
@@ -280,6 +278,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [instance]);
 
   const logout = useCallback(async () => {
+    // Only an explicit sign-out forgets an early import; routine signed-out
+    // checks can run while another tab's sign-in is still arriving.
+    earlyImport.current = null;
     clearAppSession();
     try {
       try { markCmsSignedOut(); } catch { /* Local cleanup must still run if storage is unavailable. */ }
