@@ -98,6 +98,20 @@ describe('DeliverablesService working link', () => {
       expect(call.data).not.toHaveProperty('status');
     });
 
+    it('stores the link without touching status', async () => {
+      await service.setWorkingLink(deliverableId, userId, link);
+
+      expect(prisma.deliverable.update).toHaveBeenCalledTimes(1);
+
+      const call = prisma.deliverable.update.mock.calls[0][0];
+      expect(Object.keys(call.data).sort()).toEqual([
+        'workingLinkUpdatedAt',
+        'workingLinkUpdatedById',
+        'workingLinkUrl',
+      ]);
+      expect(call.data).not.toHaveProperty('status');
+    });
+
     it('clears all three fields when link is null', async () => {
       await service.setWorkingLink(deliverableId, userId, null);
 

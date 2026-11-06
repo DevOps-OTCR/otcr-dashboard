@@ -260,11 +260,19 @@ async setWorkingLink(
 
     const assignmentUserIds = await this.deliverablesService.getAssignmentUserIds(id);
 
-    if (!canManage && assignmentUserIds.length > 0 && !assignmentUserIds.includes(user.id)) {
+    if (!canManage && !assignmentUserIds.includes(user.id)) {
       throw new ForbiddenException('Only assigned team members can set the working link');
     }
 
-    return this.deliverablesService.setWorkingLink(id, user.id, body?.link ?? null);
+    if (!body || !Object.prototype.hasOwnProperty.call(body, 'link')) {
+      throw new BadRequestException('link is required (use null to clear)');
+    }
+
+    if (body.link !== null && typeof body.link !== 'string') {
+      throw new BadRequestException('link must be a string or null');
+    }
+
+    return this.deliverablesService.setWorkingLink(id, user.id, body.link);
   }
 
   @Post(':id/submissions')
