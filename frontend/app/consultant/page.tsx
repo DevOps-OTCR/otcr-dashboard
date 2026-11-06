@@ -274,10 +274,10 @@ export default function ConsultantDashboard() {
                   type="button"
                   onClick={() => setSelectedWeek('All Weeks')}
                   className={cn(
-                    'px-3 py-1.5 rounded-full text-xs border transition',
+                    'px-3 py-1.5 rounded-[var(--radius-sm)] text-xs border transition',
                     selectedWeek === 'All Weeks'
                       ? 'bg-[var(--primary)] text-[var(--primary-foreground)] border-[var(--primary)]'
-                      : 'border-[var(--border)] text-[var(--foreground)]/70 hover:border-[var(--primary)]/50',
+                      : 'border-dashed border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--primary)]/50',
                   )}
                 >
                   All Weeks
@@ -288,10 +288,10 @@ export default function ConsultantDashboard() {
                     type="button"
                     onClick={() => setSelectedWeek(week)}
                     className={cn(
-                      'px-3 py-1.5 rounded-full text-xs border transition',
+                      'px-3 py-1.5 rounded-[var(--radius-sm)] text-xs border transition',
                       selectedWeek === week
                         ? 'bg-[var(--primary)] text-[var(--primary-foreground)] border-[var(--primary)]'
-                        : 'border-[var(--border)] text-[var(--foreground)]/70 hover:border-[var(--primary)]/50',
+                        : 'border-dashed border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--primary)]/50',
                     )}
                   >
                     {week}
@@ -300,7 +300,7 @@ export default function ConsultantDashboard() {
               </div>
 
               {loading ? <PageLoading /> : visibleActionItems.length === 0 ? (
-                <div className="p-4 rounded-xl border border-dashed border-[var(--border)] text-sm text-[var(--foreground)]/60">
+                <div className="p-4 rounded-xl border border-dashed border-[var(--border)] text-sm text-[var(--text-muted)]">
                   {loadError ? 'Could not load assignments. Return to Overview to retry.' : 'No assignments yet.'}
                 </div>
               ) : (
@@ -333,7 +333,7 @@ export default function ConsultantDashboard() {
                         >
                           {item.title}
                         </h5>
-                        <p className="text-sm text-[var(--foreground)]/70 mt-1">
+                        <p className="text-sm text-[var(--text-muted)] mt-1">
                           {item.projectName} • {item.weekLabel}
                         </p>
                         <div className="flex flex-wrap items-center gap-2 mt-2">

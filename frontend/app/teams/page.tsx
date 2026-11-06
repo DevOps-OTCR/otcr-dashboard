@@ -186,13 +186,13 @@ function TeamDeliverableCard({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-[var(--foreground)]">{deliverable.title}</p>
-          <p className="text-xs text-[var(--foreground)]/55 mt-1">
+          <p className="text-xs text-[var(--text-muted)] mt-1">
             {new Date(deliverable.deadline).toLocaleString()}
           </p>
         </div>
         <span
           className={cn(
-            'text-[11px] uppercase tracking-wide rounded-full px-2 py-1',
+            'text-[11px] rounded-[var(--radius-sm)] border px-2 py-1',
             isReleased
               ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
               : 'bg-amber-500/10 text-amber-700 dark:text-amber-300',
@@ -202,7 +202,7 @@ function TeamDeliverableCard({
         </span>
       </div>
       <div className="mt-3 flex items-center justify-between gap-3">
-        <p className="text-xs text-[var(--foreground)]/65">
+        <p className="text-xs text-[var(--text-muted)]">
           {formatAssigneeLabel(deliverable.assignee)}
         </p>
         <Button size="sm" variant={assignedToCurrentUser ? 'outline' : 'primary'} onClick={() => onToggleAssign(deliverable)}>
@@ -708,7 +708,7 @@ export default function TeamsPage() {
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <p className="text-sm font-semibold text-[var(--foreground)]">{event.title}</p>
-          <p className="text-xs text-[var(--foreground)]/60 mt-1">
+          <p className="text-xs text-[var(--text-muted)] mt-1">
             {new Date(event.eventDate).toLocaleString()}
           </p>
         </div>
@@ -722,16 +722,16 @@ export default function TeamsPage() {
           {event.locationType === 'ONLINE' ? 'Online' : 'In person'}
         </Badge>
       </div>
-      <p className="text-xs text-[var(--foreground)]/65">
+      <p className="text-xs text-[var(--text-muted)]">
         Created by {event.createdByName}
       </p>
       {event.projectName && (
-        <p className="text-xs text-[var(--foreground)]/65">
+        <p className="text-xs text-[var(--text-muted)]">
           Team: {event.projectName}
         </p>
       )}
       {variant === 'attended' && event.checkedInAt && (
-        <p className="text-xs text-[var(--foreground)]/65">
+        <p className="text-xs text-[var(--text-muted)]">
           Checked in {new Date(event.checkedInAt).toLocaleString()}
         </p>
       )}
@@ -772,7 +772,7 @@ export default function TeamsPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {loading ? (
-                  <div className="p-8 text-center text-sm text-[var(--foreground)]/70">Loading teams...</div>
+                  <div className="p-8 text-center text-sm text-[var(--text-muted)]">Loading teams...</div>
                 ) : selectedTeamId && selectedTeam ? (
                   <div className="space-y-4">
                     <Button
@@ -808,17 +808,17 @@ export default function TeamsPage() {
                                 <CalendarDays className="w-4 h-4 text-[var(--primary)]" />
                                 Sprint deliverables schedule
                               </p>
-                              <p className="text-xs text-[var(--foreground)]/60 mt-1">
+                              <p className="text-xs text-[var(--text-muted)] mt-1">
                                 Configure weekly due days here for this team. New sprints auto-fill Initial and Final Slides from these settings.
                               </p>
                             </div>
-                            <p className="max-w-[280px] text-right text-xs text-[var(--foreground)]/60">
+                            <p className="max-w-[280px] text-right text-xs text-[var(--text-muted)]">
                               Generate sprints, manage draft deliverables, and release weeks from the Deliverables page.
                             </p>
                           </div>
 
                           {sprintDataLoading ? (
-                            <div className="text-sm text-[var(--foreground)]/60">Loading sprint settings...</div>
+                            <div className="text-sm text-[var(--text-muted)]">Loading sprint settings...</div>
                           ) : (
                             <>
                               <div className="grid gap-3 md:grid-cols-2">
@@ -937,12 +937,12 @@ export default function TeamsPage() {
                                 >
                                   {sprintConfigSaving ? 'Saving...' : 'Save sprint schedule'}
                                 </Button>
-                                <p className="text-xs text-[var(--foreground)]/60">
+                                <p className="text-xs text-[var(--text-muted)]">
                                   Current pattern: Initial Slides every {labelForWeekday(sprintConfigDraft.initialSlideDueDay)} at {sprintConfigDraft.defaultDueTime}, Final Slides every {labelForWeekday(sprintConfigDraft.finalSlideDueDay)} at {sprintConfigDraft.defaultDueTime}.
                                 </p>
                               </div>
 
-                              <div className="rounded-lg border border-dashed border-[var(--border)] p-3 text-sm text-[var(--foreground)]/60">
+                              <div className="rounded-lg border border-dashed border-[var(--border)] p-3 text-sm text-[var(--text-muted)]">
                                 {teamSprints.length === 0
                                   ? 'No sprints generated yet. Use the Deliverables page when you are ready to create the first sprint.'
                                   : `${teamSprints.length} sprint${teamSprints.length === 1 ? '' : 's'} already exist for this team. Use the Deliverables page to manage them.`}
@@ -958,7 +958,7 @@ export default function TeamsPage() {
                               <CalendarDays className="w-4 h-4 text-[var(--primary)]" />
                               Team calendar
                             </p>
-                            <p className="text-xs text-[var(--foreground)]/60 mt-1">
+                            <p className="text-xs text-[var(--text-muted)] mt-1">
                               Store the team Google Calendar secret/ID here. Team-specific attendance events sync to this calendar automatically.
                             </p>
                           </div>
@@ -984,20 +984,20 @@ export default function TeamsPage() {
                               >
                                 {teamCalendarIdSaving ? 'Saving...' : 'Save team calendar'}
                               </Button>
-                              <p className="text-xs text-[var(--foreground)]/60">
+                              <p className="text-xs text-[var(--text-muted)]">
                                 Use the calendar secret/ID, not the public embed URL.
                               </p>
                             </div>
                           </>
                         ) : (
-                          <div className="rounded-lg border border-dashed border-[var(--border)] p-3 text-sm text-[var(--foreground)]/60">
+                          <div className="rounded-lg border border-dashed border-[var(--border)] p-3 text-sm text-[var(--text-muted)]">
                             {selectedTeam.googleCalendarId
                               ? 'A team calendar is configured for this team.'
                               : 'No team calendar has been configured yet.'}
                           </div>
                         )}
                       </div>
-                      <p className="text-xs font-medium text-[var(--foreground)]/70 mb-2">Members and roles</p>
+                      <p className="text-xs font-medium text-[var(--text-muted)] mb-2">Members and roles</p>
                       <ul className="space-y-2 mb-4">
                         {(selectedTeam.members ?? []).map((m) => (
                           <li
@@ -1006,7 +1006,7 @@ export default function TeamsPage() {
                           >
                             <span className="text-sm">
                               <span className="font-medium text-[var(--foreground)]">{formatMemberName(m.user)}</span>
-                              <span className="text-[var(--foreground)]/60 ml-2">({getUserRole(m.user.email)})</span>
+                              <span className="text-[var(--text-muted)] ml-2">({getUserRole(m.user.email)})</span>
                             </span>
                             {canInspectMemberAttendance && (
                               <button
@@ -1028,13 +1028,13 @@ export default function TeamsPage() {
                           </li>
                         ))}
                       </ul>
-                      <p className="text-xs font-medium text-[var(--foreground)]/70 mb-2">Add member</p>
+                      <p className="text-xs font-medium text-[var(--text-muted)] mb-2">Add member</p>
                       <input
                         type="search"
                         value={addMemberSearch}
                         onChange={(e) => setAddMemberSearch(e.target.value)}
                         placeholder="Search OTCR emails..."
-                        className="w-full mb-2 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] placeholder:text-[var(--foreground)]/50 text-sm"
+                        className="w-full mb-2 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] placeholder:text-[var(--text-muted)] text-sm"
                       />
                       <div className="flex flex-wrap gap-2">
                         {addMemberAvailableEmails.map((email) => (
@@ -1049,7 +1049,7 @@ export default function TeamsPage() {
                           </button>
                         ))}
                         {addMemberAvailableEmails.length === 0 && (
-                          <span className="text-sm text-[var(--foreground)]/60">
+                          <span className="text-sm text-[var(--text-muted)]">
                             {allowedEmails.filter((e) => !selectedMemberEmails.includes(e)).length === 0
                               ? 'All allowed users are in this team.'
                               : 'No matches for your search.'}
@@ -1062,7 +1062,7 @@ export default function TeamsPage() {
                   <>
                     {projects.length === 0 ? (
                       <div className="p-8 rounded-xl border border-dashed border-[var(--border)] text-center">
-                        <p className="text-sm text-[var(--foreground)]/70">
+                        <p className="text-sm text-[var(--text-muted)]">
                           No teams yet. Use &quot;Create team&quot; above to add your first team and assign members.
                         </p>
                       </div>
@@ -1086,11 +1086,11 @@ export default function TeamsPage() {
                                 <div className="flex items-center gap-2">
                                   <Users className="w-4 h-4 text-[var(--primary)] shrink-0" />
                                   <span className="font-semibold">{project.name}</span>
-                                  <span className="text-xs text-[var(--foreground)]/60">
+                                  <span className="text-xs text-[var(--text-muted)]">
                                     {count} member{count !== 1 ? 's' : ''}
                                   </span>
                                 </div>
-                                <ChevronRight className="w-4 h-4 text-[var(--foreground)]/50 shrink-0" />
+                                <ChevronRight className="w-4 h-4 text-[var(--text-muted)] shrink-0" />
                               </button>
                               {canManageTeams && (
                                 <button
@@ -1129,13 +1129,13 @@ export default function TeamsPage() {
               </CardHeader>
               <CardContent>
                 {!myTeam ? (
-                  <div className="p-8 rounded-xl border border-dashed border-[var(--border)] text-center text-sm text-[var(--foreground)]/70">
+                  <div className="p-8 rounded-xl border border-dashed border-[var(--border)] text-center text-sm text-[var(--text-muted)]">
                     You are not assigned to a team yet. Ask a PM or Lead Consultant to add you to a team.
                   </div>
                 ) : (
                   <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/60">
                     <h3 className="text-lg font-semibold mb-3">{myTeam.name}</h3>
-                    <p className="text-xs font-medium text-[var(--foreground)]/70 mb-2">Members and roles</p>
+                    <p className="text-xs font-medium text-[var(--text-muted)] mb-2">Members and roles</p>
                     <ul className="space-y-2">
                       {(myTeam.members ?? []).map((m) => (
                         <li
@@ -1144,7 +1144,7 @@ export default function TeamsPage() {
                         >
                           <span className="text-sm">
                             <span className="font-medium text-[var(--foreground)]">{formatMemberName(m.user)}</span>
-                            <span className="text-[var(--foreground)]/60 ml-2">({getUserRole(m.user.email)})</span>
+                            <span className="text-[var(--text-muted)] ml-2">({getUserRole(m.user.email)})</span>
                           </span>
                         </li>
                       ))}
@@ -1168,7 +1168,7 @@ export default function TeamsPage() {
               </CardHeader>
               <CardContent>
                 {loading ? (
-                  <div className="p-8 text-center text-sm text-[var(--foreground)]/70">Loading teams...</div>
+                  <div className="p-8 text-center text-sm text-[var(--text-muted)]">Loading teams...</div>
                 ) : selectedTeamId && selectedTeam ? (
                   <div className="space-y-4">
                     <Button
@@ -1182,7 +1182,7 @@ export default function TeamsPage() {
                     </Button>
                     <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/60">
                       <h3 className="text-lg font-semibold mb-3">{selectedTeam.name}</h3>
-                      <p className="text-xs font-medium text-[var(--foreground)]/70 mb-2">Members and roles</p>
+                      <p className="text-xs font-medium text-[var(--text-muted)] mb-2">Members and roles</p>
                       <ul className="space-y-2">
                         {(selectedTeam.members ?? []).map((m) => (
                           <li
@@ -1191,7 +1191,7 @@ export default function TeamsPage() {
                           >
                             <span className="text-sm">
                               <span className="font-medium text-[var(--foreground)]">{formatMemberName(m.user)}</span>
-                              <span className="text-[var(--foreground)]/60 ml-2">({getUserRole(m.user.email)})</span>
+                              <span className="text-[var(--text-muted)] ml-2">({getUserRole(m.user.email)})</span>
                             </span>
                             {canInspectMemberAttendance && (
                               <button
@@ -1209,7 +1209,7 @@ export default function TeamsPage() {
                   </div>
                 ) : projects.length === 0 ? (
                   <div className="p-8 rounded-xl border border-dashed border-[var(--border)] text-center">
-                    <p className="text-sm text-[var(--foreground)]/70">No teams available.</p>
+                    <p className="text-sm text-[var(--text-muted)]">No teams available.</p>
                   </div>
                 ) : (
                   <div className="grid gap-3">
@@ -1228,11 +1228,11 @@ export default function TeamsPage() {
                           <div className="flex items-center gap-2">
                             <Users className="w-4 h-4 text-[var(--primary)] shrink-0" />
                             <span className="font-semibold">{project.name}</span>
-                            <span className="text-xs text-[var(--foreground)]/60">
+                            <span className="text-xs text-[var(--text-muted)]">
                               {count} member{count !== 1 ? 's' : ''}
                             </span>
                           </div>
-                          <ChevronRight className="w-4 h-4 text-[var(--foreground)]/50 shrink-0" />
+                          <ChevronRight className="w-4 h-4 text-[var(--text-muted)] shrink-0" />
                         </button>
                       );
                     })}
@@ -1297,19 +1297,19 @@ export default function TeamsPage() {
               className="w-full mt-2 px-3 py-2 rounded-xl border border-[var(--border)] bg-[var(--secondary)]"
               placeholder="team-calendar@group.calendar.google.com"
             />
-            <p className="mt-1 text-xs text-[var(--foreground)]/60">
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
               Optional now, but required if team-specific events should sync into Google Calendar.
             </p>
           </div>
           <div>
             <label className="text-sm font-semibold">Add members (OTCR list)</label>
-            <p className="text-xs text-[var(--foreground)]/60 mt-1 mb-2">Search and select emails to add to the team</p>
+            <p className="text-xs text-[var(--text-muted)] mt-1 mb-2">Search and select emails to add to the team</p>
             <input
               type="search"
               value={createTeamForm.search}
               onChange={(e) => setCreateTeamForm((prev) => ({ ...prev, search: e.target.value }))}
               placeholder="Search by email..."
-              className="w-full mb-2 px-3 py-2 rounded-xl border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)] placeholder:text-[var(--foreground)]/50"
+              className="w-full mb-2 px-3 py-2 rounded-xl border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)] placeholder:text-[var(--text-muted)]"
             />
             <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-2 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/50">
               {createModalAvailableEmails.map((email) => (
@@ -1328,7 +1328,7 @@ export default function TeamsPage() {
                 </button>
               ))}
               {createModalAvailableEmails.length === 0 && (
-                <span className="text-sm text-[var(--foreground)]/60 py-2">No emails match your search.</span>
+                <span className="text-sm text-[var(--text-muted)] py-2">No emails match your search.</span>
               )}
             </div>
           </div>
@@ -1361,15 +1361,15 @@ export default function TeamsPage() {
         size="xl"
       >
         {memberHistoryLoading ? (
-          <p className="text-sm text-[var(--foreground)]/65">Loading attendance history...</p>
+          <p className="text-sm text-[var(--text-muted)]">Loading attendance history...</p>
         ) : !memberHistory ? (
-          <p className="text-sm text-[var(--foreground)]/65">No attendance history available.</p>
+          <p className="text-sm text-[var(--text-muted)]">No attendance history available.</p>
         ) : (
           <div className="space-y-5">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>
                 <p className="text-sm font-semibold text-[var(--foreground)]">{memberHistory.member.name}</p>
-                <p className="text-xs text-[var(--foreground)]/60">{memberHistory.member.email}</p>
+                <p className="text-xs text-[var(--text-muted)]">{memberHistory.member.email}</p>
               </div>
               <div className="flex gap-2 flex-wrap">
                 <Button
@@ -1399,7 +1399,7 @@ export default function TeamsPage() {
                 </div>
                 <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
                   {activeHistoryBuckets.attended.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-[var(--border)] p-4 text-sm text-[var(--foreground)]/60">
+                    <div className="rounded-xl border border-dashed border-[var(--border)] p-4 text-sm text-[var(--text-muted)]">
                       No attended events in this filter.
                     </div>
                   ) : (
@@ -1415,7 +1415,7 @@ export default function TeamsPage() {
                 </div>
                 <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
                   {activeHistoryBuckets.missed.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-[var(--border)] p-4 text-sm text-[var(--foreground)]/60">
+                    <div className="rounded-xl border border-dashed border-[var(--border)] p-4 text-sm text-[var(--text-muted)]">
                       No missed events in this filter.
                     </div>
                   ) : (
