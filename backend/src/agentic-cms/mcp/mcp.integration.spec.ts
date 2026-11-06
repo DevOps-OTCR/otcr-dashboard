@@ -130,7 +130,10 @@ integration('MCP client -> Nest endpoint -> migrated PostgreSQL', () => {
       expect(tool.inputSchema).toBeDefined();
       expect(tool.outputSchema).toBeDefined();
       expect(tool.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
+      expect(tool.inputSchema.properties).toMatchObject({ projectId: { description: expect.stringContaining('selected project') } });
     }
+    expect(result.tools.find(tool => tool.name === 'get_workstream').description).toContain('list_workstreams');
+    expect(result.tools.find(tool => tool.name === 'get_deliverable').description).toContain('deliverableId');
   });
 
   it('also accepts the legacy initialize handshake through stateless HTTP', async () => {
@@ -146,13 +149,15 @@ integration('MCP client -> Nest endpoint -> migrated PostgreSQL', () => {
       projectId: 'project', currentOnly: true, asOf: '2026-11-06T12:00:00Z',
     }));
     expect(workstreams.workstreams.items.map(item => item.id)).toEqual(['week']);
+    expect(workstreams.workstreams.items[0].generalNotesPreview).toBe('Compare market segments.');
     const workstream = schemas.getWorkstreamOutput.parse(await call(client, 'get_workstream', { projectId: 'project', workstreamId: 'week' }));
     expect(workstream.workstream.generalNotes).toBe('Compare market segments.');
     expect(workstream.deliverables.items.map(item => item.id)).toEqual(['d1', 'd2']);
+    expect(workstream.deliverables.items[0].descriptionPreview).toBe('Use cited public evidence.');
     const list = schemas.listDeliverablesOutput.parse(await call(client, 'list_deliverables', {
       projectId: 'project', workstreamId: 'week', status: 'IN_PROGRESS', limit: 1,
     }));
-    expect(list.deliverables.items[0]).toMatchObject({ id: 'd1', title: 'Market landscape', deadline: '2026-11-07T05:59:00.000Z' });
+    expect(list.deliverables.items[0]).toMatchObject({ id: 'd1', title: 'Market landscape', deadline: '2026-11-07T05:59:00.000Z', descriptionPreview: 'Use cited public evidence.' });
     const next = schemas.listDeliverablesOutput.parse(await call(client, 'list_deliverables', {
       projectId: 'project', workstreamId: 'week', status: 'IN_PROGRESS', limit: 1, cursor: list.deliverables.nextCursor,
     }));

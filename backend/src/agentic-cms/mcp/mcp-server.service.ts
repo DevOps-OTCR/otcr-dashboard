@@ -51,16 +51,16 @@ export class McpServerService {
       input => this.call(user, () => operation(input)));
 
     register('list_workstreams',
-      'List visible weekly workstreams in a project. Set currentOnly to filter by project-local date; use returned IDs with get_workstream. Follow nextCursor for remaining results.',
+      'Find weekly workstreams in the selected CMS project. Returns labels, dates, status and generalNotesPreview so you can select a week without fetching each detail. For current/this-week questions set currentOnly=true; no matches means no visible current week, not a reason to substitute a future week. Pass workstreams.items[].id as workstreamId to get_workstream for full notes and deliverables. Continue with workstreams.nextCursor and the same filters until null; never guess project or record IDs.',
       schemas.listWorkstreamsInput, schemas.listWorkstreamsOutput, input => this.reads.listWorkstreams(user, input));
     register('get_workstream',
-      'Read one visible workstream, its general notes and a batch of deliverable summaries. Deliverables may be denied independently; get_deliverable provides details.',
+      'Retrieve full notes and deliverable summaries for a known workstreamId from list_workstreams. Deliverables include descriptionPreview, deadlines and status; use these directly when sufficient instead of fetching every deliverable. Pass deliverables.items[].id as deliverableId to get_deliverable for full descriptions, assignments, subtasks or submissions. Continue deliverables.nextCursor with this same tool and IDs. deliverablesAccess=denied is an access restriction, not an empty week.',
       schemas.getWorkstreamInput, schemas.getWorkstreamOutput, input => this.reads.getWorkstream(user, input));
     register('list_deliverables',
-      'List authorized project deliverables, optionally filtered by workstream and stored status. Follow nextCursor with the same filters; use get_deliverable for details.',
+      'Find deliverables in the selected CMS project when you need to search across weeks or filter by workstreamId and stored status. Returns titles, descriptionPreview, deadlines, completion and status to help choose the relevant records. If get_workstream already returned enough information, reuse it instead of listing again. Pass deliverables.items[].id to get_deliverable with the same projectId when more detail is needed. Follow deliverables.nextCursor with this tool and unchanged filters until null; previews are not full descriptions.',
       schemas.listDeliverablesInput, schemas.listDeliverablesOutput, input => this.reads.listDeliverables(user, input));
     register('get_deliverable',
-      'Read a deliverable overview, or choose section assignments, subtasks or submissions for a paginated collection. Submissions include CMS versions and stored feedback; linked file contents are not read.',
+      'Retrieve details for a deliverableId from list_deliverables or get_workstream; do not call when its summary already answers the question. Default section=overview returns the full description and metadata. Request assignments for assigned people, subtasks for action items, or submissions for submitted links, CMS versions and recorded review feedback. Only collection sections accept limit/cursor; continue the selected section using its nextCursor. Submission links do not mean the linked file was read; CMS version numbers do not verify the external document revision.',
       schemas.getDeliverableInput, schemas.getDeliverableOutput, input => this.reads.getDeliverable(user, input));
     return server;
   }

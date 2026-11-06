@@ -22,6 +22,9 @@ const summary = (record: DeliverableRow) => ({
   title: record.title, type: record.type, templateKind: record.templateKind,
   deadline: record.deadline, status: record.status, completed: record.completed, updatedAt: record.updatedAt,
 });
+const generalNotes = (snapshot: Prisma.JsonValue): string | null =>
+  snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
+    && typeof snapshot.generalNotes === 'string' ? snapshot.generalNotes : null;
 
 @Injectable()
 export class CmsReadService {
@@ -99,12 +102,13 @@ export class CmsReadService {
         { sequenceNumber: cursor.sortValue as number, id: { gt: cursor.id } },
       ] });
       const records = await this.query(user, () => this.prisma.sprint.findMany({
-        where: { AND: conditions }, select: workstreamSelect,
+        where: { AND: conditions }, select: { ...workstreamSelect, configSnapshot: true },
         orderBy: [{ sequenceNumber: 'desc' }, { id: 'asc' }], take: input.limit + 1,
       }));
       return finish(schemas.listWorkstreamsOutput, {
         projectId: input.projectId, timezone, effectiveAsOf,
-        workstreams: this.page(records, input.limit, scope, row => ({ id: row.id, sortValue: row.sequenceNumber }), effectiveAsOf),
+        workstreams: this.page(records.map(({ configSnapshot, ...row }) => ({ ...row, generalNotesPreview: generalNotes(configSnapshot) })),
+          input.limit, scope, row => ({ id: row.id, sortValue: row.sequenceNumber }), effectiveAsOf),
       });
     });
   }
@@ -120,17 +124,15 @@ export class CmsReadService {
       if (!record) unavailable();
       const timezone = await this.timezone(user, input.projectId);
       const { configSnapshot, ...workstream } = record;
-      const generalNotes = configSnapshot && typeof configSnapshot === 'object' && !Array.isArray(configSnapshot)
-        && typeof configSnapshot.generalNotes === 'string' ? configSnapshot.generalNotes : null;
       if (!access.canReadDeliverables) {
         if (input.cursor) unavailable();
         return finish(schemas.getWorkstreamOutput, {
-          workstream: { ...workstream, generalNotes }, timezone, deliverablesAccess: 'denied', deliverables: null,
+          workstream: { ...workstream, generalNotes: generalNotes(configSnapshot) }, timezone, deliverablesAccess: 'denied', deliverables: null,
         });
       }
       const deliverables = await this.deliverablePage(user, input, 'get_workstream');
       return finish(schemas.getWorkstreamOutput, {
-        workstream: { ...workstream, generalNotes }, timezone, deliverablesAccess: 'allowed', deliverables,
+        workstream: { ...workstream, generalNotes: generalNotes(configSnapshot) }, timezone, deliverablesAccess: 'allowed', deliverables,
       });
     });
   }
@@ -146,10 +148,11 @@ export class CmsReadService {
     if (input.status) conditions.push({ status: input.status });
     if (cursor) conditions.push({ OR: [{ deadline: { gt: date } }, { deadline: date, id: { gt: cursor.id } }] });
     const rows = await this.query(user, () => this.prisma.deliverable.findMany({
-      where: { AND: conditions }, select: deliverableSelect,
+      where: { AND: conditions }, select: { ...deliverableSelect, description: true },
       orderBy: [{ deadline: 'asc' }, { id: 'asc' }], take: input.limit + 1,
     }));
-    return this.page(rows.map(summary), input.limit, scope, row => ({ id: row.id, sortValue: row.deadline.toISOString() }));
+    return this.page(rows.map(row => ({ ...summary(row), descriptionPreview: row.description })),
+      input.limit, scope, row => ({ id: row.id, sortValue: row.deadline.toISOString() }));
   }
 
   listDeliverables(user: CmsReader, raw: unknown) {

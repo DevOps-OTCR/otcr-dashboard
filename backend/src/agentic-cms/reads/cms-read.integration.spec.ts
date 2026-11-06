@@ -104,6 +104,38 @@ integration('CMS read operations against migrated PostgreSQL', () => {
     expect(ids).toEqual(['future', 'overlap', 'week']);
   });
 
+  it('provides bounded selection previews while preserving full detail and missing text', async () => {
+    const notes = '🙂'.repeat(601);
+    const description = '🔎'.repeat(601);
+    await db.sprint.update({ where: { id: 'week' }, data: { configSnapshot: { generalNotes: notes, privateKey: 'must-not-return' } } });
+    await db.deliverable.update({ where: { id: 'd1' }, data: { description } });
+    try {
+      const weeks = await reads.listWorkstreams(reader, { projectId: 'project' });
+      const index = weeks.workstreams.items.findIndex(row => row.id === 'week');
+      expect(weeks.workstreams.items[index].generalNotesPreview).toBe('🙂'.repeat(600));
+      expect(weeks.truncatedFields).toContain(`/workstreams/items/${index}/generalNotesPreview`);
+      expect(weeks.workstreams.items.find(row => row.id === 'future').generalNotesPreview).toBeNull();
+      expect(JSON.stringify(weeks)).not.toContain('must-not-return');
+      const list = await reads.listDeliverables(reader, { projectId: 'project' });
+      expect(list.deliverables.items[0].descriptionPreview).toBe('🔎'.repeat(600));
+      expect(list.truncatedFields).toContain('/deliverables/items/0/descriptionPreview');
+      const week = await reads.getWorkstream(reader, { projectId: 'project', workstreamId: 'week' });
+      expect(week.workstream.generalNotes).toBe(notes);
+      expect(week.deliverables.items[0].descriptionPreview).toBe('🔎'.repeat(600));
+      const detail = await reads.getDeliverable(reader, { projectId: 'project', deliverableId: 'd1' });
+      if (detail.section !== 'overview') throw new Error('Wrong section');
+      expect(detail.deliverable.description).toBe(description);
+      expect(detail.truncatedFields).toEqual([]);
+      for (const value of [null, '']) {
+        await db.deliverable.update({ where: { id: 'd1' }, data: { description: value } });
+        expect((await reads.listDeliverables(reader, { projectId: 'project' })).deliverables.items[0].descriptionPreview).toBe(value);
+      }
+    } finally {
+      await db.sprint.update({ where: { id: 'week' }, data: { configSnapshot: { generalNotes: 'Compare market segments.', privateKey: 'must-not-return' } } });
+      await db.deliverable.update({ where: { id: 'd1' }, data: { description: 'Describe the market.' } });
+    }
+  });
+
   it('uses the local as-of day and UTC date labels, preserving overlapping matches', async () => {
     const input = { projectId: 'project', currentOnly: true, asOf: '2026-11-09T05:59:59Z', limit: 1 };
     const first = await reads.listWorkstreams(reader, input);

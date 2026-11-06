@@ -21,9 +21,10 @@ export function finish<T extends z.ZodType>(schema: T, output: Record<string, un
     if (value instanceof Date) return value.toISOString();
     if (typeof value === 'string') {
       const points = Array.from(value);
-      if (points.length > 12000) {
+      const limit = /\/(generalNotesPreview|descriptionPreview)$/.test(path) ? 600 : 12000;
+      if (points.length > limit) {
         truncatedFields.push(path);
-        return points.slice(0, 12000).join('');
+        return points.slice(0, limit).join('');
       }
     }
     if (Array.isArray(value)) return value.map((item, index) => serialize(item, `${path}/${index}`));
