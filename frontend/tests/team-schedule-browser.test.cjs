@@ -22,6 +22,16 @@ function mondayInfo() {
   return { monday, day, iso };
 }
 
+function chicagoHour(d) {
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hourCycle: 'h23' }).format(d);
+}
+
+function chicagoYmd(d) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(d);
+}
+
+function localYmd(d) { return new Intl.DateTimeFormat('en-CA').format(d); }
+
 async function setup(t) {
   const { day, iso } = mondayInfo();
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -90,8 +100,8 @@ async function setup(t) {
     if (pathname === '/projects') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
         projects: [
-          { id: 'team-1', name: 'Team One', googleCalendarId: 'team-1@example.test', pm: { email: 'pm@example.test' } },
-          { id: 'team-2', name: 'Team Two', pm: { email: 'other.pm@example.test' } },
+          { id: 'team-1', name: 'Team One', googleCalendarId: 'team-1@example.test', sprintTimezone: 'America/Chicago', pm: { email: 'pm@example.test' } },
+          { id: 'team-2', name: 'Team Two', sprintTimezone: 'America/Chicago', pm: { email: 'other.pm@example.test' } },
         ],
       }) });
     }
@@ -145,7 +155,7 @@ async function setup(t) {
   await page.goto('http://navigation.test/overview');
   await page.addStyleTag({ content: styles });
 
-  return { page, col, patchCalls, scheduleCalls, day, fail: () => { failNext = true; } };
+  return { page, col, patchCalls, scheduleCalls, day, iso, fail: () => { failNext = true; } };
 }
 
 test('Google Calendar stays the default and the Team schedule tab loads items', async t => {
@@ -166,7 +176,7 @@ test('Google Calendar stays the default and the Team schedule tab loads items', 
 });
 
 test('a PM drags a deadline to another day and it is saved at the same time of day', async t => {
-  const { page, col, patchCalls, day } = await setup(t);
+  const { page, col, patchCalls, day, iso } = await setup(t);
   await page.getByRole('tab', { name: 'Team schedule' }).click();
   const researchBtn = page.locator('button[aria-label^="Market sizing research"]').first();
   await researchBtn.waitFor();
@@ -177,12 +187,12 @@ test('a PM drags a deadline to another day and it is saved at the same time of d
   assert.equal(patchCalls.length >= 1, true);
   assert.equal(patchCalls[0].id, 't1-research');
   const d = new Date(patchCalls[0].body.deadline);
-  assert.equal(d.getDate(), day(4).getDate());
-  assert.equal(d.getHours(), 17);
+  assert.equal(chicagoYmd(d), localYmd(day(4)));
+  assert.equal(chicagoHour(d), chicagoHour(new Date(iso(2, 17))));
 });
 
 test('Alt+ArrowRight moves a deadline one day and keeps focus', async t => {
-  const { page, patchCalls, day } = await setup(t);
+  const { page, patchCalls, day, iso } = await setup(t);
   await page.getByRole('tab', { name: 'Team schedule' }).click();
   const deckBtn = page.locator('button[aria-label^="Client draft deck"]').first();
   await deckBtn.waitFor();
@@ -194,7 +204,10 @@ test('Alt+ArrowRight moves a deadline one day and keeps focus', async t => {
   const moveCall = patchCalls.find(call => call.id === 't1-deck');
   assert.ok(moveCall, 'expected a PATCH for t1-deck');
   const d = new Date(moveCall.body.deadline);
-  assert.equal(d.getDate(), day(4).getDate());
+  const seed = new Date(iso(3, 21));
+  const expected = new Date(seed.getFullYear(), seed.getMonth(), seed.getDate() + 1, 12);
+  assert.equal(chicagoYmd(d), localYmd(expected));
+  assert.equal(chicagoHour(d), chicagoHour(seed));
 
   const activeLabel = await page.evaluate(() => {
     const el = document.activeElement;
@@ -234,7 +247,7 @@ test('switching back keeps the Google iframe mounted', async t => {
 });
 
 test('month view shows the whole month and still saves a drag', async t => {
-  const { page, col, patchCalls, day } = await setup(t);
+  const { page, col, patchCalls, day, iso } = await setup(t);
   await page.getByRole('tab', { name: 'Team schedule' }).click();
   const viewBtn = page.getByRole('button', { name: 'Month', exact: true });
   await viewBtn.click();
@@ -262,6 +275,6 @@ test('month view shows the whole month and still saves a drag', async t => {
   const moveCall = patchCalls.find(call => call.id === 't1-research');
   assert.ok(moveCall, 'expected a PATCH for t1-research');
   const d = new Date(moveCall.body.deadline);
-  assert.equal(d.getDate(), target.getDate());
-  assert.equal(d.getHours(), 17);
+  assert.equal(chicagoYmd(d), localYmd(targetNoon));
+  assert.equal(chicagoHour(d), chicagoHour(new Date(iso(2, 17))));
 });

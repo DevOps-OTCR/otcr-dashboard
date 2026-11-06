@@ -246,3 +246,15 @@ test('startOfMonth returns local midnight on the 1st', () => {
   assert.equal(start.getSeconds(), 0);
   assert.equal(start.getMilliseconds(), 0);
 });
+
+test('a nonexistent spring-forward time moves forward', () => {
+  const start = new Date('2026-03-06T08:30:00Z'); // 02:30 CST on Fri Mar 6
+  const moved = moveToDayInZone(start, new Date(2026, 2, 8), 'America/Chicago');
+  assert.equal(moved.toISOString(), '2026-03-08T08:30:00.000Z'); // 03:30 CDT
+});
+
+test('seconds are kept', () => {
+  const start = new Date('2026-10-30T22:00:45.250Z');
+  const moved = moveToDayInZone(start, new Date(2026, 10, 3), 'America/Chicago');
+  assert.equal(moved.toISOString(), '2026-11-03T23:00:45.250Z');
+});
