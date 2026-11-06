@@ -130,6 +130,8 @@ For documents > ~1,500 words: output the outline (section → argument → IDs �
 ### Step 6 — Draft with budgets
 Per §7. A section that overshoots is usually two sections or one unresolved question.
 
+**Length limits are hard ceilings (v0.3.1 — Lumen length test, 6 Nov.).** When the user states a word limit, convert it to a sentence budget: divide the limit by 30 and round down (350 words -> 11 sentences). Stay under that sentence count in at most 3 paragraphs. Do not count words. If you are over, cut in this order: restated facts, worked arithmetic (keep the result and its `[ESTIMATE]` label), secondary caveats. Never cut the recommendation, the stop condition, or a `[DATA NEEDED]` flag. Inline estimate labels carry IDs only, e.g. `[ESTIMATE: S3, S4]`. Put the arithmetic in the reviewer note, not inline. The reviewer note sits outside the sentence budget but must be at most 3 sentences. When cutting to fit, use only the facts the user supplied; anything else the argument needs becomes a [DATA NEEDED: ...] flag, never a new S# or a new number.
+
 ### Step 7 — Consistency and traceability pass
 - Every number appears in the ledger or is derived and labelled.
 - Same figure, same value everywhere (search the digits).
