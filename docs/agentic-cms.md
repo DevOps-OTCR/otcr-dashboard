@@ -79,6 +79,11 @@ does not implement an LLM client, external search, MCP transport or editors.
 
 ## Required checks and PR review
 
+Group 2's workstream and deliverable tool contracts are documented in
+[MCP read-tool contracts](agentic-cms-mcp-contracts.md). This specification covers
+inputs, outputs, pagination and inherited record permissions; it does not add a
+running MCP endpoint.
+
 PR Validation runs `scripts/check-agentic-boundaries.cjs` and its negative tests
 inside the required **Backend typecheck, tests and build** check. It rejects
 imports that bypass the feature boundary, misplaced Agentic CMS controllers,
