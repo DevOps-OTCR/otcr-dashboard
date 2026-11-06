@@ -127,7 +127,7 @@ const TO = '2026-11-16T06:00:00.000Z';
       [!has(j, 'd-h-draft'), 'd-h-draft not visible'],
       [!r.text.includes('pmId'), 'raw response does not contain "pmId"'],
     ];
-    await scene('01', 'consumer', 'Consumer view', 'GET /projects/schedule?from=' + FROM + '&to=' + TO + '  (Authorization: Bearer con@otcr.test)', r.status, j, checks);
+    await scene('01', 'consultant', 'Consultant view', 'GET /projects/schedule?from=' + FROM + '&to=' + TO + '  (Authorization: Bearer con@otcr.test)', r.status, j, checks);
   }
 
   // 02 — pm1@otcr.test
