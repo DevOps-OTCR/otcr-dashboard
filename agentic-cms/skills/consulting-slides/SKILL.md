@@ -1,12 +1,12 @@
 ---
 name: otcr-consulting-slides
-description: Use when an argument must become a consulting presentation — storyline, section structure, action titles, exhibits, slide-by-slide storyboard — or when an existing deck must be reviewed. Produces a storyboard or a severity-ranked review, never a PowerPoint file. Do not use for visual formatting of a file, for gathering evidence (use research), or for writing the document (use whitepaper-writing).
-version: 0.2.2
+description: Use when an argument must become a consulting presentation — storyline, section structure, action titles, exhibits, slide-by-slide storyboard — or when an existing deck must be reviewed, or when a finished deck needs a final pre-send audit checklist. Produces a storyboard, a severity-ranked review, or an audit checklist, never a PowerPoint file. Do not use for visual formatting of a file, for gathering evidence (use research), or for writing the document (use whitepaper-writing).
+version: 0.3.2
 owner: Group 3 (Aritro, Teja)
 release: 1
 metadata:
   category: presentation
-  modes: [build, restructure, review]
+  modes: [build, restructure, review, audit]
 ---
 
 # OTCR Consulting Presentations
@@ -26,6 +26,7 @@ It is not a collection of attractive slides. If the deck works with the visuals 
 **A. Storyline** — what does the deck argue, in what order?
 **B. Slide design** — how does each slide make its point?
 **C. QA / review** — is the whole thing coherent, accurate, and readable?
+**C (audit mode, v0.3.0)** — a distinct mode within Job C: a final pre-send pass on a finished deck. Checklist: mechanics, big picture, likely audience questions. Audit does not substitute for argument review; if the argument still needs critique, say so in one line and point to review mode.
 
 Do A completely before B. Do C after B, and again on the whole deck.
 
@@ -40,6 +41,7 @@ Blending A and B produces a tour of topics. Blending B and C produces a polished
 - **Build** *(default)* — slide-by-slide content per §7.
 - **Restructure** — diagnosis of the current deck's argument + new storyline + revised slide map.
 - **Review** — severity-ranked findings (BLOCKING / MATERIAL / MINOR), each with issue + significance + fix.
+- **Audit** *(Job C, final pre-send check)* — `- [ ]` checklist across the three passes per §8.
 
 ---
 
@@ -50,6 +52,9 @@ Blending A and B produces a tour of topics. Blending B and C produces a polished
 | "Build the storyline for the final deck" | Yes | — |
 | "Turn this whitepaper into slides" | Yes (restructure) | — |
 | "Review this deck before I send it" | Yes (review) | — |
+| "Final check before this goes out" | Yes (audit) | — |
+| "QA this deck before it goes out" | Yes (audit) | — |
+| "Proofread the deck" | Yes (audit) | — |
 | "What chart should show this?" | Yes | — |
 | "Fix the layout / fonts in this file" | **No** | Not a Release 1 capability |
 | "Analyse this data" | **No** | Analyse first; this skill specifies the exhibit |
@@ -222,6 +227,27 @@ Separate "critical problem" from "optional improvement". A 40-item list is not a
 
 Full review protocol, including how to review a deck you did not build: `references/deck-review.md`.
 
+### Audit mode (final pre-send check, v0.3.0)
+Run this after the slides are assembled, before the deck leaves the building.
+
+- **Pass 1 — mechanics.** Spelling, page numbers, bolding, boxes and alignment, plus inconsistent terms, inconsistent numbers, and leftover placeholders. This is the PM's list.
+- **Pass 2 — big picture.** Chronology, gaps in the argument, loopholes in the recommendation.
+- **Pass 3 — likely audience questions.** The questions an audience watching the presentation would ask, each tied to a slide and to who should be ready to answer it.
+
+Return `- [ ]` checklist items, each citing every slide it affects ("Slide N", "Slides N, M"). Follow the review-only contract (`shared/otcr-quality-standards.md` §6.1) and the hidden/confidential rule (§6.2). Never invent a typo.
+
+Operative rules:
+- Output sections in order: Skipped slides; Mechanics; Big picture; Likely audience questions; Not checkable from this input; Summary (one-line count).
+- Item format: `- [ ] Slide N — MUST FIX|SHOULD FIX|CHECK — issue — why it matters — suggested fix (one sentence)`.
+- At most 25 items. Quote at most 12 words.
+- Five to eight audience questions (fewer if the deck supports fewer), each grounded in a visible slide's claim, assumption or gap.
+- Audience-question item format: `- [ ] Q: <question> — <claim, assumption or gap on the slide> — <what to add or prepare> (Ready: presenter of slide N)`. Cite every slide it affects; name who should be ready to answer.
+- Run each layout check on whatever layout fields are present: if any box has left_in, compare left edges across visible slides; if footer_page is present, compare it with the slide number. Only a check whose fields are entirely missing goes under Not checkable.
+- A hidden or confidential slide appears only in Skipped slides. Never cite it, its layout or its numbering in any finding.
+
+
+Full protocol: `references/deck-audit.md`. Source: PM interview P1, 2026-11-05.
+
 ---
 
 ## 9. Quality gate
@@ -240,6 +266,10 @@ Full review protocol, including how to review a deck you did not build: `referen
 - [ ] Slide count exactly as requested; appendix only if asked
 - [ ] Length fits the time slot
 - [ ] Initial vs final convention respected
+- [ ] Audit mode returns no edited artifact
+- [ ] Hidden/confidential slides are listed, not quoted
+- [ ] Every audit item cites a slide
+- [ ] No invented errors
 
 ---
 
@@ -286,4 +316,5 @@ Full review protocol, including how to review a deck you did not build: `referen
 | `references/chart-selection.md` | Chart choice by message, exhibit hygiene, axis/label rules, when a table beats a chart |
 | `references/layouts-and-density.md` | Layout library, density thresholds, anti-monotony rule, visual hierarchy |
 | `references/deck-review.md` | Review protocol, severity calibration, worked findings |
+| `references/deck-audit.md` | Final pre-send audit protocol: three passes, checklist format, hidden/confidential rule |
 | `examples/example-storyboard.md` | A 10-slide storyboard on a synthetic client, with what was rejected |
