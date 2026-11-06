@@ -58,12 +58,12 @@ general-purpose reporting tools adapted to the purpose (S3, SINGLE-SOURCE).
 feature comparison to risk reduction.
 
 **F3 — Comparable modules price above what a mid-market operator is likely to authorise.**
-Published ACVs cluster at €18k–€30k [ESTIMATE: six vendor price pages, S4]; mid-market IT budgets are
+Published ACVs cluster at €18k–€30k [ESTIMATE: I1; six vendor price pages]; mid-market IT budgets are
 not established [DATA NEEDED].
 *So what:* either the price point or the target segment has to move. This is the crux of the decision.
 
 **F4 — ERP and incumbent suites are the structural threat.**
-Suites already own the reporting surface and can bundle compliance at near-zero marginal price (S5, S6).
+Suites already own the reporting surface and can bundle compliance at near-zero marginal price (S5, I2).
 *So what:* a standalone compliance-filing product has a two-year window at most.
 
 ## 4. Supporting evidence
@@ -72,8 +72,8 @@ Suites already own the reporting surface and can bundle compliance at near-zero 
 |---|---|---|
 | F1 | Regulatory applicability by size and sector; phased commencement (S1, S2) | FACT |
 | F2 | 4 of 5 practitioner descriptions of current practice were manual/periodic (S3) | FACT (small n) |
-| F3 | 6 published price points, €18k–€30k ACV, licence only (S4) | ESTIMATE |
-| F4 | Two suite vendors list compliance/reporting modules in their standard editions (S5, S6) | FACT (product scope) |
+| F3 | 6 published price points, €18k–€30k ACV, licence only (I1) | ESTIMATE |
+| F4 | Two suite vendors list compliance/reporting modules in their standard editions (S5); inference that bundling commoditises point solutions (I2) | FACT (product scope) + INFERENCE |
 
 ## 5. Market and competitive analysis
 
@@ -102,9 +102,9 @@ services firms (do it for you), and the spreadsheet (the real default).
 | S1 | Regulatory applicability is defined by employee count and sector | FACT | [ILLUSTRATIVE] Regulation summary, official journal | 2024 | High |
 | S2 | Commencement is phased over three reporting years | FACT | [ILLUSTRATIVE] Regulator guidance | 2025 | High |
 | S3 | 4 of 5 mid-market operators handle compliance manually/periodically | FACT (n=5) | [ILLUSTRATIVE] practitioner interviews | 2026 | Low |
-| S4 | Comparable modules list at €18k–€30k ACV | ESTIMATE | [ILLUSTRATIVE] 6 vendor price pages | 2026 | Medium |
+| I1 | Comparable modules list at €18k–€30k ACV | ESTIMATE | [ILLUSTRATIVE] 6 vendor price pages | 2026 | Medium |
 | S5 | Suite vendors include reporting/compliance in standard editions | FACT | [ILLUSTRATIVE] product documentation | 2026 | Medium |
-| S6 | Suite bundling has historically commoditised point solutions | INFERENCE | S5 + category history | — | Medium |
+| I2 | Suite bundling has historically commoditised point solutions | INFERENCE | S5 + category history | — | Medium |
 | S7 | Mid-market operators will pay a premium for audit-ready exports | ASSUMPTION | PM hypothesis, untested | — | Low |
 
 ## 8. Conflicting evidence

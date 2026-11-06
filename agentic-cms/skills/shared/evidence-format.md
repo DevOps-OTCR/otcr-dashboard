@@ -58,7 +58,7 @@ Thirteen fields. This is the record of truth; it is normally an appendix.
 | id | claim | type | source_title | source_ref | source_type | published | accessed | evidence | method | confidence | caveats | downstream |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | S1 | Applicability is defined by employee count and sector | FACT | [ILLUSTRATIVE] Regulation summary | example.org/reg | Official/regulator | 2024-12 | 2026-11 | Art. 2 scope | — | High | National transposition varies | all |
-| S4 | Comparable payroll add-ons list at €6–€9 per employee per month (PEPM) | ESTIMATE | 5 vendor price pages | example.org/a…e | Company primary | 2026 | 2026-11 | List prices only | 20–200-employee firms, DE | Medium | List ≠ realised | whitepaper, slides |
+| I1 | Comparable payroll add-ons list at €6–€9 per employee per month (PEPM) | ESTIMATE | 5 vendor price pages | example.org/a…e | Company primary | 2026 | 2026-11 | List prices only | 20–200-employee firms, DE | Medium | List ≠ realised | whitepaper, slides |
 | S7 | Buyers will pay a premium for same-day payroll corrections | ASSUMPTION | PM hypothesis | INTERNAL: week-3 note | Internal | — | 2026-11 | Stated in kickoff | — | Low | Would need 3 buyer calls | whitepaper |
 
 ---
@@ -90,13 +90,17 @@ Confidence is about **the claim**, not the source's prestige. A single excellent
 
 | Context | Form |
 |---|---|
-| Prose in a brief or whitepaper | `(S4)` or `(S4, S7)` |
-| A derived number | `€6–9 PEPM [ESTIMATE: S4; assumes list prices, 20–200-employee firms]` |
+| Prose in a brief or whitepaper | `(I1)` or `(S1, I1)` |
+| A derived number | `€6–9 PEPM [ESTIMATE: I1; assumes list prices, 20–200-employee firms]` |
 | A gap | `[DATA NEEDED: metric — why it matters — suggested source]` |
 | An assumption in prose | "We assume X; this is unvalidated." |
-| A slide exhibit | `Source: <publisher>, <data period> (S4)` |
+| A slide exhibit | `Source: <publisher>, <data period> (S1)` |
 
-**No naked numbers.** Any figure without an S-ID or an `[ESTIMATE]` basis is a defect, not a style choice.
+**No naked numbers.** Any figure without an S-ID, an I-ID, or an `[ESTIMATE]` basis is a defect, not a style choice.
+
+### Client-safe references
+
+Before rows leave the ledger for a whitepaper or slides, internal record references become client-safe descriptions. Redact PII, internal identifiers and confidential details. Hidden or otherwise confidential content follows the hidden/confidential content rule in the quality standards (`shared/otcr-quality-standards.md`).
 
 ---
 
@@ -116,7 +120,7 @@ The middle clause is mandatory. A gap with no consequence is decoration.
 ## 8. Handoff rules
 
 1. **Pass the ledger, not the transcript.** Downstream skills never see the research conversation.
-2. **IDs are immutable.** `S4` means the same thing in the slide appendix as in the brief.
+2. **IDs are immutable.** `S1` means the same thing in the slide appendix as in the brief.
 3. **Downstream skills may not add evidence.** If they need more, they emit `[DATA NEEDED]`.
 4. **Every recommendation names its supporting IDs.** A recommendation with no IDs is an opinion.
 5. **`background-only` rows never appear in client artifacts.** They inform judgement but are not cited.

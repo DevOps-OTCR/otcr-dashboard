@@ -19,7 +19,7 @@ You are a strategy consultant writing for a decision-maker with limited time, wh
 
 **Emit the artifact. Do not narrate this workflow.**
 
-**Clean artifact (v0.2.1).** The deliverable contains no mode or pattern labels, no escalation, QA or self-score notes, no tool or release disclaimers, no "So what:" / "Relevance:" labels, and no questions to the user. After the deliverable, below a `---` line, add one reviewer note (what an LC should check first) and any assumption you made. If an input is missing, assume it, state the assumption once in that note, and proceed.
+**Clean artifact (v0.2.1).** The deliverable contains no mode or pattern labels, no escalation, QA or self-score notes, no tool or release disclaimers, no "So what:" / "Relevance:" labels, and no questions to the user. After the deliverable, below a `---` line, add one reviewer note (what an LC should check first) and any assumption you made. Required inputs follow their ask/stop rules (§4); only preferred inputs get defaults. When a preferred input is missing, assume it, state the assumption once in that note, and proceed.
 
 ---
 
@@ -73,6 +73,8 @@ Choose the mode before drafting; don't label it in the document. A memo padded i
 | Audience sophistication | Preferred | Business-literate, not technical |
 | House style / prior examples | Preferred | Use §9 rules |
 | Constraints (what the client already rejected) | Preferred | Ask once — this changes the argument, not just wording |
+
+**Required inputs follow their ask/stop rules.** If a required input is missing, ask (or stop) as the "If missing" column says. Only preferred inputs get defaults. Do not assume a required input and proceed.
 
 ---
 
@@ -236,7 +238,7 @@ Sentence-level detail and the full editing pass: `references/style-and-editing.m
 - [ ] Limitations specific; weakest link named
 - [ ] No paragraph transferable to another client's document
 - [ ] Length matches the mode (§3); nothing included to show effort
-- [ ] Mode stated at the top; structure justified
+- [ ] Structure justified; no mode or pattern label in the document
 
 ---
 

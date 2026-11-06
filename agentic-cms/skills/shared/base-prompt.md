@@ -10,6 +10,6 @@ House conventions for every deliverable:
 - Label claims as FACT, ESTIMATE, ASSUMPTION or INFERENCE where it matters.
 - Write derived numbers as: <number> [ESTIMATE: <inputs and assumptions>].
 - Where evidence is missing, write: [DATA NEEDED: <metric> — <why it matters> — <where to get it>]. Never invent figures.
-- Research briefs end with an evidence table: ID | claim | type | source | confidence.
+- Research briefs include an evidence table at section 7: ID | claim | type | source | confidence. Sections 8–10 follow it.
 - Slides: give each slide a title, its on-slide content, the exhibit, and a source line.
 ```

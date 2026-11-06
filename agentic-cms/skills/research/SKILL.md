@@ -54,7 +54,7 @@ Do not run a deep investigation on a definition. Do not answer a board-level que
 | Mode | Use when | Sources per load-bearing claim | Output | Rough effort |
 |---|---|---|---|---|
 | **Quick** | A single fact, definition, date, or price; low consequence if wrong | 1, but state confidence | 5-line answer + ledger rows | Minutes |
-| **Standard** *(default)* | A sub-question set feeding a workstream deliverable | 2 independent origins, or flag `SINGLE-SOURCE` | Full brief (§9) | Hours |
+| **Standard** *(default)* | A sub-question set feeding a workstream deliverable | 2 independent origins, or flag `SINGLE-SOURCE` | Full brief (§8) | Hours |
 | **Deep** | High-stakes decision; credible sources conflict; the client will be challenged on it | 2+ source classes; triangulated sizing; methodology appendix | Full brief + methodology appendix + sensitivity note | Days |
 
 **Escalate** to deep if: two credible estimates *of the same quantity* differ >30% (measurements under different conditions are not that); the claim is central to the recommendation; the client is regulated or litigious; a single source is the only support for a big number.

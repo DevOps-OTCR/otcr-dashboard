@@ -25,26 +25,30 @@ Deliverable kind: FINAL_SLIDES
 
 ## 2. Title sequence test
 
-Read only these. If they do not form a complete argument, the deck is broken.
+*Internal working (not part of the delivered output).*
+
+Read only these. If they do not form a complete argument, the deck is broken. The delivered output follows the §7 contract and does not print this block.
 
 ```
-S1   Meridian should fund an audit-readiness module, not a compliance product
-S2   Regulation defines the buying population, so demand is countable rather than assumed
-S3   The real incumbent is a manual audit scramble, not another vendor
-S4   Comparable modules price at €18–30k — above the segment's software budget
-S5   Pricing above budget is survivable only if the cost attaches to audit, not IT
-S6   Suites will bundle filing within two years, which closes the filing-led route
-S7   Audit acceptance is the asset suites cannot bundle
-S8   Two audit-firm referrals reach the buyer we cannot reach directly
-S9   Phase 1 costs one squad for two quarters and tests the only assumption that matters
-S10  Stop if referral conversion is below 15% or auditors reject the export format
+#1   Meridian should fund an audit-readiness module, not a compliance product
+#2   Regulation defines the buying population, so demand is countable rather than assumed
+#3   The real incumbent is a manual audit scramble, not another vendor
+#4   Comparable modules price at €18–30k — above the segment's software budget
+#5   Pricing above budget is survivable only if the cost attaches to audit, not IT
+#6   Suites will bundle filing within two years, which closes the filing-led route
+#7   Audit acceptance is the asset suites cannot bundle
+#8   Two audit-firm referrals reach the buyer we cannot reach directly
+#9   Phase 1 costs one squad for two quarters and tests the only assumption that matters
+#10  Stop if referral conversion is below 15% or auditors reject the export format
 ```
 
-Grammar is parallel (declarative claims). No title is a topic. The recommendation lands on S1 and is *proven* by S2–S9, then bounded by S10.
+Grammar is parallel (declarative claims). No title is a topic. The recommendation lands on slide 1 and is *proven* by slides 2–9, then bounded by slide 10.
 
 ---
 
 ## 3. Storyboard
+
+*Internal working (not part of the delivered output).* The slide-map table below is a working aid for the storyboard; the delivered output follows the §7 contract and prints slides only.
 
 | Slide | Section | Takeaway title | Key message | Supporting content | Evidence | Visual | Layout | Notes |
 |---|---|---|---|---|---|---|---|---|
@@ -58,9 +62,9 @@ Grammar is parallel (declarative claims). No title is a topic. The recommendatio
 | 8 | Route to market | Two audit-firm referrals reach the buyer we cannot reach directly | Channel is a necessity, not a preference | 6-person sales team; long tail; referral economics; margin cost | S2, S4 | Flow diagram, 4 boxes | Title + flow | Name the risk: firms may see us as a threat |
 | 9 | Investment | Phase 1 costs one squad for two quarters and tests the only assumption that matters | Small, reversible, evidence-generating | Scope of Phase 1; what is deliberately deferred; what it proves | S4, S7 | Roadmap, 3 phases with gates | Title + roadmap | Owners and dependencies, not just phases |
 | 10 | Conditions | Stop if referral conversion is below 15% or auditors reject the export format | We are pre-committing to a kill criterion | Two thresholds, measurement method, review date | S2, S4 | Two-column criteria + trigger | Title + 2-column | Credibility slide. Do not soften it |
-| A1 | Appendix | Applicability by member state | Backs S2 if challenged | Transposition status table | S1, S2 | Table | — | Referenced from S2 |
-| A2 | Appendix | Pricing evidence | Backs S4 | Six vendors, list price, date, module scope | S4 | Table | — | Referenced from S4 |
-| A3 | Appendix | Interview sample and method | Backs S3 | n=5, selection method, questions asked, limitations | S3 | Text | — | Referenced from S3; protects against "anecdote" challenge |
+| A1 | Appendix | Applicability by member state | Backs slide 2 if challenged | Transposition status table | S1, S2 | Table | — | Referenced from slide 2 |
+| A2 | Appendix | Pricing evidence | Backs slide 4 | Six vendors, list price, date, module scope | S4 | Table | — | Referenced from slide 4 |
+| A3 | Appendix | Interview sample and method | Backs slide 3 | n=5, selection method, questions asked, limitations | S3 | Text | — | Referenced from slide 3; protects against "anecdote" challenge |
 
 ---
 
@@ -97,8 +101,8 @@ Do not:   use a pie chart, truncate the axis, or add a "market average" line
 
 ## 6. Open storyline risks
 
-1. **The differentiation slide rests on an unvalidated claim.** If auditors will accept any machine-readable export, S7 collapses and the recommendation reduces to "sell cheap" — which loses to bundling. This is the deck's weakest joint and should be said out loud in the room.
-2. **Ten slides for a 15-minute slot is tight.** If discussion starts early, cut S5 (the 2×2) rather than compressing S3 or S10.
+1. **The differentiation slide rests on an unvalidated claim.** If auditors will accept any machine-readable export, the claim on slide 7 collapses and the recommendation reduces to "sell cheap" — which loses to bundling. This is the deck's weakest joint and should be said out loud in the room.
+2. **Ten slides for a 15-minute slot is tight.** If discussion starts early, cut slide 5 (the 2×2) rather than compressing slide 3 or slide 10.
 3. **The kill criterion is unusually specific for a board deck.** It is included deliberately: it converts a request for money into a request for a bounded experiment.
 
 ---
@@ -108,7 +112,7 @@ Do not:   use a pie chart, truncate the axis, or add a "market average" line
 | Behaviour | Where |
 |---|---|
 | Structure chosen deliberately, before slides | §1 — answer-first, justified by audience |
-| Titles are claims, and the sequence is the argument | §2 — including the ask on S1 and the condition on S10 |
+| Titles are claims, and the sequence is the argument | §2 — including the ask on slide 1 and the condition on slide 10 |
 | One message per slide, enforced | §3 — no slide carries two ideas |
 | Exhibit type matched to the message | §4 — comparison of magnitudes against a threshold |
 | Evidence attached to every slide | §3 — S-IDs on all ten |

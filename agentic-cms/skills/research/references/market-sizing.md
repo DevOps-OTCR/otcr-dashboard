@@ -85,11 +85,11 @@ Compare the two methods.
 
 | Divergence | Action |
 |---|---|
-| < 15% | Report the range; use the midpoint only if the decision needs one number |
+| < 15% | Report the range; use the midpoint only if the methods are reconciled and closely aligned, and the decision needs one number |
 | 15–30% | Report both; explain the driver |
 | > 30% | **Stop.** Diagnose before choosing: definition, geography, period, segment, or double counting |
 
-**Never average two estimates.** Averaging manufactures a number that no source published and no reviewer can check.
+**Never average unresolved conflicting estimates.** A midpoint is allowed only for reconciled, closely aligned methods (divergence < 15%, same definition, geography, period and segment). Where estimates still conflict, report both and the driver. Averaging manufactures a number that no source published and no reviewer can check.
 
 ### Diagnosis in practice
 

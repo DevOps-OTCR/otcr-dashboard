@@ -45,7 +45,9 @@ Approval requested: proceed to draft?
 >
 > The structural threat is bundling: suites already own the reporting surface and can include filing at near-zero marginal price (S5, S6). A filing-led product has roughly a two-year window. An audit-readiness product does not, because the asset is auditor acceptance rather than the form.
 >
-> **Recommendation:** a three-phase build, starting with two audit-firm partnerships, with a stop condition if referral conversion is below 15% by the end of Q2 (S2, S4). The recommendation assumes a €25k target ACV; that assumption is the single largest uncertainty in this document and should be tested in the first ten buyer conversations.
+> **Recommendation:** a three-phase build, starting with two audit-firm partnerships, with a stop condition if referral conversion is below 15% by the end of Q2. The recommendation assumes a €25k target ACV; that assumption is the single largest uncertainty in this document and should be tested in the first ten buyer conversations.
+>
+> **Unvalidated assumptions in this recommendation:** I1 — the 15% referral-conversion stop condition is an assumed threshold, not a sourced figure; validate against the first cohort of referred buyers before it gates the build. S7 — the €25k target ACV is an assumed price point; validate in the first ten buyer conversations before it sets the pricing model. Neither is evidence-backed; both are carried as ASSUMPTION with an open validation path (see §3).
 
 *Note: the uncertainty is inside the executive summary, not hidden in §9. A board that discovers a buried assumption stops trusting the document.*
 
@@ -59,7 +61,11 @@ Published ACVs for comparable modules cluster between €18k and €30k, licence
 
 This is the hinge of the decision. If €25k is a departmental purchase, the segment is reachable with a small sales team and a channel. If it is a board-level capital decision, a six-person team cannot run that sales cycle at volume, and the channel becomes mandatory rather than optional.
 
-We can bound the question but not answer it. The segment's total software spend is plausibly in the low hundreds of thousands of euros per firm, which would make €25k a material line item rather than a rounding error `[ESTIMATE: assumes €0.3–0.8M total software spend per firm; unvalidated]`. Two consequences follow, and they point in the same direction: the price must attach to audit cost rather than to a software budget line, and the buying centre must include whoever owns audit outcomes, not only IT.
+We can bound the question but not answer it. The segment's total software spend is plausibly in the low hundreds of thousands of euros per firm, which would make €25k a material line item rather than a rounding error.
+
+**I2 — Unvalidated assumption.** Total software spend per firm sits in the €0.3–0.8M range. This range is an analyst assumption, not a sourced figure; no citation is attached. Validation path: vendor filings plus three buyer interviews to establish annual software budget and authorisation threshold. Until validated, the range is carried as `[ASSUMPTION: I2 — unvalidated]` and the segment sellability at €25k remains open. If the range does not hold, the pricing model changes.
+
+Two consequences follow, and they point in the same direction: the price must attach to audit cost rather than to a software budget line, and the buying centre must include whoever owns audit outcomes, not only IT.
 
 `[DATA NEEDED: mid-market freight operator annual software budget and authorisation threshold — determines whether the segment is sellable at €25k or requires a €8–12k product — vendor filings plus three buyer interviews]`
 
@@ -75,7 +81,7 @@ We can bound the question but not answer it. The segment's total software spend 
 | **Sequence** | Phase 1 (Q1–Q2): evidence capture + 2 partnerships, 1 pilot. Phase 2 (Q3): exception flagging. Phase 3 (Q4): auditor export format, only if pilots confirm acceptance |
 | **Expected effect** | €25k ACV attached to audit cost rather than software budget; no new direct sales headcount |
 | **Evidence** | S2, S3, S4, S6 |
-| **Kill criteria** | Referral conversion < 15% by end of Q2, **or** fewer than 2 of 3 pilots obtain auditor acceptance of the export |
+| **Kill criteria** | Referral conversion < 15% by end of Q2 (I1 — assumed threshold, unvalidated; validate against the first referral cohort before it gates the build), **or** fewer than 2 of 3 pilots obtain auditor acceptance of the export |
 | **Key risk** | Audit firms treat this as a threat to their advisory revenue and decline to refer |
 
 **What would change the recommendation:** if buyer budget evidence shows €25k is a routine departmental purchase, direct sales becomes viable and the channel dependency — and its margin cost — disappears.
@@ -101,10 +107,12 @@ We can bound the question but not answer it. The segment's total software spend 
 | Strongest objection stated in the outline, before drafting | §1 |
 | Executive summary contains the uncertainty | §2 |
 | Assumption stays labelled (`S7`) and is called the largest risk | §2, §3 |
+| Analyst-created thresholds and ranges carry `I#` IDs and an explicit validation path | §2 and §4 (`I1`), §3 (`I2`) |
+| No claim cites a source that does not state it | throughout |
 | Every recommendation has actor + action + mechanism + sequence + kill criteria | §4 |
 | Alternatives are steelmanned, not strawmanned | §5, first column |
 | A hypothesis is bounded without being converted to fact | §3, `[ESTIMATE]` + `[DATA NEEDED]` |
-| No new evidence introduced beyond the ledger | throughout — IDs are S1–S7 only |
+| No new SOURCE evidence beyond the ledger | throughout — source IDs are S1–S7 only; I1–I2 are labelled analyst assumptions |
 
 ## What was deliberately cut
 
