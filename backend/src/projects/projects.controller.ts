@@ -476,12 +476,55 @@ export class ProjectsController {
       return null;
     }
 
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) {
+    const groups = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?(Z|[+-](\d{2}):(\d{2}))$/.exec(
+      value,
+    );
+    if (!groups) {
       return null;
     }
 
-    if (value.endsWith('Z') && !parsed.toISOString().startsWith(value.slice(0, 16))) {
+    const year = Number(groups[1]);
+    const month = Number(groups[2]);
+    const day = Number(groups[3]);
+    const hour = Number(groups[4]);
+    const minute = Number(groups[5]);
+    const second = groups[6] === undefined ? 0 : Number(groups[6]);
+    const offsetHours = groups[8] === undefined ? 0 : Number(groups[8]);
+    const offsetMinutes = groups[9] === undefined ? 0 : Number(groups[9]);
+
+    if (month < 1 || month > 12) {
+      return null;
+    }
+
+    const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+    const daysInMonth = [
+      31,
+      isLeapYear ? 29 : 28,
+      31,
+      30,
+      31,
+      30,
+      31,
+      31,
+      30,
+      31,
+      30,
+      31,
+    ];
+    if (day < 1 || day > daysInMonth[month - 1]) {
+      return null;
+    }
+
+    if (hour > 23 || minute > 59 || second > 59) {
+      return null;
+    }
+
+    if (offsetHours > 23 || offsetMinutes > 59) {
+      return null;
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
       return null;
     }
 

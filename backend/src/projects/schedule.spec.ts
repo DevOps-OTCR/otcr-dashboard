@@ -200,6 +200,15 @@ describe('ProjectsController.getSchedule validation', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
+  it('rejects an impossible calendar date with a numeric offset', async () => {
+    await expect(
+      controller.getSchedule('2026-02-31T00:00:00+00:00', '2026-03-05T00:00:00.000Z', {
+        id: 'u',
+        role: 'ADMIN',
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
   it('rejects a date-only string', async () => {
     await expect(
       controller.getSchedule('2026-11-02', '2026-11-09T00:00:00.000Z', { id: 'u', role: 'ADMIN' }),
