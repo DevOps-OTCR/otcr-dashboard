@@ -15,7 +15,7 @@ project permissions. A skill does not grant access or bypass the release flag.
 
 Three skills. This is the agreement between Group 3 (author) and Group 1 (loader).
 
-**Versions: research 0.2.1 · whitepaper-writing 0.2.1 · consulting-slides 0.3.2. Changed after two test rounds, two adversarial reviews and one interview. Not yet LC-reviewed. See §8.**
+**Versions: research 0.3.0 · whitepaper-writing 0.2.1 · consulting-slides 0.3.2. Changed after two test rounds, two adversarial reviews and two interviews (consultant C1, PM P1). Not yet LC-reviewed. See §8.**
 
 ---
 

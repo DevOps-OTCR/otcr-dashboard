@@ -1,7 +1,7 @@
 ---
 name: otcr-research
 description: Use when a consulting question needs external evidence — market size, competitors, customers, technology, policy — and the answer must be traceable to sources. Produces a Research Brief with a typed Evidence Ledger. Handles quick lookups, standard research, and deep investigation. Do not use for internal project facts (use CMS tools), for writing the client document (use whitepaper-writing), or for deck construction (use consulting-slides).
-version: 0.2.1
+version: 0.3.0
 owner: Group 3 (Aritro, Teja)
 release: 1
 metadata:
@@ -70,7 +70,7 @@ Choose the mode internally. Do not label it in the brief; the depth should show 
 |---|---|---|
 | Decision informed | Yes | Ask once; else assume + label |
 | Client / project / workstream | Yes | Ask, or use CMS context and say what you assumed |
-| The question, in the client's words | Yes | Ask |
+| The question, in the client's words | Yes | Preferred source: the PM's weekly workstream brief (from the SOW and the week's Gantt slice). If absent, ask for it; if unavailable, state the assumed question and label it `ASSUMPTION` |
 | Geography, time horizon, segment, unit | Yes | Infer, state the inference, flag in context gaps |
 | Audience | Preferred | Default: LC/PM, business-literate, time-poor |
 | Prior work | Preferred | Ask once before re-researching |
@@ -85,7 +85,14 @@ Ask **at most three** questions in one turn. Then proceed on labelled assumption
 *"This research changes [decision] by [what would change]."*
 A finding that cannot change the decision does not belong in the brief.
 
-**Complete when:** one sentence exists and a reader could disagree with it.
+If the user supplies several unstructured inputs (documents, notes, links, figures), first produce a **short structured map** before researching:
+
+| Input | What it is | What it says | Sub-question it bears on |
+|---|---|---|---|
+
+Keep it short. The map guides the decomposition in Step 3; do not research from a pile.
+
+**Complete when:** one sentence exists and a reader could disagree with it; and, if multiple inputs were supplied, the map is written.
 
 ### Step 2 — Choose depth (§3)
 **Complete when:** mode is stated and justified in one clause.
@@ -120,9 +127,17 @@ The last column is mandatory; it prevents confirmation-only research.
 ### Step 6 — Collect and appraise
 Run the six appraisal tests **before** using a source: authority, proximity, method, recency, incentive, corroboration. Detail: `references/source-appraisal.md`.
 
+**Prefer the table, not the headline.** When a figure comes from a report, page, or article, prefer the source that carries the underlying data table (sample, period, definition, unit). A headline number without its table cannot bear a load-bearing claim; find the table or downgrade the claim.
+
+**A source the agent did not retrieve and read in this session is unverified.** This covers sources recalled from memory and sources seen only as a search snippet. Mark these `[UNVERIFIED: open and check]` in the ledger row's source field, and do not type their claims as `FACT`.
+
+**Sources the agent did retrieve may support `FACT` as normal**, subject to §6 capability and §7 typing. A `FACT` still requires a `source_ref` a human could open.
+
+**Every load-bearing source goes on the 'Sources to open and check' list** — whether the agent retrieved it or not. The PM interview is explicit: a human opens and checks each source before client use. The list is drafted here and placed in §8.
+
 **Rule of independent origin:** five articles quoting one press release are **one** source. Count origins, not URLs.
 
-**Complete when:** every load-bearing claim has two origins or is flagged `SINGLE-SOURCE`.
+**Complete when:** every load-bearing claim has two origins or is flagged `SINGLE-SOURCE`; every source not retrieved and read in this session is marked `[UNVERIFIED: open and check]`; and a 'Sources to open and check' list is drafted: URL or citation + what to check.
 
 ### Step 7 — Resolve conflicts
 1. Same thing? (definition, geography, period, currency, segment) — most conflicts die here.
@@ -212,9 +227,10 @@ Decision this informs: …
 5. Market/competitive landscape     only what the decision needs
 6. Strategic implications           options, trade-offs, what would have to be true; the answer to the question asked (below)
 7. Evidence ledger                  §7 table
-8. Conflicting evidence             per §5 step 7; "none material" only if genuinely checked
-9. Limitations                      the weakest link, named specifically
-10. Open questions                  prioritised: what, why it matters, how to get it
+8. Sources to open and check        numbered list: URL or citation + what to check
+9. Conflicting evidence             per §5 step 7; "none material" only if genuinely checked
+10. Limitations                      the weakest link, named specifically
+11. Open questions                  prioritised: what, why it matters, how to get it
 Appendix (deep mode)                methodology, excluded sources, raw tables
 ```
 
@@ -259,6 +275,7 @@ Length matches the decision. Scoping question: 1 page. Market entry: 3–5. Neve
 | A bare number in a finding ("5–10 product requirements") | S-ID or `[ESTIMATE: basis]`, or delete it |
 | Calling a source implausible on intuition | Name the basis, or present both readings |
 | Hypothetical inputs (an invented customer count or price) | Arithmetic on ledger values only; otherwise a named variable or `[DATA NEEDED]` |
+| Citing a number without the table behind it | Prefer the source with the data table; mark sources not retrieved in this session `[UNVERIFIED: open and check]`; list every load-bearing source under 'Sources to open and check' |
 
 ---
 
