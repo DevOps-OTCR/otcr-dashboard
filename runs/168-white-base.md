@@ -1,0 +1,11 @@
+## Executive Summary
+
+Harbor Lane Coffee faces a well-defined expansion decision: whether to enter wholesale supply for the 14 cafés on the UIUC campus. Our analysis supports pursuing this opportunity, with disciplined sequencing.
+
+The addressable market is substantial. Fourteen campus cafés each consume roughly 40 lb of coffee per week, implying total campus demand of approximately 560 lb/week. Harbor Lane currently holds no share of this market, and three cafés are already served by a Chicago roaster — evidence that campus operators buy from off-campus wholesalers and will switch for the right offer. Harbor Lane's wholesale price of $11/lb undercuts the incumbent's $12.50/lb by 12%, a durable advantage that requires no discounting below margin-supporting levels.
+
+Capacity is not a constraint at current volumes, but it becomes one under full penetration. Harbor Lane carries 600 lb/week of headroom against total campus demand of 560 lb/week. Capturing the entire market would consume 93% of available capacity, leaving almost no buffer for retail demand, seasonality, or equipment downtime. The recommendation is therefore to target a defined share rather than the whole market: securing 8–10 cafés, or roughly 320–400 lb/week, uses 53–67% of headroom and preserves operational resilience. That volume represents a 57–71% increase over current wholesale throughput and would meaningfully diversify revenue away from retail.
+
+Two risks warrant management attention. First, the three cafés under contract with the Chicago roaster may have service or logistics expectations Harbor Lane must match, not merely beat on price. Second, campus demand is highly seasonal, concentrating volume into the academic calendar and creating idle capacity in summer. Both are mitigable through service-level commitments and a pricing structure that smooths seasonal swings.
+
+We recommend Harbor Lane proceed: launch a pilot with two to three unserved cafés in the coming semester, validate delivery economics and reorder behavior, then scale toward the 8–10 café target. This approach captures a high-margin, undercut-priced opportunity while protecting the capacity buffer the retail business depends on.

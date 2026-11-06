@@ -1,0 +1,12 @@
+# Executive Summary
+
+Harbor Lane Coffee should pursue wholesale supply to UIUC campus cafés, entering at a price advantage that covers incremental cost and is constrained by a capacity limit small enough to keep the downside bounded. The campus holds 14 cafés; 3 already buy from an incumbent Chicago roaster. At an average draw of roughly 40 lb per café per week, the full campus represents about 560 lb per week of potential wholesale demand — within Harbor Lane's stated 600 lb per week of capacity headroom, but only barely, and only if every café converted.
+
+We recommend a phased entry rather than a campus-wide push. Harbor Lane's wholesale price of $11 per pound undercuts the incumbent's $12.50 by $1.50, a 12% discount that is the single clearest reason a café would switch. That advantage is real but not decisive on its own: cafés buy coffee on reliability, delivery cadence, and the cost of switching a menu they have already built around, none of which a price sheet answers. The 3 incumbent-served cafés are therefore the hardest accounts and should be approached last, after Harbor Lane has proof of service from the 11 uncontested ones.
+
+The capacity figure is the binding constraint and should shape the entire plan. Converting all 11 uncontested cafés at 40 lb per week would consume roughly 440 lb of the 600 lb headroom, leaving thin margin for existing retail demand and for any account that grows. We recommend targeting 5–7 cafés in a first phase — approximately 200–280 lb per week — which absorbs the fixed cost of a wholesale route, stays well inside capacity, and tests whether the price advantage is sufficient to win accounts at all.
+
+The decision turns on one question the evidence does not yet answer: whether campus cafés will switch roaster on price alone. We recommend a 90-day pilot with 5 targeted cafés. Kill criteria: fewer than 3 signed accounts, or blended gross margin below the retail equivalent, by the end of the pilot.
+
+---
+**Reviewer note:** The load-bearing assumption is that average café draw (40 lb/week) and the 600 lb/week capacity headroom are both comparable — the first is per café, the second is total — and that the two can be subtracted directly. An LC should verify the capacity figure is genuinely *unused* weekly headroom and not total capacity, since the entire phased recommendation rests on that arithmetic. The $1.50 price gap is stated as a fact from the brief; its durability (whether the incumbent matches) is untested and is the second thing to challenge.
