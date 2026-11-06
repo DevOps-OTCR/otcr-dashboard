@@ -42,6 +42,7 @@ if (action === 'down') {
     const env = { ...process.env, DATABASE_URL: databaseUrl, DIRECT_URL: databaseUrl, CMS_READ_TEST_DATABASE_URL: databaseUrl };
     run(process.execPath, [path.join(backend, 'node_modules/prisma/build/index.js'), 'generate'], env);
     run(process.execPath, [path.join(backend, 'node_modules/jest/bin/jest.js'), '--runInBand', '--runTestsByPath',
-      'src/agentic-cms/reads/cms-read.integration.spec.ts', ...process.argv.slice(3)], env);
+      'src/agentic-cms/reads/cms-read.integration.spec.ts',
+      'src/agentic-cms/mcp/mcp.integration.spec.ts', ...process.argv.slice(3)], env);
   }
 }

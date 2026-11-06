@@ -5,10 +5,12 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { CmsReadAccessService } from './authorization/cms-read-access.service';
 import { CmsReadService } from './reads/cms-read.service';
 import { ReadCursorService } from './reads/read-cursor.service';
+import { McpController } from './mcp/mcp.controller';
+import { McpServerService } from './mcp/mcp-server.service';
 
 @Module({
   imports: [FeatureFlagsModule, PrismaModule],
-  controllers: [AgenticCmsController],
-  providers: [CmsReadAccessService, CmsReadService, ReadCursorService],
+  controllers: [AgenticCmsController, McpController],
+  providers: [CmsReadAccessService, CmsReadService, ReadCursorService, McpServerService],
 })
 export class AgenticCmsModule {}
