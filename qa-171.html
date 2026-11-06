@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PR #171 — Group 3 skills (4/4): research starts from the PM&#39;s scoped question; humans open every source</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #0f1115;
+    color: #e8e8ea;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 32px;
+  }
+  section.scene {
+    min-height: 860px;
+    padding: 24px 0;
+    border-bottom: 1px solid #1d2129;
+  }
+  section.scene:last-child { border-bottom: none; }
+  .title-card {
+    min-height: 760px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 16px;
+  }
+  .kicker {
+    font-size: 14px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #9aa4b2;
+  }
+  h1 { font-size: 44px; margin: 0; line-height: 1.15; }
+  h2 { font-size: 26px; margin: 0 0 16px; }
+  h3 { font-size: 15px; margin: 0 0 10px; color: #c7ccd6; text-transform: uppercase; letter-spacing: 0.08em; }
+  h3.prompt-label { margin-top: 8px; }
+  .subtitle { font-size: 16px; color: #9aa4b2; margin: 0; max-width: 900px; line-height: 1.5; }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  .col { min-width: 0; }
+  pre.prompt {
+    max-height: 300px;
+    overflow: auto;
+    background: #14171d;
+    border: 1px solid #222834;
+    border-radius: 8px;
+    padding: 16px;
+    font-size: 13px;
+   
+line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #d6dae2;
+  }
+  pre.out {
+    max-height: 420px;
+    overflow: auto;
+    background: #14171d;
+    border: 1px solid #222834;
+    border-radius: 8px;
+    padding: 16px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #d6dae2;
+    margin: 0;
+  }
+  .missing {
+    background: #2a1a1d;
+    border: 1px solid #5a2b33;
+    border-radius: 8px;
+    padding: 16px;
+    color: #f0b7bf;
+    font-size: 13px;
+  }
+  .checks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .chip {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 2px;
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: #fff;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .chip-inline {
+    display: inline-block;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+  .chip-label { font-weight: 600; }
+  .chip-detail { opacity: 0.85; }
+  table.summary {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  table.summary th, table.summary td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid #1d2129;
+    vertical-align: middle;
+  }
+  table.summary thead th {
+    color: #9aa4b2;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+  }
+  table.summary tbody tr:hover { background: #14171d; }
+</style>
+</head>
+<body>
+<section class="scene">
+    <div class="title-card">
+      <div class="kicker">PR #171</div>
+      <h1>Group 3 skills (4/4): research starts from the PM&#39;s scoped question; humans open every source</h1>
+      <p class="subtitle">Real runs on Illinois Lumen — DeepSeek V4.1 Flash. Same prompt, with and without this PR's skill files. Generated 2026-11-06.</p>
+    </div>
+  </section>
+<section class="scene">
+      <h2>PM-scoped research plan</h2>
+      <h3 class="prompt-label">Prompt</h3>
+      <pre class="prompt">PM scope (from the Gantt + SOW): Week 3 workstream = size the campus wholesale opportunity for Harbor Lane Coffee. Scope: UIUC dining + independent campus cafés only; volumes in lb/week; 2-year horizon; inputs we already have: client&#39;s price list and capacity. The consultant needs to know which data tables to find and what to verify. Produce the research plan and brief. Keep the whole answer under 450 words.</pre>
+    </section>
+<section class="scene">
+      <h2>PM-scoped research plan — comparison</h2>
+      <div class="grid">
+        <div class="col"><h3>Without skill</h3><pre class="out">**Research Plan — UIUC Campus Wholesale Sizing (Week 3)**
+
+*Tables to find (in order):*
+1. **Dining Services contract &amp; purchase records** — UIUC Dining procurement (FOIA-able); vendor list, coffee SKUs, annual spend.
+2. **Dining outlet roster** — locations, meal counts, hours (dining.illinois.edu); drives volume-per-outlet estimates.
+3. **Independent café census** — Champaign-Urbana business registry + Google/Yelp sweep; ~15–25 targets near campus.
+4. **Client price list &amp; capacity file** (already held) — anchor for conversion and feasibility.
+5. **Comparable benchmarks** — NRA/SCA per-cup usage (~1.5–2 lb per 100 cups) to fill gaps.
+
+*Verify:*
+- Dining buys centrally vs. per-unit — determines one deal or many.
+- Exclusivity clauses in existing contracts (blocks entry).
+- Cup volumes → lb conversion assumptions; state them explicitly.
+- Independent cafés&#39; current roasters and contract end dates.
+- Client capacity ceiling vs. 2-year projected demand.
+
+**Brief**
+
+**Objective:** Size weekly lb/week opportunity across UIUC Dining + independent campus cafés; 2-year horizon.
+
+**Method:** Bottom-up. Dining: outlets × daily cups × 7 ÷ 100 × 1.75 lb. Independents: cafés × avg daily cups × 7, same conversion.
+
+**Outputs:** TAM (all campus), SAM (reachable given capacity), SOM (2-yr realistic), plus a target list ranked by volume and contract timing.
+
+**Key risks:** Centralized Dining procurement = long sales cycle; capacity caps SAM; conversion assumption ±20%.
+
+**Ask:** Confirm capacity ceiling and any existing campus relationships before finalizing SOM.
+
+&lt;!-- WORD COUNT: ~230 --&gt;
+</pre><div class="checks"><div class="chip" style="background:#8b1e2d"><span class="chip-label">Lists &quot;Sources to open and check&quot;</span><span class="chip-detail">section missing</span></div><div class="chip" style="background:#1f6f43"><span class="chip-label">Restates the PM scope (lb/week, 2-year)</span><span class="chip-detail">scope restated</span></div><div class="chip" style="background:#1f6f43"><span class="chip-label">Names data tables to find</span><span class="chip-detail">data table references present</span></div><div class="chip" style="background:#1f6f43"><span class="chip-label">Does not claim sources were verified</span><span class="chip-detail">no verification claim</span></div></div></div>
+        <div class="col"><h3>With skill (this PR)</h3><pre class="out"># Campus Wholesale Sizing — Research Brief (Week 3)
+
+**Decision this informs:** whether to open a campus wholesale channel for Harbor Lane Coffee, and at what build capacity.
+
+**Scope:** UIUC dining + independent campus cafés; lb/week; 2-year horizon. Out: retail, non-campus foodservice, retail-packaged.
+
+## Data tables to find
+
+| Sub-question | Table/source to find |
+|---|---|
+| 1. UIUC dining coffee demand | UIUC Housing/Dining annual report or bid/RFP docs: coffee purchases (lb), contract volumes, vendor list |
+| 2. Independent campus café count | Champaign-Urbana health dept. food-service permits; Yelp/Google count reconciled to permits |
+| 3. Per-café demand | Cafe POS proxies (reviews as volume proxy), comparable shop benchmarks, national per-outlet lb/week averages |
+| 4. Current suppliers/pricing | Distributor price pages (Sysco/US Foods), local roaster price lists |
+| 5. Capacity to serve | *Internal:* client price list + capacity (CMS) |
+
+## Sub-question plan
+
+| SQ | Method | Source class | Falsifier |
+|---|---|---|---|
+| 1 UIUC volume | FOIA/public records request; RFP award docs | Official/regulator | Contract goes to national distributor with volume floor |
+| 2 Café universe | Permit list, dedupe chains | Official | Campus area defines &lt;20 independent outlets |
+| 3 Per-café lb/wk | Benchmark + 3–5 shop interviews | Primary/estimate | Shops use &lt;5 lb/wk → SOM too small |
+| 4 Price position | Compare distributor vs client list | Company primary | Client price &gt; distributor by &gt;20% |
+| 5 Margin | Client cost vs achievable price | Internal + S4 | Margin &lt; hurdle → no-go |
+
+## Sources to open and check
+
+1. UIUC Dining procurement/RFP portal — coffee volume, contract term `[UNVERIFIED: open and check]`
+2. Champaign-Urbana Public Health District food permits — café count `[UNVERIFIED]`
+3. 3–5 café owner interviews — actual lb/week, switch willingness
+
+## Ledger
+
+| ID | Claim | Type | Source | Data date | Confidence |
+|---|---|---|---|---|---|
+| S1 | UIUC dining coffee volume (lb/yr) | FACT | UIUC procurement docs | TBD | Medium |
+| S2 | # independent campus cafés | FACT | CU health permits | TBD | High |
+| S3 | Client list price + capacity | FACT | CMS internal | 2026 | High |
+| I1 | Campus SOM (lb/wk) | ESTIMATE | S1,S2,S3 | — | Low |
+| I2 | Gross margin at achievable price | ESTIMATE | S3,S4 | — | Low |
+
+**Pricing demand:** `[DATA NEEDED: distributor price premium vs client list — decides if client wins on price or must differentiate — 3 distributor quotes]`
+
+**Verify first:** that UIUC Dining publishes actual coffee volumes, and that permit data yields a clean independent-café count. Without both, I1 stays `Low`.
+</pre><div class="checks"><div class="chip" style="background:#1f6f43"><span class="chip-label">Lists &quot;Sources to open and check&quot;</span><span class="chip-detail">section present</span></div><div class="chip" style="background:#1f6f43"><span class="chip-label">Restates the PM scope (lb/week, 2-year)</span><span class="chip-detail">scope restated</span></div><div class="chip" style="background:#1f6f43"><span class="chip-label">Names data tables to find</span><span class="chip-detail">data table references present</span></div><div class="chip" style="background:#1f6f43"><span class="chip-label">Does not claim sources were verified</span><span class="chip-detail">no verification claim</span></div></div></div>
+      </div>
+    </section>
+<section class="scene">
+    <h2>Summary</h2>
+    <table class="summary"><thead><tr><th>Task</th><th>Check</th><th>Without</th><th>With</th></tr></thead><tbody><tr>
+        <td>PM-scoped research plan</td>
+        <td>Lists &quot;Sources to open and check&quot;</td>
+        <td><span class="chip chip-inline" style="background:#8b1e2d">FAIL</span></td>
+        <td><span class="chip chip-inline" style="background:#1f6f43">PASS</span></td>
+      </tr><tr>
+        <td>PM-scoped research plan</td>
+        <td>Restates the PM scope (lb/week, 2-year)</td>
+        <td><span class="chip chip-inline" style="background:#1f6f43">PASS</span></td>
+        <td><span class="chip chip-inline" style="background:#1f6f43">PASS</span></td>
+      </tr><tr>
+        <td>PM-scoped research plan</td>
+        <td>Names data tables to find</td>
+        <td><span class="chip chip-inline" style="background:#1f6f43">PASS</span></td>
+        <td><span class="chip chip-inline" style="background:#1f6f43">PASS</span></td>
+      </tr><tr>
+        <td>PM-scoped research plan</td>
+        <td>Does not claim sources were verified</td>
+        <td><span class="chip chip-inline" style="background:#1f6f43">PASS</span></td>
+        <td><span class="chip chip-inline" style="background:#1f6f43">PASS</span></td>
+      </tr></tbody></table>
+  </section>
+</body>
+</html>
