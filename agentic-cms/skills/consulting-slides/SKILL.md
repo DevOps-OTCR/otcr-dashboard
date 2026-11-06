@@ -1,7 +1,7 @@
 ---
 name: otcr-consulting-slides
 description: Use when an argument must become a consulting presentation — storyline, section structure, action titles, exhibits, slide-by-slide storyboard — or when an existing deck must be reviewed, or when a finished deck needs a final pre-send audit checklist. Produces a storyboard, a severity-ranked review, or an audit checklist, never a PowerPoint file. Do not use for visual formatting of a file, for gathering evidence (use research), or for writing the document (use whitepaper-writing).
-version: 0.3.1
+version: 0.3.2
 owner: Group 3 (Aritro, Teja)
 release: 1
 metadata:
@@ -241,7 +241,8 @@ Operative rules:
 - Item format: `- [ ] Slide N — MUST FIX|SHOULD FIX|CHECK — issue — why it matters — suggested fix (one sentence)`.
 - At most 25 items. Quote at most 12 words.
 - Up to 8 audience questions, each grounded in a visible slide's claim, assumption or gap.
-- Footer and layout checks only when that data is present in the input.
+- Run each layout check on whatever layout fields are present: if any box has left_in, compare left edges across visible slides; if footer_page is present, compare it with the slide number. Only a check whose fields are entirely missing goes under Not checkable.
+- A hidden or confidential slide appears only in Skipped slides. Never cite it, its layout or its numbering in any finding.
 
 
 Full protocol: `references/deck-audit.md`. Source: PM interview P1, 2026-11-05.
