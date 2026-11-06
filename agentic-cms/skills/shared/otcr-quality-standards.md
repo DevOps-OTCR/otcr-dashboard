@@ -114,6 +114,7 @@ Content marked hidden or confidential **must not be read for findings, quoted, s
 | `[HIDDEN]` in the exported slide text | Deck text export |
 | `[CONFIDENTIAL]` | Any input |
 | `[PROPRIETARY]` | Any input |
+| Non-empty `confidentiality:` field on a slide | Deck text export |
 
 The output lists only: `Slide N skipped (hidden/confidential)`. No title, no body, no notes. For non-slide inputs (documents, notes) output: `Section/item <id> skipped (confidential)`.
 

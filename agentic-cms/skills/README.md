@@ -56,7 +56,7 @@ Do not move a **decision rule** into `references/`. Move **elaboration** only. T
 | Entry point | `SKILL.md` (Agent Skills convention) |
 | Self-contained | Yes — see §2 |
 | Dependencies | None. No scripts, no packages, no network calls, no images |
-| Length | `SKILL.md` 250–300 lines; references 80–120 each |
+| Length | `SKILL.md` 250–300 lines; references aim for under ~200 lines; split if longer |
 | Tables | ≤10 per `SKILL.md` (coherence ceiling) |
 | Permissions | None. Skills grant no access and contain no write logic |
 
@@ -153,7 +153,7 @@ notes: <speaker notes>
 confidentiality: <tag or empty>
 ```
 
-**Filtered input.** Hidden and confidential slides are dropped upstream, before the model call. For a slide that is hidden or confidential the loader sends only:
+**Filtered input.** For a slide that is hidden or confidential, the slide content (title, body and notes) is dropped upstream, before the model call, and the loader sends only:
 
 ```
 ---
