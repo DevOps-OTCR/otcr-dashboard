@@ -18,6 +18,10 @@
     "prisma:studio": "prisma studio",
     "prisma:seed": "ts-node prisma/seed.ts",
     "test": "jest",
+    "test:db:up": "node ../scripts/cms-test-db.cjs up",
+    "test:db:down": "node ../scripts/cms-test-db.cjs down",
+    "test:db:status": "node ../scripts/cms-test-db.cjs status",
+    "test:integration": "node ../scripts/cms-test-db.cjs test",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage"
   },

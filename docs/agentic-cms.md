@@ -133,3 +133,30 @@ Tests cover all six roles, draft query filters, project-scoped child lookups and
 generic denial responses. These are access-foundation tests, not live Microsoft
 sign-in or end-to-end MCP tests; the production MCP endpoint comes in Step 4.
 Authentication/global-guard changes require Isaiah's boundary review before integration.
+
+### Read-operation evidence (Step 3)
+
+`CmsReadService` implements `listWorkstreams`, `getWorkstream`, `listDeliverables`
+and `getDeliverable` with strict input/output schemas, authorized query scopes,
+signed pagination, source metadata and explicit text truncation. Deliverable detail
+sections expose assignments, subtasks and submission history/feedback. These are
+internal methods; the MCP endpoint and registration are not implemented yet.
+
+For local PostgreSQL integration tests, start Docker Desktop and run
+`npm --prefix backend run test:integration` from the repository root. This manages
+the dedicated database in `docker-compose.test.yml`; see the README for start,
+status and stop commands. No temporary embedded PostgreSQL package is required.
+CI supplies its own PostgreSQL service through `CMS_READ_TEST_DATABASE_URL`.
+That variable also supports a manually managed local test database with the
+ordinary backend test command; without it, integration tests are reported as
+skipped while unit tests still run.
+The suite rejects remote hosts, creates a uniquely named schema, applies committed
+migration SQL, inserts synthetic fixtures and removes only its schema afterwards.
+It verifies actual returned values, filtering/pagination, timezone boundaries,
+versions/feedback, nested permissions, lost membership and flag-off blocking.
+No production credentials, client materials or external model calls are used.
+
+Local validation: 225 backend tests passed, including 14 PostgreSQL integration
+cases; lint, typecheck, build, boundary checks and workflow validation passed.
+Browser regression: 71/72 passed initially; the When2Meet 667x375 layout case
+passed on a focused rerun. No frontend code changed in Step 3.
