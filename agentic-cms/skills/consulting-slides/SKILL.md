@@ -240,7 +240,7 @@ Operative rules:
 - Output sections in order: Skipped slides; Mechanics; Big picture; Likely audience questions; Not checkable from this input; one-line count.
 - Item format: `- [ ] Slide N — MUST FIX|SHOULD FIX|CHECK — issue — why it matters — suggested fix (one sentence)`.
 - At most 25 items. Quote at most 12 words.
-- Up to 8 audience questions, each grounded in a visible slide's claim, assumption or gap.
+- Five to eight audience questions (fewer if the deck supports fewer), each grounded in a visible slide's claim, assumption or gap.
 - Run each layout check on whatever layout fields are present: if any box has left_in, compare left edges across visible slides; if footer_page is present, compare it with the slide number. Only a check whose fields are entirely missing goes under Not checkable.
 - A hidden or confidential slide appears only in Skipped slides. Never cite it, its layout or its numbering in any finding.
 
