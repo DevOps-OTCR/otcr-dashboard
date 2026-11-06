@@ -35,6 +35,8 @@ type DeliverableItem = {
   templateKind?: string;
   status: string;
   completed?: boolean;
+  workingLinkUrl?: string | null;
+  workingLinkUpdatedAt?: string | null;
   assignees?: Array<{
     id: string;
     email?: string;
@@ -163,6 +165,7 @@ export default function DeliverablesPage() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [busyDeliverableId, setBusyDeliverableId] = useState<string | null>(null);
   const [submitLinks, setSubmitLinks] = useState<Record<string, string>>({});
+  const [workingLinks, setWorkingLinks] = useState<Record<string, string>>({});
   const [assignmentTargets, setAssignmentTargets] = useState<Record<string, string[]>>({});
   const [deadlineInputs, setDeadlineInputs] = useState<Record<string, string>>({});
   const [subtaskEdits, setSubtaskEdits] = useState<
@@ -440,6 +443,48 @@ export default function DeliverablesPage() {
         error?.response?.data?.message ??
         error?.message ??
         'Failed to assign team member.';
+      setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
+    } finally {
+      setBusyDeliverableId(null);
+    }
+  };
+
+  const handleSaveWorkingLink = async (deliverable: DeliverableItem, clear = false) => {
+    if (!selectedProjectId) return;
+    const link = clear ? '' : (workingLinks[deliverable.id] ?? '').trim();
+
+    if (!clear) {
+      if (!link) {
+        setLoadError('Add a working file link first.');
+        return;
+      }
+      if (!/^https:\/\//i.test(link)) {
+        setLoadError('Use the https link to the file on Teams or SharePoint.');
+        return;
+      }
+    }
+
+    const assignedToCurrentUser = Boolean(
+      deliverable.assignees?.some(
+        (assignee) => assignee.email?.toLowerCase() === currentEmail,
+      ),
+    );
+    if (!canManage && !assignedToCurrentUser) {
+      setLoadError('Assign yourself to this deliverable before linking a working file.');
+      return;
+    }
+
+    setBusyDeliverableId(deliverable.id);
+    try {
+      await deliverablesAPI.setWorkingLink(deliverable.id, clear ? null : link);
+      setWorkingLinks((current) => ({ ...current, [deliverable.id]: '' }));
+      await loadSprints(selectedProjectId);
+      setFeedback(clear ? 'Working file link removed' : 'Working file link saved');
+    } catch (error: any) {
+      const message =
+        error?.response?.data?.message ??
+        error?.message ??
+        'Failed to save working file link.';
       setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
     } finally {
       setBusyDeliverableId(null);
@@ -810,6 +855,71 @@ export default function DeliverablesPage() {
                                 )}
                                 {deliverable.completed ? 'Completed' : 'Complete'}
                               </button>
+                            </div>
+
+                            <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-3">
+                              <div className="flex items-center gap-2">
+                                <LinkIcon className="w-4 h-4 text-[var(--primary)]" />
+                                <p className="text-sm font-medium text-[var(--foreground)]">
+                                  Live working file
+                                </p>
+                              </div>
+                              <p className="mt-2 text-xs text-[var(--foreground)]/60">
+                                Link the PowerPoint or doc on Teams so your PM can open the latest version any time. This does not submit the deliverable.
+                              </p>
+                              {deliverable.workingLinkUrl && (
+                                <div className="mt-3 flex flex-wrap items-center gap-3">
+                                  <a
+                                    href={deliverable.workingLinkUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--primary)] underline-offset-2 hover:underline"
+                                  >
+                                    <LinkIcon className="w-4 h-4" />
+                                    Open live file
+                                  </a>
+                                  {deliverable.workingLinkUpdatedAt && (
+                                    <span className="text-xs text-[var(--foreground)]/60">
+                                      Updated {new Date(deliverable.workingLinkUpdatedAt).toLocaleString()}
+                                    </span>
+                                  )}
+                                  {canSubmit && (
+                                    <button
+                                      type="button"
+                                      className="text-xs font-medium text-[var(--foreground)]/70 hover:text-[var(--foreground)]"
+                                      disabled={busyDeliverableId === deliverable.id}
+                                      onClick={() => void handleSaveWorkingLink(deliverable, true)}
+                                    >
+                                      Remove
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                                <input
+                                  value={workingLinks[deliverable.id] ?? ''}
+                                  onChange={(e) =>
+                                    setWorkingLinks((current) => ({
+                                      ...current,
+                                      [deliverable.id]: e.target.value,
+                                    }))
+                                  }
+                                  placeholder="https://teams.microsoft.com/... or https://...sharepoint.com/..."
+                                  aria-label="Live working file link"
+                                  className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                                />
+                                <Button
+                                  size="sm"
+                                  disabled={
+                                    busyDeliverableId === deliverable.id ||
+                                    !canSubmit ||
+                                    !(workingLinks[deliverable.id] ?? '').trim()
+                                  }
+                                  onClick={() => void handleSaveWorkingLink(deliverable)}
+                                >
+                                  Save link
+                                </Button>
+                              </div>
                             </div>
 
                             <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-3">
