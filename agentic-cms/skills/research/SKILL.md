@@ -92,7 +92,7 @@ If the user supplies several unstructured inputs (documents, notes, links, figur
 
 Keep it short: concise, paraphrased, confidential details omitted. It is internal working, not output — do not print it in the brief. The map guides the decomposition in Step 3; do not research from a pile.
 
-**Complete when:** one sentence exists and a reader could disagree with it; and, if multiple inputs were supplied, the internal map is written.
+**Complete when:** one sentence exists and a reader could disagree with it; and, if multiple inputs were supplied, the internal map has been built as working notes and is not printed in the brief.
 
 ### Step 2 — Choose depth (§3)
 **Complete when:** mode is stated and justified in one clause.
