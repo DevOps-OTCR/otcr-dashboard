@@ -104,10 +104,10 @@ export class ProjectsController {
     @Query('to') to: string,
     @GetUser() user: any
   ) {
-    const fromDate = new Date(from);
-    const toDate = new Date(to);
+    const fromDate = this.parseIsoInstant(from);
+    const toDate = this.parseIsoInstant(to);
 
-    if (!from || !to || Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+    if (!fromDate || !toDate) {
       throw new BadRequestException('from and to must be ISO dates');
     }
 
@@ -462,6 +462,30 @@ export class ProjectsController {
     }
 
     return this.projectsService.removeMember(id, userId);
+  }
+
+  private parseIsoInstant(value: string | undefined): Date | null {
+    if (!value) {
+      return null;
+    }
+
+    const isoInstantPattern =
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
+
+    if (!isoInstantPattern.test(value)) {
+      return null;
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return null;
+    }
+
+    if (value.endsWith('Z') && !parsed.toISOString().startsWith(value.slice(0, 16))) {
+      return null;
+    }
+
+    return parsed;
   }
 
   private parsePositiveInt(value: string | undefined, fallback: number): number {

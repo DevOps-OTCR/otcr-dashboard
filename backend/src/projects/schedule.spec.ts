@@ -1,3 +1,5 @@
+import { BadRequestException } from '@nestjs/common';
+import { ProjectsController } from './projects.controller';
 import { ProjectsService } from './projects.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -167,5 +169,71 @@ describe('ProjectsService.getSchedule', () => {
         status: 'IN_PROGRESS',
       },
     ]);
+  });
+});
+
+describe('ProjectsController.getSchedule validation', () => {
+  const service = {
+    getSchedule: jest.fn().mockResolvedValue({ projects: [], deliverables: [] }),
+  };
+
+  const controller = new (ProjectsController as unknown as new (
+    ...args: unknown[]
+  ) => ProjectsController)(service, {}, {}, {});
+
+  beforeEach(() => {
+    service.getSchedule.mockClear();
+  });
+
+  it('rejects a non-date string', async () => {
+    await expect(
+      controller.getSchedule('not-a-date', '2026-10-12T00:00:00.000Z', { id: 'u', role: 'ADMIN' }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects an impossible calendar date', async () => {
+    await expect(
+      controller.getSchedule('2026-02-31T00:00:00.000Z', '2026-03-05T00:00:00.000Z', {
+        id: 'u',
+        role: 'ADMIN',
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a date-only string', async () => {
+    await expect(
+      controller.getSchedule('2026-11-02', '2026-11-09T00:00:00.000Z', { id: 'u', role: 'ADMIN' }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a range where to is not after from', async () => {
+    await expect(
+      controller.getSchedule('2026-10-12T00:00:00.000Z', '2026-10-05T00:00:00.000Z', {
+        id: 'u',
+        role: 'ADMIN',
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a range longer than 62 days', async () => {
+    await expect(
+      controller.getSchedule('2026-01-01T00:00:00.000Z', '2026-04-01T00:00:00.000Z', {
+        id: 'u',
+        role: 'ADMIN',
+      }),
+    ).rejects.toThrow(/62 days/);
+  });
+
+  it('accepts a 14-day range and forwards Date objects', async () => {
+    await controller.getSchedule('2026-10-05T00:00:00.000Z', '2026-10-19T00:00:00.000Z', {
+      id: 'u',
+      role: 'ADMIN',
+    });
+
+    expect(service.getSchedule).toHaveBeenCalledTimes(1);
+    const [user, fromArg, toArg] = service.getSchedule.mock.calls[0];
+    expect(user).toEqual({ id: 'u', role: 'ADMIN' });
+    expect(fromArg).toEqual(new Date('2026-10-05T00:00:00.000Z'));
+    expect(toArg).toEqual(new Date('2026-10-19T00:00:00.000Z'));
   });
 });

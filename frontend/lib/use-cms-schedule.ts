@@ -60,12 +60,14 @@ export function useCmsSchedule(
       try {
         const token = await getToken();
         if (cancelled) return;
+        setLoading(true);
         setAuthToken(token || user?.email || null);
 
         const res = await projectsAPI.getSchedule(
           new Date(fromMs).toISOString(),
           new Date(toMs).toISOString(),
         );
+        if (cancelled) return;
         const rawProjects: ScheduleProjectRow[] =
           res.data?.projects ?? [];
         const rawDeliverables: ScheduleDeliverableRow[] =
