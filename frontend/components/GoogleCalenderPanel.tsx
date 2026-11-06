@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { PageLoading } from './PageLoading';
 import { CalendarDays } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -59,6 +59,7 @@ export function GoogleCalendarPanel({
   );
   const [sources, setSources] = useState<CalendarSource[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const lastEmailRef = useRef<string | null>(null);
 
   const getToken = session.getToken;
   const email = session?.user?.email;
@@ -71,12 +72,15 @@ export function GoogleCalendarPanel({
       const fallbackSources = buildCalendarSources(fallbackCalendarUrl, []);
       setSources(fallbackSources);
       setSelected(new Set(fallbackSources.map((source) => source.key)));
+      lastEmailRef.current = null;
       return;
     }
 
-    // Reset stale state from a previous account before the new request resolves.
-    setSources(null);
-    setSelected(new Set());
+    // Reset stale state only when the signed-in account actually changed.
+    if (lastEmailRef.current !== null && lastEmailRef.current !== email) {
+      setSources(null);
+      setSelected(new Set());
+    }
 
     let canceled = false;
     getToken()
@@ -111,6 +115,7 @@ export function GoogleCalendarPanel({
 
         setSources(nextSources);
         setSelected(defaultSelected);
+        lastEmailRef.current = email;
       })
       .catch(() => {
         if (canceled) return;
