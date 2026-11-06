@@ -140,7 +140,7 @@ file supplied / outside Release 1 scope.
 
 **Taste is not a finding.** "I would use fewer colours" is not a review comment unless it affects comprehension or credibility.
 
-Review-only contract: findings only, fixes of at most one sentence, no edited artifact (`shared/otcr-quality-standards.md` §6.1). Hidden and confidential slides are skipped, never read or quoted (§6.2).
+Review-only contract: findings only, fixes of at most one sentence, no edited artifact (`shared/otcr-quality-standards.md` §6.1). Hidden and confidential slides are skipped, never read or quoted (`shared/otcr-quality-standards.md` §6.2).
 
 ---
 

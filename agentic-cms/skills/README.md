@@ -166,6 +166,8 @@ No `title`, `body` or `notes` are sent for a skipped slide, and none are expecte
 
 Markers inside the text (`[HIDDEN]`, `[CONFIDENTIAL]`, `[PROPRIETARY]`) carry the same meaning as the fields. See `shared/otcr-quality-standards.md` §6.2 for the handling rule and its limits.
 
+Markers are the fallback, not the primary control. They apply when upstream filtering failed or when the input is not a slide (for example a document or notes paste). With filtering working, marked content is dropped upstream and the model never sees it.
+
 The text export carries no layout. Rendered layout, fonts, overflow and colour contrast stay out of scope (see `consulting-slides/references/deck-review.md` §7).
 
 ---
