@@ -187,6 +187,15 @@ const outDir = process.argv[2] || path.join(process.cwd(), 'demo-out');
   await page.screenshot({ path: path.join(outDir, '05-rejected-reverted.png'), fullPage: false });
   console.log(JSON.stringify({ step: '05-rejected-reverted', patchCalls: patchCalls.length }));
 
+  // 6b. month view
+  await page.getByRole('button', { name: 'Month', exact: true }).click();
+  await page.getByText(new Date().toLocaleDateString(undefined, { month: 'long', year: 'numeric' })).waitFor();
+  await page.waitForTimeout(1500);
+  await page.screenshot({ path: path.join(outDir, '06-month-view.png'), fullPage: false });
+  console.log(JSON.stringify({ step: '06-month-view' }));
+  await page.getByRole('button', { name: 'Week', exact: true }).click();
+  await page.waitForTimeout(800);
+
   // 6. back to Google Calendar
   await page.getByRole('tab', { name: 'Google Calendar' }).click();
   await page.locator('iframe').first().waitFor({ state: 'visible' });
