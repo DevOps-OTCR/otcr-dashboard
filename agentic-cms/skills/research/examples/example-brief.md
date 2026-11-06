@@ -107,7 +107,19 @@ services firms (do it for you), and the spreadsheet (the real default).
 | I2 | Suite bundling has historically commoditised point solutions | INFERENCE | S5 + category history | — | Medium |
 | S7 | Mid-market operators will pay a premium for audit-ready exports | ASSUMPTION | PM hypothesis, untested | — | Low |
 
-## 8. Conflicting evidence
+## 8. Sources to open and check
+
+1. S1 — [ILLUSTRATIVE] Regulation summary, official journal. Check: current in-force text; the employee-count and sector thresholds as they now read; any amendment after the data date.
+2. S2 — [ILLUSTRATIVE] Regulator guidance. Check: the commencement dates and the phase-in for each reporting year; whether guidance has been superseded.
+3. S3 — [ILLUSTRATIVE] practitioner interviews. Check: how the five firms were selected; the interview guide; whether the manual/periodic finding survives a larger sample.
+4. I1 — [ILLUSTRATIVE] 6 vendor price pages. Check: each price is current list ACV, licence only, and that services and hardware are excluded; record the data date of each page.
+5. S5 — [ILLUSTRATIVE] product documentation. Check: reporting/compliance is in the standard edition, not an add-on, and for which suite tiers.
+6. S7 — PM hypothesis, untested. Check: the PM's basis for the audit-ready premium; find a buyer or auditor statement that supports or contradicts it.
+7. Analyst A — €1.4B (2025), services and internal tools included. Check: the definition and scope behind the number before any use.
+8. Analyst B — €420M (2025), software licences only. Check: the definition and scope behind the number before any use.
+9. The vendor claim in §9. Check: the method, sample and definition behind "most mid-market operators now use dedicated software".
+
+## 9. Conflicting evidence
 
 **Market size.** Analyst A: €1.4B (2025), including services and internal tools. Analyst B: €420M
 (2025), software licences only. The 3.3x gap is definitional, not a disagreement about the market.
@@ -118,14 +130,14 @@ Both are recorded as directional bounds only.
 "most mid-market operators now use dedicated software". We weight S3 above the vendor claim because the
 vendor has an incentive and discloses no method. Unresolved; would be settled by a 30-firm survey.
 
-## 9. Limitations
+## 10. Limitations
 
 - n=5 practitioner interviews, self-selected. F2 is directionally useful, not representative.
 - All pricing is list price. Realised discounts are unknown and typically 15–30% in this category.
 - No buyer-budget evidence at all. This is the weakest link: it decides whether €25k is trivial or fatal.
 - Regulatory dates move. Verify current transposition before any client-facing use.
 
-## 10. Open questions
+## 11. Open questions
 
 1. What is the mid-market freight operator's annual software budget, and who authorises €25k?
    → vendor filings, 3 buyer interviews. **Blocks the recommendation.**
@@ -140,12 +152,13 @@ vendor has an incentive and discloses no method. Unresolved; would be settled by
 | Behaviour | Where to look |
 |---|---|
 | Scope is contracted before research | §1 — unit of analysis excludes services |
-| Two credible estimates are diagnosed, not averaged | §8 — 3.3x gap attributed to definition |
+| Two credible estimates are diagnosed, not averaged | §9 — 3.3x gap attributed to definition |
 | A hypothesis stays a hypothesis | S7 remains `ASSUMPTION` throughout |
 | Single-source claims are flagged | F2 carries `SINGLE-SOURCE` and n=5 |
-| The weakest link is named | §9 — buyer budget |
+| The weakest link is named | §10 — buyer budget |
 | No recommendation sneaks in | §6 stops at implications |
 | Gaps are specific, not decorative | `[DATA NEEDED]` names the metric, the stakes, the source |
+| Load-bearing sources are listed for a human to open | §8 — each S-ID with what to check |
 
 ## What was deliberately cut
 
