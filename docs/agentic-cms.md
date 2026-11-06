@@ -60,6 +60,19 @@ folder with a literal `@Controller('agentic-cms/...')` prefix. Import the featur
 module only from `AppModule`; share ordinary CMS services into the feature,
 rather than importing AI services into existing CMS modules.
 
+HTTP routes at `/agentic-cms/mcp` and below use verified-only CMS authentication:
+the global guard rejects email-only bearer credentials before identity resolution
+and requires an active CMS user. Other CMS routes retain their current sign-in
+behavior. This uses the existing Microsoft Graph token verifier; interoperable
+remote MCP OAuth discovery/resource-token support is not implemented yet.
+
+`CmsReadAccessService` supplies project-authorized workstream/deliverable query
+scopes and individual-record checks. Read handlers must combine these scopes with
+their filters using AND, including nested records, and recheck for each operation
+or continuation. It preserves the existing differences between role-wide project
+access and deliverable access; membership, ownership and draft visibility still
+apply after pilot admission.
+
 For jobs, streaming iterations and non-HTTP entry points, inject
 `FeatureFlagsService` from `FeatureFlagsModule` and call:
 
@@ -108,3 +121,15 @@ runs. Keep shared CMS changes backward compatible. Static checks cannot infer
 the purpose of arbitrary new code or prove worker cancellation: reviewers must
 check new entry points, shared-page changes and before-write checks. Do not
 weaken these checks or change the release defaults without Isaiah's review.
+
+### MCP access evidence (Step 2)
+
+`backend/src/agentic-cms/authorization/` contains unit and HTTP tests using synthetic
+identities, a mocked token verifier and mocked Prisma queries. Flag-off cases
+block verification, identity resolution and tool reads while an ordinary guarded
+CMS route remains usable. Flag-on cases accept verified members and deny malformed
+or email-only credentials, inactive users, non-pilot users and lost membership.
+Tests cover all six roles, draft query filters, project-scoped child lookups and
+generic denial responses. These are access-foundation tests, not live Microsoft
+sign-in or end-to-end MCP tests; the production MCP endpoint comes in Step 4.
+Authentication/global-guard changes require Isaiah's boundary review before integration.

@@ -42,8 +42,8 @@ Never accept caller-supplied identity, role or permission overrides.
 | LC | All | Current member or project PM owner | Yes |
 | EXECUTIVE | All | Current member or project PM owner | No |
 | PM | Current member or project PM owner | Current member or project PM owner | Yes |
-| CONSULTANT | Current member | Current member | No |
-| PARTNER | Current member | Current member | No |
+| CONSULTANT | Current member | Current member or project PM owner | No |
+| PARTNER | Current member | Current member or project PM owner | No |
 
 Ownership means actual `pmId`; unknown roles are denied. Removed membership no
 longer grants access; independent ownership/role access can still apply.

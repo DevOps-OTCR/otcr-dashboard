@@ -10,22 +10,27 @@ export class AuthGuard implements CanActivate {
     private authService: AuthService
   ) {}
 
-  async canActivate(context: ExecutionContext): Promise<boolean> {
+  async canActivate(context: ExecutionContext, options?: { verifiedOnly: boolean }): Promise<boolean> {
     const requiredRoles = this.reflector.get<string[]>('roles', context.getHandler());
     
     const request = context.switchToHttp().getRequest();
-    const token = request.headers.authorization?.replace('Bearer ', '');
+    const authorization = request.headers.authorization;
+    const token = options?.verifiedOnly
+      ? (typeof authorization === 'string' ? /^Bearer ([^\s]+)$/i.exec(authorization)?.[1] : undefined)
+      : authorization?.replace('Bearer ', '');
     if (!token) return false;
+    // MCP must never resolve a user from a caller-provided email address.
+    if (options?.verifiedOnly && token.includes('@')) return false;
     let email: string;
     try {
       // Support both legacy "Bearer <email>" and modern "Bearer <access_token>".
-      email = token.includes('@') ? token : await getVerifiedUser(token);
+      email = !options?.verifiedOnly && token.includes('@') ? token : await getVerifiedUser(token);
     } catch (error: any) {
       return false;
     }
     if (!email || typeof email !== 'string') return false;
     const user = await this.authService.getUserByEmail(email);
-    if (!user) return false;
+    if (!user || (options?.verifiedOnly && !user.active)) return false;
     request.user = user;
     if (!requiredRoles) return true;
     return requiredRoles.includes(user.role);
