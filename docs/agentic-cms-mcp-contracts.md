@@ -1,6 +1,6 @@
 # Agentic CMS MCP read-tool contracts
 
-Status: Step 1 specification; endpoint, handlers and executable schemas come later.
+Status: Read operations and schemas implemented; MCP endpoint/registration comes next.
 Follow [the integration guide](agentic-cms.md). Implement under
 `backend/src/agentic-cms/` through a Nest controller at `/agentic-cms/mcp`.
 
@@ -70,6 +70,7 @@ alone bypasses them. Preserve the matrix in reusable authorized read operations.
 - Bind cursors to tool, project, parent/section, filters and sort position; reject
   altered/mismatched tokens with `INVALID_CURSOR`. Reuse returned tokens unchanged.
   Pages reflect live data, not a frozen snapshot; ID breaks ordering ties.
+  Signing keys are process-local; restart/instance changes require a new traversal.
 - Success payloads include `schemaVersion: "1"`, `retrievedAt` and `truncatedFields`.
   Timestamps are ISO 8601 UTC; preserve stored nulls and independent status/completion.
 - Return named fields, not raw Prisma objects/profiles/configuration. User references
@@ -92,8 +93,8 @@ List visible weekly workstreams; use returned IDs with `get_workstream`.
 Inputs: **`projectId`**, `currentOnly` (default false), `asOf` (RFC 3339 timestamp
 with offset, only with currentOnly), `limit`, `cursor`.
 Output: `projectId`, `timezone`, `effectiveAsOf` (timestamp or null), `workstreams: Page<WorkstreamSummary>`.
-Current means the as-of local date falls within inclusive sprint dates in the project
-timezone; default to now and freeze effectiveAsOf in cursors. Return all matches or
+Current compares the as-of project-local date with inclusive sprint date labels
+(stored at UTC midnight); freeze effectiveAsOf in cursors. Return all matches or
 none, never a latest-sprint fallback. Invalid timezone is `CMS_UNAVAILABLE`.
 Order: `sequenceNumber DESC, id ASC`.
 

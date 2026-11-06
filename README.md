@@ -121,6 +121,36 @@ npm --prefix backend run lint:prune
 
 CI only runs `lint` and never updates suppressions. Do not regenerate all suppressions to make new errors pass. See [ESLint bulk suppressions](https://eslint.org/docs/latest/use/suppressions).
 
+## Local database integration tests
+
+Install the locked backend dependencies (`npm --prefix backend ci --ignore-scripts`)
+and start Docker Desktop (Docker Engine with Compose also works on Linux). Then,
+from the repository root:
+
+```bash
+npm --prefix backend run test:integration
+```
+
+This starts the dedicated PostgreSQL 18 test container, waits for it to be ready,
+generates Prisma's client and runs the CMS read-operation integration tests.
+It uses `docker-compose.test.yml`, loopback port **55439**, and a separate
+`otcr_cms_test` database with synthetic local credentials. The command overrides
+database connection variables for its child processes; no production connection
+or real client data is used. Each test run creates a unique schema, applies the
+committed migrations, inserts synthetic records and removes its schema afterward.
+
+```bash
+npm --prefix backend run test:db:up      # Start/wait for PostgreSQL only
+npm --prefix backend run test:db:status  # Show the test container
+npm --prefix backend run test:db:down    # Stop/remove the container; retain its volume
+```
+
+The database remains running after tests for reuse. These commands operate only
+on the `otcr-cms-test` Compose project. They do not start the CMS or enable Agentic
+CMS; a separate development database is still needed when running the application.
+Unit tests (`npm --prefix backend test -- --runInBand`) need no running database.
+CI supplies its own PostgreSQL service and runs the same integration suite.
+
 ## Browser navigation tests
 
 Install the browser after installing frontend dependencies, then run the suite:
