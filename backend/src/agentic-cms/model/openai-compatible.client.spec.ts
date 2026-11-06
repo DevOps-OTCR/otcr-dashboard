@@ -111,6 +111,39 @@ describe('OpenAICompatibleClient', () => {
     });
   });
 
+  it.each([
+    [401, '{}', 'config', false, /key was rejected/],
+    [403, '{"error":{"code":"consent_required"}}', 'config', false, /accept this model's notice/],
+    [403, '{"error":{"code":"model_blocked"}}', 'config', false, /isn't allowed/],
+    [404, '{}', 'config', false, /LUMEN_MODEL/],
+    [429, '{"error":{"code":"rate_limit_exceeded"}}', 'rate_limit', true, /Try again in a minute/],
+    [429, '{"code":"insufficient_quota"}', 'rate_limit', false, /budget is used up/],
+    [503, 'not json', 'model', true, /couldn't respond/],
+    [504, '{}', 'model', true, /too long/],
+  ])('maps Lumen HTTP %i %s to a clear %s error', async (status, body, kind, retryable, message) => {
+    script = { status, body };
+    const err = await new OpenAICompatibleClient(base, 'secret-key', 'm').stream(req(), () => undefined).catch((e) => e);
+    expect(err).toMatchObject({ kind, retryable });
+    expect(err.userMessage).toMatch(message);
+    expect(JSON.stringify(err) + String(err.cause)).not.toContain('secret-key');
+  });
+
+  it('reports a timeout separately from other failures', async () => {
+    script = { frames: [] };
+    const slow = http.createServer(() => undefined); // accepts and never answers
+    await new Promise<void>((r) => slow.listen(0, '127.0.0.1', () => r()));
+    try {
+      const url = `http://127.0.0.1:${(slow.address() as AddressInfo).port}/v1`;
+      await expect(new OpenAICompatibleClient(url, 'k', 'm', 50).stream(req(), () => undefined)).rejects.toMatchObject({
+        kind: 'model',
+        userMessage: expect.stringMatching(/too long/),
+      });
+    } finally {
+      slow.closeAllConnections();
+      await new Promise<void>((r) => slow.close(() => r()));
+    }
+  });
+
   it('maps a network failure to a model error', async () => {
     const dead = new OpenAICompatibleClient('http://127.0.0.1:1/v1', 'k', 'm');
     await expect(dead.stream(req(), () => undefined)).rejects.toMatchObject({ kind: 'model' });

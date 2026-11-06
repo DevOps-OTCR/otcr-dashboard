@@ -1,7 +1,8 @@
 // Events streamed from POST /agentic-cms/chat as Server-Sent Events
 export type AgentSource = { id: number; title: string; url: string };
 
-export type AgentErrorKind = 'model' | 'rate_limit' | 'auth' | 'disabled' | 'internal';
+// config = a server setting (key, model, consent) needs an admin; retrying will not help.
+export type AgentErrorKind = 'model' | 'rate_limit' | 'auth' | 'config' | 'disabled' | 'internal';
 
 export type AgentEvent =
   | { type: 'conversation'; id: string }
