@@ -14,7 +14,10 @@ export type CalendarItem = {
   projectName: string;
   color: string;
   draggable: boolean;
+  timeZone?: string;
 };
+
+type ProjectInput = ProjectSprintSummary & { timeZone?: string };
 
 export type CalendarEventInput = {
   id: string;
@@ -63,7 +66,7 @@ function isValidDate(d: Date): boolean {
 }
 
 export function buildCalendarItems(
-  projects: ProjectSprintSummary[],
+  projects: ProjectInput[],
   events: CalendarEventInput[],
   manageableProjectIds: Set<string>,
 ): CalendarItem[] {
@@ -87,6 +90,7 @@ export function buildCalendarItems(
           projectName: project.name,
           color,
           draggable,
+          timeZone: project.timeZone,
         });
       }
     }
@@ -119,6 +123,71 @@ export function moveToDay(start: Date, targetDay: Date): Date {
   const d = new Date(targetDay);
   d.setHours(start.getHours(), start.getMinutes(), start.getSeconds(), start.getMilliseconds());
   return d;
+}
+
+export function startOfMonth(d: Date): Date {
+  const out = new Date(d);
+  out.setHours(0, 0, 0, 0);
+  out.setDate(1);
+  return out;
+}
+
+export function monthGridDays(anchor: Date): Date[] {
+  const start = startOfWeek(startOfMonth(anchor));
+  const days: Date[] = [];
+  for (let i = 0; i < 42; i++) {
+    days.push(addDays(start, i));
+  }
+  return days;
+}
+
+function wallClockInZone(date: Date, timeZone: string): { year: number; month: number; day: number; hour: number; minute: number } | null {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+    }).formatToParts(date);
+    const values: Record<string, number> = {};
+    for (const part of parts) {
+      if (part.type === 'year' || part.type === 'month' || part.type === 'day' || part.type === 'hour' || part.type === 'minute') {
+        values[part.type] = Number(part.value);
+      }
+    }
+    const { year, month, day, hour, minute } = values;
+    if ([year, month, day, hour, minute].some((n) => typeof n !== 'number' || Number.isNaN(n))) return null;
+    return { year, month, day, hour, minute };
+  } catch {
+    return null;
+  }
+}
+
+export function moveToDayInZone(start: Date, targetDay: Date, timeZone?: string): Date {
+  if (!timeZone || !isValidDate(start) || !isValidDate(targetDay)) {
+    return moveToDay(start, targetDay);
+  }
+  const zoned = wallClockInZone(start, timeZone);
+  if (!zoned) return moveToDay(start, targetDay);
+
+  const guess = Date.UTC(targetDay.getFullYear(), targetDay.getMonth(), targetDay.getDate(), zoned.hour, zoned.minute, 0, 0);
+  const guessParts = wallClockInZone(new Date(guess), timeZone);
+  if (!guessParts) return moveToDay(start, targetDay);
+  const guessZoned = Date.UTC(guessParts.year, guessParts.month - 1, guessParts.day, guessParts.hour, guessParts.minute, 0, 0);
+  const offset1 = guessZoned - guess;
+  let result = guess - offset1;
+
+  const resultParts = wallClockInZone(new Date(result), timeZone);
+  if (resultParts) {
+    const resultZoned = Date.UTC(resultParts.year, resultParts.month - 1, resultParts.day, resultParts.hour, resultParts.minute, 0, 0);
+    const offset2 = resultZoned - result;
+    if (offset2 !== offset1) result = guess - offset2;
+  }
+
+  return new Date(result);
 }
 
 export function deliverableIdOf(item: CalendarItem): string {

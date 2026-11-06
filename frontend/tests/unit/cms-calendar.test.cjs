@@ -7,13 +7,16 @@ const exportsForModule = {};
 vm.runInNewContext(ts.transpileModule(fs.readFileSync(
   __dirname + '/../../lib/cms-calendar.ts', 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 },
-}).outputText, { exports: exportsForModule, Date, Set, Math });
+}).outputText, { exports: exportsForModule, Date, Set, Math, Intl, Number });
 const {
   startOfWeek,
   weekDays,
   buildCalendarItems,
   itemsForDay,
   moveToDay,
+  moveToDayInZone,
+  monthGridDays,
+  startOfMonth,
   deliverableIdOf,
   EVENT_COLOR,
   PROJECT_COLORS,
@@ -182,4 +185,64 @@ test('deliverableIdOf strips the prefix', () => {
   assert.equal(deliverableIdOf({ id: 'deliverable:abc' }), 'abc');
   assert.equal(deliverableIdOf({ id: 'event:xyz' }), 'event:xyz');
   assert.equal(deliverableIdOf({ id: 'plain' }), 'plain');
+});
+
+test('moveToDayInZone keeps 17:00 America/Chicago across the November 2026 DST change', () => {
+  const start = new Date('2026-10-30T22:00:00Z'); // 17:00 CDT on Fri Oct 30
+  const moved = moveToDayInZone(start, new Date(2026, 10, 3), 'America/Chicago');
+  assert.equal(moved.toISOString(), '2026-11-03T23:00:00.000Z');
+});
+
+test('moveToDayInZone keeps 17:00 America/Chicago across the March 2026 DST change', () => {
+  const start = new Date('2026-03-06T23:00:00Z'); // 17:00 CST on Fri Mar 6
+  const moved = moveToDayInZone(start, new Date(2026, 2, 9), 'America/Chicago');
+  assert.equal(moved.toISOString(), '2026-03-09T22:00:00.000Z');
+});
+
+test('moveToDayInZone without a time zone falls back to moveToDay', () => {
+  const start = new Date(2024, 4, 15, 13, 45, 30, 123);
+  const targetDay = new Date(2024, 4, 20, 8, 0, 0, 0);
+  const fallback = moveToDayInZone(start, targetDay);
+  const base = moveToDay(start, targetDay);
+  assert.equal(fallback.getTime(), base.getTime());
+});
+
+test('moveToDayInZone with an invalid time zone falls back to moveToDay', () => {
+  const start = new Date(2024, 4, 15, 13, 45, 30, 123);
+  const targetDay = new Date(2024, 4, 20, 8, 0, 0, 0);
+  const fallback = moveToDayInZone(start, targetDay, 'Not/AZone');
+  const base = moveToDay(start, targetDay);
+  assert.equal(fallback.getTime(), base.getTime());
+});
+
+test('monthGridDays returns 42 consecutive days from the Monday before the 1st', () => {
+  const days = monthGridDays(new Date(2026, 10, 18));
+  assert.equal(days.length, 42);
+  assert.equal(days[0].getDay(), 1);
+  assert.equal(days[0].getFullYear(), 2026);
+  assert.equal(days[0].getMonth(), 9);
+  assert.equal(days[0].getDate(), 26);
+  assert.equal(days[0].getHours(), 0);
+  assert.equal(days[0].getMinutes(), 0);
+  assert.equal(days[0].getSeconds(), 0);
+  assert.equal(days[0].getMilliseconds(), 0);
+  for (let i = 1; i < days.length; i++) {
+    const prev = days[i - 1];
+    const expected = new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() + 1);
+    assert.equal(days[i].getFullYear(), expected.getFullYear());
+    assert.equal(days[i].getMonth(), expected.getMonth());
+    assert.equal(days[i].getDate(), expected.getDate());
+    assert.equal(days[i].getHours(), 0);
+  }
+});
+
+test('startOfMonth returns local midnight on the 1st', () => {
+  const start = startOfMonth(new Date(2026, 10, 18, 15, 30, 45, 678));
+  assert.equal(start.getFullYear(), 2026);
+  assert.equal(start.getMonth(), 10);
+  assert.equal(start.getDate(), 1);
+  assert.equal(start.getHours(), 0);
+  assert.equal(start.getMinutes(), 0);
+  assert.equal(start.getSeconds(), 0);
+  assert.equal(start.getMilliseconds(), 0);
 });

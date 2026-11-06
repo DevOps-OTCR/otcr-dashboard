@@ -1,20 +1,23 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import type React from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { useCmsSchedule } from '@/lib/use-cms-schedule';
 import {
   weekDays,
+  monthGridDays,
+  startOfMonth,
   startOfWeek,
   addDays,
   itemsForDay,
-  moveToDay,
+  moveToDayInZone,
   deliverableIdOf,
   EVENT_COLOR,
   type CalendarItem,
 } from '@/lib/cms-calendar';
 import { deliverablesAPI } from '@/lib/api';
+import { DashboardRefresh } from './navbar-registration';
 
 const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -58,14 +61,16 @@ function serverMessageOf(err: unknown): string {
 export function CmsCalendar({ refreshKey = 0 }: { refreshKey?: number }) {
   const { items, setItems, projects, loading, error, warning } = useCmsSchedule(refreshKey);
   const [anchor, setAnchor] = useState<Date>(() => startOfWeek(new Date()));
+  const [view, setView] = useState<'week' | 'month'>('week');
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const refreshDashboard = useContext(DashboardRefresh);
   const focusIdRef = useRef<string | null>(null);
   const itemRefs = useRef(new Map<string, HTMLButtonElement>());
 
-  const days = weekDays(anchor);
+  const days = view === 'week' ? weekDays(anchor) : monthGridDays(anchor);
   const today = new Date();
 
   async function moveItem(item: CalendarItem, targetDay: Date) {
@@ -73,7 +78,7 @@ export function CmsCalendar({ refreshKey = 0 }: { refreshKey?: number }) {
     if (isSameDay(item.start, targetDay)) return;
 
     const previousStart = item.start;
-    const newStart = moveToDay(item.start, targetDay);
+    const newStart = moveToDayInZone(item.start, targetDay, item.timeZone);
 
     setSaving(true);
     setAlertMessage(null);
@@ -87,6 +92,7 @@ export function CmsCalendar({ refreshKey = 0 }: { refreshKey?: number }) {
     try {
       await deliverablesAPI.updateDeadline(deliverableIdOf(item), newStart.toISOString());
       setStatusMessage(`Moved ${item.title} to ${formatDayLong(newStart)}`);
+      refreshDashboard?.();
     } catch (err) {
       setItems((prev) =>
         prev
@@ -113,17 +119,13 @@ export function CmsCalendar({ refreshKey = 0 }: { refreshKey?: number }) {
     if (e.altKey) {
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') e.preventDefault();
       if (saving) return;
-      if (e.key === 'ArrowLeft') {
-        const target = addDays(item.start, -1);
-        if (target < days[0]) setAnchor(addDays(anchor, -7));
-        focusIdRef.current = item.id;
-        void moveItem(item, target);
-      } else if (e.key === 'ArrowRight') {
-        const target = addDays(item.start, 1);
-        if (target >= addDays(days[0], 7)) setAnchor(addDays(anchor, 7));
-        focusIdRef.current = item.id;
-        void moveItem(item, target);
+      const target = e.key === 'ArrowLeft' ? addDays(item.start, -1) : addDays(item.start, 1);
+      const rangeEnd = addDays(days[days.length - 1], 1);
+      if (target < days[0] || target >= rangeEnd) {
+        setAnchor(view === 'week' ? startOfWeek(target) : startOfMonth(target));
       }
+      focusIdRef.current = item.id;
+      void moveItem(item, target);
     }
   }
 
@@ -147,29 +149,77 @@ export function CmsCalendar({ refreshKey = 0 }: { refreshKey?: number }) {
       </CardHeader>
       <CardContent>
         <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex gap-1 rounded-lg bg-[var(--secondary)] p-1">
+            <button
+              type="button"
+              aria-pressed={view === 'week'}
+              className={`rounded-md px-2.5 py-1 text-sm ${
+                view === 'week' ? 'bg-[var(--card)] font-medium shadow-sm' : ''
+              }`}
+              onClick={() => {
+                setView('week');
+                const now = new Date();
+                setAnchor(
+                  startOfWeek(
+                    anchor.getMonth() === now.getMonth() &&
+                      anchor.getFullYear() === now.getFullYear()
+                      ? now
+                      : anchor,
+                  ),
+                );
+              }}
+            >
+              Week
+            </button>
+            <button
+              type="button"
+              aria-pressed={view === 'month'}
+              className={`rounded-md px-2.5 py-1 text-sm ${
+                view === 'month' ? 'bg-[var(--card)] font-medium shadow-sm' : ''
+              }`}
+              onClick={() => {
+                setView('month');
+                setAnchor(startOfMonth(anchor));
+              }}
+            >
+              Month
+            </button>
+          </div>
           <button
             type="button"
             className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--foreground)] hover:bg-[var(--accent)]"
-            onClick={() => setAnchor((prev) => addDays(prev, -7))}
+            onClick={() =>
+              view === 'month'
+                ? setAnchor(startOfMonth(new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1)))
+                : setAnchor((prev) => addDays(prev, -7))
+            }
           >
-            Previous week
+            {view === 'month' ? 'Previous month' : 'Previous week'}
           </button>
           <button
             type="button"
             className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--foreground)] hover:bg-[var(--accent)]"
-            onClick={() => setAnchor(startOfWeek(new Date()))}
+            onClick={() =>
+              view === 'month' ? setAnchor(startOfMonth(new Date())) : setAnchor(startOfWeek(new Date()))
+            }
           >
             Today
           </button>
           <button
             type="button"
             className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--foreground)] hover:bg-[var(--accent)]"
-            onClick={() => setAnchor((prev) => addDays(prev, 7))}
+            onClick={() =>
+              view === 'month'
+                ? setAnchor(startOfMonth(new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1)))
+                : setAnchor((prev) => addDays(prev, 7))
+            }
           >
-            Next week
+            {view === 'month' ? 'Next month' : 'Next week'}
           </button>
           <span className="ml-auto text-sm font-medium text-[var(--foreground)]">
-            {formatWeekLabel(days)}
+            {view === 'month'
+              ? anchor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+              : formatWeekLabel(days)}
           </span>
         </div>
 
@@ -205,7 +255,11 @@ export function CmsCalendar({ refreshKey = 0 }: { refreshKey?: number }) {
                   return (
                     <div
                       key={day.toISOString()}
-                      className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-1.5"
+                      className={`rounded-lg border border-[var(--border)] bg-[var(--card)] p-1.5 ${
+                        view === 'month' && day.getMonth() !== anchor.getMonth()
+                          ? 'opacity-60'
+                          : ''
+                      }`}
                       onDragOver={(e) => {
                         if (draggingId) e.preventDefault();
                       }}
@@ -218,10 +272,16 @@ export function CmsCalendar({ refreshKey = 0 }: { refreshKey?: number }) {
                             : 'text-[var(--foreground)]/70'
                         }`}
                       >
-                        <div className="font-semibold">{WEEKDAY_SHORT[index]}</div>
+                        {view === 'week' || index < 7 ? (
+                          <div className="font-semibold">{WEEKDAY_SHORT[index % 7]}</div>
+                        ) : null}
                         <div>{day.getDate()}</div>
                       </div>
-                      <div className="min-h-[160px] space-y-2">
+                      <div
+                        className={`space-y-2 ${
+                          view === 'week' ? 'min-h-[160px]' : 'min-h-[72px]'
+                        }`}
+                      >
                         {dayItems.map((item) => (
                           <button
                             key={item.id}

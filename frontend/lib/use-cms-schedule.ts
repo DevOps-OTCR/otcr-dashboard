@@ -45,8 +45,12 @@ export function useCmsSchedule(refreshKey = 0): UseCmsScheduleResult {
         if (cancelled) return;
 
         const res = await projectsAPI.getAll({ includeMembers: true, limit: 100 });
-        const rawProjects: Array<{ id: string; name: string; pm?: { email?: string | null } | null }> =
-          res.data?.projects ?? [];
+        const rawProjects: Array<{
+          id: string;
+          name: string;
+          pm?: { email?: string | null } | null;
+          sprintTimezone?: string | null;
+        }> = res.data?.projects ?? [];
 
         const email = user?.email?.toLowerCase() ?? '';
         const manageableIds = new Set<string>();
@@ -71,6 +75,7 @@ export function useCmsSchedule(refreshKey = 0): UseCmsScheduleResult {
               id: project.id,
               name: project.name,
               sprints: visibleSprints,
+              timeZone: project.sprintTimezone ?? undefined,
             };
           }),
         );
