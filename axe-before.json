@@ -1,0 +1,361 @@
+{
+  "results": {
+    "light/overview": [
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      },
+      {
+        "id": "scrollable-region-focusable",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": ".max-h-\\[400px\\]",
+          "failureSummary": "Fix any of the following:\n  Element should have focusable content\n  Element should be focusable"
+        }
+      }
+    ],
+    "light/deliverables": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": 3,
+        "sample": {
+          "target": ".mt-1.text-\\[var\\(--foreground\\)\\]\\/55",
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.8 (foreground color: #747882, background color: #edeef1, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio"
+        }
+      },
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      },
+      {
+        "id": "label",
+        "impact": "critical",
+        "nodes": 1,
+        "sample": {
+          "target": "input[value=\"2026-10-18T18:00\"]",
+          "failureSummary": "Fix any of the following:\n  Element does not have an implicit (wrapped) <label>\n  Element does not have an explicit <label>\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribut"
+        }
+      },
+      {
+        "id": "select-name",
+        "impact": "critical",
+        "nodes": 1,
+        "sample": {
+          "target": ".flex-wrap.gap-3.flex > select",
+          "failureSummary": "Fix any of the following:\n  Element does not have an implicit (wrapped) <label>\n  Element does not have an explicit <label>\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribut"
+        }
+      }
+    ],
+    "light/attendance": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": ".uppercase",
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.96 (foreground color: #7c8088, background color: #ffffff, font size: 9.0pt (12px), font weight: normal). Expected contrast rati"
+        }
+      },
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      }
+    ],
+    "light/workstream": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": 10,
+        "sample": {
+          "target": ".space-y-5 > .flex-wrap.gap-3.flex > .flex-col.gap-1.flex > .text-\\[11px\\].text-\\[var\\(--foreground\\)\\]\\/55.uppercase",
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.96 (foreground color: #7c8088, background color: #ffffff, font size: 8.3pt (11px), font weight: normal). Expected contrast rati"
+        }
+      },
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      },
+      {
+        "id": "label",
+        "impact": "critical",
+        "nodes": 2,
+        "sample": {
+          "target": ".bg-\\[var\\(--secondary\\)\\]\\/70.p-4.rounded-xl:nth-child(1) > .mt-4.justify-between.flex-wrap > .justify-end.gap-2.flex-wrap > input[type=\"datetime-local\"][value=\"2026-10-18T18:00\"]",
+          "failureSummary": "Fix any of the following:\n  Element does not have an implicit (wrapped) <label>\n  Element does not have an explicit <label>\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribut"
+        }
+      },
+      {
+        "id": "select-name",
+        "impact": "critical",
+        "nodes": 2,
+        "sample": {
+          "target": "select:nth-child(1)",
+          "failureSummary": "Fix any of the following:\n  Element does not have an implicit (wrapped) <label>\n  Element does not have an explicit <label>\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribut"
+        }
+      }
+    ],
+    "light/when2meet": [
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      }
+    ],
+    "light/people": [
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      }
+    ],
+    "dark/overview": [
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      },
+      {
+        "id": "scrollable-region-focusable",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": ".max-h-\\[400px\\]",
+          "failureSummary": "Fix any of the following:\n  Element should have focusable content\n  Element should be focusable"
+        }
+      }
+    ],
+    "dark/deliverables": [
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      },
+      {
+        "id": "label",
+        "impact": "critical",
+        "nodes": 1,
+        "sample": {
+          "target": "input[value=\"2026-10-18T18:00\"]",
+          "failureSummary": "Fix any of the following:\n  Element does not have an implicit (wrapped) <label>\n  Element does not have an explicit <label>\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribut"
+        }
+      },
+      {
+        "id": "select-name",
+        "impact": "critical",
+        "nodes": 1,
+        "sample": {
+          "target": ".flex-wrap.gap-3.flex > select",
+          "failureSummary": "Fix any of the following:\n  Element does not have an implicit (wrapped) <label>\n  Element does not have an explicit <label>\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribut"
+        }
+      }
+    ],
+    "dark/attendance": [
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      }
+    ],
+    "dark/workstream": [
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      },
+      {
+        "id": "label",
+        "impact": "critical",
+        "nodes": 2,
+        "sample": {
+          "target": ".bg-\\[var\\(--secondary\\)\\]\\/70.p-4.rounded-xl:nth-child(1) > .mt-4.justify-between.flex-wrap > .justify-end.gap-2.flex-wrap > input[type=\"datetime-local\"][value=\"2026-10-18T18:00\"]",
+          "failureSummary": "Fix any of the following:\n  Element does not have an implicit (wrapped) <label>\n  Element does not have an explicit <label>\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribut"
+        }
+      },
+      {
+        "id": "select-name",
+        "impact": "critical",
+        "nodes": 2,
+        "sample": {
+          "target": "select:nth-child(1)",
+          "failureSummary": "Fix any of the following:\n  Element does not have an implicit (wrapped) <label>\n  Element does not have an explicit <label>\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribut"
+        }
+      }
+    ],
+    "dark/when2meet": [
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      }
+    ],
+    "dark/people": [
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,244 @@
+{
+  "results": {
+    "light/overview": [
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      }
+    ],
+    "light/deliverables": [
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      }
+    ],
+    "light/attendance": [
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      }
+    ],
+    "light/workstream": [
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      }
+    ],
+    "light/when2meet": [
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      }
+    ],
+    "light/people": [
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      }
+    ],
+    "dark/overview": [
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      }
+    ],
+    "dark/deliverables": [
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      }
+    ],
+    "dark/attendance": [
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      }
+    ],
+    "dark/workstream": [
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      }
+    ],
+    "dark/when2meet": [
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      }
+    ],
+    "dark/people": [
+      {
+        "id": "document-title",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "serious",
+        "nodes": 1,
+        "sample": {
+          "target": "html",
+          "failureSummary": "Fix any of the following:\n  The <html> element does not have a lang attribute"
+        }
+      }
+    ]
+  }
+}
