@@ -37,19 +37,41 @@ in-flight request or undo a completed write.
 
 ## Where each group builds
 
-| Group | Required integration boundary |
-| --- | --- |
-| 1: agent backend and sidebar | Add providers, orchestration and chat endpoints under `backend/src/agentic-cms/`; mount the bot from `frontend/features/agentic-cms/index.tsx`. |
-| 2: context and MCP tools | Add new context endpoints under `/agentic-cms/context` and MCP under `/agentic-cms/mcp`. New upload controls belong inside the same frontend feature folder. Reuse existing CMS authorization/services for read tools. |
-| 3: skills | Store instructions/resources under `agentic-cms/skills/`. The gated agent loads them on demand. Test synthetic examples locally with your own key. |
+| Group                        | Required integration boundary                                                                                                                                                                                          |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1: agent backend and sidebar | Add providers, orchestration and chat endpoints under `backend/src/agentic-cms/`; mount the bot from `frontend/features/agentic-cms/index.tsx`.                                                                        |
+| 2: context and MCP tools     | Add new context endpoints under `/agentic-cms/context` and MCP under `/agentic-cms/mcp`. New upload controls belong inside the same frontend feature folder. Reuse existing CMS authorization/services for read tools. |
+| 3: skills                    | Store instructions/resources under `agentic-cms/skills/`. The gated agent loads them on demand. Test synthetic examples locally with your own key.                                                                     |
 
 The protected `/agentic-cms/status` endpoint is a connection check, not a chat
 implementation. `GET /feature-flags` returns only `{ "agenticCms": boolean }`
 for the signed-in user, with no secrets or allowlist in the response. The
-frontend has one lazy entry point, `components/AgenticCmsFeature.tsx`, mounted
+frontend has one access-gated entry point, `components/AgenticCmsFeature.tsx`, mounted
 in the application layout. Feature components and their effects must stay
 inside it; do not mount a second sidebar or import feature code into existing
 CMS pages. A failure or an older backend that lacks this endpoint keeps it off.
+
+## Project context (current implementation)
+
+The gated page is available at `/agentic-cms`. Its Project Context tab stores a
+project overview and SOW/scope text; its Client Call Notes tab stores titled,
+pasted note text with a creation timestamp. These fields are attached to the
+existing project. The existing project description remains separate. Existing
+link-based submissions on `/client-notes` continue to work and are not migrated.
+
+Context data is stored in `Project.overview`, `Project.scope`, and
+`ProjectContextNote`. Apply the committed backend Prisma migrations when setting
+up a local database. The HTTP API is under `/agentic-cms/context/projects/:projectId`:
+GET reads project context and notes, PUT updates overview and scope, POST adds a
+call note, and DELETE removes a call note.
+
+The global feature flag and pilot allowlist gate both the interface and these
+endpoints. Context reads also require project access. Writes are restricted to
+Admins, LCs with project access, and the PM assigned to that project. The UI
+uses the shared `getEffectiveRole` resolver, including the local role-switcher
+override; it shows edit controls only to those write roles. Users without
+accessible projects do not see the context tabs. No MCP endpoint currently
+reads this stored context; adding that is a later integration step.
 
 ## Backend enforcement
 
@@ -102,8 +124,11 @@ inside the required **Backend typecheck, tests and build** check. It rejects
 imports that bypass the feature boundary, misplaced Agentic CMS controllers,
 AI/MCP SDKs outside the backend feature folder, frontend provider-key references,
 and independent reads of the release switch. Backend HTTP tests cover default
-off, authenticated on, pilot denial and blocked side effects. Browser tests
-cover lazy loading, failed flag requests, account changes and sign-out.
+off, authenticated on, pilot denial and blocked side effects. Context controller
+and authorization tests cover project-scoped reads/writes, validation, role
+denial, note creation/deletion and flag-off behavior. Browser tests cover gated
+loading, failed flag requests, account changes and sign-out; the context browser
+test covers separate tabs and role-dependent edit controls.
 
 Run from the repository root after installing the locked backend/frontend
 dependencies and generating their Prisma clients:
@@ -113,6 +138,7 @@ node scripts/check-agentic-boundaries.cjs
 node --test scripts/check-agentic-boundaries.test.cjs
 npm --prefix backend test -- --runInBand
 npm --prefix frontend run test:navigation:browser
+node --test frontend/tests/agentic-context-browser.test.cjs
 ```
 
 For every Agentic CMS PR, record the scenario tested with the flag off and on.

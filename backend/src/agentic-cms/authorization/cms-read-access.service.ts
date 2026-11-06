@@ -47,6 +47,15 @@ export class CmsReadAccessService {
     return { projectId: project.id, canReadDrafts: draftRoles.has(user.role), canReadDeliverables };
   }
 
+  async assertContextWrite(user: CmsReader, projectId: string) {
+    const access = await this.projectScope(user, projectId, 'deliverables');
+    if (user.role !== 'ADMIN' && user.role !== 'LC' && user.role !== 'PM') {
+      this.deny();
+    }
+    const project = await this.prisma.project.findUnique({ where: { id: projectId }, select: { pmId: true } });
+    if (!project || (user.role === 'PM' && project.pmId !== user.id)) this.deny();
+  }
+
   async workstreamScope(user: CmsReader, projectId: string) {
     const access = await this.projectScope(user, projectId, 'workstreams');
     const where: Prisma.SprintWhereInput = {
