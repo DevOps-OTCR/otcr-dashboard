@@ -2,7 +2,7 @@
 
 Reviewing a deck is a different job from building one. You are diagnosing, not rewriting.
 
-**Output: severity-ranked findings. Never a rebuilt deck unless the user asks for one.**
+**Output: severity-ranked findings. Never a rebuilt deck.** A request to rebuild is a switch to Build mode (jobs A and B), not part of review.
 
 ---
 
@@ -139,6 +139,8 @@ file supplied / outside Release 1 scope.
 | Judge against the audience's decision | Judge against personal taste |
 
 **Taste is not a finding.** "I would use fewer colours" is not a review comment unless it affects comprehension or credibility.
+
+Review-only contract: findings only, fixes of at most one sentence, no edited artifact (`shared/otcr-quality-standards.md` §6.1). Hidden and confidential slides are skipped, never read or quoted (`shared/otcr-quality-standards.md` §6.2).
 
 ---
 
