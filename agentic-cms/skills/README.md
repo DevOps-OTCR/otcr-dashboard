@@ -136,8 +136,8 @@ Review and audit modes accept a plain-text export, one record per slide:
 |---|---|---|
 | `number` | yes | Slide number, as shown to the author |
 | `hidden` | yes | `true` / `false`. Set from the PowerPoint hide-slide state |
-| `title` | yes | Slide title text |
-| `body` | yes | Body text, flattened |
+| `title` | yes | Slide title text. Required only for slides that are not skipped |
+| `body` | yes | Body text, flattened. Required only for slides that are not skipped |
 | `notes` | no | Speaker notes |
 | `confidentiality` | no | Free-text tag, e.g. `CONFIDENTIAL`, `PROPRIETARY` |
 
@@ -152,6 +152,17 @@ body: <flattened body text>
 notes: <speaker notes>
 confidentiality: <tag or empty>
 ```
+
+**Filtered input.** Hidden and confidential slides are dropped upstream, before the model call. For a slide that is hidden or confidential the loader sends only:
+
+```
+---
+number: 12
+hidden: true
+skipped: true
+```
+
+No `title`, `body` or `notes` are sent for a skipped slide, and none are expected. Review and audit modes assume this upstream filtering; they do not perform it. The filter is open question 7 in §9.
 
 Markers inside the text (`[HIDDEN]`, `[CONFIDENTIAL]`, `[PROPRIETARY]`) carry the same meaning as the fields. See `shared/otcr-quality-standards.md` §6.2 for the handling rule and its limits.
 
@@ -215,7 +226,7 @@ Do not present `0.1.0` as validated. It has not been run.
 5. **Repo location:** `skills/<name>/SKILL.md` at repo root, or under the API module? We assume root-level `skills/`.
 6. **Version surface:** does the bot report which skill version produced an output? Recommended for review traceability.
 7. **Loader-side content filtering:** the loader or document tool must **drop hidden and confidential slides before any text reaches the model**. A skill instruction cannot stop a model from seeing what is sent to it; the filter has to sit upstream of the prompt. Required for review and audit modes. (PM interview P1, 2026-11-05)
-8. **No write access for review tools:** no review tool gets write access to Google Docs or PowerPoint files. Comments only, per the SOW. The skill has no write logic; the boundary has to be enforced in the tool. (PM interview P1, 2026-11-05)
+8. **No content-edit permission for review tools:** no review tool has permission to edit the content of Google Docs or PowerPoint files. A separate comment-only permission is allowed, per the SOW (review comments on Google Docs/PowerPoint). The skill has no write logic; the boundary has to be enforced in the tool. (PM interview P1, 2026-11-05)
 
 Raise these at the Sunday integration meeting rather than guessing.
 

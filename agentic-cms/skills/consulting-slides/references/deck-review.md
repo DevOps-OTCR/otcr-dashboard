@@ -2,7 +2,7 @@
 
 Reviewing a deck is a different job from building one. You are diagnosing, not rewriting.
 
-**Output: severity-ranked findings. Never a rebuilt deck unless the user asks for one.**
+**Output: severity-ranked findings. Never a rebuilt deck.** A request to rebuild is a switch to Build mode (jobs A and B), not part of review.
 
 ---
 
