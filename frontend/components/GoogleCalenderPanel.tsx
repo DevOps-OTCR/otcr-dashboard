@@ -74,6 +74,10 @@ export function GoogleCalendarPanel({
       return;
     }
 
+    // Reset stale state from a previous account before the new request resolves.
+    setSources(null);
+    setSelected(new Set());
+
     let canceled = false;
     getToken()
       .then((token) => {
@@ -93,12 +97,14 @@ export function GoogleCalendarPanel({
             .map((source) => source.key),
         );
 
-        const projectSource = projectId
-          ? nextSources.find((source) => source.key === `project:${projectId}`)
-          : undefined;
-
-        if (projectSource) {
-          defaultSelected.add(projectSource.key);
+        if (projectId) {
+          const projectPrefix = `project:${projectId}:`;
+          const projectKey = `project:${projectId}`;
+          nextSources.forEach((source) => {
+            if (source.key === projectKey || source.key.startsWith(projectPrefix)) {
+              defaultSelected.add(source.key);
+            }
+          });
         } else {
           nextSources.forEach((source) => defaultSelected.add(source.key));
         }

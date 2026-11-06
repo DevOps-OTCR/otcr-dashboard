@@ -66,20 +66,34 @@ export function buildCalendarSources(
 
   for (const project of projects ?? []) {
     const trimmedId = project.googleCalendarId?.trim();
-    const candidate = trimmedId
-      ? trimmedId
-      : extractGoogleCalendarSources(project.googleCalendarEmbedUrl)[0];
 
-    if (!candidate || seen.has(candidate)) continue;
+    if (trimmedId) {
+      if (seen.has(trimmedId)) continue;
+      seen.add(trimmedId);
+      sources.push({
+        key: `project:${project.id}`,
+        label: project.name,
+        src: trimmedId,
+        color: CALENDAR_COLORS[sources.length % CALENDAR_COLORS.length],
+        kind: 'project',
+      });
+      continue;
+    }
 
-    seen.add(candidate);
-    sources.push({
-      key: `project:${project.id}`,
-      label: project.name,
-      src: candidate,
-      color: CALENDAR_COLORS[sources.length % CALENDAR_COLORS.length],
-      kind: 'project',
-    });
+    const extracted = extractGoogleCalendarSources(project.googleCalendarEmbedUrl);
+    let index = 0;
+    for (const src of extracted) {
+      if (seen.has(src)) continue;
+      seen.add(src);
+      index += 1;
+      sources.push({
+        key: index === 1 ? `project:${project.id}` : `project:${project.id}:${index}`,
+        label: index === 1 ? project.name : `${project.name} (${index})`,
+        src,
+        color: CALENDAR_COLORS[sources.length % CALENDAR_COLORS.length],
+        kind: 'project',
+      });
+    }
   }
 
   return sources;
