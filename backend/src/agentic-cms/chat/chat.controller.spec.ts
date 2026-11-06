@@ -10,6 +10,12 @@ import { AgentService } from '../agent/agent.service';
 import { ConversationStore } from '../agent/conversation.store';
 import { FakeModelClient } from '../model/fake-test-model.client';
 import { MODEL_CLIENT, type ModelClient } from '../model/model-client';
+import { TavilySearchClient } from '../search/tavily-search.client';
+import { SkillLibrary } from '../skills/skill-library';
+import { LoadSkillTool } from '../tools/load-skill.tool';
+import { MockWorkstreamTool } from '../tools/mock-workstream.tool';
+import { ToolRegistry } from '../tools/tool-registry';
+import { WebSearchTool } from '../tools/web-search.tool';
 import { ChatController } from './chat.controller';
 
 // Spec for POST /agentic-cms/chat over real HTTP, behind the real global
@@ -49,6 +55,12 @@ describe('POST /agentic-cms/chat', () => {
       providers: [
         AgentService,
         ConversationStore,
+        ToolRegistry,
+        WebSearchTool,
+        LoadSkillTool,
+        MockWorkstreamTool,
+        TavilySearchClient,
+        SkillLibrary,
         { provide: MODEL_CLIENT, useValue: model },
         { provide: ProjectsService, useValue: projects },
       ],
