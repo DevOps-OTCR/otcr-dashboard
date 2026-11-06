@@ -13,6 +13,7 @@ import {
   NotFoundException,
   UseGuards,
 } from '@nestjs/common';
+import { User } from '@prisma/client';
 import { DeliverablesService } from './deliverables.service';
 import { ProjectsService } from '../projects/projects.service';
 import { AuthGuard } from '../auth/auth.guard';
@@ -233,6 +234,37 @@ export class DeliverablesController {
     }
 
     return this.deliverablesService.updateCompletion(id, Boolean(body?.completed));
+  }
+
+  @Patch(':id/working-link')
+  @Roles('ADMIN', 'PM', 'LC', 'CONSULTANT', 'PARTNER', 'EXECUTIVE')
+async setWorkingLink(
+    @Param('id') id: string,
+    @Body() body: { link?: string | null },
+    @GetUser() user: User,
+  ) {
+    const deliverable = await this.deliverablesService.findOne(id);
+    if (!deliverable) throw new NotFoundException('Deliverable not found');
+
+    const isMember = await this.projectsService.isMember(deliverable.projectId, user.id);
+    const project = await this.projectsService.findOne(deliverable.projectId);
+    const canManage = ['ADMIN', 'LC'].includes(user.role) || project?.pmId === user.id;
+
+    if (!canManage && !isMember) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    if ((deliverable as { sprint?: { status?: string } | null }).sprint?.status !== 'RELEASED' && !canManage) {
+      throw new ForbiddenException('Draft deliverables cannot be linked yet');
+    }
+
+    const assignmentUserIds = await this.deliverablesService.getAssignmentUserIds(id);
+
+    if (!canManage && assignmentUserIds.length > 0 && !assignmentUserIds.includes(user.id)) {
+      throw new ForbiddenException('Only assigned team members can set the working link');
+    }
+
+    return this.deliverablesService.setWorkingLink(id, user.id, body?.link ?? null);
   }
 
   @Post(':id/submissions')

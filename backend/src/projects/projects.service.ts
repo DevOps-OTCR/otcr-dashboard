@@ -991,7 +991,9 @@ export class ProjectsService {
           d."templateKind"::text AS "templateKind",
           d."dueDateSource"::text AS "dueDateSource",
           d."status"::text AS "status",
-          d."completed"
+          d."completed",
+          d."workingLinkUrl",
+          d."workingLinkUpdatedAt"
         FROM "Deliverable" d
         WHERE d."sprintId" IN (${Prisma.join(sprintIds)})
         ORDER BY d."deadline" ASC
@@ -1124,6 +1126,8 @@ export class ProjectsService {
           templateKind: deliverable.templateKind,
           status: deliverable.status,
           completed: deliverable.completed,
+          workingLinkUrl: deliverable.workingLinkUrl ?? null,
+          workingLinkUpdatedAt: deliverable.workingLinkUpdatedAt ?? null,
           assignees: assignmentsByDeliverable.get(deliverable.id) ?? [],
           subtasks: subtasksByDeliverable.get(deliverable.id) ?? [],
           latestSubmission: latestSubmissionByDeliverable.get(deliverable.id) ?? null,
