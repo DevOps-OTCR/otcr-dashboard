@@ -237,7 +237,7 @@ Run this after the slides are assembled, before the deck leaves the building.
 Return `- [ ]` checklist items, each citing every slide it affects ("Slide N", "Slides N, M"). Follow the review-only contract (`shared/otcr-quality-standards.md` §6.1) and the hidden/confidential rule (§6.2). Never invent a typo.
 
 Operative rules:
-- Output sections in order: Skipped slides; Mechanics; Big picture; Likely audience questions; Not checkable from this input; one-line count.
+- Output sections in order: Skipped slides; Mechanics; Big picture; Likely audience questions; Not checkable from this input; Summary (one-line count).
 - Item format: `- [ ] Slide N — MUST FIX|SHOULD FIX|CHECK — issue — why it matters — suggested fix (one sentence)`.
 - At most 25 items. Quote at most 12 words.
 - Five to eight audience questions (fewer if the deck supports fewer), each grounded in a visible slide's claim, assumption or gap.
