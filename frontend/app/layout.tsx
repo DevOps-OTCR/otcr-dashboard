@@ -22,7 +22,7 @@ export default function MsalWrapper({ children }: { children: ReactNode }) {
 
   return (
     // The theme script sets the class/color-scheme on <html> before hydration.
-    <html suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <title>OTCR Dashboard</title>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />

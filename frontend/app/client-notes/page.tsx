@@ -232,7 +232,7 @@ export default function ClientNotesPage() {
         <div className="max-w-[1000px] mx-auto space-y-6">
           {!canRead && (
             <Card className="shadow-lg">
-              <CardContent className="py-8 text-center text-[var(--foreground)]/70 text-sm">
+              <CardContent className="py-8 text-center text-[var(--text-muted)] text-sm">
                 You do not have access to client call notes.
               </CardContent>
             </Card>
@@ -297,11 +297,11 @@ export default function ClientNotesPage() {
                   </p>
                 )}
                 {loading ? (
-                  <div className="p-4 rounded-xl border border-dashed border-[var(--border)] text-center text-[var(--foreground)]/60 text-sm">
+                  <div className="p-4 rounded-xl border border-dashed border-[var(--border)] text-center text-[var(--text-muted)] text-sm">
                     Loading client notes...
                   </div>
                 ) : notes.length === 0 ? (
-                  <div className="p-4 rounded-xl border border-dashed border-[var(--border)] text-center text-[var(--foreground)]/60 text-sm">
+                  <div className="p-4 rounded-xl border border-dashed border-[var(--border)] text-center text-[var(--text-muted)] text-sm">
                     No submitted client notes yet.
                   </div>
                 ) : (
@@ -310,7 +310,7 @@ export default function ClientNotesPage() {
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         <div>
                           <h3 className="font-semibold">{note.title}</h3>
-                          <p className="text-xs text-[var(--foreground)]/70">
+                          <p className="text-xs text-[var(--text-muted)]">
                             {note.projectName} • {note.createdAt ? new Date(note.createdAt).toLocaleString() : 'Recently added'}
                           </p>
                         </div>

@@ -47,7 +47,7 @@ export default function AnonymousFeedbackPage() {
         <>
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <p className="text-sm font-semibold">Anonymous submission</p>
-            <p className="text-xs text-[var(--foreground)]/60">
+            <p className="text-xs text-[var(--text-muted)]">
               {new Date(submission.createdAt).toLocaleString()}
             </p>
           </div>
@@ -74,7 +74,7 @@ export default function AnonymousFeedbackPage() {
               onChange={(event) => setDescription(event.target.value)}
               placeholder="Share the issue, tip, or experience you want the team to know about"
               rows={7}
-              className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] placeholder:text-[var(--foreground)]/50 text-sm"
+              className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] placeholder:text-[var(--text-muted)] text-sm"
             />
           </div>
 

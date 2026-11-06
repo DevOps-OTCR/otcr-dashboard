@@ -122,7 +122,7 @@ export default function SignUpPage() {
             </p>
           )}
 
-          <p className="text-sm text-[var(--foreground)]/65">
+          <p className="text-sm text-[var(--text-muted)]">
             Already approved? <Link href="/sign-in" className="text-[var(--primary)] hover:underline">Sign in</Link>
           </p>
         </CardContent>

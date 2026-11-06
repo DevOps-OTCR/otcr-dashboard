@@ -629,6 +629,7 @@ export default function DeliverablesPage() {
             <CardContent className="space-y-5">
               <div className="flex flex-wrap items-center gap-3">
                 <select
+                  aria-label="Project"
                   value={selectedProjectId}
                   onChange={(e) => void handleProjectChange(e.target.value)}
                   className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
@@ -649,7 +650,7 @@ export default function DeliverablesPage() {
 
               <div className="flex flex-wrap gap-2">
                 {visibleSprints.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-[var(--border)] px-4 py-4 text-sm text-[var(--foreground)]/60">
+                  <div className="rounded-xl border border-dashed border-[var(--border)] px-4 py-4 text-sm text-[var(--text-muted)]">
                     {canManage ? 'No non-slide deliverables yet.' : 'No released non-slide deliverables yet.'}
                   </div>
                 ) : (
@@ -681,11 +682,11 @@ export default function DeliverablesPage() {
                           visibleSprints.findIndex((item) => item.id === selectedSprint.id),
                         )}
                       </h3>
-                      <p className="text-sm text-[var(--foreground)]/60">
+                      <p className="text-sm text-[var(--text-muted)]">
                         {new Date(selectedSprint.weekStartDate).toLocaleDateString()} - {new Date(selectedSprint.weekEndDate).toLocaleDateString()}
                       </p>
                     </div>
-                    <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                    <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--success)_30%,transparent)] bg-[var(--success-bg)] px-2 py-0.5 text-xs font-semibold text-[var(--success)]">
                       {selectedSprint.status}
                     </span>
                   </div>
@@ -719,7 +720,7 @@ export default function DeliverablesPage() {
                               <p className="text-sm font-semibold text-[var(--foreground)]">
                                 {normalizeWeekText(deliverable.title)}
                               </p>
-                              <p className="mt-1 text-xs text-[var(--foreground)]/55">
+                              <p className="mt-1 text-xs text-[var(--text-muted)]">
                                 Due {new Date(deliverable.deadline).toLocaleString()}
                               </p>
                               {deliverable.description?.trim() ? (
@@ -728,14 +729,14 @@ export default function DeliverablesPage() {
                                 </p>
                               ) : null}
                             </div>
-                            <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                            <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--success)_30%,transparent)] bg-[var(--success-bg)] px-2 py-0.5 text-xs font-semibold text-[var(--success)]">
                               {deliverable.status.replace(/_/g, ' ')}
                             </span>
                           </div>
 
                           <div className="mt-4 space-y-3">
                             <div>
-                              <p className="text-xs font-medium text-[var(--foreground)]/70">Assigned</p>
+                              <p className="text-xs font-medium text-[var(--text-muted)]">Assigned</p>
                               <p className="text-sm text-[var(--foreground)]">{formatAssignees(deliverable.assignees)}</p>
                             </div>
 
@@ -760,6 +761,7 @@ export default function DeliverablesPage() {
                                 <>
                                   <input
                                     type="datetime-local"
+                                    aria-label="Due date"
                                     value={deadlineInputs[deliverable.id] ?? ''}
                                     onChange={(e) =>
                                       setDeadlineInputs((current) => ({
@@ -806,7 +808,7 @@ export default function DeliverablesPage() {
                                 {deliverable.completed ? (
                                   <CheckSquare className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                                 ) : (
-                                  <Square className="w-4 h-4 text-[var(--foreground)]/55" />
+                                  <Square className="w-4 h-4 text-[var(--text-muted)]" />
                                 )}
                                 {deliverable.completed ? 'Completed' : 'Complete'}
                               </button>
@@ -844,7 +846,7 @@ export default function DeliverablesPage() {
                                 </Button>
                               </div>
                               {!canSubmit && (
-                                <p className="mt-2 text-xs text-[var(--foreground)]/60">
+                                <p className="mt-2 text-xs text-[var(--text-muted)]">
                                   Assign yourself first to submit this deliverable.
                                 </p>
                               )}
@@ -855,7 +857,7 @@ export default function DeliverablesPage() {
                                       key={submission.id}
                                       className="rounded-lg border border-[var(--border)] bg-[var(--secondary)]/60 p-3"
                                     >
-                                      <p className="text-xs font-medium text-[var(--foreground)]/70">
+                                      <p className="text-xs font-medium text-[var(--text-muted)]">
                                         Submitted by {formatSubmitter(submission.submitter)}
                                       </p>
                                       <a
@@ -866,7 +868,7 @@ export default function DeliverablesPage() {
                                       >
                                         View submission
                                       </a>
-                                      <p className="mt-1 text-xs text-[var(--foreground)]/60">
+                                      <p className="mt-1 text-xs text-[var(--text-muted)]">
                                         {new Date(submission.submittedAt).toLocaleString()}
                                       </p>
                                     </div>
@@ -876,7 +878,7 @@ export default function DeliverablesPage() {
                                       key={assignee.id}
                                       className="rounded-lg border border-[var(--border)] bg-[var(--secondary)]/60 p-3"
                                     >
-                                      <p className="text-xs font-medium text-[var(--foreground)]/70">
+                                      <p className="text-xs font-medium text-[var(--text-muted)]">
                                         {formatPerson(assignee)} - Not submitted
                                       </p>
                                     </div>
@@ -900,7 +902,7 @@ export default function DeliverablesPage() {
                               >
                                 <span className="min-w-0 text-sm font-medium text-[var(--foreground)]">
                                   Subtasks
-                                  <span className="font-normal text-[var(--foreground)]/55">
+                                  <span className="font-normal text-[var(--text-muted)]">
                                     {' · '}
                                     {(deliverable.subtasks ?? []).filter((subtask) => subtask.completed).length}/
                                     {(deliverable.subtasks ?? []).length} done
@@ -909,18 +911,18 @@ export default function DeliverablesPage() {
                                 <ChevronDown
                                   aria-hidden="true"
                                   className={cn(
-                                    'h-4 w-4 shrink-0 text-[var(--foreground)]/60 transition-transform',
+                                    'h-4 w-4 shrink-0 text-[var(--text-muted)] transition-transform',
                                     subtasksExpanded && 'rotate-180',
                                   )}
                                 />
                               </button>
 
                               <div id={subtasksPanelId} hidden={!subtasksExpanded} className="mt-3 space-y-3">
-                                <p className="text-xs text-[var(--foreground)]/60">
+                                <p className="text-xs text-[var(--text-muted)]">
                                   Split the deliverable into smaller assigned steps.
                                 </p>
                                 {(deliverable.subtasks ?? []).length === 0 && (
-                                  <div className="rounded-lg border border-dashed border-[var(--border)] p-3 text-xs text-[var(--foreground)]/60">
+                                  <div className="rounded-lg border border-dashed border-[var(--border)] p-3 text-xs text-[var(--text-muted)]">
                                     No subtasks yet.
                                   </div>
                                 )}
@@ -1022,7 +1024,7 @@ export default function DeliverablesPage() {
                                             <p className={cn('text-sm font-medium text-[var(--foreground)]', subtask.completed && 'line-through opacity-60')}>
                                               {subtask.title}
                                             </p>
-                                            <p className="mt-1 text-xs text-[var(--foreground)]/60">
+                                            <p className="mt-1 text-xs text-[var(--text-muted)]">
                                               {formatPerson(subtask.assignee)}
                                               {subtask.dueDate ? ` • Due ${new Date(subtask.dueDate).toLocaleString()}` : ''}
                                             </p>
@@ -1037,7 +1039,7 @@ export default function DeliverablesPage() {
                                               {subtask.completed ? 'Mark Open' : 'Mark Done'}
                                             </Button>
                                           ) : (
-                                            <span className="text-xs text-[var(--foreground)]/55">
+                                            <span className="text-xs text-[var(--text-muted)]">
                                               {subtask.completed ? 'Done' : 'Open'}
                                             </span>
                                           )}

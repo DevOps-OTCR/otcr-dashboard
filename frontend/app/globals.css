@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@600;800&family=Mulish:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@600;800&family=Lexend:wght@400;500;600;700&family=Mulish:wght@300;400;500;600&family=Source+Sans+3:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 /* Theme is chosen by a class on <html> (see components/ThemeProvider.tsx). */
@@ -52,6 +52,77 @@
   color-scheme: dark;
 }
 
+:root {
+  --font-heading: 'Lexend', system-ui, sans-serif;
+  --font-body: 'Source Sans 3', system-ui, sans-serif;
+
+  /* Elevated-but-quiet fill for nested panels, table headers, toolbars. */
+  --surface-muted: #eef1f5;
+
+  /* Muted text on --card (#ffffff): #5a6472 vs #ffffff = 6.00:1 */
+  --text-muted: #5a6472;
+
+  /* Stronger divider for grouped rows / section breaks (>= 3:1 (to verify) on card). */
+  --border-strong: #8b95a3;
+
+  /* Success: #166534 on #dcfce7 = 6.49:1 */
+  --success: #166534;
+  --success-bg: #dcfce7;
+
+  /* Warning: #854d0e on #fef3c7 = 6.15:1 */
+  --warning: #854d0e;
+  --warning-bg: #fef3c7;
+
+  /* Danger: #991b1b on #fee2e2 = 6.80:1 */
+  --danger: #991b1b;
+  --danger-bg: #fee2e2;
+
+  /* Info: #075985 on #e0f2fe = 6.59:1 */
+  --info: #075985;
+  --info-bg: #e0f2fe;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 4px 10px -4px rgba(15, 23, 42, 0.12), 0 8px 24px -12px rgba(15, 23, 42, 0.18);
+}
+
+.dark {
+  /* Nested panel fill, one step above --card (#111a2b). */
+  --surface-muted: #172236;
+
+  /* Muted text on --card (#111a2b): #9aa7bb vs #111a2b = 7.14:1 */
+  --text-muted: #9aa7bb;
+
+  /* Stronger divider for grouped rows / section breaks (>= 3:1 (to verify) on card). */
+  --border-strong: #5f7290;
+
+  /* Success: #86efac on #14321f = 9.93:1 */
+  --success: #86efac;
+  --success-bg: #14321f;
+
+  /* Warning: #fcd34d on #3a2c07 = 9.44:1 */
+  --warning: #fcd34d;
+  --warning-bg: #3a2c07;
+
+  /* Danger: #fca5a5 on #3b1518 = 8.47:1 */
+  --danger: #fca5a5;
+  --danger-bg: #3b1518;
+
+  /* Info: #7dd3fc on #0b2b3f = 8.80:1 */
+  --info: #7dd3fc;
+  --info-bg: #0b2b3f;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.55);
+  --shadow-md: 0 4px 12px -4px rgba(0, 0, 0, 0.55), 0 10px 28px -12px rgba(0, 0, 0, 0.7);
+}
+
+h1,h2,h3,h4{font-family:var(--font-heading);letter-spacing:-0.01em}
+
+.tabular{font-variant-numeric:tabular-nums}
+
 * {
   border-color: var(--border);
 }
@@ -76,7 +147,10 @@ html.theme-changing *::after {
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: 'Space Grotesk', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* Google renders its embed in another origin, so theme the frame without reloading it. */

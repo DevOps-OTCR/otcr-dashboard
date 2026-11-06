@@ -594,6 +594,7 @@ export default function WorkstreamPage() {
             <CardContent className="space-y-5">
               <div className="flex flex-wrap items-center gap-3">
                 <select
+                  aria-label="Project"
                   value={selectedProjectId}
                   onChange={(e) => void handleProjectChange(e.target.value)}
                   className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
@@ -604,14 +605,14 @@ export default function WorkstreamPage() {
                     </option>
                   ))}
                 </select>
-                <span className="text-sm text-[var(--foreground)]/60">
+                <span className="text-sm text-[var(--text-muted)]">
                   {canManage
                     ? 'Create draft sprints, add deliverables, and release a week when it is ready.'
                     : 'Draft weeks are visible here, but work stays locked until released.'}
                 </span>
                 {canManage && (
                   <div className="flex flex-col gap-1">
-                    <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--foreground)]/55">
+                    <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
                       Due Date Week
                     </span>
                     <input
@@ -625,6 +626,7 @@ export default function WorkstreamPage() {
                 )}
                 {canManage && sprints.length > 0 && (
                   <select
+                    aria-label="Week"
                     value={selectedSprintId}
                     onChange={(e) => setSelectedSprintId(e.target.value)}
                     className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
@@ -655,12 +657,12 @@ export default function WorkstreamPage() {
                   </div>
                 )}
                 {sprints.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-[var(--border)] px-4 py-4 text-sm text-[var(--foreground)]/60">
+                  <div className="rounded-xl border border-dashed border-[var(--border)] px-4 py-4 text-sm text-[var(--text-muted)]">
                     <p>{canManage ? 'No sprints yet.' : 'No weeks yet.'}</p>
                     {canManage && (
                       <div className="mt-3 flex flex-wrap items-end gap-3">
                         <label className="flex flex-col gap-1">
-                          <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--foreground)]/55">
+                          <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
                             Due Date Week
                           </span>
                           <input
@@ -710,11 +712,11 @@ export default function WorkstreamPage() {
                           sprints.findIndex((item) => item.id === selectedSprint.id),
                         )}
                       </h3>
-                      <p className="text-sm text-[var(--foreground)]/60">
+                      <p className="text-sm text-[var(--text-muted)]">
                         {new Date(selectedSprint.weekStartDate).toLocaleDateString()} - {new Date(selectedSprint.weekEndDate).toLocaleDateString()}
                       </p>
                     </div>
-                    <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                    <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--success)_30%,transparent)] bg-[var(--success-bg)] px-2 py-0.5 text-xs font-semibold text-[var(--success)]">
                       {selectedSprint.status}
                     </span>
                   </div>
@@ -722,7 +724,7 @@ export default function WorkstreamPage() {
                   {canManage && (
                     <div className="mt-4 flex flex-wrap items-end gap-3 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/60 p-4">
                       <label className="flex flex-col gap-1">
-                        <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--foreground)]/55">
+                        <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
                           Workstream Week Start
                         </span>
                         <input
@@ -751,7 +753,7 @@ export default function WorkstreamPage() {
                     <p className="text-sm font-semibold text-[var(--foreground)]">
                       General Notes / Links
                     </p>
-                    <p className="mt-1 text-xs text-[var(--foreground)]/60">
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">
                       Week-level context for this workstream (updates, links, reminders).
                     </p>
                     {canManage ? (
@@ -785,7 +787,7 @@ export default function WorkstreamPage() {
                           <FileText className="w-4 h-4 text-[var(--primary)]" />
                           <p className="text-sm font-semibold text-[var(--foreground)]">Add Draft Deliverables</p>
                         </div>
-                        <p className="mt-1 text-xs text-[var(--foreground)]/60">
+                        <p className="mt-1 text-xs text-[var(--text-muted)]">
                           Paste lines that start with `-`. Each one becomes a deliverable in this sprint.
                         </p>
                         <textarea
@@ -821,7 +823,7 @@ export default function WorkstreamPage() {
                           Add whitepaper submission
                         </label>
                         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                          <span className="text-xs text-[var(--foreground)]/60">{parsedDrafts.length} parsed</span>
+                          <span className="text-xs text-[var(--text-muted)]">{parsedDrafts.length} parsed</span>
                           <div className="flex gap-2">
                             <Button size="sm" variant="ghost" onClick={() => void handleDeleteSprint()}>
                               Delete Week
@@ -844,7 +846,7 @@ export default function WorkstreamPage() {
                         <p className="text-sm font-semibold text-[var(--foreground)]">Parsed Deliverables</p>
                         <div className="mt-3 space-y-2">
                           {parsedDrafts.length === 0 && whitepaperPreviewItems.length === 0 ? (
-                            <div className="rounded-xl border border-dashed border-[var(--border)] p-3 text-sm text-[var(--foreground)]/60">
+                            <div className="rounded-xl border border-dashed border-[var(--border)] p-3 text-sm text-[var(--text-muted)]">
                               Paste lines starting with `-` to preview deliverables.
                             </div>
                           ) : (
@@ -897,24 +899,25 @@ export default function WorkstreamPage() {
                             <p className="text-sm font-semibold text-[var(--foreground)]">
                               {normalizeWeekText(deliverable.title)}
                             </p>
-                            <p className="text-xs text-[var(--foreground)]/55 mt-1">
+                            <p className="text-xs text-[var(--text-muted)] mt-1">
                               Due {new Date(deliverable.deadline).toLocaleString()}
                             </p>
                           </div>
-                          <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                          <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--success)_30%,transparent)] bg-[var(--success-bg)] px-2 py-0.5 text-xs font-semibold text-[var(--success)]">
                             {selectedSprint.status === 'RELEASED' ? 'final' : 'draft'}
                           </span>
                         </div>
 
                         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                           <div>
-                            <p className="text-xs font-medium text-[var(--foreground)]/70">Assigned</p>
+                            <p className="text-xs font-medium text-[var(--text-muted)]">Assigned</p>
                             <p className="text-sm text-[var(--foreground)]">{formatAssignees(deliverable.assignees)}</p>
                           </div>
                           {canManage ? (
                             <div className="flex flex-wrap items-center gap-2 justify-end">
                               <input
                                 type="datetime-local"
+                                aria-label="Due date"
                                 value={deadlineInputs[deliverable.id] ?? ''}
                                 onChange={(e) =>
                                   setDeadlineInputs((current) => ({
@@ -946,7 +949,7 @@ export default function WorkstreamPage() {
                               </Button>
                             </div>
                           ) : (
-                            <p className="text-xs text-[var(--foreground)]/60">
+                            <p className="text-xs text-[var(--text-muted)]">
                               Read-only until this week is released.
                             </p>
                           )}
@@ -956,7 +959,7 @@ export default function WorkstreamPage() {
                     ))}
 
                     {selectedSprintDeliverables.length === 0 && (
-                      <div className="rounded-xl border border-dashed border-[var(--border)] p-4 text-sm text-[var(--foreground)]/60">
+                      <div className="rounded-xl border border-dashed border-[var(--border)] p-4 text-sm text-[var(--text-muted)]">
                         {canManage ? 'No deliverables in this week yet.' : 'No deliverables in this week.'}
                       </div>
                     )}
