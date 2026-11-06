@@ -27,7 +27,9 @@ If the deck still needs an argument critique, say so in one line and point to `d
 
 Per slide: number, hidden flag, title, body, notes. Optional: `footer_page`, `layout` (for example `title_bold`, box positions).
 
-Accept JSON or the README §6.1 shape. If `layout` is absent, skip the visual checks and say so under Limits. Do not guess a layout.
+Skipped slides arrive as metadata only: `{number, hidden: true, skipped: true}`, with no title, body or notes (README §6.1). List them from that metadata.
+
+Accept JSON or the README §6.1 shape. If `layout` is absent, skip the visual checks and say so under Limits. Do not guess a layout. If `footer_page` is absent, the footer comparison is not checkable: put it under 'Not checkable from this input' and never infer it.
 
 ## 4. Skip rule
 
@@ -39,10 +41,12 @@ Slide 5 skipped (hidden/confidential)
 
 ## 5. Pass 1 — mechanics
 
+Each item carries a severity tag: 'MUST FIX' (wrong or embarrassing in front of the client), 'SHOULD FIX', or 'CHECK' (possible issue, human judgement). Order items within each section MUST FIX first.
+
 - [ ] Spelling and grammar
-- [ ] Page numbers run in sequence; footer page numbers match
+- [ ] Page numbers run in sequence; footer page numbers match — only where `footer_page` is present
 - [ ] Bolding is consistent
-- [ ] Box consistency and alignment — only where layout data is present
+- [ ] Box alignment: when boxes carry left_in (and width_in), compare left edges across visible slides; a box whose left edge differs from the deck's usual edge is a SHOULD FIX alignment finding citing the slide and both values. Only when no box positions are supplied does alignment go under Not checkable.
 - [ ] Odd wording (wrong preposition, half-finished sentence)
 - [ ] Cross-references ("see slide 7") point to something real
 - [ ] The same metric carries the same value on every slide
@@ -58,7 +62,7 @@ Slide 5 skipped (hidden/confidential)
 
 ## 7. Pass 3 — likely audience questions
 
-Five to eight questions the client is likely to ask. Each is tied to a slide, with a readiness note.
+Five to eight questions the client is likely to ask, fewer if the deck supports fewer. Every question must be grounded in a specific claim, assumption or gap on a visible slide — name it. Never invent a premise the deck does not show. Each question is tied to a slide, with a readiness note.
 
 Format: `Ready: presenter of slide N`.
 
@@ -71,10 +75,11 @@ Format: `Ready: presenter of slide N`.
 Slide N skipped (hidden/confidential)
 
 ## Mechanics
-- [ ] Slide N — issue — why it matters — suggested fix (one sentence)
+- [ ] Slide N — MUST FIX — issue — why it matters — suggested fix (one sentence)
 - [ ] ...
 
 ## Big picture
+- [ ] Slide N — MUST FIX — issue — why it matters — suggested fix (one sentence)
 - [ ] ...
 
 ## Likely audience questions
@@ -91,7 +96,7 @@ n items: n mechanics, n big picture, n questions.
 
 - No rewritten deck (`shared/otcr-quality-standards.md` §6.1). Findings only. One sentence per fix.
 - At most 25 items.
-- Every item cites a slide.
+- Every item cites a slide. A finding that spans slides cites every affected slide ('Slides 2 and 4 — …').
 - Quote at most 12 words of the original.
 - Never invent a typo. If unsure, leave it out.
 - Style preferences are not errors.
@@ -108,20 +113,20 @@ Synthetic deck, fictional client. Six slides; slide 5 is hidden and never read. 
 Slide 5 skipped (hidden/confidential)
 
 ## Mechanics
-- [ ] Slide 3 — footer shows 4 — page numbers will not match printed packs — renumber to match slide order
-- [ ] Slide 6 — "see slide 9" — slide 9 does not exist — point to a slide in 1–6 or delete the reference
-- [ ] Slide 2 — "€12M" vs slide 4 "€12.4M" — two values for the same market size — fix one figure and use it everywhere
-- [ ] Slide 3 — "1st Jan 2027" — date format differs from the rest of the deck — use the deck's format throughout
-- [ ] Slide 1 — title not bold while other slide titles are — bolding is inconsistent — bold the title to match
+- [ ] Slide 6 — MUST FIX — "see slide 9" — slide 9 does not exist — point to a slide in 1–6 or delete the reference
+- [ ] Slides 2 and 4 — MUST FIX — "€12M" vs "€12.4M" — two values for the same market size — fix one figure and use it everywhere
+- [ ] Slide 3 — SHOULD FIX — footer shows 4 — page numbers will not match printed packs — renumber to match slide order
+- [ ] Slide 3 — SHOULD FIX — "1st Jan 2027" — date format differs from the rest of the deck — use the deck's format throughout
+- [ ] Slide 1 — CHECK — title not bold while other slide titles are — bolding is inconsistent — bold the title to match
 
 ## Big picture
-- [ ] Slide 6 — roadmap lists Q3 2026 before Q1 2026 — chronology reads backwards — reorder into date order
-- [ ] Slide 2 vs slide 6 — exec summary names three priorities, body names four — mismatch will be noticed — align the two
-- [ ] Slide 4 — "€2M retrofit cost" — no owner or timeline — board cannot approve without these — add owner and dates
+- [ ] Slide 6 — MUST FIX — roadmap lists Q3 2026 before Q1 2026 — chronology reads backwards — reorder into date order
+- [ ] Slides 2 and 6 — MUST FIX — exec summary names three priorities, body names four — mismatch will be noticed — align the two
+- [ ] Slide 4 — SHOULD FIX — "€2M retrofit cost" — no owner or timeline — board cannot approve without these — add owner and dates
 
 ## Likely audience questions
-- [ ] Q: What happens to the pilot if the grant does not land? — not addressed — add a fallback line (Ready: presenter of slide 4)
-- [ ] Q: Who signs off the €2M? — no owner named — name the accountable executive (Ready: presenter of slide 4)
+- [ ] Q: Who signs off the €2M on slide 4? — no owner named — name the accountable executive (Ready: presenter of slide 4)
+- [ ] Q: How is the €2M retrofit cost phased? — slide 4 shows no timeline — add milestone dates (Ready: presenter of slide 4)
 
 ## Not checkable from this input
 Only title_bold was supplied as layout data, so box consistency and alignment were not checked.
@@ -135,5 +140,5 @@ Only title_bold was supplied as layout data, so box consistency and alignment we
 | Limit | Detail |
 |---|---|
 | Text export carries no rendering | Fonts, colour, overflow and truncation cannot be seen |
-| The skill cannot enforce skipping | The loader must strip hidden slides before the model call (§6.2) |
+| The skill cannot enforce skipping | The loader must strip hidden and confidential slide content before the model call (§6.2) |
 | Not LC-validated | This checklist is a working draft, not OTCR policy |

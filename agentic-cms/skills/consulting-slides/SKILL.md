@@ -1,7 +1,7 @@
 ---
 name: otcr-consulting-slides
 description: Use when an argument must become a consulting presentation — storyline, section structure, action titles, exhibits, slide-by-slide storyboard — or when an existing deck must be reviewed, or when a finished deck needs a final pre-send audit checklist. Produces a storyboard, a severity-ranked review, or an audit checklist, never a PowerPoint file. Do not use for visual formatting of a file, for gathering evidence (use research), or for writing the document (use whitepaper-writing).
-version: 0.3.0
+version: 0.3.1
 owner: Group 3 (Aritro, Teja)
 release: 1
 metadata:
@@ -41,6 +41,7 @@ Blending A and B produces a tour of topics. Blending B and C produces a polished
 - **Build** *(default)* — slide-by-slide content per §7.
 - **Restructure** — diagnosis of the current deck's argument + new storyline + revised slide map.
 - **Review** — severity-ranked findings (BLOCKING / MATERIAL / MINOR), each with issue + significance + fix.
+- **Audit** *(Job C, final pre-send check)* — `- [ ]` checklist across the three passes per §8.
 
 ---
 
@@ -233,7 +234,15 @@ Run this after the slides are assembled, before the deck leaves the building.
 - **Pass 2 — big picture.** Chronology, gaps in the argument, loopholes in the recommendation.
 - **Pass 3 — likely audience questions.** The questions an audience watching the presentation would ask, each tied to a slide and to who should be ready to answer it.
 
-Return `- [ ]` checklist items, each citing one slide ("Slide N"). Follow the review-only contract (`shared/otcr-quality-standards.md` §6.1) and the hidden/confidential rule (§6.2). Visual checks only from layout data present in the input; otherwise write "Not checkable from this input". Never invent a typo.
+Return `- [ ]` checklist items, each citing every slide it affects ("Slide N", "Slides N, M"). Follow the review-only contract (`shared/otcr-quality-standards.md` §6.1) and the hidden/confidential rule (§6.2). Never invent a typo.
+
+Operative rules:
+- Output sections in order: Skipped slides; Mechanics; Big picture; Likely audience questions; Not checkable from this input; one-line count.
+- Item format: `- [ ] Slide N — MUST FIX|SHOULD FIX|CHECK — issue — why it matters — suggested fix (one sentence)`.
+- At most 25 items. Quote at most 12 words.
+- Up to 8 audience questions, each grounded in a visible slide's claim, assumption or gap.
+- Footer and layout checks only when that data is present in the input.
+
 
 Full protocol: `references/deck-audit.md`. Source: PM interview P1, 2026-11-05.
 
