@@ -38,6 +38,7 @@ async function setup(t) {
   t.after(() => context.close());
   const errors = [];
   const patchCalls = [];
+  const scheduleCalls = [];
   let failNext = false;
 
   const weekStartDate = iso(0, 0);
@@ -72,6 +73,28 @@ async function setup(t) {
 
     if (pathname === '/auth/role') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ role: 'PM' }) });
+    }
+
+    if (pathname === '/projects/schedule') {
+      const params = new URL(req.url()).searchParams;
+      const from = params.get('from');
+      const to = params.get('to');
+      scheduleCalls.push(req.url());
+      const rows = [];
+      for (const [projectId, list] of Object.entries(deliverables)) {
+        for (const d of list) {
+          if (d.deadline >= from && d.deadline < to) {
+            rows.push({ id: d.id, title: d.title, deadline: d.deadline, projectId, status: d.status });
+          }
+        }
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+        projects: [
+          { id: 'team-1', name: 'Team One', timeZone: 'America/Chicago', canManage: true },
+          { id: 'team-2', name: 'Team Two', timeZone: 'America/Chicago', canManage: false },
+        ],
+        deliverables: rows,
+      }) });
     }
 
     if (pathname === '/projects') {
@@ -132,11 +155,11 @@ async function setup(t) {
   await page.goto('http://navigation.test/overview');
   await page.addStyleTag({ content: styles });
 
-  return { page, col, patchCalls, day, iso, fail: () => { failNext = true; } };
+  return { page, col, patchCalls, scheduleCalls, day, iso, fail: () => { failNext = true; } };
 }
 
 test('Google Calendar stays the default and the Team schedule tab loads items', async t => {
-  const { page } = await setup(t);
+  const { page, scheduleCalls } = await setup(t);
   await page.getByRole('tab', { name: 'Google Calendar' }).waitFor();
   assert.equal(await page.getByRole('tab', { name: 'Google Calendar' }).getAttribute('aria-selected'), 'true');
 
@@ -145,6 +168,8 @@ test('Google Calendar stays the default and the Team schedule tab loads items', 
   await researchBtn.waitFor();
   const memoBtn = page.locator('button[aria-label^="Pricing memo"]').first();
   await memoBtn.waitFor();
+
+  assert.equal(scheduleCalls.length >= 1, true);
 
   assert.equal(await memoBtn.getAttribute('draggable'), 'false');
   assert.equal(await researchBtn.getAttribute('draggable'), 'true');
@@ -252,4 +277,32 @@ test('month view shows the whole month and still saves a drag', async t => {
   const d = new Date(moveCall.body.deadline);
   assert.equal(chicagoYmd(d), localYmd(targetNoon));
   assert.equal(chicagoHour(d), chicagoHour(new Date(iso(2, 17))));
+});
+
+test('a slow response for an earlier week never overwrites the week now shown', async t => {
+  const { page } = await setup(t);
+  let pageCalls = 0;
+  await page.route('**/api/projects/schedule**', async route => {
+    pageCalls += 1;
+    if (pageCalls > 1) return route.fallback();
+    const from = new URL(route.request().url()).searchParams.get('from');
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+      projects: [{ id: 'team-1', name: 'Team One', timeZone: 'America/Chicago', canManage: true }],
+      deliverables: [{ id: 'stale-1', title: 'Stale week item', deadline: new Date(Date.parse(from) + 8 * 86400000 + 12 * 3600000).toISOString(), projectId: 'team-1', status: 'IN_PROGRESS' }],
+    }) });
+  });
+
+  await page.getByRole('tab', { name: 'Team schedule' }).click();
+  await page.getByRole('button', { name: 'Next week', exact: true }).click();
+
+  const deadline = Date.now() + 5000;
+  while (pageCalls < 2 && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  assert.equal(pageCalls >= 2, true);
+  await new Promise(resolve => setTimeout(resolve, 2500));
+
+  assert.equal(await page.getByText('Stale week item').count(), 0);
+  assert.equal(await page.getByRole('button', { name: 'Next week', exact: true }).isEnabled(), true);
 });

@@ -59,7 +59,6 @@ function serverMessageOf(err: unknown): string {
 }
 
 export function CmsCalendar({ refreshKey = 0 }: { refreshKey?: number }) {
-  const { items, setItems, projects, loading, error, warning } = useCmsSchedule(refreshKey);
   const [anchor, setAnchor] = useState<Date>(() => startOfWeek(new Date()));
   const [view, setView] = useState<'week' | 'month'>('week');
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -71,6 +70,11 @@ export function CmsCalendar({ refreshKey = 0 }: { refreshKey?: number }) {
   const itemRefs = useRef(new Map<string, HTMLButtonElement>());
 
   const days = view === 'week' ? weekDays(anchor) : monthGridDays(anchor);
+  const { items, setItems, projects, loading, error, warning } = useCmsSchedule(
+    refreshKey,
+    days[0],
+    addDays(days[days.length - 1], 1),
+  );
   const today = new Date();
 
   async function moveItem(item: CalendarItem, targetDay: Date) {
@@ -240,14 +244,18 @@ export function CmsCalendar({ refreshKey = 0 }: { refreshKey?: number }) {
             {warning}
           </div>
         )}
-        {loading && <p className="text-sm text-[var(--foreground)]/70">Loading schedule…</p>}
+        {loading && (
+          <p role="status" aria-live="polite" className="text-sm text-[var(--foreground)]/70">
+            Loading schedule…
+          </p>
+        )}
         {error && !loading && (
           <p role="alert" className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-500/40 dark:bg-red-950/40 dark:text-red-200">
             {error}
           </p>
         )}
 
-        {!loading && !error && (
+        {!error && (
           <>
             <div className="overflow-x-auto">
               <div className="grid min-w-[40rem] grid-cols-7 gap-1.5">

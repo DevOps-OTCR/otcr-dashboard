@@ -368,6 +368,7 @@ export const projectsAPI = {
     },
   ) => api.patch(`/projects/${projectId}/sprint-config`, data),
   getSprints: (projectId: string) => cachedRequest(`/projects/${projectId}/sprints`, () => api.get(`/projects/${projectId}/sprints`)),
+  getSchedule: (from: string, to: string) => api.get('/projects/schedule', { params: { from, to } }),
   updateSprintNotes: (projectId: string, sprintId: string, data: { generalNotes?: string }) =>
     api.patch(`/projects/${projectId}/sprints/${sprintId}/notes`, data),
   getSprintById: (projectId: string, sprintId: string) =>
