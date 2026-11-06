@@ -163,8 +163,8 @@ export function GoogleCalendarPanel({
               className={
                 'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition' +
                 (allSelected
-                  ? ' border-[var(--primary)] bg-[var(--secondary)]'
-                  : ' border-[var(--border)] opacity-60')
+                  ? ' border-[var(--primary)] bg-[var(--primary)]/10 font-medium text-[var(--foreground)]'
+                  : ' border-dashed border-[var(--border)] text-[var(--foreground)]/70')
               }
             >
               All calendars
@@ -180,12 +180,12 @@ export function GoogleCalendarPanel({
                   className={
                     'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition' +
                     (isSelected
-                      ? ' border-[var(--primary)] bg-[var(--secondary)]'
-                      : ' border-[var(--border)] opacity-60')
+                      ? ' border-[var(--primary)] bg-[var(--primary)]/10 font-medium text-[var(--foreground)]'
+                      : ' border-dashed border-[var(--border)] text-[var(--foreground)]/70')
                   }
                 >
                   <span
-                    className="h-2.5 w-2.5 rounded-full"
+                    className={'h-2.5 w-2.5 rounded-full' + (isSelected ? '' : ' opacity-40')}
                     style={{ backgroundColor: source.color }}
                     aria-hidden
                   />
