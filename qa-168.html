@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PR #168 — Group 3 skills (1/4): research, whitepaper-writing, consulting-slides</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #0f1115;
+    color: #e8e8ea;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 32px;
+  }
+  section.scene {
+    min-height: 860px;
+    padding: 24px 0;
+    border-bottom: 1px solid #1d2129;
+  }
+  section.scene:last-child { border-bottom: none; }
+  .title-card {
+    min-height: 760px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 16px;
+  }
+  .kicker {
+    font-size: 14px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #9aa4b2;
+  }
+  h1 { font-size: 44px; margin: 0; line-height: 1.15; }
+  h2 { font-size: 26px; margin: 0 0 16px; }
+  h3 { font-size: 15px; margin: 0 0 10px; color: #c7ccd6; text-transform: uppercase; letter-spacing: 0.08em; }
+  h3.prompt-label { margin-top: 8px; }
+  .subtitle { font-size: 16px; color: #9aa4b2; margin: 0; max-width: 900px; line-height: 1.5; }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  .col { min-width: 0; }
+  pre.prompt {
+    max-height: 300px;
+    overflow: auto;
+    background: #14171d;
+    border: 1px solid #222834;
+    border-radius: 8px;
+    padding: 16px;
+    font-size: 13px;
+   
+line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #d6dae2;
+  }
+  pre.out {
+    max-height: 420px;
+    overflow: auto;
+    background: #14171d;
+    border: 1px solid #222834;
+    border-radius: 8px;
+    padding: 16px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #d6dae2;
+    margin: 0;
+  }
+  .missing {
+    background: #2a1a1d;
+    border: 1px solid #5a2b33;
+    border-radius: 8px;
+    padding: 16px;
+    color: #f0b7bf;
+    font-size: 13px;
+  }
+  .checks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .chip {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 2px;
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: #fff;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .chip-inline {
+    display: inline-block;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+  .chip-label { font-weight: 600; }
+  .chip-detail { opacity: 0.85; }
+  table.summary {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  table.summary th, table.summary td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid #1d2129;
+    vertical-align: middle;
+  }
+  table.summary thead th {
+    color: #9aa4b2;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+  }
+  table.summary tbody tr:hover { background: #14171d; }
+</style>
+</head>
+<body>
+<section class="scene">
+    <div class="title-card">
+      <div class="kicker">PR #168</div>
+      <h1>Group 3 skills (1/4): research, whitepaper-writing, consulting-slides</h1>
+      <p class="subtitle">Real runs on Illinois Lumen — DeepSeek V4.1 Flash. Same prompt, with and without this PR's skill files. Generated 2026-11-06.</p>
+    </div>
+  </section>
+<section class="scene">
+      <h2>Research brief</h2>
+      <h3 class="prompt-label">Prompt</h3>
+      <pre class="prompt">You are OTCR Bot helping a university strategy-consulting team. Client: Harbor Lane Coffee, a Champaign-Urbana specialty roaster deciding whether to sell wholesale beans to campus cafés. Research question: how large is the wholesale opportunity across UIUC campus cafés over the next 2 years, and what evidence would a PM need before recommending it? Produce the research brief. Keep the whole answer under 450 words.</pre>
+    </section>
+<section class="scene">
+      <h2>Research brief — comparison</h2>
+      <div class="grid">
+        <div class="col"><h3>Without skill</h3><pre class="out">**Research Brief: Harbor Lane Coffee — UIUC Campus Café Wholesale Opportunity**
+
+**Bottom line:** Estimated $420K–$650K annual wholesale bean opportunity across UIUC campus cafés, growing to $500K–$780K by 2026. Evidence is directionally favorable but insufficient for a PM recommendation without primary validation.
+
+**Market sizing (top-down + bottom-up triangulation)**
+- UIUC campus + Campustown: ~50–60 cafés, dining halls, and coffee-serving outlets (UIUC Dining, Illini Union, coffee shops along Green St.).
+- Assume 35–45 qualified buyers (daily espresso/drip operations); ~25–30 currently buy wholesale from regional roasters (Intelligentsia, Dark Matter, Columbia Street).
+- Average campus café consumes 300–500 lb/month green-equivalent; blended wholesale price $9–$13/lb.
+- Bottom-up: 40 buyers × 400 lb/mo × $11 × 12 = ~$2.1M total category. Harbor Lane realistic capture 20–30% = **$420K–$650K**.
+
+**Two-year outlook:** UIUC enrollment growth (+2–3%/yr) and campus dining expansion support 15–20% category growth. Realistic serviceable opportunity rises to $500K–$780K by 2026, assuming no major competitor lock-in.
+
+**Evidence a PM needs before recommending**
+1. **Demand validation:** 10–15 café owner interviews confirming willingness to switch/dual-source and acceptable price points.
+2. **Competitive audit:** Current roaster contracts, terms, and switching costs (equipment, training, exclusivity).
+3. **Unit economics:** COGS, delivery/logistics for campus density, gross margin target &gt;40%.
+4. **Capacity check:** Roasting capacity headroom to add 15K–25K lb/yr without disrupting retail.
+5. **Pilot data:** 1–2 café pilot over 8–12 weeks measuring reorder rate and retention.
+
+**Risks:** Long incumbent contracts; low switching incentive if quality parity; thin margins on small-drop deliveries; UIUC procurement rules for campus-owned outlets.
+
+**Recommendation:** Proceed to validation, not commitment. Run 3 discovery interviews + one paid pilot before any go decision. Confidence: medium.
+
+*Sources: UIUC Dining Services, Campustown business listings, specialty coffee wholesale benchmarks. Figures are estimates pending primary research.*
+</pre><div class="checks"><div class="chip" style="background:#3a4250"><span class="chip-label">Words</span><span class="chip-detail">280 words</span></div><div class="chip" style="background:#8b1e2d"><span class="chip-label">Evidence ledger with claim IDs (S#/I#)</span><span class="chip-detail">no claim IDs</span></div><div class="chip" style="background:#8b1e2d"><span class="chip-label">Marks missing data instead of inventing it</span><span class="chip-detail">none</span></div><div class="chip" style="background:#1f6f43"><span class="chip-label">States confidence or assumptions</span><span class="chip-detail">confidence/assumption language present</span></div></div></div>
+        <div class="col"><h3>With skill (this PR)</h3><pre class="out"># How large is the wholesale opportunity across UIUC campus cafés over the next 2 years, and what evidence would a PM need before recommending it? — Research Brief
+
+Project/workstream: Harbor Lane wholesale expansion · Prepared for: PM / LC
+Decision this informs: whether Harbor Lane commits sales capacity to a wholesale pilot with campus cafés in the next two academic years.
+
+## Executive takeaway
+The opportunity is real but modest and unquantified at the level the decision needs. A defensible campus-wide revenue figure requires café counts, cups sold, and bean cost per cup — none of which we hold. The PM should treat &quot;go&quot; as conditional on three pieces of primary evidence: a census of campus café outlets, 3–5 buyer interviews on current supplier and price, and the café&#39;s bean cost per drink. Until then the answer is **not yet**.
+
+## Findings
+F1. The number of UIUC campus café outlets is the denominator for every sizing attempt and is not established here. [DATA NEEDED: count of campus-area cafés and coffee-serving outlets — sets the entire TAM denominator — UIUC facilities/dining directories + a walk census]
+F2. Wholesale revenue is a function of outlets × cups/day × bean cost per cup × Harbor Lane&#39;s share. Harbor Lane&#39;s sellable capacity against that demand is the binding constraint the PM must price. [DATA NEEDED: Harbor Lane monthly roast capacity net of retail — decides whether demand or supply caps the pilot — internal production records]
+F3. Demand-side evidence (café willingness to switch supplier) cannot be inferred from market structure; it requires direct buyer contact. [DATA NEEDED: current bean supplier, price per lb, and contract terms for 3–5 campus cafés — the only evidence that moves the switch probability — buyer interviews]
+
+## Evidence ledger
+
+| ID | Claim | Type | Source | Data date | Confidence |
+|---|---|---|---|---|---|
+| I1 | Campus-wide wholesale opportunity is not sizeable enough to commit capacity without primary validation. | INFERENCE | F1–F3 | — | Low |
+| I2 | The pilot decision should be deferred pending outlet census and 3–5 buyer interviews. | RECOMMENDATION | I1 | — | Low |
+
+## Limitations
+The weakest link is F1: without an outlet count, no revenue range can be stated. Every downstream number is blocked on this.
+
+## Open questions
+1. How many coffee-serving outlets exist on and adjacent to campus? — sets TAM.
+2. What do campus cafés currently pay per pound, and to whom? — sets price ceiling.
+3. What is Harbor Lane&#39;s net roast capacity? — sets the ceiling on share.
+
+---
+**Reviewer note (LC):** Check first whether an outlet census already exists in prior work before commissioning a new one. Assumption made: &quot;campus cafés&quot; = outlets within the UIUC campus footprint, 2-year horizon, wholesale green/roasted bean sales only (not equipment or training).
+</pre><div class="checks"><div class="chip" style="background:#3a4250"><span class="chip-label">Words</span><span class="chip-detail">470 words</span></div><div class="chip" style="background:#1f6f43"><span class="chip-label">Evidence ledger with claim IDs (S#/I#)</span><span class="chip-detail">I1, I2, I1</span></div><div class="chip" style="background:#1f6f43"><span class="chip-label">Marks missing data instead of inventing it</span><span class="chip-detail">not established</span></div><div class="chip" style="background:#1f6f43"><span class="chip-label">States confidence or assumptions</span><span class="chip-detail">confidence/assumption language present</span></div></div></div>
+      </div>
+    </section>
+<section class="scene">
+      <h2>Whitepaper executive summary</h2>
+      <h3 class="prompt-label">Prompt</h3>
+      <pre class="prompt">You are OTCR Bot. Write the executive-summary section (max 350 words) of a whitepaper for Harbor Lane Coffee recommending whether to pursue wholesale to UIUC campus cafés. Facts available: 14 campus cafés; 3 already buy from a Chicago roaster; average café uses ~40 lb/week; Harbor Lane wholesale price $11/lb vs competitor $12.50/lb; capacity headroom 600 lb/week.</pre>
+    </section>
+<section class="scene">
+      <h2>Whitepaper executive summary — comparison</h2>
+      <div class="grid">
+        <div class="col"><h3>Without skill</h3><pre class="out">## Executive Summary
+
+Harbor Lane Coffee faces a well-defined expansion decision: whether to enter wholesale supply for the 14 cafés on the UIUC campus. Our analysis supports pursuing this opportunity, with disciplined sequencing.
+
+The addressable market is substantial. Fourteen campus cafés each consume roughly 40 lb of coffee per week, implying total campus demand of approximately 560 lb/week. Harbor Lane currently holds no share of this market, and three cafés are already served by a Chicago roaster — evidence that campus operators buy from off-campus wholesalers and will switch for the right offer. Harbor Lane&#39;s wholesale price of $11/lb undercuts the incumbent&#39;s $12.50/lb by 12%, a durable advantage that requires no discounting below margin-supporting levels.
+
+Capacity is not a constraint at current volumes, but it becomes one under full penetration. Harbor Lane carries 600 lb/week of headroom against total campus demand of 560 lb/week. Capturing the entire market would consume 93% of available capacity, leaving almost no buffer for retail demand, seasonality, or equipment downtime. The recommendation is therefore to target a defined share rather than the whole market: securing 8–10 cafés, or roughly 320–400 lb/week, uses 53–67% of headroom and preserves operational resilience. That volume represents a 57–71% increase over current wholesale throughput and would meaningfully diversify revenue away from retail.
+
+Two risks warrant management attention. First, the three cafés under contract with the Chicago roaster may have service or logistics expectations Harbor Lane must match, not merely beat on price. Second, campus demand is highly seasonal, concentrating volume into the academic calendar and creating idle capacity in summer. Both are mitigable through service-level commitments and a pricing structure that smooths seasonal swings.
+
+We recommend Harbor Lane proceed: launch a pilot with two to three unserved cafés in the coming semester, validate delivery economics and reorder behavior, then scale toward the 8–10 café target. This approach captures a high-margin, undercut-priced opportunity while protecting the capacity buffer the retail business depends on.
+</pre><div class="checks"><div class="chip" style="background:#3a4250"><span class="chip-label">Words</span><span class="chip-detail">322 words</span></div><div class="chip" style="background:#1f6f43"><span class="chip-label">≤ 350 words</span><span class="chip-detail">322 words</span></div><div class="chip" style="background:#8b1e2d"><span class="chip-label">Recommendation in the first 60 words</span><span class="chip-detail">no recommendation in first 60 words</span></div></div></div>
+        <div class="col"><h3>With skill (this PR)</h3><pre class="out"># Executive Summary
+
+Harbor Lane Coffee should pursue wholesale supply to UIUC campus cafés, entering at a price advantage that covers incremental cost and is constrained by a capacity limit small enough to keep the downside bounded. The campus holds 14 cafés; 3 already buy from an incumbent Chicago roaster. At an average draw of roughly 40 lb per café per week, the full campus represents about 560 lb per week of potential wholesale demand — within Harbor Lane&#39;s stated 600 lb per week of capacity headroom, but only barely, and only if every café converted.
+
+We recommend a phased entry rather than a campus-wide push. Harbor Lane&#39;s wholesale price of $11 per pound undercuts the incumbent&#39;s $12.50 by $1.50, a 12% discount that is the single clearest reason a café would switch. That advantage is real but not decisive on its own: cafés buy coffee on reliability, delivery cadence, and the cost of switching a menu they have already built around, none of which a price sheet answers. The 3 incumbent-served cafés are therefore the hardest accounts and should be approached last, after Harbor Lane has proof of service from the 11 uncontested ones.
+
+The capacity figure is the binding constraint and should shape the entire plan. Converting all 11 uncontested cafés at 40 lb per week would consume roughly 440 lb of the 600 lb headroom, leaving thin margin for existing retail demand and for any account that grows. We recommend targeting 5–7 cafés in a first phase — approximately 200–280 lb per week — which absorbs the fixed cost of a wholesale route, stays well inside capacity, and tests whether the price advantage is sufficient to win accounts at all.
+
+The decision turns on one question the evidence does not yet answer: whether campus cafés will switch roaster on price alone. We recommend a 90-day pilot with 5 targeted cafés. Kill criteria: fewer than 3 signed accounts, or blended gross margin below the retail equivalent, by the end of the pilot.
+
+---
+**Reviewer note:** The load-bearing assumption is that average café draw (40 lb/week) and the 600 lb/week capacity headroom are both comparable — the first is per café, the second is total — and that the two can be subtracted directly. An LC should verify the capacity figure is genuinely *unused* weekly headroom and not total capacity, since the entire phased recommendation rests on that arithmetic. The $1.50 price gap is stated as a fact from the brief; its durability (whether the incumbent matches) is untested and is the second thing to challenge.
+</pre><div class="checks"><div class="chip" style="background:#3a4250"><span class="chip-label">Words</span><span class="chip-detail">427 words</span></div><div class="chip" style="background:#8b1e2d"><span class="chip-label">≤ 350 words</span><span class="chip-detail">427 words</span></div><div class="chip" style="background:#1f6f43"><span class="chip-label">Recommendation in the first 60 words</span><span class="chip-detail">should pursue</span></div></div></div>
+      </div>
+    </section>
+<section class="scene">
+      <h2>Slide storyboard</h2>
+      <h3 class="prompt-label">Prompt</h3>
+      <pre class="prompt">You are OTCR Bot. Storyboard a 6-slide client deck recommending that Harbor Lane Coffee pilot wholesale to 4 UIUC campus cafés. Same facts: 14 cafés; 3 use a Chicago roaster; ~40 lb/week each; Harbor Lane $11/lb vs $12.50/lb competitor; 600 lb/week spare capacity. Keep the whole answer under 450 words.</pre>
+    </section>
+<section class="scene">
+      <h2>Slide storyboard — comparison</h2>
+      <div class="grid">
+        <div class="col"><h3>Without skill</h3><pre class="out">**Deck: &quot;Fueling the Quad — A Wholesale Pilot for Harbor Lane Coffee&quot;** (6 slides)
+
+**Slide 1 — Title**
+- *Harbor Lane Coffee: A Campus Wholesale Pilot*
+- Subhead: 4 UIUC cafés. 12 weeks. One clear decision.
+
+**Slide 2 — The Opportunity**
+- 14 cafés across UIUC campus.
+- Only 3 currently buy from a Chicago roaster — 11 are unserved or self-supplied.
+- Each café uses ~40 lb/week.
+- Takeaway: a large, under-penetrated local market sits in walking distance.
+
+**Slide 3 — Why Harbor Lane Wins**
+- Price: Harbor Lane $11/lb vs. competitor $12.50/lb — ~12% savings.
+- Local: no Chicago freight, faster delivery, fresher roast.
+- Capacity: 600 lb/week spare — a 4-café pilot needs only ~160 lb/week.
+- Takeaway: cheaper, fresher, and we have room to serve it.
+
+**Slide 4 — The Pilot**
+- Scope: 4 campus cafés, 12 weeks.
+- Volume: ~160 lb/week (~1,920 lb total).
+- Terms: $11/lb, weekly delivery, 2-week trial ramp.
+- Takeaway: low-risk, low-commitment, quickly measurable.
+
+**Slide 5 — What Success Looks Like**
+- Usage: ≥90% of pilot cafés reorder by week 6.
+- Economics: pilot adds ~$1,760/week revenue.
+- Proof point: becomes the reference for the remaining 10 cafés.
+- Takeaway: this pilot is the wedge into all 14.
+
+**Slide 6 — The Ask**
+- Approve a 12-week, 4-café pilot at $11/lb.
+- Assign an owner and start date.
+- Review at week 12; scale to remaining cafés if metrics hold.
+
+**Speaker note:** Competitor&#39;s $12.50/lb leaves room to win on both price and proximity — and 600 lb/week capacity means we can scale without new equipment.
+</pre><div class="checks"><div class="chip" style="background:#3a4250"><span class="chip-label">Slide titles found</span><span class="chip-detail">6 titles</span></div><div class="chip" style="background:#8b1e2d"><span class="chip-label">Titles are full-sentence takeaways</span><span class="chip-detail">0 of 6 titles are sentences</span></div></div></div>
+        <div class="col"><h3>With skill (this PR)</h3><pre class="out"># Harbor Lane Coffee — UIUC Wholesale Pilot
+Governing thought: Harbor Lane should pilot wholesale to 4 of the 14 UIUC campus cafés at $11/lb, converting about a third of the Chicago-roaster accounts with existing spare capacity and no new equipment.
+
+#1 Pilot wholesale to four campus cafés, funded entirely by Harbor Lane&#39;s idle roasting capacity
+- 14 UIUC campus cafés; 3 buy from a Chicago roaster
+- Those 3 each use ~40 lb/week, ~120 lb/week combined
+- Pilot: 4 cafés [ESTIMATE: S1 + one adjacent non-roaster account as a control]
+- 600 lb/week spare capacity comfortably absorbs ~160 lb/week
+Source: S1 (café census, 14 cafés); S2 (40 lb/week/café); S6 (600 lb/week spare)
+
+#2 Harbor Lane enters $1.50/lb below the incumbent, a 12% price advantage
+- Harbor Lane $11.00/lb vs Chicago roaster $12.50/lb
+- 12% gap [ESTIMATE: (12.50 − 11.00) ÷ 12.50]
+- Competitor serves only 3 of 14 cafés; remaining 11 are unserved or self-supplied
+- Margin headroom retained at pilot volume
+Source: S3 ($11/lb); S4 ($12.50/lb)
+
+#3 The three Chicago-roaster accounts are the natural first converts at the limit of the 600 lb/week headroom
+- Each conversion adds ~40 lb/week of committed volume
+- 3 conversions = 120 lb/week, ~20% of spare capacity
+- Capacity ceiling implies a maximum of ~15 similar accounts before expansion
+- Pricing advantage, not capacity, is the binding constraint at pilot scale
+Source: S2, S6; derived ceiling [ESTIMATE: 600 ÷ 40]
+
+#4 Conversion hinges on three tests: price, cup consistency, and delivery cadence
+- Price: already a 12% advantage (S3, S4)
+- Consistency: unproven — competitor has an established roast profile
+- Cadence: UIUC cafés need twice-weekly drops; Harbor Lane has no wholesale route today
+- Each café&#39;s buying decision is owned by a manager, not central procurement (I1)
+Source: I1 (inferred from café census showing independent purchasing)
+
+#5 Run a 12-week, 4-café pilot with explicit kill criteria
+- Owner (proposed): Wholesale lead, Harbor Lane
+- Phase 1 (weeks 1–4): onboard 2 cafés, weekly cupping check
+- Phase 2 (weeks 5–12): add 2 more, track reorder rate
+- Kill if reorder rate &lt;70% by week 8 or cupping variance exceeds agreed tolerance
+- Gate: LC sign-off before extending to remaining 10 cafés
+Source: S1–S6; thresholds anchored to ledger values
+
+#6 Pilot caps capital exposure at idle capacity while proving the wholesale motion
+- Worst case: 4 cafés churn, ~0 net cost — capacity was idle
+- Best case: 120–160 lb/week recurring, ~$7,000–9,400/month incremental revenue [ESTIMATE: 160 lb × $11 × 4.3 weeks]
+- Decision requested: approve the 12-week pilot and name the owner
+Source: S2, S3, S6
+
+---
+Evidence:
+| ID | Claim | Type | Basis |
+|---|---|---|---|
+| S1 | 14 UIUC campus cafés | Given | Prompt |
+| S2 | ~40 lb/week per café | Given | Prompt |
+| S3 | Harbor Lane $11/lb | Given | Prompt |
+| S4 | Competitor $12.50/lb | Given | Prompt |
+| S5 | 3 cafés use Chicago roaster | Given | Prompt |
+| S6 | 600 lb/week spare capacity | Given | Prompt |
+| I1 | Café managers own purchasing | Inference | Census shows no central buyer |
+
+Data gaps (max 3): [DATA NEEDED: competitor contract terms — determines switchability — ask café managers]; [DATA NEEDED: Harbor Lane incremental roast cost — sets true margin — finance]; [DATA NEEDED: delivery cost to Champaign — changes payback — ops]
+
+Reviewer note: Assumes &quot;pilot to 4&quot; includes one non-roaster café as a control, and that spare capacity carries no incremental fixed cost — confirm with ops before client delivery.
+</pre><div class="checks"><div class="chip" style="background:#3a4250"><span class="chip-label">Slide titles found</span><span class="chip-detail">6 titles</span></div><div class="chip" style="background:#1f6f43"><span class="chip-label">Titles are full-sentence takeaways</span><span class="chip-detail">6 of 6 titles are sentences</span></div></div></div>
+      </div>
+    </section>
+<section class="scene">
+    <h2>Summary</h2>
+    <table class="summary"><thead><tr><th>Task</th><th>Check</th><th>Without</th><th>With</th></tr></thead><tbody><tr>
+        <td>Research brief</td>
+        <td>Words</td>
+        <td><span class="chip chip-inline" style="background:#3a4250">INFO</span></td>
+        <td><span class="chip chip-inline" style="background:#3a4250">INFO</span></td>
+      </tr><tr>
+        <td>Research brief</td>
+        <td>Evidence ledger with claim IDs (S#/I#)</td>
+        <td><span class="chip chip-inline" style="background:#8b1e2d">FAIL</span></td>
+        <td><span class="chip chip-inline" style="background:#1f6f43">PASS</span></td>
+      </tr><tr>
+        <td>Research brief</td>
+        <td>Marks missing data instead of inventing it</td>
+        <td><span class="chip chip-inline" style="background:#8b1e2d">FAIL</span></td>
+        <td><span class="chip chip-inline" style="background:#1f6f43">PASS</span></td>
+      </tr><tr>
+        <td>Research brief</td>
+        <td>States confidence or assumptions</td>
+        <td><span class="chip chip-inline" style="background:#1f6f43">PASS</span></td>
+        <td><span class="chip chip-inline" style="background:#1f6f43">PASS</span></td>
+      </tr><tr>
+        <td>Whitepaper executive summary</td>
+        <td>Words</td>
+        <td><span class="chip chip-inline" style="background:#3a4250">INFO</span></td>
+        <td><span class="chip chip-inline" style="background:#3a4250">INFO</span></td>
+      </tr><tr>
+        <td>Whitepaper executive summary</td>
+        <td>≤ 350 words</td>
+        <td><span class="chip chip-inline" style="background:#1f6f43">PASS</span></td>
+        <td><span class="chip chip-inline" style="background:#8b1e2d">FAIL</span></td>
+      </tr><tr>
+        <td>Whitepaper executive summary</td>
+        <td>Recommendation in the first 60 words</td>
+        <td><span class="chip chip-inline" style="background:#8b1e2d">FAIL</span></td>
+        <td><span class="chip chip-inline" style="background:#1f6f43">PASS</span></td>
+      </tr><tr>
+        <td>Slide storyboard</td>
+        <td>Slide titles found</td>
+        <td><span class="chip chip-inline" style="background:#3a4250">INFO</span></td>
+        <td><span class="chip chip-inline" style="background:#3a4250">INFO</span></td>
+      </tr><tr>
+        <td>Slide storyboard</td>
+        <td>Titles are full-sentence takeaways</td>
+        <td><span class="chip chip-inline" style="background:#8b1e2d">FAIL</span></td>
+        <td><span class="chip chip-inline" style="background:#1f6f43">PASS</span></td>
+      </tr></tbody></table>
+  </section>
+</body>
+</html>
