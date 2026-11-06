@@ -29,7 +29,7 @@ Per slide: number, hidden flag, title, body, notes. Optional: `footer_page`, `la
 
 Skipped slides arrive as metadata only: `{number, hidden: true, skipped: true}`, with no title, body or notes (README §6.1). List them from that metadata.
 
-Accept JSON or the README §6.1 shape. If `layout` is absent, skip the visual checks and say so under Limits. Do not guess a layout. If `footer_page` is absent, the footer comparison is not checkable: put it under 'Not checkable from this input' and never infer it.
+Accept JSON or the README §6.1 shape. If `layout` is absent, skip the visual checks and report that under 'Not checkable from this input'. Do not guess a layout. If `footer_page` is absent, the footer comparison is not checkable: put it under 'Not checkable from this input' and never infer it.
 
 ## 4. Skip rule
 

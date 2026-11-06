@@ -204,7 +204,7 @@ Working ledger (body):
 
 Full thirteen-field ledger for the appendix and handoff: `shared/evidence-format.md`.
 
-**Rules:** `S#` = a claim stated by a source, including supplied facts. `I#` = any claim you create (inference, derived estimate, new assumption). Never split, suffix or rename a supplied ID (no `S2a`). IDs are stable and never renumbered. Type a claim once: the label or "we infer", not both. One claim per row. `High` = capable + corroborated; `Medium` = capable single or corroborated weak; `Low` = inference/soft assumption/contested.
+**Rules:** `S#` = a claim stated by a source, including supplied facts. `I#` = any claim you create (inference, derived estimate, new assumption). Never split, suffix or rename a supplied ID (no `S2a`). IDs are stable and never renumbered. Type a claim once: the label or "we infer", not both. One claim per row. `High` = capable + corroborated, or official primary data; `Medium` = capable single or corroborated weak; `Low` = inference/soft assumption/contested.
 
 **No claim may be typed higher than its evidence allows.** This is the failure that destroys trust in an otherwise good document.
 
@@ -222,7 +222,7 @@ Decision this informs: …
 
 1. Research question and scope      primary question, sub-questions, scope contract, out of scope
 2. Executive takeaway               3–5 sentences: the answer, not the process
-3. Key findings                     F1..Fn: finding → evidence (S-IDs) → so-what, ranked by decision relevance
+3. Key findings                     F1..Fn (a display label only): finding (cite the I#) → evidence (source S-IDs) → so-what, ranked by decision relevance. Each analyst-created finding also gets an I# ledger row that cites its source IDs (§7).
 4. Supporting evidence              the substance: numbers with definitions, periods, units
 5. Market/competitive landscape     only what the decision needs
 6. Strategic implications           options, trade-offs, what would have to be true; the answer to the question asked (below)
