@@ -153,7 +153,7 @@ notes: <speaker notes>
 confidentiality: <tag or empty>
 ```
 
-**Filtered input.** Hidden and confidential slides are dropped upstream, before the model call. For a slide that is hidden or confidential the loader sends only:
+**Filtered input.** For a slide that is hidden or confidential, the slide content (title, body and notes) is dropped upstream, before the model call, and the loader sends only:
 
 ```
 ---
