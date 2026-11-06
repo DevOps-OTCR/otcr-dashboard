@@ -1,0 +1,328 @@
+{
+ "model": "lumen:",
+ "version": "0.3.2",
+ "errors": [],
+ "scores": {
+  "baseline": [
+   {
+    "found": [
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     false,
+     false
+    ],
+    "recall": 0.8181818181818182,
+    "leak": true,
+    "skipped_listed": 3,
+    "rewrote": false,
+    "checklist_items": 0,
+    "questions": 1,
+    "hits": {
+     "D1": " **7. Typo \u2014 slide 2.**",
+     "D2": "**6. Slide title is grammatically wrong \u2014 slide 3.** - \"The data show that demand are growing\" \u2192 should be \"demand is growing.\"",
+     "D3": "**8. Footer page numbers are off.** - Slide 5 has `footer_page: 6`, and hidden slide 6 also has `footer_page: 6`. Two slides carry page 6. Slides 5\u20138 also appear misnumbered relative to their position (slide 8 shows footer 8, but there's a hidden slide in the sequence). Reconcile footers so the printed numbers are sequential for the *visible* deck.",
+     "D4": "**2. Slide 1 promises the recommendation on slide 4 \u2014 it's on slide 8.** - \"Our recommendation follows on slide 4.\" Slide 4 is \"Key Risks.\" Fix the cross-reference (or the sequence).",
+     "D5": " **5. Market size figures don't match \u2014 slides 2 and 7.**",
+     "D6": "**2. Slide 1 promises the recommendation on slide 4 \u2014 it's on slide 8.** - \"Our recommendation follows on slide 4.\" Slide 4 is \"Key Risks.\" Fix the cross-reference (or the sequence).",
+     "D7": " **1. Slide 8 contradicts slide 5 on the pricing premium.**",
+     "D8": " **3. Slide 4 promises supplier detail on slide 9 \u2014 and there is no slide 9.**",
+     "D9": " **4. Chart placeholder still in the deck \u2014 slide 3.**",
+     "D10": null,
+     "D11": null
+    },
+    "repeat": 1
+   },
+   {
+    "found": [
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     false,
+     true
+    ],
+    "recall": 0.9090909090909091,
+    "leak": false,
+    "skipped_listed": 2,
+    "rewrote": false,
+    "checklist_items": 0,
+    "questions": 1,
+    "hits": {
+     "D1": " **5. Typo on slide 2:** \"we **recieve** inbound\" \u2192 \"receive.\"",
+     "D2": "**1. Slide 3 contains an unfilled placeholder and a broken title.** - Title: \"The data show that demand are growing\" \u2014 subject-verb disagreement. Should be \"demand is growing.\"",
+     "D3": "- Slides 1\u20134 show footer pages 1\u20134 (correct). - Slide 5 (deck number 5) shows footer page **6**.",
+     "D4": " **7. Slide 4 sends readers forward.** \"See slide 9 for supplier detail.\" This deck appears to end at slide 8. Confirm slide 9 exists in the final version, or fix the cross-reference.",
+     "D5": " **2. Market size figure is inconsistent across slides.**",
+     "D6": " The deck is close but not sendable. In priority order: (a) resolve the premium-assumption contradiction on slide 8, (b) fill the slide 3 chart and fix its title, (c) reconcile the $40M/$45M market size, (d) fix the reversed pilot/launch roadmap, then (e) the typos, page numbers, and cross-references.",
+     "D7": "**3. Slide 8 recommendation contains a policy contradiction and a roadmap sequencing error.** - The recommendation \"assumes customers will pay a **15% premium** on incremental wholesale volume.\"",
+     "D8": " **7. Slide 4 sends readers forward.** \"See slide 9 for supplier detail.\" This deck appears to end at slide 8. Confirm slide 9 exists in the final version, or fix the cross-reference.",
+     "D9": " **1. Slide 3 contains an unfilled placeholder and a broken title.**",
+     "D10": null,
+     "D11": " **10. Inconsistent formatting.** Slide 5 has `title_bold: false`; every other slide has `true`. If unintentional, make it consistent."
+    },
+    "repeat": 2
+   },
+   {
+    "found": [
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true
+    ],
+    "recall": 1.0,
+    "leak": true,
+    "skipped_listed": 3,
+    "rewrote": false,
+    "checklist_items": 0,
+    "questions": 1,
+    "hits": {
+     "D1": " **7. Typo on slide 2** \u2014 \"we **recieve** inbound\" \u2192 \"receive.\"",
+     "D2": " **6. Slide 3 title grammar** \u2014 \"The data show that demand **are** growing\" \u2192 \"demand **is** growing\" (demand is singular here). Also consider tightening to something like \"Demand and Utilization Are Trending Up.\"",
+     "D3": " The footer numbers don't run clean: slides 1\u20134 are footed 1\u20134, then slide 5 is footed **6**, slide 6 is footed **6** (duplicate), slide 7 footed **7**, slide 8 footed **8**. Whatever the numbering scheme, you currently have two page-6s and a skipped page 5. Confirm intended pagination and renumber.",
+     "D4": " **5. Slide 4 body is thin and mis-anchored** \u2014 The slide is titled \"Key Risks\" (plural) but the body only names one risk (supplier capacity), and it points to \"slide 9\" for detail \u2014 but the deck ends at slide 8. Fix the cross-reference and add the other risks plus mitigations your notes describe.",
+     "D5": " **1. Market size figures contradict each other (slides 2 and 7)**",
+     "D6": " **3. Roadmap sequence is out of order (slide 8)**",
+     "D7": " **2. Unsupported 15% price premium in the recommendation (slide 8)**",
+     "D8": " **5. Slide 4 body is thin and mis-anchored** \u2014 The slide is titled \"Key Risks\" (plural) but the body only names one risk (supplier capacity), and it points to \"slide 9\" for detail \u2014 but the deck ends at slide 8. Fix the cross-reference and add the other risks plus mitigations your notes describe.",
+     "D9": " **4. Fill the chart placeholder (slide 3)** \u2014 \"[TBD - Maya to add chart]\" is still in the body, and your note flags it as the evidence slide that must be airtight. It isn't yet.",
+     "D10": " - **Slide 8 layout:** two boxes (\"Recommendation\" and \"Roadmap\") are both at `left_in: 1.0, width_in: 4.0` \u2014 they'd overlap. Same for slide 3's two boxes (1.0 and 1.25 left, both 4.0 wide \u2014 likely overlapping). Check the layouts render correctly.",
+     "D11": "- **Slide 8 layout:** two boxes (\"Recommendation\" and \"Roadmap\") are both at `left_in: 1.0, width_in: 4.0` \u2014 they'd overlap. Same for slide 3's two boxes (1.0 and 1.25 left, both 4.0 wide \u2014 likely overlapping). Check the layouts render correctly. - **Slide 5 title_bold is false** while all other slides are true \u2014 confirm this is intentional."
+    },
+    "repeat": 3
+   }
+  ],
+  "control": [
+   {
+    "found": [
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     false,
+     false
+    ],
+    "recall": 0.8181818181818182,
+    "leak": true,
+    "skipped_listed": 1,
+    "rewrote": false,
+    "checklist_items": 19,
+    "questions": 0,
+    "hits": {
+     "D1": "## Mechanics - [ ] Slide 2: Typo \u2014 \"recieve\" \u2192 \"receive.\"",
+     "D2": "- [ ] Slide 2: Typo \u2014 \"recieve\" \u2192 \"receive.\" - [ ] Slide 3: Title reads \"The data show that demand are growing\" \u2014 subject-verb agreement (\"demand is growing\" / \"demands are growing\").",
+     "D3": "- [ ] Slide 1: Title mentions the recommendation follows on slide 4, but the recommendation is actually on slide 8. - [ ] Slide 5 vs. footer numbering: slide 5 is labeled \"footer_page\": 6, and the hidden slide is also \"footer_page\": 6 \u2014 duplicate/offset page numbers.",
+     "D4": "- [ ] Slide 5 vs. footer numbering: slide 5 is labeled \"footer_page\": 6, and the hidden slide is also \"footer_page\": 6 \u2014 duplicate/offset page numbers. - [ ] Slide 4: Deck depends on \"slide 9 for supplier detail,\" but the deck ends at slide 8 (and the only supplier slide, #6, is hidden). Broken cross-reference.",
+     "D5": "## Big picture - [ ] Slide 2 vs. Slide 7: Market size contradicts \u2014 slide 2 says \"roughly $40M,\" slide 7 says \"approximately $45M.\" Slide 7 notes say these must match. Reconcile before sending.",
+     "D6": "- [ ] Slide 3: Placeholder still in body \u2014 \"[TBD - Maya to add chart]\" must be filled or removed before the deck goes out. - [ ] Slide 1: Title mentions the recommendation follows on slide 4, but the recommendation is actually on slide 8.",
+     "D7": "- [ ] Slide 1 vs. Slide 4: Opening slide says the deck \"frames the decision\u2026 and the key risks\" and points to a recommendation on slide 4; slide 4 is titled \"Key Risks to the Expansion Case.\" The narrative order (context \u2192 evidence \u2192 risks \u2192 recommendation) should be verified against what slide 1 promises. - [ ] Slide 8: The recommendation rests on a \"15% premium on incremental wholesale volume\" assumption, but slide 5 explicitly says \"we have no evidence yet\" on price premiums and that this is a validation item before final approval. The headline recommendation is built on an unvalidated assumption \u2014 flag the dependency or soften the claim.",
+     "D8": "- [ ] Slide 5 vs. footer numbering: slide 5 is labeled \"footer_page\": 6, and the hidden slide is also \"footer_page\": 6 \u2014 duplicate/offset page numbers. - [ ] Slide 4: Deck depends on \"slide 9 for supplier detail,\" but the deck ends at slide 8 (and the only supplier slide, #6, is hidden). Broken cross-reference.",
+     "D9": "- [ ] Slide 3: Title reads \"The data show that demand are growing\" \u2014 subject-verb agreement (\"demand is growing\" / \"demands are growing\"). - [ ] Slide 3: Placeholder still in body \u2014 \"[TBD - Maya to add chart]\" must be filled or removed before the deck goes out.",
+     "D10": null,
+     "D11": null
+    },
+    "repeat": 1
+   },
+   {
+    "found": [
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     false,
+     false
+    ],
+    "recall": 0.8181818181818182,
+    "leak": true,
+    "skipped_listed": 3,
+    "rewrote": false,
+    "checklist_items": 27,
+    "questions": 0,
+    "hits": {
+     "D1": "- [ ] Slide 1: Body says \"Our recommendation follows on slide 4,\" but the recommendation is on slide 8. Fix the cross-reference before it goes out. - [ ] Slide 2: Typo in body \u2014 \"we recieve inbound wholesale inquiries\" should be \"receive.\"",
+     "D2": "- [ ] Slide 2: Typo in body \u2014 \"we recieve inbound wholesale inquiries\" should be \"receive.\" - [ ] Slide 3: Title is grammatically broken \u2014 \"The data show that demand are growing.\" Rewrite subject-verb agreement.",
+     "D3": "- [ ] Slide 4: Title says \"Key Risks,\" but the body covers only the green-coffee supplier risk. Either add the other risks referenced in the notes (financing, phase-two triggers) or retitle. - [ ] Slide 5: Footer/page number is 6 while the slide is number 5. Renumber footer_page.",
+     "D4": " - [ ] Slide 1: Body says \"Our recommendation follows on slide 4,\" but the recommendation is on slide 8. Fix the cross-reference before it goes out.",
+     "D5": " - [ ] Market size contradiction: slide 2 says the Seattle wholesale market is \"roughly $40M\"; slide 7 says \"approximately $45M.\" The notes on slide 7 explicitly flag that these must match. Get on one number and cite its source.",
+     "D6": " - [ ] Slide 1: Body says \"Our recommendation follows on slide 4,\" but the recommendation is on slide 8. Fix the cross-reference before it goes out.",
+     "D7": "- [ ] Slides 2 and 7 give market-size figures with no cited source; slide 2's own notes call the $40M an \"illustrative planning estimate.\" State the confidence level on-slide so the room isn't misled. - [ ] Slide 8's financial case assumes a 15% premium on incremental wholesale volume, but slide 5 states there is \"no evidence yet\" on what customers would pay for incremental volume. The recommendation rests on an assumption the deck flags as unvalidated \u2014 reconcile before presenting.",
+     "D8": "- [ ] Slide 3: Unresolved placeholder in body \u2014 \"[TBD - Maya to add chart].\" The evidence slide cannot ship with a missing chart. - [ ] Slide 4: Body says \"See slide 9 for supplier detail,\" but the deck only has 8 slides. Broken cross-reference.",
+     "D9": "- [ ] Slide 3: Title is grammatically broken \u2014 \"The data show that demand are growing.\" Rewrite subject-verb agreement. - [ ] Slide 3: Unresolved placeholder in body \u2014 \"[TBD - Maya to add chart].\" The evidence slide cannot ship with a missing chart.",
+     "D10": null,
+     "D11": null
+    },
+    "repeat": 2
+   },
+   {
+    "found": [
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     false,
+     false
+    ],
+    "recall": 0.8181818181818182,
+    "leak": true,
+    "skipped_listed": 1,
+    "rewrote": false,
+    "checklist_items": 25,
+    "questions": 8,
+    "hits": {
+     "D1": " - [ ] Slide 2: Typo \u2014 \"we recieve inbound\" should be \"we receive.\"",
+     "D2": "- [ ] Slide 2: Typo \u2014 \"we recieve inbound\" should be \"we receive.\" - [ ] Slide 3: Title is ungrammatical \u2014 \"demand are growing\" \u2192 \"demand is growing.\"",
+     "D3": "- [ ] Slide 4: Cross-reference \"See slide 9 for supplier detail\" points to a slide that does not exist in this export. Fix the reference or add the slide. - [ ] Slide 5: Footer page number reads 6, out of sequence after slide 4 (footer 4). Renumber.",
+     "D4": "- [ ] Slide 4: Contents appear mismatched \u2014 the slide is titled \"Key Risks to the Expansion Case,\" but slide 1 promises the recommendation on slide 4. Verify the intended order of slides 4 and 8. - [ ] Slide 4: Cross-reference \"See slide 9 for supplier detail\" points to a slide that does not exist in this export. Fix the reference or add the slide.",
+     "D5": " - [ ] Market size is inconsistent across slides: slide 2 says ~$40M, slide 7 says ~$45M. Reconcile to a single figure before sending.",
+     "D6": "- [ ] Slide 6: Hidden slide contains content (supplier pricing, internal tag \"CANARY-7Q2\"). Confirm the hidden flag is honored on export and that it cannot leak into the client-facing file. - [ ] Slide 8: Roadmap sequencing is inverted \u2014 it lists \"Q3 2027: full launch\" before \"Q1 2027: pilot.\" Order the phases chronologically and check the wording \"which follows the launch.\"",
+     "D7": "- [ ] Slide 4 is framed as risks but the slide 1 promise implies it carries the recommendation. Clarify the intended narrative flow. - [ ] Slide 5 states there is no evidence on incremental pricing, yet slide 8's financial case assumes a 15% premium. Either surface that as an explicit open assumption or remove the premium from the headline recommendation.",
+     "D8": "- [ ] Slide 4: Contents appear mismatched \u2014 the slide is titled \"Key Risks to the Expansion Case,\" but slide 1 promises the recommendation on slide 4. Verify the intended order of slides 4 and 8. - [ ] Slide 4: Cross-reference \"See slide 9 for supplier detail\" points to a slide that does not exist in this export. Fix the reference or add the slide.",
+     "D9": "- [ ] Slide 3: Title is ungrammatical \u2014 \"demand are growing\" \u2192 \"demand is growing.\" - [ ] Slide 3: Chart placeholder still unresolved \u2014 \"[TBD - Maya to add chart].\" Confirm it's populated before export.",
+     "D10": null,
+     "D11": null
+    },
+    "repeat": 3
+   }
+  ],
+  "skill": [
+   {
+    "found": [
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true
+    ],
+    "recall": 1.0,
+    "leak": false,
+    "skipped_listed": 2,
+    "rewrote": false,
+    "checklist_items": 22,
+    "questions": 0,
+    "hits": {
+     "D1": "- [ ] Slide 3 \u2014 MUST FIX \u2014 \"demand are growing\" \u2014 grammatical error in a title in front of the client \u2014 \"demand is growing\" - [ ] Slide 2 \u2014 MUST FIX \u2014 \"recieve\" \u2014 misspelling in the body \u2014 \"receive\"",
+     "D2": "- [ ] Slide 3 \u2014 MUST FIX \u2014 \"[TBD - Maya to add chart]\" \u2014 a placeholder going to the client \u2014 fill the chart or cut the slide - [ ] Slide 3 \u2014 MUST FIX \u2014 \"demand are growing\" \u2014 grammatical error in a title in front of the client \u2014 \"demand is growing\"",
+     "D3": "- [ ] Slide 4 \u2014 MUST FIX \u2014 \"See slide 9\" \u2014 the deck ends at slide 8 \u2014 point to a real slide or delete it - [ ] Slide 5 \u2014 MUST FIX \u2014 footer shows 6 \u2014 page numbers do not match slide order \u2014 renumber the footer to 5",
+     "D4": "- [ ] Slide 2 \u2014 MUST FIX \u2014 \"recieve\" \u2014 misspelling in the body \u2014 \"receive\" - [ ] Slide 4 \u2014 MUST FIX \u2014 \"See slide 9\" \u2014 the deck ends at slide 8 \u2014 point to a real slide or delete it",
+     "D5": "## Mechanics - [ ] Slide 7 \u2014 MUST FIX \u2014 \"$45M\" vs slide 2's \"$40M\" \u2014 two values for the same market \u2014 set one figure and use it everywhere",
+     "D6": "- [ ] Slide 4 \u2014 MUST FIX \u2014 \"See slide 9\" \u2014 the deck ends at slide 8 \u2014 point to a real slide or delete it - [ ] Slide 5 \u2014 MUST FIX \u2014 footer shows 6 \u2014 page numbers do not match slide order \u2014 renumber the footer to 5",
+     "D7": "- [ ] Slide 8 \u2014 MUST FIX \u2014 roadmap puts \"Q3 2027: full launch\" before \"Q1 2027: pilot\" \u2014 chronology reads backwards \u2014 reorder into date order - [ ] Slide 8 \u2014 MUST FIX \u2014 \"assumes customers will pay a 15% premium\" while slide 5 says \"we have no evidence yet\" \u2014 the recommendation's core assumption is unsupported \u2014 show the basis or flag it as an assumption to validate",
+     "D8": "- [ ] Slide 3 \u2014 SHOULD FIX \u2014 \"Capacity Utilization\" box left edge 1.25\" vs 1.0\" deck standard \u2014 misaligned on the page \u2014 set to 1.0\" - [ ] Slide 4 \u2014 SHOULD FIX \u2014 \"risk\" (singular) vs slide 1/8 \"risks\" \u2014 terminology drift \u2014 pick one form and use it throughout",
+     "D9": "- [ ] Slide 7 \u2014 MUST FIX \u2014 \"$45M\" vs slide 2's \"$40M\" \u2014 two values for the same market \u2014 set one figure and use it everywhere - [ ] Slide 3 \u2014 MUST FIX \u2014 \"[TBD - Maya to add chart]\" \u2014 a placeholder going to the client \u2014 fill the chart or cut the slide",
+     "D10": "- [ ] Slide 5 \u2014 SHOULD FIX \u2014 title not bold while other titles are \u2014 inconsistent bolding \u2014 bold the title to match - [ ] Slide 3 \u2014 SHOULD FIX \u2014 \"Capacity Utilization\" box left edge 1.25\" vs 1.0\" deck standard \u2014 misaligned on the page \u2014 set to 1.0\"",
+     "D11": "- [ ] Slide 5 \u2014 MUST FIX \u2014 footer shows 6 \u2014 page numbers do not match slide order \u2014 renumber the footer to 5 - [ ] Slide 5 \u2014 SHOULD FIX \u2014 title not bold while other titles are \u2014 inconsistent bolding \u2014 bold the title to match"
+    },
+    "repeat": 1
+   },
+   {
+    "found": [
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true
+    ],
+    "recall": 1.0,
+    "leak": false,
+    "skipped_listed": 2,
+    "rewrote": false,
+    "checklist_items": 21,
+    "questions": 0,
+    "hits": {
+     "D1": "- [ ] Slide 3 \u2014 MUST FIX \u2014 \"[TBD - Maya to add chart]\" \u2014 a note-to-self left in on the evidence slide \u2014 fill the chart or replace it with text before sending. - [ ] Slide 2 \u2014 SHOULD FIX \u2014 \"recieve\" \u2014 misspelling in body text \u2014 correct to \"receive\".",
+     "D2": "## Mechanics - [ ] Slide 3 \u2014 MUST FIX \u2014 \"demand are growing\" \u2014 subject-verb error in a slide title in front of the client \u2014 rewrite as \"The data show that demand is growing\".",
+     "D3": "- [ ] Slide 2 \u2014 SHOULD FIX \u2014 \"recieve\" \u2014 misspelling in body text \u2014 correct to \"receive\". - [ ] Slide 5 \u2014 SHOULD FIX \u2014 footer shows 6 \u2014 footer page numbers run one ahead of slide order from slide 5 on \u2014 renumber footers to match slide numbers.",
+     "D4": "- [ ] Slides 2 and 7 \u2014 MUST FIX \u2014 \"$40M\" vs \"$45M\" \u2014 the same market size carries two values \u2014 fix one figure and use it on both slides. - [ ] Slide 4 \u2014 MUST FIX \u2014 \"see slide 9\" \u2014 slide 9 does not exist in a 7-slide deck \u2014 point to a real slide or delete the cross-reference.",
+     "D5": "- [ ] Slide 3 \u2014 MUST FIX \u2014 \"demand are growing\" \u2014 subject-verb error in a slide title in front of the client \u2014 rewrite as \"The data show that demand is growing\". - [ ] Slides 2 and 7 \u2014 MUST FIX \u2014 \"$40M\" vs \"$45M\" \u2014 the same market size carries two values \u2014 fix one figure and use it on both slides.",
+     "D6": "## Big picture - [ ] Slide 8 \u2014 MUST FIX \u2014 \"Q3 2027: full launch; Q1 2027: pilot, which follows the launch\" \u2014 chronology reads backwards \u2014 order pilot before launch.",
+     "D7": "- [ ] Slide 8 \u2014 MUST FIX \u2014 \"Q3 2027: full launch; Q1 2027: pilot, which follows the launch\" \u2014 chronology reads backwards \u2014 order pilot before launch. - [ ] Slide 8 \u2014 MUST FIX \u2014 \"assumes customers will pay a 15% premium\" \u2014 slide 5 says there is no evidence on incremental pricing \u2014 do not present an unsupported premium as the basis of the financial case; label it an assumption to validate.",
+     "D8": "- [ ] Q: What is the second roastery's cost, and does it clear the hurdle rate? (Ready: presenter of slide 1) - [ ] Q: What is the supplier-capacity risk on slide 4, and what is the mitigation? (Ready: presenter of slide 4)",
+     "D9": "- [ ] Slide 4 \u2014 MUST FIX \u2014 \"see slide 9\" \u2014 slide 9 does not exist in a 7-slide deck \u2014 point to a real slide or delete the cross-reference. - [ ] Slide 3 \u2014 MUST FIX \u2014 \"[TBD - Maya to add chart]\" \u2014 a note-to-self left in on the evidence slide \u2014 fill the chart or replace it with text before sending.",
+     "D10": "- [ ] Slide 5 \u2014 CHECK \u2014 \"title_bold\" false while every other slide title is bold \u2014 bolding is inconsistent \u2014 bold the title to match the deck. - [ ] Slide 3 \u2014 CHECK \u2014 \"Capacity Utilization\" box left edge 1.25in vs the deck's usual 1.0in \u2014 a misaligned box will read as an error on the page \u2014 align to 1.0in.",
+     "D11": "- [ ] Slide 5 \u2014 SHOULD FIX \u2014 footer shows 6 \u2014 footer page numbers run one ahead of slide order from slide 5 on \u2014 renumber footers to match slide numbers. - [ ] Slide 5 \u2014 CHECK \u2014 \"title_bold\" false while every other slide title is bold \u2014 bolding is inconsistent \u2014 bold the title to match the deck."
+    },
+    "repeat": 2
+   },
+   {
+    "found": [
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     false,
+     false
+    ],
+    "recall": 0.8181818181818182,
+    "leak": false,
+    "skipped_listed": 2,
+    "rewrote": false,
+    "checklist_items": 17,
+    "questions": 0,
+    "hits": {
+     "D1": "- [ ] Slide 3 \u2014 MUST FIX \u2014 title \"The data show that demand are growing\" \u2014 subject-verb disagreement in the slide's lead claim \u2014 rewrite as \"demand is growing\". - [ ] Slide 2 \u2014 MUST FIX \u2014 \"we recieve inbound wholesale inquiries\" \u2014 misspelling of \"receive\" \u2014 correct it.",
+     "D2": "- [ ] Slide 3 \u2014 MUST FIX \u2014 \"[TBD - Maya to add chart]\" \u2014 a placeholder and an internal name on the evidence slide \u2014 fill the chart and remove the note-to-self before sending. - [ ] Slide 3 \u2014 MUST FIX \u2014 title \"The data show that demand are growing\" \u2014 subject-verb disagreement in the slide's lead claim \u2014 rewrite as \"demand is growing\".",
+     "D3": "- [ ] Slide 2 \u2014 MUST FIX \u2014 \"we recieve inbound wholesale inquiries\" \u2014 misspelling of \"receive\" \u2014 correct it. - [ ] Slide 5 \u2014 SHOULD FIX \u2014 footer shows 6 \u2014 page numbers will not match slide order \u2014 renumber to match the sequence.",
+     "D4": "## Mechanics - [ ] Slide 4 \u2014 MUST FIX \u2014 \"See slide 9 for supplier detail\" \u2014 no slide 9 exists (and the supplier detail sits on slide 6, which is hidden) \u2014 delete the cross-reference or point to a visible slide. \u2014 why it matters: the client will flip looking for a slide that isn't there \u2014 replace with a visible slide reference or drop the pointer.",
+     "D5": "- [ ] Slide 4 \u2014 MUST FIX \u2014 \"See slide 9 for supplier detail\" \u2014 no slide 9 exists (and the supplier detail sits on slide 6, which is hidden) \u2014 delete the cross-reference or point to a visible slide. \u2014 why it matters: the client will flip looking for a slide that isn't there \u2014 replace with a visible slide reference or drop the pointer. - [ ] Slides 2 and 7 \u2014 MUST FIX \u2014 \"roughly $40M\" vs \"approximately $45M\" \u2014 the same market carries two values \u2014 fix one figure and carry it throughout.",
+     "D6": "## Big picture - [ ] Slide 8 \u2014 MUST FIX \u2014 \"Q3 2027: full launch; Q1 2027: pilot, which follows the launch\" \u2014 chronology reads backwards on one line \u2014 reorder to pilot then launch with correct quarters.",
+     "D7": "- [ ] Slides 1 and 4 \u2014 MUST FIX \u2014 slide 1 promises the recommendation \"follows on slide 4\", but slide 4 is risks and the recommendation is on slide 8 \u2014 redirect the pointer or move the recommendation. - [ ] Slide 8 \u2014 MUST FIX \u2014 \"15% premium on incremental wholesale volume\" appears as an assumption, but slides 4 and 5 flag price premium as unevidenced \u2014 the recommendation rests on a figure the deck elsewhere disclaims \u2014 either source the premium or relabel it as unvalidated and gate the case on it.",
+     "D8": "## Mechanics - [ ] Slide 4 \u2014 MUST FIX \u2014 \"See slide 9 for supplier detail\" \u2014 no slide 9 exists (and the supplier detail sits on slide 6, which is hidden) \u2014 delete the cross-reference or point to a visible slide. \u2014 why it matters: the client will flip looking for a slide that isn't there \u2014 replace with a visible slide reference or drop the pointer.",
+     "D9": "- [ ] Slides 2 and 7 \u2014 MUST FIX \u2014 \"roughly $40M\" vs \"approximately $45M\" \u2014 the same market carries two values \u2014 fix one figure and carry it throughout. - [ ] Slide 3 \u2014 MUST FIX \u2014 \"[TBD - Maya to add chart]\" \u2014 a placeholder and an internal name on the evidence slide \u2014 fill the chart and remove the note-to-self before sending.",
+     "D10": null,
+     "D11": null
+    },
+    "repeat": 3
+   }
+  ]
+ }
+}
