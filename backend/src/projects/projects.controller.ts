@@ -102,7 +102,7 @@ export class ProjectsController {
   async getSchedule(
     @Query('from') from: string,
     @Query('to') to: string,
-    @GetUser() user: any
+    @GetUser() user: { id: string; role: string }
   ) {
     const fromDate = this.parseIsoInstant(from);
     const toDate = this.parseIsoInstant(to);
