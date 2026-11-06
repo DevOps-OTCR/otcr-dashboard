@@ -9,9 +9,8 @@ import {
   type CalendarEventInput,
   type CalendarItem,
 } from '@/lib/cms-calendar';
-import type { ProjectSprintSummary, SprintSummary } from '@/lib/dashboard-deliverables';
+import type { ProjectSprintSummary } from '@/lib/dashboard-deliverables';
 import { useAuth } from '@/components/AuthContext';
-import { getEffectiveRole } from '@/lib/permissions';
 
 export type ScheduleProject = { id: string; name: string; color: string };
 
@@ -24,13 +23,35 @@ type UseCmsScheduleResult = {
   warning: string | null;
 };
 
-export function useCmsSchedule(refreshKey = 0): UseCmsScheduleResult {
+type ScheduleProjectRow = {
+  id: string;
+  name: string;
+  timeZone: string;
+  canManage: boolean;
+};
+
+type ScheduleDeliverableRow = {
+  id: string;
+  title: string;
+  deadline: string;
+  projectId: string;
+  status: string;
+};
+
+export function useCmsSchedule(
+  refreshKey = 0,
+  from: Date,
+  to: Date,
+): UseCmsScheduleResult {
   const { user, getToken } = useAuth();
   const [items, setItems] = useState<CalendarItem[]>([]);
   const [projects, setProjects] = useState<ScheduleProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+
+  const fromMs = from.getTime();
+  const toMs = to.getTime();
 
   useEffect(() => {
     let cancelled = false;
@@ -41,45 +62,50 @@ export function useCmsSchedule(refreshKey = 0): UseCmsScheduleResult {
         if (cancelled) return;
         setAuthToken(token || user?.email || null);
 
-        const role = await getEffectiveRole(token, user?.email);
-        if (cancelled) return;
+        const res = await projectsAPI.getSchedule(
+          new Date(fromMs).toISOString(),
+          new Date(toMs).toISOString(),
+        );
+        const rawProjects: ScheduleProjectRow[] =
+          res.data?.projects ?? [];
+        const rawDeliverables: ScheduleDeliverableRow[] =
+          res.data?.deliverables ?? [];
 
-        const res = await projectsAPI.getAll({ includeMembers: true, limit: 100 });
-        const rawProjects: Array<{
-          id: string;
-          name: string;
-          pm?: { email?: string | null } | null;
-          sprintTimezone?: string | null;
-        }> = res.data?.projects ?? [];
-
-        const email = user?.email?.toLowerCase() ?? '';
-        const manageableIds = new Set<string>();
-        if (role === 'ADMIN' || role === 'LC') {
-          for (const project of rawProjects) manageableIds.add(project.id);
-        } else if (role === 'PM') {
-          for (const project of rawProjects) {
-            if (project.pm?.email?.toLowerCase() === email && email) {
-              manageableIds.add(project.id);
-            }
+        const deliverablesByProject = new Map<string, ScheduleDeliverableRow[]>();
+        for (const deliverable of rawDeliverables) {
+          const list = deliverablesByProject.get(deliverable.projectId);
+          if (list) {
+            list.push(deliverable);
+          } else {
+            deliverablesByProject.set(deliverable.projectId, [deliverable]);
           }
         }
 
-        const nextProjects: ProjectSprintSummary[] = await Promise.all(
-          rawProjects.map(async (project) => {
-            const sprints = await projectsAPI.getSprints(project.id);
-            const allSprints = (sprints.data as Array<SprintSummary & { status?: string }>) ?? [];
-            const visibleSprints = manageableIds.has(project.id)
-              ? allSprints
-              : allSprints.filter((sprint) => sprint.status === 'RELEASED');
-            return {
-              id: project.id,
-              name: project.name,
-              sprints: visibleSprints,
-              timeZone: project.sprintTimezone ?? undefined,
-            };
-          }),
-        );
-        if (cancelled) return;
+        const manageableIds = new Set<string>();
+        for (const project of rawProjects) {
+          if (project.canManage) manageableIds.add(project.id);
+        }
+
+        const nextProjects: ProjectSprintSummary[] = rawProjects.map((project) => ({
+          id: project.id,
+          name: project.name,
+          timeZone: project.timeZone,
+          sprints: [
+            {
+              id: 'schedule',
+              label: '',
+              weekStartDate: '',
+              weekEndDate: '',
+              deliverables: (deliverablesByProject.get(project.id) ?? []).map(
+                (deliverable) => ({
+                  id: deliverable.id,
+                  title: deliverable.title,
+                  deadline: deliverable.deadline,
+                }),
+              ),
+            },
+          ],
+        }));
 
         let events: CalendarEventInput[] = [];
         let eventsWarning: string | null = null;
@@ -113,7 +139,7 @@ export function useCmsSchedule(refreshKey = 0): UseCmsScheduleResult {
     return () => {
       cancelled = true;
     };
-  }, [getToken, user?.email, refreshKey]);
+  }, [getToken, user?.email, refreshKey, fromMs, toMs]);
 
   return { items, setItems, projects, loading, error, warning };
 }

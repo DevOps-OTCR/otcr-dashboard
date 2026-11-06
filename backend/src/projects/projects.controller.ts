@@ -97,6 +97,36 @@ export class ProjectsController {
     return this.projectsService.findAll(parsedQuery);
   }
 
+  @Get('schedule')
+  @Roles('ADMIN', 'PM', 'LC', 'CONSULTANT', 'PARTNER', 'EXECUTIVE')
+  async getSchedule(
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @GetUser() user: any
+  ) {
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+
+    if (!from || !to || Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+      throw new BadRequestException('from and to must be ISO dates');
+    }
+
+    if (toDate <= fromDate) {
+      throw new BadRequestException('to must be after from');
+    }
+
+    const rangeMs = toDate.getTime() - fromDate.getTime();
+    if (rangeMs > 62 * 24 * 60 * 60 * 1000) {
+      throw new BadRequestException('Range must be 62 days or less');
+    }
+
+    return this.projectsService.getSchedule(
+      { id: user.id, role: user.role },
+      fromDate,
+      toDate
+    );
+  }
+
   @Get(':id/sprint-config')
   @Roles('ADMIN', 'PM', 'LC', 'CONSULTANT', 'PARTNER', 'EXECUTIVE')
   async getSprintConfig(@Param('id') id: string, @GetUser() user: any) {

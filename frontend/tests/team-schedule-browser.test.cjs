@@ -28,6 +28,7 @@ async function setup(t) {
   t.after(() => context.close());
   const errors = [];
   const patchCalls = [];
+  const scheduleCalls = [];
   let failNext = false;
 
   const weekStartDate = iso(0, 0);
@@ -62,6 +63,28 @@ async function setup(t) {
 
     if (pathname === '/auth/role') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ role: 'PM' }) });
+    }
+
+    if (pathname === '/projects/schedule') {
+      const params = new URL(req.url()).searchParams;
+      const from = params.get('from');
+      const to = params.get('to');
+      scheduleCalls.push(req.url());
+      const rows = [];
+      for (const [projectId, list] of Object.entries(deliverables)) {
+        for (const d of list) {
+          if (d.deadline >= from && d.deadline < to) {
+            rows.push({ id: d.id, title: d.title, deadline: d.deadline, projectId, status: d.status });
+          }
+        }
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+        projects: [
+          { id: 'team-1', name: 'Team One', timeZone: 'America/Chicago', canManage: true },
+          { id: 'team-2', name: 'Team Two', timeZone: 'America/Chicago', canManage: false },
+        ],
+        deliverables: rows,
+      }) });
     }
 
     if (pathname === '/projects') {
@@ -122,11 +145,11 @@ async function setup(t) {
   await page.goto('http://navigation.test/overview');
   await page.addStyleTag({ content: styles });
 
-  return { page, col, patchCalls, day, fail: () => { failNext = true; } };
+  return { page, col, patchCalls, scheduleCalls, day, fail: () => { failNext = true; } };
 }
 
 test('Google Calendar stays the default and the Team schedule tab loads items', async t => {
-  const { page } = await setup(t);
+  const { page, scheduleCalls } = await setup(t);
   await page.getByRole('tab', { name: 'Google Calendar' }).waitFor();
   assert.equal(await page.getByRole('tab', { name: 'Google Calendar' }).getAttribute('aria-selected'), 'true');
 
@@ -135,6 +158,8 @@ test('Google Calendar stays the default and the Team schedule tab loads items', 
   await researchBtn.waitFor();
   const memoBtn = page.locator('button[aria-label^="Pricing memo"]').first();
   await memoBtn.waitFor();
+
+  assert.equal(scheduleCalls.length >= 1, true);
 
   assert.equal(await memoBtn.getAttribute('draggable'), 'false');
   assert.equal(await researchBtn.getAttribute('draggable'), 'true');

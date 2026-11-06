@@ -59,7 +59,6 @@ function serverMessageOf(err: unknown): string {
 }
 
 export function CmsCalendar({ refreshKey = 0 }: { refreshKey?: number }) {
-  const { items, setItems, projects, loading, error, warning } = useCmsSchedule(refreshKey);
   const [anchor, setAnchor] = useState<Date>(() => startOfWeek(new Date()));
   const [view, setView] = useState<'week' | 'month'>('week');
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -71,6 +70,11 @@ export function CmsCalendar({ refreshKey = 0 }: { refreshKey?: number }) {
   const itemRefs = useRef(new Map<string, HTMLButtonElement>());
 
   const days = view === 'week' ? weekDays(anchor) : monthGridDays(anchor);
+  const { items, setItems, projects, loading, error, warning } = useCmsSchedule(
+    refreshKey,
+    days[0],
+    addDays(days[days.length - 1], 1),
+  );
   const today = new Date();
 
   async function moveItem(item: CalendarItem, targetDay: Date) {
