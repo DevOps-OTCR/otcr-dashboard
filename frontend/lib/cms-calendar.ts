@@ -173,6 +173,7 @@ export function moveToDayInZone(start: Date, targetDay: Date, timeZone?: string)
   const zoned = wallClockInZone(start, timeZone);
   if (!zoned) return moveToDay(start, targetDay);
 
+  const extra = start.getUTCSeconds() * 1000 + start.getUTCMilliseconds();
   const guess = Date.UTC(targetDay.getFullYear(), targetDay.getMonth(), targetDay.getDate(), zoned.hour, zoned.minute, 0, 0);
   const guessParts = wallClockInZone(new Date(guess), timeZone);
   if (!guessParts) return moveToDay(start, targetDay);
@@ -187,7 +188,17 @@ export function moveToDayInZone(start: Date, targetDay: Date, timeZone?: string)
     if (offset2 !== offset1) result = guess - offset2;
   }
 
-  return new Date(result);
+  const finalParts = wallClockInZone(new Date(result), timeZone);
+  if (finalParts && (finalParts.hour !== zoned.hour || finalParts.minute !== zoned.minute)) {
+    const beforeParts = wallClockInZone(new Date(guess - 24 * 60 * 60 * 1000), timeZone);
+    if (beforeParts) {
+      const beforeZoned = Date.UTC(beforeParts.year, beforeParts.month - 1, beforeParts.day, beforeParts.hour, beforeParts.minute, 0, 0);
+      const offsetBefore = beforeZoned - (guess - 24 * 60 * 60 * 1000);
+      result = guess - offsetBefore;
+    }
+  }
+
+  return new Date(result + extra);
 }
 
 export function deliverableIdOf(item: CalendarItem): string {

@@ -116,8 +116,9 @@ export function CmsCalendar({ refreshKey = 0 }: { refreshKey?: number }) {
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLButtonElement>, item: CalendarItem) {
-    if (e.altKey) {
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') e.preventDefault();
+    if (!e.altKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+    e.preventDefault();
+    {
       if (saving) return;
       const target = e.key === 'ArrowLeft' ? addDays(item.start, -1) : addDays(item.start, 1);
       const rangeEnd = addDays(days[days.length - 1], 1);
@@ -179,7 +180,8 @@ export function CmsCalendar({ refreshKey = 0 }: { refreshKey?: number }) {
               }`}
               onClick={() => {
                 setView('month');
-                setAnchor(startOfMonth(anchor));
+                const today = new Date();
+                setAnchor(startOfMonth(days.some((d) => isSameDay(d, today)) ? today : anchor));
               }}
             >
               Month
