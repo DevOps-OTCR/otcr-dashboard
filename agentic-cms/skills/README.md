@@ -140,6 +140,7 @@ Review and audit modes accept a plain-text export, one record per slide:
 | `body` | yes | Body text, flattened. Required only for slides that are not skipped |
 | `notes` | no | Speaker notes |
 | `confidentiality` | no | Free-text tag, e.g. `CONFIDENTIAL`, `PROPRIETARY` |
+| `skipped` | no | `true` only on a filtered record for a hidden or confidential slide; such a record carries no title, body or notes |
 
 Shape:
 
