@@ -119,13 +119,15 @@
   --shadow-md: 0 4px 12px -4px rgba(0, 0, 0, 0.55), 0 10px 28px -12px rgba(0, 0, 0, 0.7);
 }
 
-h1,h2,h3,h4{font-family:var(--font-heading);letter-spacing:-0.01em}
+@layer base {
+  h1,h2,h3,h4{font-family:var(--font-heading);letter-spacing:-0.01em}
+
+  * {
+    border-color: var(--border);
+  }
+}
 
 .tabular{font-variant-numeric:tabular-nums}
-
-* {
-  border-color: var(--border);
-}
 
 /* Apply each theme in one update. This also avoids motion for reduced-motion users. */
 html.theme-changing,

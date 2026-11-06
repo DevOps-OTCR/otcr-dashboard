@@ -761,7 +761,7 @@ export default function DeliverablesPage() {
                                 <>
                                   <input
                                     type="datetime-local"
-                                    aria-label="Due date"
+                                    aria-label={`Due date for ${deliverable.title}`}
                                     value={deadlineInputs[deliverable.id] ?? ''}
                                     onChange={(e) =>
                                       setDeadlineInputs((current) => ({

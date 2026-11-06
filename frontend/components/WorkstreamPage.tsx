@@ -917,7 +917,7 @@ export default function WorkstreamPage() {
                             <div className="flex flex-wrap items-center gap-2 justify-end">
                               <input
                                 type="datetime-local"
-                                aria-label="Due date"
+                                aria-label={`Due date for ${deliverable.title}`}
                                 value={deadlineInputs[deliverable.id] ?? ''}
                                 onChange={(e) =>
                                   setDeadlineInputs((current) => ({

@@ -35,6 +35,7 @@ export function WeeklyDeliverablesCard({
       <CardContent
         className="space-y-4 max-h-[400px] overflow-y-auto"
         tabIndex={0}
+        role="region"
         aria-label="This week's deliverables"
       >
         {loading ? <PageLoading /> : items.length === 0 ? (
