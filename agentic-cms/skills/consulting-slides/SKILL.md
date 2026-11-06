@@ -26,7 +26,7 @@ It is not a collection of attractive slides. If the deck works with the visuals 
 **A. Storyline** — what does the deck argue, in what order?
 **B. Slide design** — how does each slide make its point?
 **C. QA / review** — is the whole thing coherent, accurate, and readable?
-**C (audit mode, v0.3.0)** — a final pre-send pass on a finished deck. Same job as review, different checklist: mechanics, big picture, likely audience questions. Not a fourth job, not a new skill.
+**C (audit mode, v0.3.0)** — a distinct mode within Job C: a final pre-send pass on a finished deck. Checklist: mechanics, big picture, likely audience questions. Audit does not substitute for argument review; if the argument still needs critique, say so in one line and point to review mode.
 
 Do A completely before B. Do C after B, and again on the whole deck.
 
@@ -241,6 +241,7 @@ Operative rules:
 - Item format: `- [ ] Slide N — MUST FIX|SHOULD FIX|CHECK — issue — why it matters — suggested fix (one sentence)`.
 - At most 25 items. Quote at most 12 words.
 - Five to eight audience questions (fewer if the deck supports fewer), each grounded in a visible slide's claim, assumption or gap.
+- Audience-question item format: `- [ ] Q: <question> — <claim, assumption or gap on the slide> — <what to add or prepare> (Ready: presenter of slide N)`. Cite every slide it affects; name who should be ready to answer.
 - Run each layout check on whatever layout fields are present: if any box has left_in, compare left edges across visible slides; if footer_page is present, compare it with the slide number. Only a check whose fields are entirely missing goes under Not checkable.
 - A hidden or confidential slide appears only in Skipped slides. Never cite it, its layout or its numbering in any finding.
 
