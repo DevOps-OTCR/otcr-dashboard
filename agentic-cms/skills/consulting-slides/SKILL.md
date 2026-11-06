@@ -192,7 +192,7 @@ Reviewer note: <one line + any assumption made>
 
 **Do not print:** a slide-map table, a title-sequence block, Decision role / Layout / Source status columns, a QA checklist, or self-scores. Run the five tests (§8) **internally**, fix what fails, then emit. *(v0.2.1 — blind raters scored the dense spec table and printed QA metadata down on clarity; one deck printed "FAIL" and shipped anyway.)*
 
-**Label on the slide, not just in the source line (v0.2.2).** A derived number carries its basis inline: "3.3× gap [ESTIMATE: S2 ÷ S3]". An inference that a title or bullet depends on gets an `I#` ("B is the closest software rival (I2)") and a row in the evidence table. Unlabelled inferences stated as fact were the main reason blind raters scored this skill below a format-matched control on Evidence (−1.08) and Accuracy (−0.58).
+**Label on the slide, not just in the source line (v0.2.2).** A derived number gets an I# ledger row with the calculation and its input IDs, and the slide cites that I#: "3.3× gap [ESTIMATE: I4; I4 = S2 ÷ S3]". An inference that a title or bullet depends on gets an `I#` ("B is the closest software rival (I2)") and a row in the evidence table. Unlabelled inferences stated as fact were the main reason blind raters scored this skill below a format-matched control on Evidence (−1.08) and Accuracy (−0.58).
 
 **Decision slides** (recommendation, roadmap, kill criteria): every threshold anchored to a ledger value or a named decision variable, and derived thresholds tagged `[ESTIMATE: …]`; every phase has an owner role and a dependency. Owner roles are proposals, so write "Owner (proposed): Head of sales". Never present an invented figure, timeline or role as fact. `[TBD]` on a decision slide is a defect.
 
