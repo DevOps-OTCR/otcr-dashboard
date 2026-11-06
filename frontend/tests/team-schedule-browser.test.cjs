@@ -278,3 +278,31 @@ test('month view shows the whole month and still saves a drag', async t => {
   assert.equal(chicagoYmd(d), localYmd(targetNoon));
   assert.equal(chicagoHour(d), chicagoHour(new Date(iso(2, 17))));
 });
+
+test('a slow response for an earlier week never overwrites the week now shown', async t => {
+  const { page } = await setup(t);
+  let pageCalls = 0;
+  await page.route('**/api/projects/schedule**', async route => {
+    pageCalls += 1;
+    if (pageCalls > 1) return route.fallback();
+    const from = new URL(route.request().url()).searchParams.get('from');
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+      projects: [{ id: 'team-1', name: 'Team One', timeZone: 'America/Chicago', canManage: true }],
+      deliverables: [{ id: 'stale-1', title: 'Stale week item', deadline: new Date(Date.parse(from) + 8 * 86400000 + 12 * 3600000).toISOString(), projectId: 'team-1', status: 'IN_PROGRESS' }],
+    }) });
+  });
+
+  await page.getByRole('tab', { name: 'Team schedule' }).click();
+  await page.getByRole('button', { name: 'Next week', exact: true }).click();
+
+  const deadline = Date.now() + 5000;
+  while (pageCalls < 2 && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  assert.equal(pageCalls >= 2, true);
+  await new Promise(resolve => setTimeout(resolve, 2500));
+
+  assert.equal(await page.getByText('Stale week item').count(), 0);
+  assert.equal(await page.getByRole('button', { name: 'Next week', exact: true }).isEnabled(), true);
+});
