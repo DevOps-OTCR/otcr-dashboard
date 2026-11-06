@@ -59,6 +59,6 @@ export function OverviewDeliverables() {
       emptyMessage={error ? 'Could not load deliverables. Return to Overview to retry.' : 'No deliverables found for the current week.'}
     />
     {error && projects.length > 0 && <p role="alert" className="mt-3 text-sm text-red-600 dark:text-red-400">Could not refresh deliverables. Showing previously loaded data.</p>}
-    {canSeePmTools(role) && <div className="mt-6"><PmToolsCard summaries={summarizePmProjects(projects, new Date())} loading={loading} /></div>}
+    {canSeePmTools(roleOverride ?? role) && <div className="mt-6"><PmToolsCard summaries={summarizePmProjects(projects, new Date())} loading={loading} /></div>}
   </>;
 }

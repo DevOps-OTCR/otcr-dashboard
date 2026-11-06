@@ -16,7 +16,7 @@ const deliverable = (over) => ({
   id: 'd-' + Math.random().toString(36).slice(2),
   title: 'Deliverable',
   deadline: iso(5, 12),
-  status: 'OPEN',
+  status: 'IN_PROGRESS',
   completed: false,
   ...over,
 });
@@ -39,17 +39,17 @@ test('overdue counts open deliverables before now across all sprint statuses and
   const result = summarizePmProjects([project({
     sprints: [
       { status: 'DRAFT', deliverables: [
-        deliverable({ id: 'past-1', deadline: iso(3, 9), status: 'OPEN', completed: false }),
+        deliverable({ id: 'past-1', deadline: iso(3, 9), status: 'IN_PROGRESS', completed: false }),
         deliverable({ id: 'sub', deadline: iso(3, 9), status: 'SUBMITTED', completed: false }),
         deliverable({ id: 'app', deadline: iso(3, 9), status: 'APPROVED', completed: false }),
-        deliverable({ id: 'done', deadline: iso(3, 9), status: 'OPEN', completed: true }),
-        deliverable({ id: 'today-earlier', deadline: iso(4, 9), status: 'OPEN', completed: false }),
-        deliverable({ id: 'exactly-now', deadline: iso(4, 12), status: 'OPEN', completed: false }),
-        deliverable({ id: 'future', deadline: iso(6, 12), status: 'OPEN', completed: false }),
+        deliverable({ id: 'done', deadline: iso(3, 9), status: 'IN_PROGRESS', completed: true }),
+        deliverable({ id: 'today-earlier', deadline: iso(4, 9), status: 'IN_PROGRESS', completed: false }),
+        deliverable({ id: 'exactly-now', deadline: iso(4, 12), status: 'IN_PROGRESS', completed: false }),
+        deliverable({ id: 'future', deadline: iso(6, 12), status: 'IN_PROGRESS', completed: false }),
       ] },
       { status: 'ACTIVE', deliverables: [
-        deliverable({ id: 'past-2', deadline: iso(1, 0), status: 'OPEN', completed: false }),
-        deliverable({ id: 'past-3', deadline: iso(3, 23), status: 'IN_REVIEW', completed: false }),
+        deliverable({ id: 'past-2', deadline: iso(1, 0), status: 'IN_PROGRESS', completed: false }),
+        deliverable({ id: 'past-3', deadline: iso(3, 23), status: 'PENDING', completed: false }),
       ] },
     ],
   })], now);
@@ -60,13 +60,13 @@ test('dueThisWeek counts open deliverables from now through Sunday Nov 8 23:59:5
   const result = summarizePmProjects([project({
     sprints: [
       { status: 'ACTIVE', deliverables: [
-        deliverable({ id: 'before', deadline: iso(4, 11), status: 'OPEN', completed: false }),
-        deliverable({ id: 'now', deadline: iso(4, 12), status: 'OPEN', completed: false }),
-        deliverable({ id: 'fri', deadline: iso(6, 12), status: 'OPEN', completed: false }),
-        deliverable({ id: 'sunday-late', deadline: iso(8, 23), status: 'OPEN', completed: false }),
-        deliverable({ id: 'monday', deadline: iso(9, 0), status: 'OPEN', completed: false }),
+        deliverable({ id: 'before', deadline: iso(4, 11), status: 'IN_PROGRESS', completed: false }),
+        deliverable({ id: 'now', deadline: iso(4, 12), status: 'IN_PROGRESS', completed: false }),
+        deliverable({ id: 'fri', deadline: iso(6, 12), status: 'IN_PROGRESS', completed: false }),
+        deliverable({ id: 'sunday-late', deadline: iso(8, 23), status: 'IN_PROGRESS', completed: false }),
+        deliverable({ id: 'monday', deadline: iso(9, 0), status: 'IN_PROGRESS', completed: false }),
         deliverable({ id: 'closed', deadline: iso(6, 12), status: 'APPROVED', completed: false }),
-        deliverable({ id: 'completed', deadline: iso(6, 12), status: 'OPEN', completed: true }),
+        deliverable({ id: 'completed', deadline: iso(6, 12), status: 'IN_PROGRESS', completed: true }),
       ] },
     ],
   })], now);
@@ -155,4 +155,17 @@ test('summarizePmProjects keeps order and apply over 4 projects', () => {
   assert.equal(result[1].id, 'p2');
   assert.equal(result[2].id, 'p3');
   assert.equal(result[3].id, 'p4');
+});
+
+test('real Prisma statuses: OVERDUE counts as overdue and PENDING due Friday counts as due this week', () => {
+  const result = summarizePmProjects([project({
+    sprints: [
+      { status: 'ACTIVE', deliverables: [
+        deliverable({ id: 'od', status: 'OVERDUE', deadline: iso(2, 9) }),
+        deliverable({ id: 'pf', status: 'PENDING', deadline: iso(6, 12) }),
+      ] },
+    ],
+  })], now);
+  assert.equal(result[0].overdue, 1);
+  assert.equal(result[0].dueThisWeek, 1);
 });
