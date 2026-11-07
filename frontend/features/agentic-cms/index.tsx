@@ -1,6 +1,9 @@
 'use client';
 
-// Group 1 mounts OTCR Bot here. Keep all feature UI inside this lazy boundary.
+import { OtcrBot } from './OtcrBot';
+
+// Loaded lazily by components/AgenticCmsFeature.tsx only after the backend
+// enables Agentic CMS for the signed-in user. Keep all feature UI inside here.
 export default function AgenticCms() {
-  return null;
+  return <OtcrBot />;
 }
