@@ -7,6 +7,7 @@ if (params.get('role') === 'PM') (window as any).testRole = 'PM';
 if (params.get('projects') === 'none') (window as any).noProjects = true;
 if (params.has('delayProjectTwo')) (window as any).delayProjectTwo = true;
 if (params.has('failProjectTwo')) (window as any).failProjectTwo = true;
+if (params.has('holdWrites')) (window as any).holdWrites = true;
 if (params.has('lateMount')) {
   document.getElementById('agentic-cms-root')?.remove();
   setTimeout(() => { const target = document.createElement('div'); target.id = 'agentic-cms-root'; document.body.appendChild(target); }, 40);
