@@ -64,6 +64,9 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', className
                 className
               )}
               onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-label={title}
             >
               {/* Header */}
               {title && (

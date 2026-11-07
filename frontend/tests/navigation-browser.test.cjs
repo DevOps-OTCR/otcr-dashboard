@@ -504,6 +504,35 @@ test('draft assignments survive title edits, inserts, moves, and deletions', asy
   assert.deepEqual(creations.map(item => [item.title, item.assigneeIds]), [['New task', []], ['Research revised', ['u-1']]]);
 });
 
+test('deleting a deliverable asks for confirmation in a styled dialog', async t => {
+  const { page, open } = await setup(t, '/workstream');
+  const deletes = [];
+  await page.route('**/api/deliverables/*', route => {
+    if (route.request().method() !== 'DELETE') return route.fallback();
+    deletes.push(new URL(route.request().url()).pathname);
+    return route.fulfill({ contentType: 'application/json', body: '{}' });
+  });
+  let nativeDialogs = 0;
+  page.on('dialog', dialog => { nativeDialogs += 1; return dialog.dismiss(); });
+  await open();
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  const dialog = page.getByRole('dialog', { name: 'Delete deliverable', exact: true });
+  await page.getByRole('button', { name: 'Delete', exact: true }).first().click();
+  await dialog.getByText('Delete "team-1 Research"? This cannot be undone.', { exact: true }).waitFor();
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await dialog.waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'Delete', exact: true }).first().click();
+  await page.keyboard.press('Escape');
+  await dialog.waitFor({ state: 'detached' });
+  assert.deepEqual(deletes, []);
+  await page.getByRole('button', { name: 'Delete', exact: true }).first().click();
+  await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
+  await page.getByText('Deliverable deleted', { exact: true }).waitFor();
+  await dialog.waitFor({ state: 'detached' });
+  assert.deepEqual(deletes, ['/api/deliverables/team-1-research']);
+  assert.equal(nativeDialogs, 0);
+});
+
 for (const initialFailure of [true, false]) {
   test(`member lookup failure is visible and retryable on ${initialFailure ? 'initial load' : 'project change'}`, async t => {
     const { page, open } = await setup(t, '/workstream');
