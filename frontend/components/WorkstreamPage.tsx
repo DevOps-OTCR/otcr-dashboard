@@ -7,6 +7,7 @@ import { AssigneeChecklist, projectAssignees, type AssigneeOption } from '@/comp
 import { AppNavbar } from '@/components/AppNavbar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/components/AuthContext';
 import { PageLoading } from './PageLoading';
@@ -136,6 +137,7 @@ export default function WorkstreamPage() {
   const [loading, setLoading] = useState(!snapshot);
   const [refreshing, setRefreshing] = useState(true);
   const [busyDeliverableId, setBusyDeliverableId] = useState<string | null>(null);
+  const [pendingDeleteDeliverable, setPendingDeleteDeliverable] = useState<DeliverableItem | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -481,12 +483,14 @@ export default function WorkstreamPage() {
     }
   };
 
-  const handleDeleteDeliverable = async (deliverable: DeliverableItem) => {
-    if (!selectedProjectId || !canManage) return;
-    const confirmed = window.confirm(
-      `Delete "${normalizeWeekText(deliverable.title)}"? This cannot be undone.`,
-    );
-    if (!confirmed) return;
+  const closeDeleteDeliverableModal = useCallback(() => {
+    if (busyDeliverableId) return;
+    setPendingDeleteDeliverable(null);
+  }, [busyDeliverableId]);
+
+  const handleDeleteDeliverable = async () => {
+    const deliverable = pendingDeleteDeliverable;
+    if (!selectedProjectId || !canManage || !deliverable) return;
 
     setBusyDeliverableId(deliverable.id);
     try {
@@ -501,6 +505,7 @@ export default function WorkstreamPage() {
       setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
     } finally {
       setBusyDeliverableId(null);
+      setPendingDeleteDeliverable(null);
     }
   };
 
@@ -940,7 +945,7 @@ export default function WorkstreamPage() {
                                 size="sm"
                                 variant="ghost"
                                 disabled={busyDeliverableId === deliverable.id}
-                                onClick={() => void handleDeleteDeliverable(deliverable)}
+                                onClick={() => setPendingDeleteDeliverable(deliverable)}
                               >
                                 Delete
                               </Button>
@@ -967,6 +972,35 @@ export default function WorkstreamPage() {
           </Card>
         </div>}
       </main>
+
+      <Modal
+        isOpen={pendingDeleteDeliverable !== null}
+        onClose={closeDeleteDeliverableModal}
+        title="Delete deliverable"
+        size="sm"
+      >
+        <p className="text-sm text-[var(--foreground)]/80">
+          Delete &quot;{normalizeWeekText(pendingDeleteDeliverable?.title ?? '')}&quot;? This cannot be undone.
+        </p>
+        <div className="mt-6 flex justify-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busyDeliverableId !== null}
+            onClick={closeDeleteDeliverableModal}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            loading={busyDeliverableId !== null && busyDeliverableId === pendingDeleteDeliverable?.id}
+            onClick={() => void handleDeleteDeliverable()}
+          >
+            Delete
+          </Button>
+        </div>
+      </Modal>
 
       {feedback && (
         <div className="fixed bottom-6 right-6 z-50 rounded-2xl border border-white/15 bg-[var(--card)] px-4 py-3 shadow-xl">
