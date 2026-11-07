@@ -58,6 +58,12 @@ export class CmsReadAccessService {
     this.checkFeature(user);
   }
 
+  async canWriteContext(user: CmsReader, projectId: string): Promise<boolean> {
+    await this.projectScope(user, projectId, 'deliverables');
+    if (user.role === 'ADMIN' || user.role === 'LC') return true;
+    return user.role === 'PM' && (await this.prisma.project.findUnique({ where: { id: projectId }, select: { pmId: true } }))?.pmId === user.id;
+  }
+
   async workstreamScope(user: CmsReader, projectId: string) {
     const access = await this.projectScope(user, projectId, 'workstreams');
     const where: Prisma.SprintWhereInput = {

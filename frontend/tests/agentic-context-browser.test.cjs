@@ -19,12 +19,12 @@ test('separates context and call notes and keeps consultant content read-only', 
   const context = await browser.newContext(); t.after(() => context.close());
   await context.route('**/*', route => route.fulfill({ contentType: route.request().url().endsWith('/bundle.js') ? 'text/javascript' : 'text/html', body: route.request().url().endsWith('/bundle.js') ? bundle : document }));
   const page = await context.newPage(); await page.goto('http://context.test/agentic-cms');
-  await page.getByRole('button', { name: 'Project context' }).waitFor();
+  await page.getByRole('tab', { name: 'Project Context' }).waitFor();
   assert.equal(await page.getByRole('textbox').count(), 0);
   assert.equal(await page.getByText('Read only overview').count(), 1);
   assert.equal(await page.getByText('SOW text').count(), 1);
   assert.equal(await page.getByRole('button', { name: 'Save context' }).count(), 0);
-  await page.getByRole('button', { name: 'Client call notes' }).click();
+  await page.getByRole('tab', { name: 'Client Call Notes' }).click();
   assert.equal(await page.locator('article').filter({ hasText: 'Call notes' }).count(), 1);
   assert.equal(await page.getByRole('textbox', { name: 'Note text' }).count(), 0);
 });
@@ -33,16 +33,68 @@ test('shows editable context controls for an Admin role', async t => {
   const context = await browser.newContext(); t.after(() => context.close());
   await context.route('**/*', route => route.fulfill({ contentType: route.request().url().endsWith('/bundle.js') ? 'text/javascript' : 'text/html', body: route.request().url().endsWith('/bundle.js') ? bundle : document }));
   const page = await context.newPage(); await page.goto('http://context.test/agentic-cms?role=ADMIN');
-  await page.getByRole('button', { name: 'Project context' }).waitFor();
+  await page.getByRole('tab', { name: 'Project Context' }).waitFor();
   assert.equal(await page.getByRole('textbox', { name: 'Overview' }).isEditable(), true);
   assert.equal(await page.getByRole('textbox', { name: 'SOW / Scope' }).isEditable(), true);
   assert.equal(await page.getByRole('button', { name: 'Save context' }).count(), 1);
+  await page.getByRole('textbox', { name: 'Overview' }).fill('Updated synthetic overview');
+  await page.getByRole('button', { name: 'Save context' }).click();
+  await page.reload();
+  await page.getByRole('tab', { name: 'Project Context' }).waitFor();
+  assert.equal(await page.getByRole('textbox', { name: 'Overview' }).inputValue(), 'Updated synthetic overview');
+});
+
+test('hides PM edit controls for projects they do not own', async t => {
+  const context = await browser.newContext(); t.after(() => context.close());
+  await context.route('**/*', route => route.fulfill({ contentType: route.request().url().endsWith('/bundle.js') ? 'text/javascript' : 'text/html', body: route.request().url().endsWith('/bundle.js') ? bundle : document }));
+  const page = await context.newPage(); await page.goto('http://context.test/agentic-cms?role=PM');
+  await page.getByRole('tab', { name: 'Project Context' }).waitFor();
+  await page.getByRole('combobox', { name: 'Project' }).selectOption('p2');
+  await page.getByText('Other project scope').waitFor();
+  assert.equal(await page.getByRole('textbox', { name: 'Overview' }).count(), 0);
+  assert.equal(await page.getByRole('button', { name: 'Save context' }).count(), 0);
+});
+
+test('ignores a late project response after switching back to another project', async t => {
+  const context = await browser.newContext(); t.after(() => context.close());
+  await context.route('**/*', route => route.fulfill({ contentType: route.request().url().endsWith('/bundle.js') ? 'text/javascript' : 'text/html', body: route.request().url().endsWith('/bundle.js') ? bundle : document }));
+  const page = await context.newPage(); await page.goto('http://context.test/agentic-cms?role=ADMIN&delayProjectTwo');
+  await page.getByRole('tab', { name: 'Project Context' }).waitFor();
+  await page.getByText('Read only overview').waitFor();
+  const project = page.getByRole('combobox', { name: 'Project' });
+  await project.selectOption('p2');
+  await project.selectOption('p1');
+  await page.getByText('Read only overview').waitFor();
+  await page.waitForTimeout(150);
+  assert.equal(await page.getByText('SOW text').count(), 1);
+  assert.equal(await page.getByText('Other project overview').count(), 0);
+});
+
+test('shows project load errors without leaving old project content on screen', async t => {
+  const context = await browser.newContext(); t.after(() => context.close());
+  await context.route('**/*', route => route.fulfill({ contentType: route.request().url().endsWith('/bundle.js') ? 'text/javascript' : 'text/html', body: route.request().url().endsWith('/bundle.js') ? bundle : document }));
+  const page = await context.newPage(); await page.goto('http://context.test/agentic-cms?failProjectTwo');
+  await page.getByRole('tab', { name: 'Project Context' }).waitFor();
+  await page.getByText('Read only overview').waitFor();
+  await page.getByRole('combobox', { name: 'Project' }).selectOption('p2');
+  await page.getByRole('alert').getByText('Could not load this project context. Try again.').waitFor();
+  assert.equal(await page.getByText('Read only overview').count(), 0);
+  assert.equal(await page.getByRole('button', { name: 'Retry' }).count(), 1);
+});
+
+test('mounts when its portal target is added after the route component', async t => {
+  const context = await browser.newContext(); t.after(() => context.close());
+  await context.route('**/*', route => route.fulfill({ contentType: route.request().url().endsWith('/bundle.js') ? 'text/javascript' : 'text/html', body: route.request().url().endsWith('/bundle.js') ? bundle : document }));
+  const page = await context.newPage(); await page.goto('http://context.test/agentic-cms?lateMount');
+  await page.getByRole('tab', { name: 'Project Context' }).waitFor();
+  assert.equal(await page.getByRole('heading', { name: 'Agentic CMS' }).count(), 1);
 });
 
 test('does not show the context tabs when the account has no accessible projects', async t => {
   const context = await browser.newContext(); t.after(() => context.close());
   await context.route('**/*', route => route.fulfill({ contentType: route.request().url().endsWith('/bundle.js') ? 'text/javascript' : 'text/html', body: route.request().url().endsWith('/bundle.js') ? bundle : document }));
   const page = await context.newPage(); await page.goto('http://context.test/agentic-cms?projects=none');
-  await page.getByRole('heading', { name: 'Agentic CMS' }).waitFor();
+  await page.waitForTimeout(100);
+  assert.equal(await page.getByRole('heading', { name: 'Agentic CMS' }).count(), 0);
   assert.equal(await page.getByRole('tablist', { name: 'Agentic CMS tools' }).count(), 0);
 });

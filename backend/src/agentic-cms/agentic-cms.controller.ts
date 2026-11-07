@@ -17,7 +17,7 @@ export class AgenticCmsController {
 
   @Get('context/projects/:projectId')
   async getContext(@Param('projectId') projectId: string, @Req() req: ContextRequest) {
-    await this.access.projectScope(req.user, projectId, 'deliverables');
+    const canEdit = await this.access.canWriteContext(req.user, projectId);
     this.flags.assertAgenticCmsEnabledFor(req.user.email);
     const [project, notes] = await Promise.all([
       this.prisma.project.findUnique({ where: { id: projectId }, select: { id: true, name: true, overview: true, scope: true } }),
@@ -25,7 +25,7 @@ export class AgenticCmsController {
     ]);
     if (!project) throw new NotFoundException();
     this.flags.assertAgenticCmsEnabledFor(req.user.email);
-    return { project, notes };
+    return { project, notes, canEdit };
   }
 
   @Put('context/projects/:projectId')

@@ -5,7 +5,7 @@ import { BadRequestException } from '@nestjs/common';
 import { AgenticCmsController } from './agentic-cms.controller';
 
 describe('Agentic CMS project context endpoints', () => {
-  const access = { projectScope: jest.fn(), assertContextWrite: jest.fn() };
+  const access = { projectScope: jest.fn(), canWriteContext: jest.fn(), assertContextWrite: jest.fn() };
   const prisma = {
     project: { findUnique: jest.fn(), update: jest.fn() },
     projectContextNote: { findMany: jest.fn(), create: jest.fn(), findFirst: jest.fn(), delete: jest.fn() },
@@ -16,8 +16,9 @@ describe('Agentic CMS project context endpoints', () => {
   it('reads overview, scope and notes only after project authorization', async () => {
     prisma.project.findUnique.mockResolvedValue({ id: 'p', name: 'Project', overview: 'Overview', scope: 'Scope' });
     prisma.projectContextNote.findMany.mockResolvedValue([{ id: 'n', title: 'Call', content: 'Text' }]);
-    await expect(controller.getContext('p', req)).resolves.toMatchObject({ project: { overview: 'Overview', scope: 'Scope' }, notes: [{ content: 'Text' }] });
-    expect(access.projectScope).toHaveBeenCalledWith(req.user, 'p', 'deliverables');
+    access.canWriteContext.mockResolvedValue(true);
+    await expect(controller.getContext('p', req)).resolves.toMatchObject({ project: { overview: 'Overview', scope: 'Scope' }, notes: [{ content: 'Text' }], canEdit: true });
+    expect(access.canWriteContext).toHaveBeenCalledWith(req.user, 'p');
     expect(prisma.project.findUnique).toHaveBeenCalledWith({ where: { id: 'p' }, select: { id: true, name: true, overview: true, scope: true } });
   });
   it('updates overview and scope without changing project description', async () => {
