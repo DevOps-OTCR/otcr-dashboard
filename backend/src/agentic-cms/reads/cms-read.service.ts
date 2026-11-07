@@ -76,6 +76,30 @@ export class CmsReadService {
     return project.sprintTimezone;
   }
 
+  getProjectContext(user: CmsReader, raw: unknown) {
+    return this.execute(user, async () => {
+      const input = parseInput(schemas.getProjectContextInput, raw);
+      await this.access.projectScope(user, input.projectId, 'deliverables');
+      const scope = this.cursors.scope({ tool: 'get_project_context', userId: user.id, projectId: input.projectId });
+      const cursor = this.cursors.decode(input.cursor, scope);
+      const date = this.datePosition(cursor);
+      const project = await this.query(user, () => this.prisma.project.findUnique({
+        where: { id: input.projectId }, select: { id: true, name: true, overview: true, scope: true, updatedAt: true },
+      }));
+      if (!project) unavailable();
+      const rows = await this.query(user, () => this.prisma.projectContextNote.findMany({
+        where: { projectId: input.projectId, ...(cursor ? { OR: [
+          { createdAt: { lt: date } }, { createdAt: date, id: { gt: cursor.id } },
+        ] } : {}) },
+        select: { id: true, title: true, content: true, createdAt: true },
+        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], take: input.limit + 1,
+      }));
+      return finish(schemas.getProjectContextOutput, {
+        project, notes: this.page(rows, input.limit, scope, row => ({ id: row.id, sortValue: row.createdAt.toISOString() })),
+      });
+    });
+  }
+
   listWorkstreams(user: CmsReader, raw: unknown) {
     return this.execute(user, async () => {
       const input = parseInput(schemas.listWorkstreamsInput, raw);

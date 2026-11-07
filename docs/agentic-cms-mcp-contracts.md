@@ -1,18 +1,17 @@
 # Agentic CMS MCP read-tool contracts
 
-Status: Read operations and schemas implemented; MCP endpoint/registration comes next.
+Status: Five read-only tools implemented at the gated MCP endpoint.
 Follow [the integration guide](agentic-cms.md). Implement under
 `backend/src/agentic-cms/` through a Nest controller at `/agentic-cms/mcp`.
 
 ## Scope and workstream requirements
 
-- Implement four read-only tools using actual CMS records, without new tables.
+- Use actual CMS workstream, deliverable and project-context records.
 - Group 2's Friday, November 6 prototype needs an independent test client,
   denied-access evidence, connection instructions and example requests/results.
   Group 1 integration follows on Sunday.
-- Add `get_project_context` once the parallel context infrastructure is ready.
-  No dummy context tool/storage now. Group 2's full prototype still requires CMS
-  add/update functionality for readable overview, SOW/scope and client-call notes.
+- `get_project_context` reads the parallel context infrastructure. CMS HTTP endpoints
+  supply add/update functionality for overview, SOW/scope and client-call notes.
 - Return stored submission links and metadata with `contentAvailability: "link_only"`.
   Reading linked files remains a later Release 1 requirement.
 - No model calls/keys, writes, frontend changes or live configuration changes.
@@ -86,6 +85,19 @@ alone bypasses them. Preserve the matrix in reusable authorized read operations.
 - Tool annotations: read-only/idempotent true; destructive/open-world false.
 
 ## Tools
+
+### `get_project_context`
+
+Read stored background before interpreting workstreams or deliverables.
+Inputs: **`projectId`**, `limit`, `cursor` (pagination applies to notes only).
+Output: `project: { id, name, overview, scope, updatedAt }` and
+`notes: Page<{ id, title, content, createdAt }>` plus common metadata.
+Notes sort by `createdAt DESC, id ASC`. Access matches context HTTP reads:
+Admin, actual PM owner or current project member; broad workstream access alone
+is insufficient. Recheck on continuation. Null overview/scope and empty notes
+mean absent stored context. Project updatedAt does not track note changes.
+Text is capped/reported like other detail fields; no files or URLs are fetched.
+
 
 ### `list_workstreams`
 

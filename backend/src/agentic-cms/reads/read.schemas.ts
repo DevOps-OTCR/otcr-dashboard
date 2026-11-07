@@ -9,6 +9,8 @@ const pagination = {
   limit: z.number().int().min(1).max(50).default(20).describe('Maximum items per batch, default 20 and maximum 50. A batch is not necessarily the full collection.'),
   cursor: z.string().min(1).max(4096).optional().describe('Exact nextCursor from the same tool, project, parent/section and filters. Omit on the first call; stop when nextCursor is null.'),
 };
+export const getProjectContextInput = z.strictObject({ projectId, ...pagination });
+
 export const listWorkstreamsInput = z.strictObject({
   projectId, currentOnly: z.boolean().default(false).describe('Use true for current/this-week workstreams, based on project timezone. False lists all visible weeks, including past and future.'),
   asOf: z.iso.datetime({ offset: true }).optional().describe('Optional timestamp with timezone offset for currentOnly=true; defaults to now. Keep the same argument on continuation calls.'), ...pagination,
@@ -90,3 +92,9 @@ export const getDeliverableOutput = z.discriminatedUnion('section', [
     })),
   }),
 ]);
+
+export const getProjectContextOutput = z.strictObject({
+  ...metadata,
+  project: z.strictObject({ id, name: z.string(), overview: z.string().nullable(), scope: z.string().nullable(), updatedAt: timestamp }),
+  notes: page(z.strictObject({ id, title: z.string(), content: z.string(), createdAt: timestamp })),
+});

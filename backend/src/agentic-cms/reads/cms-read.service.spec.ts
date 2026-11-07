@@ -63,10 +63,10 @@ describe('CMS read validation and failures', () => {
     } finally { log.mockRestore(); }
   });
 
-  it('blocks all four entry points before validation/reads when disabled or pilot-denied', async () => {
+  it('blocks all five entry points before validation/reads when disabled or pilot-denied', async () => {
     for (const config of [{ AGENTIC_CMS_ENABLED: 'false' }, { AGENTIC_CMS_ENABLED: 'true', AGENTIC_CMS_ALLOWED_EMAILS: 'other@illinois.edu' }]) {
       settings = config;
-      for (const method of ['listWorkstreams', 'getWorkstream', 'listDeliverables', 'getDeliverable'] as const) {
+      for (const method of ['getProjectContext', 'listWorkstreams', 'getWorkstream', 'listDeliverables', 'getDeliverable'] as const) {
         await expect(service[method](user, {})).rejects.toMatchObject({ status: 404 });
       }
     }

@@ -76,8 +76,9 @@ endpoints. Context reads also require project access. Writes are restricted to
 Admins, LCs with project access, and the PM assigned to that project. The UI
 uses the shared `getEffectiveRole` resolver, including the local role-switcher
 override; it shows edit controls only to those write roles. Users without
-accessible projects do not see the context tabs. No MCP endpoint currently
-reads this stored context; adding that is a later integration step.
+accessible projects do not see the context tabs. The read-only MCP tool
+`get_project_context` returns overview, scope and paginated call notes under the
+same project access rules. It does not fetch linked files.
 
 ## Backend enforcement
 

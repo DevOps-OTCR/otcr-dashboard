@@ -121,10 +121,10 @@ integration('MCP client -> Nest endpoint -> migrated PostgreSQL', () => {
     return result.structuredContent;
   }
 
-  it('discovers exactly four read-only tools with input and output schemas', async () => {
+  it('discovers exactly five read-only tools with input and output schemas', async () => {
     const client = await connect();
     const result = await client.listTools();
-    expect(result.tools.map(tool => tool.name).sort()).toEqual(['get_deliverable', 'get_workstream', 'list_deliverables', 'list_workstreams']);
+    expect(result.tools.map(tool => tool.name).sort()).toEqual(['get_deliverable', 'get_project_context', 'get_workstream', 'list_deliverables', 'list_workstreams']);
     for (const tool of result.tools) {
       expect(tool.description).toBeTruthy();
       expect(tool.inputSchema).toBeDefined();
@@ -138,7 +138,7 @@ integration('MCP client -> Nest endpoint -> migrated PostgreSQL', () => {
 
   it('also accepts the legacy initialize handshake through stateless HTTP', async () => {
     const client = await connect('reader', false);
-    expect((await client.listTools()).tools).toHaveLength(4);
+    expect((await client.listTools()).tools).toHaveLength(5);
     const output = schemas.getDeliverableOutput.parse(await call(client, 'get_deliverable', { projectId: 'project', deliverableId: 'd1' }));
     expect(output.deliverableId).toBe('d1');
   });
@@ -175,6 +175,99 @@ integration('MCP client -> Nest endpoint -> migrated PostgreSQL', () => {
     expect(history.submissions.items.map(item => [item.id, item.version, item.replacesId, item.feedback])).toEqual([
       ['revision-2', 2, 'revision-1', null], ['revision-1', 1, null, 'Add source citations.'],
     ]);
+  });
+
+  it('reads context saved through the HTTP API, paginates tied notes and reports truncation', async () => {
+    const contextUrl = endpoint.replace('/mcp', '/context/projects/project');
+    const headers = { Authorization: 'Bearer token-pm', 'Content-Type': 'application/json' };
+    try {
+      expect((await fetch(contextUrl, { method: 'PUT', headers,
+        body: JSON.stringify({ overview: 'Synthetic client overview', scope: 'Compare two market segments.' }) })).status).toBe(200);
+      for (const title of ['First call', 'Second call']) {
+        expect((await fetch(`${contextUrl}/notes`, { method: 'POST', headers,
+          body: JSON.stringify({ title, content: title === 'First call' ? '😀'.repeat(12001) : 'Validate demand assumptions.' }) })).status).toBe(201);
+      }
+      // Tied timestamps verify the ID tie-breaker on continuation.
+      await db.projectContextNote.updateMany({ where: { projectId: 'project' }, data: { createdAt: timestamp } });
+      const expected = await db.projectContextNote.findMany({ where: { projectId: 'project' }, orderBy: { id: 'asc' } });
+      const client = await connect();
+      const first = schemas.getProjectContextOutput.parse(await call(client, 'get_project_context', { projectId: 'project', limit: 1 }));
+      expect(first.project).toMatchObject({ id: 'project', overview: 'Synthetic client overview', scope: 'Compare two market segments.' });
+      expect(first.notes.items.map(note => note.id)).toEqual([expected[0].id]);
+      expect(first.notes.nextCursor).toEqual(expect.any(String));
+      const second = schemas.getProjectContextOutput.parse(await call(client, 'get_project_context', {
+        projectId: 'project', limit: 1, cursor: first.notes.nextCursor,
+      }));
+      expect(second.notes.items.map(note => note.id)).toEqual([expected[1].id]);
+      expect(second.notes.nextCursor).toBeNull();
+      for (const output of [first, second]) {
+        const note = output.notes.items[0];
+        expect(note.createdAt).toBe(timestamp.toISOString());
+        if (note.title === 'First call') {
+          expect(Array.from(note.content)).toHaveLength(12000);
+          expect(output.truncatedFields).toContain('/notes/items/0/content');
+        } else expect(note.content).toBe('Validate demand assumptions.');
+      }
+      const pm = await connect('pm');
+      const mismatched = await pm.callTool({ name: 'get_project_context', arguments: {
+        projectId: 'project', cursor: first.notes.nextCursor,
+      } });
+      expect(mismatched.isError).toBe(true);
+      expect(JSON.stringify(mismatched)).toContain('INVALID_CURSOR');
+    } finally {
+      await db.projectContextNote.deleteMany({ where: { projectId: 'project' } });
+      await db.project.update({ where: { id: 'project' }, data: { overview: null, scope: null } });
+    }
+  });
+
+  it('distinguishes absent context from denied project access and validates context arguments', async () => {
+    const pm = await connect('pm');
+    const empty = schemas.getProjectContextOutput.parse(await call(pm, 'get_project_context', { projectId: 'other' }));
+    expect(empty.project).toMatchObject({ id: 'other', overview: null, scope: null });
+    expect(empty.notes).toEqual({ items: [], nextCursor: null });
+    const reader = await connect();
+    for (const projectId of ['other', 'missing']) {
+      const denied = await reader.callTool({ name: 'get_project_context', arguments: { projectId } });
+      expect(denied.isError).toBe(true);
+      expect(JSON.stringify(denied)).toContain('NOT_FOUND_OR_FORBIDDEN');
+      expect(denied.structuredContent).toBeUndefined();
+    }
+    for (const args of [{ projectId: 'project', userId: 'pm' }, { projectId: 'project', limit: 51 }, { projectId: '' }]) {
+      const result = await reader.callTool({ name: 'get_project_context', arguments: args }).catch(() => ({ isError: true }));
+      expect(result.isError).toBe(true);
+    }
+    const invalid = await reader.callTool({ name: 'get_project_context', arguments: { projectId: 'project', cursor: 'altered' } });
+    expect(JSON.stringify(invalid)).toContain('INVALID_CURSOR');
+  });
+
+  it('rechecks context membership on continuation and withholds context revoked mid-read', async () => {
+    const client = await connect();
+    try {
+      await db.projectContextNote.createMany({ data: ['a', 'b'].map(id => ({ id, projectId: 'project', title: id, content: 'Synthetic note', createdAt: timestamp })) });
+      const first = schemas.getProjectContextOutput.parse(await call(client, 'get_project_context', { projectId: 'project', limit: 1 }));
+      await db.projectMember.update({ where: { projectId_userId: { projectId: 'project', userId: 'reader' } }, data: { leftAt: new Date() } });
+      const denied = await client.callTool({ name: 'get_project_context', arguments: { projectId: 'project', cursor: first.notes.nextCursor } });
+      expect(denied.isError).toBe(true);
+      expect(JSON.stringify(denied)).not.toContain('Synthetic note');
+    } finally {
+      await db.projectMember.update({ where: { projectId_userId: { projectId: 'project', userId: 'reader' } }, data: { leftAt: null } });
+      await db.projectContextNote.deleteMany({ where: { projectId: 'project' } });
+    }
+    await db.projectContextNote.create({ data: { id: 'secret', projectId: 'project', title: 'Private title', content: 'Private context' } });
+    const findNotes = db.projectContextNote.findMany.bind(db.projectContextNote);
+    const notes = jest.spyOn(db.projectContextNote, 'findMany');
+    notes.mockImplementationOnce(args => {
+      const result = findNotes(args);
+      settings.AGENTIC_CMS_ENABLED = 'false';
+      return result;
+    });
+    try {
+      const revoked = await client.callTool({ name: 'get_project_context', arguments: { projectId: 'project' } });
+      expect(revoked.isError).toBe(true);
+      expect(JSON.stringify(revoked)).not.toContain('Private context');
+    } finally {
+      await db.projectContextNote.deleteMany({ where: { projectId: 'project' } });
+    }
   });
 
   it('isolates concurrent users and denies draft/cross-project access without leaking records', async () => {
