@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Res } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, NotFoundException, Post, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { GetUser } from '../../common/get-user.decorator';
 import { ProjectsService } from '../../projects/projects.service';
@@ -21,6 +21,7 @@ export class ChatController {
   @Post()
   async chat(@Body() dto: ChatDto, @GetUser() user: AgentUser, @Res() res: Response) {
     await this.projects.assertProjectAccess(dto.projectId, user);
+    if (dto.sprintId) await this.assertSprintVisible(dto.projectId, dto.sprintId, user);
 
     res.status(200);
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -48,6 +49,15 @@ export class ChatController {
       clearInterval(heartbeat);
       send({ type: 'done' });
       res.end();
+    }
+  }
+
+  /** Same rule as GET /projects/:id/sprints/:sprintId: it must belong to the project, and drafts stay with leads. */
+  private async assertSprintVisible(projectId: string, sprintId: string, user: AgentUser) {
+    const sprint = await this.projects.getSprint(projectId, sprintId);
+    if (!sprint) throw new NotFoundException('Sprint not found');
+    if (sprint.status !== 'RELEASED' && !['PM', 'LC', 'ADMIN'].includes(user.role)) {
+      throw new ForbiddenException('You do not have access to this sprint');
     }
   }
 }

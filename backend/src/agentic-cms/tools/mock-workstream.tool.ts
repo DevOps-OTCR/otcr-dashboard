@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { z } from 'zod';
-import { AgentTool, ToolContext } from './tool.types';
+import { ProjectsService } from '../../projects/projects.service';
+import { AgentTool, ToolContext, ToolFailure } from './tool.types';
 
 const input = z.object({}).describe('No arguments: the current project and workstream come from the chat.');
 
@@ -18,11 +19,20 @@ export class MockWorkstreamTool implements AgentTool<typeof input> {
     'Currently returns MOCK sample data; tell the user it is placeholder data.';
   readonly input = input;
 
+  constructor(private readonly projects: ProjectsService) {}
+
   label() {
     return 'Reading the workstream (mock data)';
   }
 
   async run(_input: z.infer<typeof input>, ctx: ToolContext) {
+    // Recheck with the CMS rule, as real read tools must, even though this data is fake.
+    try {
+      await this.projects.assertProjectAccess(ctx.projectId, ctx.user);
+    } catch (e) {
+      if (!(e instanceof ForbiddenException || e instanceof NotFoundException)) throw e;
+      throw new ToolFailure('No access to this project', "Access denied. Tell the user you can't see this project's details.");
+    }
     const summary = {
       mock: true,
       notice: 'Sample data for testing OTCR Bot. Not a real CMS record.',

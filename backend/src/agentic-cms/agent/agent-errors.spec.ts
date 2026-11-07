@@ -1,6 +1,16 @@
+import { NotFoundException } from '@nestjs/common';
 import { AgentError, errMsg, modelRateLimited, modelUnavailable, toAgentErrorEvent, userRateLimited } from './agent-errors';
 
 describe('toAgentErrorEvent', () => {
+  it('explains a missing or unavailable conversation', () => {
+    expect(toAgentErrorEvent(new NotFoundException('Conversation not found'))).toEqual({
+      type: 'error',
+      kind: 'auth',
+      retryable: false,
+      message: "This conversation isn't available. Start a new chat.",
+    });
+  });
+
   it('copies kind, retryable and the friendly message from an AgentError', () => {
     expect(toAgentErrorEvent(modelUnavailable())).toEqual({
       type: 'error',

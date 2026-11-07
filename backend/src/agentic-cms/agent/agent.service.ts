@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { FeatureFlagsService } from '../../feature-flags/feature-flags.service';
 import { ChatMessage, MODEL_CLIENT, ModelClient } from '../model/model-client';
@@ -8,6 +8,7 @@ import type { ToolContext } from '../tools/tool.types';
 import { featureDisabled, userRateLimited } from './agent-errors';
 import type { AgentSource } from './agent.events';
 import type { AgentUser, RunInput, SendEvent } from './agent.types';
+import { checkCitations } from './citations';
 import { ConversationStore } from './conversation.store';
 import { buildSystemPrompt } from './prompt';
 
@@ -16,6 +17,8 @@ export const DEFAULT_MAX_MESSAGES_PER_HOUR = 60;
 
 @Injectable()
 export class AgentService {
+  private readonly log = new Logger('OtcrBotAgent');
+
   constructor(
     @Inject(MODEL_CLIENT) private readonly model: ModelClient,
     private readonly store: ConversationStore,
@@ -69,7 +72,7 @@ export class AgentService {
     });
     const schemas = this.tools.schemas(tools);
 
-    // Sources cited in this answer, numbered [1], [2]… in the order tools found them.
+    // Sources found this turn, numbered [1], [2]… in the order tools found them.
     const sources: AgentSource[] = [];
     const ctx: ToolContext = {
       user: input.user,
@@ -88,6 +91,7 @@ export class AgentService {
 
     // 4. The loop: ask the model; if it wants tools, run them and ask again.
     let streamedText = false;
+    let answer = '';
     try {
       for (let round = 0; round < MAX_ROUNDS; round++) {
         this.assertStillEnabled(input.user);
@@ -101,6 +105,7 @@ export class AgentService {
             send({ type: 'text_delta', text: delta });
           },
         );
+        answer += turn.text;
         turnMessages.push(turn.message);
         if (!turn.toolCalls.length) break; // model answered: done
 
@@ -123,7 +128,12 @@ export class AgentService {
       throw err;
     }
 
-    // 5. Save the finished turn (with its sources, for the history UI later).
-    await this.store.append(convo.id, turnMessages, sources.length ? { sources } : undefined);
+    // 5. Sources stream as found so [n] links work live. The final list keeps only cited ones.
+    const { cited, invalid } = checkCitations(answer, sources);
+    if (sources.length) send({ type: 'sources', sources: cited });
+    if (invalid.length) this.log.warn(`Model cited unknown sources [${invalid.join(', ')}] in ${convo.id}`);
+
+    // 6. Save the finished turn (with its sources, for the history UI later).
+    await this.store.append(convo.id, turnMessages, cited.length ? { sources: cited } : undefined);
   }
 }

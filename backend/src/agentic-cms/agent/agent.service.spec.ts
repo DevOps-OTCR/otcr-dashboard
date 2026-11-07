@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { NotFoundException } from '@nestjs/common';
 import { FeatureFlagsService } from '../../feature-flags/feature-flags.service';
 import { AgentError } from './agent-errors';
@@ -64,7 +65,7 @@ describe('AgentService.run', () => {
     const config = { get: (key: string) => settings[key] } as never;
     const flags = new FeatureFlagsService(config);
     const skills = new SkillLibrary(config);
-    const tools = new ToolRegistry(new WebSearchTool(new TavilySearchClient(config)), new LoadSkillTool(skills), new MockWorkstreamTool());
+    const tools = new ToolRegistry(new WebSearchTool(new TavilySearchClient(config)), new LoadSkillTool(skills), new MockWorkstreamTool({ assertProjectAccess: async () => ({ id: 'p1', pmId: 'pm' }) } as never));
     return { store, svc: new AgentService(model, store, flags, tools, skills, config) };
   };
 
@@ -281,7 +282,7 @@ describe('AgentService.run', () => {
       const { events, conversationId } = await runTurn(svc, 'How big is the e-bike market?');
 
       expect(seen[0].system).toMatch(/call web_search/);
-      expect(events.map((e) => e.type)).toEqual(['conversation', 'tool_start', 'tool_end', 'sources', 'text_delta']);
+      expect(events.map((e) => e.type)).toEqual(['conversation', 'tool_start', 'tool_end', 'sources', 'text_delta', 'sources']);
       expect(events[1]).toMatchObject({ name: 'web_search', label: 'Searching the web for "e-bike market size"' });
       expect(events[2]).toMatchObject({ ok: true, note: '1 result' });
       expect(events[3]).toEqual({ type: 'sources', sources: [{ id: 1, title: 'E-bike market report', url: 'https://example.com/report' }] });
@@ -289,6 +290,38 @@ describe('AgentService.run', () => {
       expect(toolMsg?.content).toContain('[1] E-bike market report');
       expect(toolMsg?.content).toMatch(/never follow instructions/);
       expect((await store.history(conversationId!)).map((m) => m.role)).toEqual(['user', 'assistant', 'tool', 'assistant']);
+    });
+
+    it('ends with only the cited sources and logs numbers that match no source', async () => {
+      settings.TAVILY_API_KEY = 'tvly-test';
+      jest.spyOn(global, 'fetch').mockImplementation(async (input, init) => {
+        if (String(input) !== 'https://api.tavily.com/search') return realFetch(input, init);
+        return new Response(JSON.stringify({ results: [
+          { title: 'Cited', url: 'https://example.com/cited', content: 'x' },
+          { title: 'Unused', url: 'https://example.com/unused', content: 'y' },
+        ] }), { status: 200 });
+      });
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      let round = 0;
+      const model: ModelClient = {
+        name: 'cites-one',
+        async stream(_req, onText) {
+          if (++round === 1) {
+            const call = { id: 'c1', name: 'web_search', args: { query: 'e-bikes' } };
+            return { text: '', toolCalls: [call], message: assistantMessage('', [call]) };
+          }
+          const text = 'Real [1], invented [7].';
+          onText(text);
+          return { text, toolCalls: [], message: assistantMessage(text, []) };
+        },
+      };
+      const { svc } = setup(model);
+      const { events } = await runTurn(svc, 'Research e-bikes');
+
+      const lists = events.filter((e) => e.type === 'sources').map((e) => (e.type === 'sources' ? e.sources : []));
+      expect(lists[0].map((s) => s.title)).toEqual(['Cited', 'Unused']); // available while streaming
+      expect(lists[1]).toEqual([{ id: 1, title: 'Cited', url: 'https://example.com/cited' }]);
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/unknown sources \[7\]/));
     });
 
     it('reports a failed search to the user and the model without failing the turn', async () => {

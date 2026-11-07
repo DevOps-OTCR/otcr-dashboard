@@ -46,6 +46,8 @@ describe('POST /agentic-cms/chat', () => {
       if (projectId === 'forbidden') throw new ForbiddenException('You do not have access to this project');
       return { id: projectId, pmId: 'pm' };
     }),
+    getSprint: jest.fn(async (_projectId: string, sprintId: string) =>
+      ({ released: { id: sprintId, status: 'RELEASED' }, draft: { id: sprintId, status: 'DRAFT' } })[sprintId] ?? null),
   };
 
   beforeAll(async () => {
@@ -140,6 +142,26 @@ describe('POST /agentic-cms/chat', () => {
       const r = await chat({ projectId: 'forbidden', message: 'hello' });
       expect(r.status).toBe(403);
       expect(r.contentType).toContain('application/json');
+      expect(model.stream).not.toHaveBeenCalled();
+    });
+
+    it('allows a released sprint', async () => {
+      const r = await chat({ projectId: 'p1', sprintId: 'released', message: 'hello' });
+      expect(r.status).toBe(200);
+      expect(projects.getSprint).toHaveBeenCalledWith('p1', 'released');
+    });
+
+    it('returns 404 for a sprint outside the project, before any model call', async () => {
+      model.stream.mockClear();
+      const r = await chat({ projectId: 'p1', sprintId: 'other-project', message: 'hello' });
+      expect(r.status).toBe(404);
+      expect(model.stream).not.toHaveBeenCalled();
+    });
+
+    it('hides draft sprints from consultants, before any model call', async () => {
+      model.stream.mockClear();
+      const r = await chat({ projectId: 'p1', sprintId: 'draft', message: 'hello' });
+      expect(r.status).toBe(403);
       expect(model.stream).not.toHaveBeenCalled();
     });
 

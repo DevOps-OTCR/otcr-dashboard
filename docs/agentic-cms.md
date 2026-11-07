@@ -115,7 +115,7 @@ otherwise the response is a plain 403 before any model call. The reply is a
 | `{"type":"conversation","id"}` | Send this id back as `conversationId` to continue the chat |
 | `{"type":"text_delta","text"}` | Next piece of the answer |
 | `{"type":"tool_start","id","name","label"}` / `{"type":"tool_end","id","ok","note?"}` | Tool progress for the UI |
-| `{"type":"sources","sources":[{"id","title","url"}]}` | All sources so far; the answer cites them as `[id]` |
+| `{"type":"sources","sources":[{"id","title","url"}]}` | All sources so far, so `[id]` links work while streaming; the last event of a turn lists only the cited ones |
 | `{"type":"error","kind","retryable","message"}` | A user-safe error (see below) |
 | `{"type":"done"}` | End of the reply |
 
@@ -179,7 +179,6 @@ the skills folder copied in (or `AGENTIC_CMS_SKILLS_DIR` pointed at it).
 - `get_workstream_summary` returns mock data. Real project context arrives with
   Group 2's MCP tools.
 - Source numbers restart with each answer.
-- The sidebar renders plain text with bold and linked citations, not full Markdown.
 
 ## Where each group builds
 

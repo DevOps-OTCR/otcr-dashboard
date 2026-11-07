@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import type { AgentErrorKind, AgentEvent } from './agent.events';
 
 export class AgentError extends Error {
@@ -54,6 +55,10 @@ export const featureDisabled = () =>
 export function toAgentErrorEvent(err: unknown): AgentEvent {
   if (err instanceof AgentError) {
     return { type: 'error', kind: err.kind, retryable: err.retryable, message: err.userMessage};
+  }
+  // Not this user's conversation, or history was lost when the server restarted.
+  if (err instanceof NotFoundException) {
+    return { type: 'error', kind: 'auth', retryable: false, message: "This conversation isn't available. Start a new chat." };
   }
 
   console.error('[otcr-bot] unexpected error:', errMsg(err) );
