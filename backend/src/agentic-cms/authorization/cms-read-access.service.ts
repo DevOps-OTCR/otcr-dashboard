@@ -48,12 +48,14 @@ export class CmsReadAccessService {
   }
 
   async assertContextWrite(user: CmsReader, projectId: string) {
-    const access = await this.projectScope(user, projectId, 'deliverables');
+    await this.projectScope(user, projectId, 'deliverables');
+    this.checkFeature(user);
     if (user.role !== 'ADMIN' && user.role !== 'LC' && user.role !== 'PM') {
       this.deny();
     }
     const project = await this.prisma.project.findUnique({ where: { id: projectId }, select: { pmId: true } });
     if (!project || (user.role === 'PM' && project.pmId !== user.id)) this.deny();
+    this.checkFeature(user);
   }
 
   async workstreamScope(user: CmsReader, projectId: string) {

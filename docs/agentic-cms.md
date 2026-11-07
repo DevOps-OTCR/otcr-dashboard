@@ -65,6 +65,12 @@ up a local database. The HTTP API is under `/agentic-cms/context/projects/:proje
 GET reads project context and notes, PUT updates overview and scope, POST adds a
 call note, and DELETE removes a call note.
 
+The `20261106180000_project_overview` migration uses `ADD COLUMN IF NOT EXISTS`
+because `20261106090000_project_context` already creates `overview`. Both migration
+names are retained. Before shared rollout, inspect `_prisma_migrations`: the later
+SQL file has changed, so an already-recorded checksum or failed migration may need
+reconciliation. Do not reset a shared database or delete its migration history.
+
 The global feature flag and pilot allowlist gate both the interface and these
 endpoints. Context reads also require project access. Writes are restricted to
 Admins, LCs with project access, and the PM assigned to that project. The UI
@@ -82,7 +88,8 @@ folder with a literal `@Controller('agentic-cms/...')` prefix. Import the featur
 module only from `AppModule`; share ordinary CMS services into the feature,
 rather than importing AI services into existing CMS modules.
 
-HTTP routes at `/agentic-cms/mcp` and below use verified-only CMS authentication:
+HTTP routes at `/agentic-cms/mcp` and `/agentic-cms/context` (including their
+subpaths) use verified-only CMS authentication:
 the global guard rejects email-only bearer credentials before identity resolution
 and requires an active CMS user. Other CMS routes retain their current sign-in
 behavior. This uses the existing Microsoft Graph token verifier; interoperable
@@ -159,6 +166,16 @@ Tests cover all six roles, draft query filters, project-scoped child lookups and
 generic denial responses. These are access-foundation tests, not live Microsoft
 sign-in or end-to-end MCP tests; the production MCP endpoint comes in Step 4.
 Authentication/global-guard changes require Isaiah's boundary review before integration.
+
+Project-context HTTP security tests use the real Nest controller, global guard and
+authorization service with synthetic identities and mocked verification/database
+queries. They cover all four operations: flag-off blocking before authentication
+or reads, verified active users, pilot denial, project membership and write roles,
+project-scoped note deletion, and flag/pilot changes during requests. An ordinary
+CMS route still accepts its existing credentials with the feature off. Context
+handlers recheck the feature before writes and before returning fetched context.
+These tests do not contact Microsoft Graph or a live database.
+
 
 ### Read-operation evidence (Step 3)
 

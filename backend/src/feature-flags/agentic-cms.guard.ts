@@ -23,8 +23,8 @@ export class AgenticCmsGuard implements CanActivate {
 
     // Registered globally: a new endpoint cannot forget its feature/auth guard.
     if (!this.flags.isAgenticCmsEnabled()) this.flags.assertAgenticCmsEnabledFor();
-    const mcpRoute = paths.some(path => /^agentic-cms\/mcp(?:\/|$)/i.test(path));
-    if (mcpRoute) {
+    const verifiedRoute = paths.some(path => /^agentic-cms\/(?:mcp|context)(?:\/|$)/i.test(path));
+    if (verifiedRoute) {
       // This must run in the global guard, before legacy auth resolves identity.
       if (!await this.auth.canActivate(context, { verifiedOnly: true })) throw new UnauthorizedException();
     } else if (!await this.auth.canActivate(context)) return false;

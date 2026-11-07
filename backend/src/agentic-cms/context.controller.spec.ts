@@ -1,3 +1,6 @@
+import { CmsReadAccessService } from './authorization/cms-read-access.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { FeatureFlagsService } from '../feature-flags/feature-flags.service';
 import { BadRequestException } from '@nestjs/common';
 import { AgenticCmsController } from './agentic-cms.controller';
 
@@ -8,8 +11,8 @@ describe('Agentic CMS project context endpoints', () => {
     projectContextNote: { findMany: jest.fn(), create: jest.fn(), findFirst: jest.fn(), delete: jest.fn() },
   };
   let controller: AgenticCmsController;
-  const req = { user: { id: 'pm', email: 'pm@example.test', role: 'PM' } };
-  beforeEach(() => { jest.resetAllMocks(); controller = new AgenticCmsController(access as any, prisma as any); });
+  const req = { user: { id: 'pm', email: 'pm@example.test', role: 'PM' as const } };
+  beforeEach(() => { jest.resetAllMocks(); controller = new AgenticCmsController(access as unknown as CmsReadAccessService, prisma as unknown as PrismaService, { assertAgenticCmsEnabledFor: jest.fn() } as unknown as FeatureFlagsService); });
   it('reads overview, scope and notes only after project authorization', async () => {
     prisma.project.findUnique.mockResolvedValue({ id: 'p', name: 'Project', overview: 'Overview', scope: 'Scope' });
     prisma.projectContextNote.findMany.mockResolvedValue([{ id: 'n', title: 'Call', content: 'Text' }]);
@@ -28,6 +31,7 @@ describe('Agentic CMS project context endpoints', () => {
     await expect(controller.addNote('p', { title: ' ', content: '' }, req)).rejects.toBeInstanceOf(BadRequestException);
     prisma.projectContextNote.findFirst.mockResolvedValue({ id: 'n' });
     await expect(controller.deleteNote('p', 'n', req)).resolves.toEqual({ deleted: true });
+    expect(prisma.projectContextNote.delete).toHaveBeenCalledWith({ where: { id: 'n', projectId: 'p' } });
     expect(prisma.projectContextNote.findFirst).toHaveBeenCalledWith({ where: { id: 'n', projectId: 'p' }, select: { id: true } });
   });
 });
