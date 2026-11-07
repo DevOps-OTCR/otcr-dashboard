@@ -98,6 +98,7 @@ All Agentic CMS work must use the backend-controlled release flag, which
 defaults to off. Read [the integration guide](docs/agentic-cms.md) before adding
 bot UI, MCP tools, context uploads, reviews or skills. It documents local Lumen
 setup, pilot access, required code boundaries, rollback and CI checks.
+For Group 2's five read-only tools, see [MCP connection and usage](docs/agentic-cms-mcp.md).
 
 ## Linting
 

@@ -117,15 +117,14 @@ workers/listeners in constructors, module imports or startup hooks. Standalone
 MCP servers and WebSockets are not automatically covered by the HTTP guard;
 they require an equivalent server-side gate and review before integration.
 
-The Lumen variables are a configuration contract for Group 1; this flag scaffold
-does not implement an LLM client, external search, MCP transport or editors.
+The Lumen variables are a configuration contract for Group 1. The MCP transport
+and read tools are implemented; they do not require an LLM client or model key.
 
 ## Required checks and PR review
 
-Group 2's workstream and deliverable tool contracts are documented in
-[MCP read-tool contracts](agentic-cms-mcp-contracts.md). This specification covers
-inputs, outputs, pagination and inherited record permissions; it does not add a
-running MCP endpoint.
+Group 2's five tools are documented in [MCP read-tool contracts](agentic-cms-mcp-contracts.md).
+See [MCP connection and usage](agentic-cms-mcp.md) for authentication, an SDK client,
+captured synthetic responses and current limitations.
 
 PR Validation runs `scripts/check-agentic-boundaries.cjs` and its negative tests
 inside the required **Backend typecheck, tests and build** check. It rejects
@@ -164,8 +163,8 @@ block verification, identity resolution and tool reads while an ordinary guarded
 CMS route remains usable. Flag-on cases accept verified members and deny malformed
 or email-only credentials, inactive users, non-pilot users and lost membership.
 Tests cover all six roles, draft query filters, project-scoped child lookups and
-generic denial responses. These are access-foundation tests, not live Microsoft
-sign-in or end-to-end MCP tests; the production MCP endpoint comes in Step 4.
+generic denial responses. These access-foundation tests do not perform live
+Microsoft sign-in; separate integration tests exercise the MCP endpoint.
 Authentication/global-guard changes require Isaiah's boundary review before integration.
 
 Project-context HTTP security tests use the real Nest controller, global guard and
@@ -180,11 +179,11 @@ These tests do not contact Microsoft Graph or a live database.
 
 ### Read-operation evidence (Step 3)
 
-`CmsReadService` implements `listWorkstreams`, `getWorkstream`, `listDeliverables`
-and `getDeliverable` with strict input/output schemas, authorized query scopes,
+`CmsReadService` implements `getProjectContext`, `listWorkstreams`, `getWorkstream`,
+`listDeliverables` and `getDeliverable` with strict input/output schemas, authorized query scopes,
 signed pagination, source metadata and explicit text truncation. Deliverable detail
-sections expose assignments, subtasks and submission history/feedback. These are
-internal methods; the MCP endpoint and registration are not implemented yet.
+sections expose assignments, subtasks and submission history/feedback. All five
+operations are registered as read-only tools at `/agentic-cms/mcp`.
 
 For local PostgreSQL integration tests, start Docker Desktop and run
 `npm --prefix backend run test:integration` from the repository root. This manages
@@ -200,7 +199,8 @@ It verifies actual returned values, filtering/pagination, timezone boundaries,
 versions/feedback, nested permissions, lost membership and flag-off blocking.
 No production credentials, client materials or external model calls are used.
 
-Local validation: 225 backend tests passed, including 14 PostgreSQL integration
-cases; lint, typecheck, build, boundary checks and workflow validation passed.
-Browser regression: 71/72 passed initially; the When2Meet 667x375 layout case
-passed on a focused rerun. No frontend code changed in Step 3.
+Latest MCP validation (November 6): 246 backend tests plus 32 local PostgreSQL/MCP
+integration cases passed; backend lint, typecheck, build and boundary checks passed.
+The official client verifies discovery, calls, pagination and denials, including
+context HTTP writes followed by MCP reads. Existing project-context UI/browser
+issues remain deferred; this evidence does not establish a passing full PR suite.

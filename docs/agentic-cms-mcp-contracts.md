@@ -1,7 +1,8 @@
 # Agentic CMS MCP read-tool contracts
 
 Status: Five read-only tools implemented at the gated MCP endpoint.
-Follow [the integration guide](agentic-cms.md). Implement under
+See [connection examples and captured responses](agentic-cms-mcp.md).
+Follow [the integration guide](agentic-cms.md). Code lives under
 `backend/src/agentic-cms/` through a Nest controller at `/agentic-cms/mcp`.
 
 ## Scope and workstream requirements
@@ -169,6 +170,6 @@ Test flag-off/on, all roles, ownership/membership loss, draft/unscoped visibilit
 cross-project IDs, nested permissions, filters, timezone boundaries, empty results,
 cursor validation, truncation, multiple assignees, versions and failures. Demonstrate
 actual MCP discovery/calls without an LLM; supply connection examples and known limits.
-Run applicable PR Validation checks and record flag-off/on evidence. Steps 2/3 add
-authorization/reads, Step 4 adds MCP/executable schemas, Step 5 adds client evidence,
-and Step 6 connects real context. No user decision blocks Step 2.
+Run applicable PR Validation checks and record flag-off/on evidence. Authorization,
+read operations, MCP registration and stored project context are implemented.
+Shared rollout still requires migration-history verification and Isaiah's boundary review.
