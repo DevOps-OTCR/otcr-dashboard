@@ -1,0 +1,188 @@
+[
+  {
+    "name": "get_project_context",
+    "arguments": {
+      "projectId": "project"
+    },
+    "structuredContent": {
+      "schemaVersion": "1",
+      "retrievedAt": "2026-11-07T01:16:26.796Z",
+      "truncatedFields": [],
+      "project": {
+        "id": "project",
+        "name": "project",
+        "overview": "Compare market segments for a synthetic client.",
+        "scope": "Assess demand and competitors using cited public evidence.",
+        "updatedAt": "2026-11-07T01:16:26.776Z"
+      },
+      "notes": {
+        "items": [
+          {
+            "id": "call-note",
+            "title": "Kickoff call",
+            "content": "Prioritize two market segments and document assumptions.",
+            "createdAt": "2026-11-05T12:00:00.000Z"
+          }
+        ],
+        "nextCursor": null
+      }
+    }
+  },
+  {
+    "name": "list_workstreams",
+    "arguments": {
+      "projectId": "project",
+      "currentOnly": true,
+      "asOf": "2026-11-06T12:00:00Z"
+    },
+    "structuredContent": {
+      "schemaVersion": "1",
+      "retrievedAt": "2026-11-07T01:16:26.811Z",
+      "truncatedFields": [],
+      "projectId": "project",
+      "timezone": "America/Chicago",
+      "effectiveAsOf": "2026-11-06T12:00:00.000Z",
+      "workstreams": {
+        "items": [
+          {
+            "id": "week",
+            "projectId": "project",
+            "label": "Week 1",
+            "sequenceNumber": 1,
+            "status": "RELEASED",
+            "weekStartDate": "2026-11-02T00:00:00.000Z",
+            "weekEndDate": "2026-11-08T00:00:00.000Z",
+            "updatedAt": "2026-11-07T01:16:26.554Z",
+            "generalNotesPreview": "Compare market segments."
+          }
+        ],
+        "nextCursor": null
+      }
+    }
+  },
+  {
+    "name": "get_workstream",
+    "arguments": {
+      "projectId": "project",
+      "workstreamId": "week"
+    },
+    "structuredContent": {
+      "schemaVersion": "1",
+      "retrievedAt": "2026-11-07T01:16:26.825Z",
+      "truncatedFields": [],
+      "timezone": "America/Chicago",
+      "workstream": {
+        "id": "week",
+        "projectId": "project",
+        "label": "Week 1",
+        "sequenceNumber": 1,
+        "status": "RELEASED",
+        "weekStartDate": "2026-11-02T00:00:00.000Z",
+        "weekEndDate": "2026-11-08T00:00:00.000Z",
+        "updatedAt": "2026-11-07T01:16:26.554Z",
+        "generalNotes": "Compare market segments."
+      },
+      "deliverablesAccess": "allowed",
+      "deliverables": {
+        "items": [
+          {
+            "id": "d1",
+            "projectId": "project",
+            "workstreamId": "week",
+            "title": "Market landscape",
+            "type": "ANALYSIS",
+            "templateKind": "CUSTOM",
+            "deadline": "2026-11-07T05:59:00.000Z",
+            "status": "IN_PROGRESS",
+            "completed": false,
+            "updatedAt": "2026-11-07T01:16:26.559Z",
+            "descriptionPreview": "Use cited public evidence."
+          },
+          {
+            "id": "d2",
+            "projectId": "project",
+            "workstreamId": "week",
+            "title": "Competitor analysis",
+            "type": "ANALYSIS",
+            "templateKind": "CUSTOM",
+            "deadline": "2026-11-07T05:59:00.000Z",
+            "status": "IN_PROGRESS",
+            "completed": false,
+            "updatedAt": "2026-11-07T01:16:26.559Z",
+            "descriptionPreview": "Use cited public evidence."
+          }
+        ],
+        "nextCursor": null
+      }
+    }
+  },
+  {
+    "name": "list_deliverables",
+    "arguments": {
+      "projectId": "project",
+      "workstreamId": "week",
+      "status": "IN_PROGRESS",
+      "limit": 1
+    },
+    "structuredContent": {
+      "schemaVersion": "1",
+      "retrievedAt": "2026-11-07T01:16:26.838Z",
+      "truncatedFields": [],
+      "projectId": "project",
+      "deliverables": {
+        "items": [
+          {
+            "id": "d1",
+            "projectId": "project",
+            "workstreamId": "week",
+            "title": "Market landscape",
+            "type": "ANALYSIS",
+            "templateKind": "CUSTOM",
+            "deadline": "2026-11-07T05:59:00.000Z",
+            "status": "IN_PROGRESS",
+            "completed": false,
+            "updatedAt": "2026-11-07T01:16:26.559Z",
+            "descriptionPreview": "Use cited public evidence."
+          }
+        ],
+        "nextCursor": "eyJzY29wZSI6IjRmNGY2ZjlmZTUwOTAyMGQyZDhhYzYyZTc0ODM0OTQxZTk3NmEyOWExODM3ODQ3NDQ2OTJhMmI5YTIwNjJiYzAiLCJpZCI6ImQxIiwic29ydFZhbHVlIjoiMjAyNi0xMS0wN1QwNTo1OTowMC4wMDBaIiwiYXNPZiI6bnVsbH0.RfUQZ3hrA5fd4JAIFcm0Y7Ix-jnFWK8CphJCezKOohw"
+      }
+    }
+  },
+  {
+    "name": "get_deliverable",
+    "arguments": {
+      "projectId": "project",
+      "deliverableId": "d1"
+    },
+    "structuredContent": {
+      "schemaVersion": "1",
+      "retrievedAt": "2026-11-07T01:16:26.863Z",
+      "truncatedFields": [],
+      "projectId": "project",
+      "deliverableId": "d1",
+      "sourceUpdatedAt": "2026-11-07T01:16:26.559Z",
+      "section": "overview",
+      "deliverable": {
+        "id": "d1",
+        "projectId": "project",
+        "workstreamId": "week",
+        "title": "Market landscape",
+        "type": "ANALYSIS",
+        "templateKind": "CUSTOM",
+        "deadline": "2026-11-07T05:59:00.000Z",
+        "status": "IN_PROGRESS",
+        "completed": false,
+        "updatedAt": "2026-11-07T01:16:26.559Z",
+        "description": "Use cited public evidence.",
+        "dueDateSource": "AUTO",
+        "createdAt": "2026-11-07T01:16:26.559Z"
+      },
+      "availableSections": [
+        "assignments",
+        "subtasks",
+        "submissions"
+      ]
+    }
+  }
+]
