@@ -17,8 +17,10 @@ See [tool contracts](agentic-cms-mcp-contracts.md) for exact fields and permissi
 3. Start the backend with `npm --prefix backend run start:dev`.
 4. Supply a current Microsoft Graph access token obtained through the existing
    CMS sign-in flow. The backend verifies it through Graph `/me`, requires an
-   `@illinois.edu` principal and an active CMS identity, then enforces pilot and
-   project access. An ID token, email-only bearer value or test token will not work.
+   `@illinois.edu` principal, active CMS email enrollment and an active CMS user,
+   then enforces pilot and project access. For local browser sign-in, use the
+   team's approved Entra app registration with `http://localhost:3000/auth/callback`
+   registered as a SPA redirect URI. Send a Graph access token in the bearer header.
 5. Configure a client that supports Streamable HTTP and a custom
    `Authorization: Bearer <access-token>` header. Supply the selected CMS project's
    ID; these tools do not discover projects. Expired tokens require renewed sign-in.

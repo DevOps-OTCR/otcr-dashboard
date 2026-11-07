@@ -74,8 +74,8 @@ reconciliation. Do not reset a shared database or delete its migration history.
 The global feature flag and pilot allowlist gate both the interface and these
 endpoints. Context reads also require project access. Writes are restricted to
 Admins, LCs with project access, and the PM assigned to that project. The UI
-uses the shared `getEffectiveRole` resolver, including the local role-switcher
-override; it shows edit controls only to those write roles. Users without
+uses the backend's `canEdit` response for the selected project. Write endpoints
+check permissions again on each request. Users without
 accessible projects do not see the context tabs. The read-only MCP tool
 `get_project_context` returns overview, scope and paginated call notes under the
 same project access rules. It does not fetch linked files.
@@ -92,7 +92,7 @@ rather than importing AI services into existing CMS modules.
 HTTP routes at `/agentic-cms/mcp` and `/agentic-cms/context` (including their
 subpaths) use verified-only CMS authentication:
 the global guard rejects email-only bearer credentials before identity resolution
-and requires an active CMS user. Other CMS routes retain their current sign-in
+and requires active CMS email enrollment and an active CMS user. Other CMS routes retain their current sign-in
 behavior. This uses the existing Microsoft Graph token verifier; interoperable
 remote MCP OAuth discovery/resource-token support is not implemented yet.
 
@@ -199,8 +199,8 @@ It verifies actual returned values, filtering/pagination, timezone boundaries,
 versions/feedback, nested permissions, lost membership and flag-off blocking.
 No production credentials, client materials or external model calls are used.
 
-Latest MCP validation (November 6): 246 backend tests plus 32 local PostgreSQL/MCP
-integration cases passed; backend lint, typecheck, build and boundary checks passed.
 The official client verifies discovery, calls, pagination and denials, including
-context HTTP writes followed by MCP reads. Existing project-context UI/browser
-issues remain deferred; this evidence does not establish a passing full PR suite.
+context HTTP writes followed by MCP reads and denial after CMS enrollment is
+revoked. The context browser suite covers save/reload, project switching during
+reads and writes, note creation/deletion, and project-specific edit controls.
+Browser fixtures use synthetic sign-in. Record current validation results in the PR.

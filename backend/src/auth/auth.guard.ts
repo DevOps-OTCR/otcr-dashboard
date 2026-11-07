@@ -19,7 +19,7 @@ export class AuthGuard implements CanActivate {
       ? (typeof authorization === 'string' ? /^Bearer ([^\s]+)$/i.exec(authorization)?.[1] : undefined)
       : authorization?.replace('Bearer ', '');
     if (!token) return false;
-    // MCP must never resolve a user from a caller-provided email address.
+    // Verified routes require a token before resolving CMS identity.
     if (options?.verifiedOnly && token.includes('@')) return false;
     let email: string;
     try {
@@ -29,6 +29,8 @@ export class AuthGuard implements CanActivate {
       return false;
     }
     if (!email || typeof email !== 'string') return false;
+    // CMS enrollment can be revoked while the User row remains active.
+    if (options?.verifiedOnly && !await this.authService.isEmailAllowed(email)) return false;
     const user = await this.authService.getUserByEmail(email);
     if (!user || (options?.verifiedOnly && !user.active)) return false;
     request.user = user;
