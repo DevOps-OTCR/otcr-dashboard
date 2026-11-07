@@ -1,4 +1,5 @@
 import { api } from '@/lib/api';
+import { createSseParser } from './sse';
 
 // Mirrors backend/src/agentic-cms/agent/agent.events.ts
 export type AgentSource = { id: number; title: string; url: string };
@@ -56,26 +57,10 @@ export async function streamChat(
   if (!res.ok || !res.body) throw httpErrorMessage(res.status);
 
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
-  let buffer = '';
+  const push = createSseParser((event) => onEvent(event as AgentEvent));
   for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
-    buffer += value;
-    let boundary: number;
-    while ((boundary = buffer.indexOf('\n\n')) >= 0) {
-      const frame = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      const data = frame
-        .split('\n')
-        .filter((line) => line.startsWith('data:'))
-        .map((line) => line.slice(5).trimStart())
-        .join('\n');
-      if (!data) continue; // heartbeat comments
-      try {
-        onEvent(JSON.parse(data) as AgentEvent);
-      } catch {
-        // Ignore a malformed frame rather than breaking the conversation.
-      }
-    }
+    push(value);
   }
 }

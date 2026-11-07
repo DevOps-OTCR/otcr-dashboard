@@ -1,7 +1,7 @@
 'use client';
 
 import { AlertCircle, Bot, Check, ExternalLink, Loader2, Plus, RotateCcw, Send, Square, X } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type PointerEvent } from 'react';
 import { useAuth } from '@/components/AuthContext';
 import { projectsAPI } from '@/lib/api';
 import { ChatRequestError, streamChat, type AgentEvent, type AgentSource } from './chat-stream';
@@ -27,6 +27,25 @@ const EXAMPLES = [
   'Research the size of the US campus e-bike market, with sources',
   'Write an executive summary of our findings so far',
 ];
+const DEFAULT_WIDTH = 440;
+const MIN_WIDTH = 360;
+const MAX_WIDTH = 960;
+const WIDTH_STEP = 24;
+const WIDTH_KEY = 'otcr-bot-width';
+
+const clampWidth = (width: number) =>
+  Math.round(Math.max(MIN_WIDTH, Math.min(width, MAX_WIDTH, window.innerWidth - 40)));
+
+// The panel only loads in the browser, after the backend enables the feature.
+function savedWidth() {
+  try {
+    const saved = Number(window.localStorage.getItem(WIDTH_KEY));
+    return saved > 0 ? clampWidth(saved) : DEFAULT_WIDTH;
+  } catch {
+    return DEFAULT_WIDTH;
+  }
+}
+
 let nextId = 0;
 const newId = () => `m${++nextId}`;
 
@@ -42,6 +61,7 @@ export function OtcrBot() {
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
+  const [width, setWidth] = useState(savedWidth);
   const abortRef = useRef<AbortController | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -71,7 +91,10 @@ export function OtcrBot() {
     projectsAPI.getSprints(projectId)
       .then((res) => {
         if (cancelled) return;
-        const list = ((res.data ?? []) as Array<{ id: string; label: string }>).map((s) => ({ id: s.id, name: s.label }));
+        // Draft workstreams are hidden from consultants, and the backend refuses them.
+        const list = ((res.data ?? []) as Array<{ id: string; label: string; status: string }>)
+          .filter((s) => s.status === 'RELEASED')
+          .map((s) => ({ id: s.id, name: s.label }));
         setSprints(list);
         setSprintId(list[list.length - 1]?.id ?? '');
       })
@@ -90,6 +113,14 @@ export function OtcrBot() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(WIDTH_KEY, String(width));
+    } catch {
+      // Private browsing can block storage; the width still works for this visit.
+    }
+  }, [width]);
 
   const updateBot = useCallback((id: string, change: (entry: BotEntry) => BotEntry) => {
     setEntries((list) => list.map((e) => (e.id === id && e.role === 'assistant' ? change(e) : e)));
@@ -169,6 +200,19 @@ export function OtcrBot() {
     void send(user.text);
   };
 
+  const onResizeStart = (e: PointerEvent<HTMLDivElement>) => {
+    e.preventDefault(); // keep the drag from selecting chat text
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onResizeMove = (e: PointerEvent<HTMLDivElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) setWidth(clampWidth(window.innerWidth - e.clientX));
+  };
+  const onResizeKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    setWidth((w) => clampWidth(w + (e.key === 'ArrowLeft' ? WIDTH_STEP : -WIDTH_STEP)));
+  };
+
   const onSubmit = (e: FormEvent) => { e.preventDefault(); void send(draft); };
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(draft); }
@@ -192,8 +236,22 @@ export function OtcrBot() {
   return (
     <aside
       aria-label="OTCR Bot"
-      className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-slate-200 bg-white text-slate-900 shadow-2xl sm:w-[440px] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+      style={{ '--otcr-bot-width': `${width}px` } as CSSProperties}
+      className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-slate-200 bg-white text-slate-900 shadow-2xl sm:w-[var(--otcr-bot-width)] sm:max-w-[calc(100vw-2.5rem)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
     >
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize OTCR Bot"
+        aria-valuemin={MIN_WIDTH}
+        aria-valuemax={MAX_WIDTH}
+        aria-valuenow={width}
+        tabIndex={0}
+        onPointerDown={onResizeStart}
+        onPointerMove={onResizeMove}
+        onKeyDown={onResizeKey}
+        className="absolute inset-y-0 left-0 z-10 hidden w-2 -translate-x-1/2 cursor-ew-resize touch-none hover:bg-blue-500/40 focus:outline-none focus-visible:bg-blue-500/60 active:bg-blue-500/60 sm:block"
+      />
       <header className="space-y-2 border-b border-slate-200 px-4 py-3 dark:border-slate-700">
         <div className="flex items-center gap-2">
           <Bot className="h-5 w-5 text-blue-700 dark:text-blue-400" aria-hidden />
@@ -255,7 +313,7 @@ export function OtcrBot() {
                 <span>{tool.label}{tool.note ? ` · ${tool.note}` : ''}</span>
               </div>
             ))}
-            {entry.text && <MessageText text={entry.text} sources={entry.sources} />}
+            {entry.text && <MessageText text={entry.text} sources={entry.sources} copyable={!entry.pending && !entry.error} />}
             {entry.pending && !entry.text && (
               <div className="flex items-center gap-2 text-xs text-slate-500"><Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> Thinking…</div>
             )}
