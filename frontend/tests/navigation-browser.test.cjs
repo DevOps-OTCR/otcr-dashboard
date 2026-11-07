@@ -675,6 +675,37 @@ test('Overview shares sprint requests and retains the calendar across routes and
   assert.equal(state.calendarLoads, 1);
 });
 
+test('Consultant Overview keeps an explicit All Weeks filter and restores it from the snapshot', async t => {
+  const { page, open } = await setup(t, '/consultant');
+  await page.route('**/api/projects/*/sprints', route => {
+    const projectId = new URL(route.request().url()).pathname.split('/')[3];
+    const week = number => ({ id: `${projectId}-week-${number}`, label: `Week ${number}`, status: 'RELEASED',
+      deliverables: [{ id: `${projectId}-deck-${number}`, title: `${projectId} Week ${number} deck`, templateKind: 'INITIAL_SLIDES',
+        deadline: `2026-10-${10 + number}T23:00:00Z`, assignees: [] }] });
+    const [first] = responseFor(route.request().url().split('/api')[1], 'PM');
+    const weekOne = { ...week(1), deliverables: [...first.deliverables.filter(item => !item.templateKind), ...week(1).deliverables] };
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify([weekOne, week(2)]) });
+  });
+  const pill = label => page.getByRole('button', { name: label, exact: true });
+  const isSelected = async label => /bg-\[var\(--primary\)\]/.test(await pill(label).getAttribute('class'));
+  await open();
+  await page.getByText('team-1 Week 2 deck', { exact: true }).waitFor();
+  assert.equal(await isSelected('Week 2'), true);
+  assert.equal(await page.getByText('team-1 Week 1 deck', { exact: true }).count(), 0);
+  await pill('All Weeks').click();
+  await page.getByText('team-1 Week 1 deck', { exact: true }).waitFor();
+  await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 100)));
+  assert.equal(await isSelected('All Weeks'), true);
+  assert.equal(await page.getByText('team-1 Week 2 deck', { exact: true }).isVisible(), true);
+  await page.evaluate(() => window.navigationTest.navigate('/deliverables'));
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  await page.evaluate(() => window.navigationTest.navigate('/consultant'));
+  await page.getByText('team-1 Week 1 deck', { exact: true }).waitFor();
+  await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 100)));
+  assert.equal(await isSelected('All Weeks'), true);
+  assert.equal(await page.getByText('team-1 Week 2 deck', { exact: true }).isVisible(), true);
+});
+
 test('legacy role overview URLs redirect to the canonical Overview', async t => {
   const { page, nav, open } = await setup(t, '/pm');
   await open();
