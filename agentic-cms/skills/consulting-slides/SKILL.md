@@ -1,7 +1,7 @@
 ---
 name: consulting-slides
 description: Use when an argument must become a consulting presentation — storyline, section structure, action titles, exhibits, slide-by-slide storyboard — or when an existing deck must be reviewed, or when a finished deck needs a final pre-send audit checklist. Produces a storyboard, a severity-ranked review, or an audit checklist, never a PowerPoint file. Do not use for visual formatting of a file, for gathering evidence (use research), or for writing the document (use whitepaper-writing).
-version: 0.3.3
+version: 0.3.4
 owner: Group 3 (Aritro, Teja)
 release: 1
 metadata:
@@ -34,7 +34,7 @@ Do A completely before B. Do C after B, and again on the whole deck.
 
 Blending A and B produces a tour of topics. Blending B and C produces a polished deck that argues nothing.
 
-**Release 1 boundary:** content, structure, titles, and exhibit *specification* only. No `.pptx` generation, no file editing, no rendered-output inspection (fonts, overflow, alignment). If asked for those, say so plainly and deliver the specification instead.
+**Release 1 boundary:** content, structure, titles, and exhibit *specification* only. No `.pptx` generation, no file editing, no rendered-output inspection. Rendered fonts, overflow and clipping are never verified. Alignment and footer-page checks are allowed only when computed from supplied layout fields (for example `left_in`, `footer_page`) — never from a rendered file. If asked for rendered-output work, say so plainly and deliver the specification instead.
 
 ---
 
@@ -254,15 +254,15 @@ Operative rules:
 - At most 25 items. Quote at most 12 words.
 - Five to eight audience questions (fewer if the deck supports fewer), each grounded in a visible slide's claim, assumption or gap.
 - Audience-question item format: `- [ ] Q: <question> — <claim, assumption or gap on the slide> — <what to add or prepare> (Ready: presenter of slide N)`. Cite every slide it affects; name who should be ready to answer.
-- Run each layout check on whatever layout fields are present: if any box has left_in, compare left edges across visible slides; if footer_page is present, compare it with the slide number. Only a check whose fields are entirely missing goes under Not checkable.
-- A hidden or confidential slide appears only in Skipped slides. Never cite it, its layout or its numbering in any finding.
+- Layout checks (the single partial-layout rule here and in Audit rules): run a check on the slides that have its fields — if a slide's box carries left_in, compare its left edge with the deck's usual edge across the slides that supply it; if a slide supplies footer_page, compare it with that slide's number. List the check under "Not checkable from this input" only for the slides (or the whole deck, if none qualify) whose fields are missing, naming those slides.
+- A hidden or confidential slide appears only in Skipped slides. Never cite it, its layout or its numbering in any finding. A page-number gap caused only by a skipped slide is not a finding — the skipped slide accounts for the missing number, so do not report the gap.
 
 
 Audit rules (self-contained; operative even if `references/deck-audit.md` is not loaded):
 - Audit uses the same input contract as Review mode above: each visible slide arrives with its stable `number` and available content/layout fields; a withheld slide arrives only as `{number, hidden: true, skipped: true}`.
 - Skipped slides are listed by number only, under Skipped slides. Neither hidden text nor hidden layout/metadata is used anywhere.
 - Findings and proposed fixes only. Audit does not generate or edit a PowerPoint, does not edit any file, and does not post comments.
-- For every check that needs a field the input lacks (for example layout, position or font data absent in a text-only export), write "Not checkable from this input" for that check. Never imply text-only input verified rendered alignment, fonts, overflow or clipping.
+- Layout checks follow the single partial-layout rule in Operative rules: run a check on the slides that have its fields; list it under "Not checkable from this input" only for the slides (or the whole deck) whose fields are missing, naming those slides. Rendered fonts, overflow and clipping are never verified. Never imply text-only input verified rendered alignment, fonts, overflow or clipping.
 - Order items MUST FIX first within each section; never invent a typo; style preferences are not errors.
 
 Full protocol: `references/deck-audit.md`. Source: PM interview P1, 2026-11-05.
