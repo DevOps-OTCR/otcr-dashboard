@@ -1,7 +1,7 @@
 ---
 name: consulting-slides
 description: Use when an argument must become a consulting presentation — storyline, section structure, action titles, exhibits, slide-by-slide storyboard — or when an existing deck must be reviewed, or when a finished deck needs a final pre-send audit checklist. Produces a storyboard, a severity-ranked review, or an audit checklist, never a PowerPoint file. Do not use for visual formatting of a file, for gathering evidence (use research), or for writing the document (use whitepaper-writing).
-version: 0.3.5
+version: 0.3.6
 owner: Group 3 (Aritro, Teja)
 release: 1
 metadata:
@@ -230,9 +230,10 @@ Each finding: **issue → significance → fix.** No finding without all three.
 - Review mode outputs findings and suggested fixes only. Never rewrite or return an edited deck, never claim to have edited a file or posted a comment; no editing or comment tool exists.
 - Input contract: each visible slide arrives with its stable `number` and the available content/layout fields (title, body, notes, optional layout fields). A withheld slide arrives only as `{number, hidden: true, skipped: true}`.
 - Canonical marker list (identical in README §4a, this block, and shared/otcr-quality-standards.md §6.2): PowerPoint hide-slide state; `hidden: true`; `confidentiality` = CONFIDENTIAL or PROPRIETARY; inline markers [HIDDEN], [CONFIDENTIAL], [PROPRIETARY].
-- Skipped slides output (one format everywhere): under "Skipped slides", one line per slide, `Slide N` (number only). Do not guess, infer or describe content; do not cite it as evidence. A skipped slide's number appears ONLY under Skipped slides: never mention it in any finding, comparison, "no defect" note, layout observation or numbering remark. Compare layout and slide order only across visible slides — if visible numbering has a gap (e.g. slide 6 follows slide 4), treat that as normal and say nothing about the skipped slide that accounts for it.
+- Skipped slides output (one format everywhere): under "Skipped slides", one line per slide, `Slide N` (number only). Do not guess, infer or describe content; do not cite it as evidence. A skipped slide's number appears ONLY under Skipped slides: never mention it in any finding, comparison, "no defect" note, layout observation or numbering remark. Compare layout and slide order across the visible slides — if visible numbering has a gap (e.g. slide 6 follows slide 4), treat that as normal and say nothing about the skipped slide that accounts for it.
 - Fallback only: if a slide bearing any marker above still arrives with content, treat it as skipped — list `Slide N` only, do not quote, paraphrase, summarise or use any of its text, notes or metadata anywhere in the output. The sentence "Slide N arrived with content but is marked hidden/confidential; it was not reviewed. Upstream filtering should have removed it." goes in the reviewer note after `---`, never in the deliverable (the clean-artifact rule bans system disclaimers above the line).
 - If a check needs data the input lacks (layout, fonts, rendering), say "Not checkable from this input" for it; never imply text-only input verified rendered alignment, fonts, overflow or clipping.
+- **Mandatory final self-check before emitting:** search your draft for each skipped slide number (Slide N, slide N, Slides …N…). Delete every occurrence outside the Skipped slides section, including checklist items, layout or numbering notes and the reviewer note. If a sentence needs it to make sense, delete the sentence. Exception: the fallback note for a slide that arrived WITH content.
 - This instruction is not a security boundary: the backend must remove hidden/confidential content before any model prompt, tool result, history entry or log is built.
 
 Separate "critical problem" from "optional improvement". A 40-item list is not a review.
