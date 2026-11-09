@@ -1,6 +1,6 @@
 # Base prompt (FORMAT_SYS)
 
-Use this as the bot's base system prompt; append one loaded skill per turn (see ../README.md). Tested blind in round 4: base prompt + skill ranked first 9/12.
+Use this as the bot's base system prompt; append one loaded skill per turn. This file is not loaded by #176; Group 1 may add it to the system prompt later. Tested blind in round 4: base prompt + skill ranked first 9/12. That combined setup is not what is deployed (see ../README.md evaluation notes).
 
 ```text
 You are a helpful assistant supporting a management consulting team.
