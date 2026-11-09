@@ -1,7 +1,7 @@
 ---
 name: whitepaper-writing
 description: Use when research or analysis must become a client-facing written deliverable — whitepaper, strategy report, decision memo, findings document, or a revision of an existing draft — that argues a position and must survive LC/PM review. Consumes an Evidence Ledger and preserves claim traceability. Do not use for slides (use consulting-slides), for gathering evidence (use research), or for short chat answers.
-version: 0.4.0
+version: 0.4.1
 owner: Group 3 (Aritro, Teja)
 release: 1
 metadata:
@@ -78,6 +78,8 @@ Choose the mode before drafting; don't label it in the document. A memo padded i
 
 **Required inputs follow their ask/stop rules.** If a required input is missing, ask (or stop) as the "If missing" column says. Only preferred inputs get defaults. Do not assume a required input and proceed.
 
+**Draft-now exception.** If the user explicitly asks for a draft and supplies facts, do not refuse for missing inputs: draft now with the supplied facts, and put each missing required input as a `[DATA NEEDED: ...]` flag in the body with its stated effect on confidence. Ask at most one question, and only in the reviewer note. The Step 5 outline gate applies only when the user did not ask for a full draft.
+
 ---
 
 ## 5. Workflow
@@ -127,20 +129,20 @@ Every `gap` is resolved or converted to `[DATA NEEDED: …]` with a stated effec
 **Complete when:** zero unsupported claims remain in the argument chain.
 
 ### Step 5 — Outline gate ⏸
-For documents > ~1,500 words: output the outline (section → argument → IDs → length) and stop. Continue on approval or explicit "just draft it".
+Applies only when the user did not ask for a full draft. When it applies and the document is > ~1,500 words: output the outline (section → argument → IDs → length) and stop. Continue on approval or explicit "just draft it". If the user explicitly asked for a full draft, skip this gate and draft per §4's draft-now exception.
 
 ### Step 6 — Draft with budgets
 Per §7. A section that overshoots is usually two sections or one unresolved question.
 
-**Length limits (v0.4.0 — LC review, 8 Nov).** A word limit is a hard ceiling with different mechanics depending on the piece.
+**Length limits (v0.4.1 — LC review + Lumen loader test, 8 Nov).** A word limit is a hard ceiling with different mechanics depending on the piece.
 
-(a) **Short executive summary or single-section piece (limit ≤ 500 words AND single-section).** Only in this case, use the sentence-budget rule: divide the limit by 30 and round down (350 words -> 11 sentences), and stay at or under that sentence count in at most 3 paragraphs.
+(a) **Short executive summary (limit ≤ 500 words).** Only when the piece is a short executive summary with a limit of 500 words or fewer, use the sentence-budget rule: divide the limit by 30 and round down (350 words -> 11 sentences), and stay at or under that sentence count in at most 3 paragraphs. Any other single-section piece uses rule (b).
 
 (b) **Any limit > 500 words, or any multi-section piece.** Do not use the 3-paragraph rule. Give every section a word budget that sums to the limit, and draft each section to its budget. Include the section budget table even when Step 5's outline gate is skipped.
 
 (c) **Reviewer note.** The reviewer note does not count toward the word limit. It must be at most 3 sentences.
 
-(d) **Verify before returning.** Count the words actually written in the deliverable body, headings excluded. Report `Word count: N / LIMIT` on one line, as the first line of the reviewer note after `---`, never in the deliverable body. If over, cut in this order: restated facts, worked arithmetic (keep the result and its `[ESTIMATE]` label), secondary caveats. Never cut the recommendation, the stop condition, or a `[DATA NEEDED]` flag. A sentence count is only a drafting aid, not proof of compliance. Inline estimate labels carry IDs only, e.g. `[ESTIMATE: S3, S4]`. Put the arithmetic in the reviewer note, not inline. When cutting to fit, use only the facts the user supplied; anything else the argument needs becomes a [DATA NEEDED: ...] flag, never a new S# or a new number.
+(d) **Verify before returning.** Your own word count runs about 10% low. Draft to 85% of the limit, not to the limit itself (e.g. 300 for a 350 limit, 210 for 250, 1,275 for 1,500), and cut until your estimate is at or under 85% of the limit. Count the words you estimate are in the deliverable body, headings excluded. Report `Word count (estimate): N / LIMIT` on one line, as the first line of the reviewer note after `---`, never in the deliverable body. This estimate is not proof; the reviewer or tooling verifies the real count. If over, cut in this order: restated facts, worked arithmetic (keep the result and its `[ESTIMATE]` label), secondary caveats. Never cut the recommendation, the stop condition, or a `[DATA NEEDED]` flag. A sentence count is only a drafting aid, not proof of compliance. Inline estimate labels carry IDs only, e.g. `[ESTIMATE: S3, S4]`. Put the arithmetic in the reviewer note, not inline. When cutting to fit, use only the facts the user supplied; anything else the argument needs becomes a [DATA NEEDED: ...] flag, never a new S# or a new number.
 
 ### Step 7 — Consistency and traceability pass
 - Every number appears in the ledger or is derived and labelled.
