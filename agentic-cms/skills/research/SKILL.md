@@ -163,6 +163,24 @@ Build §8, run §9, hand off (§10).
 
 ---
 
+## 5a. What you can actually read (v0.3.1 — LC review, 8 Nov)
+
+Every piece of evidence sits in one of three states. Only the first can support a `FACT`.
+
+| State | What it is | Where it may go |
+|---|---|---|
+| **Retrieved source** | Full page/document content returned by a source-reading tool, with provenance (URL or document name, retrieval this session) | The only state that can become a verified ledger row |
+| **Unverified lead** | A search excerpt/snippet, a remembered URL, or a title | Only under 'Sources to open and check', marked `[UNVERIFIED: open and check]`. Never a verified ledger row; never supports a `FACT` |
+| **Supplied evidence** | Material the user pasted or attached | May support a claim attributed to the user ("per the supplied <doc>"). Never implies independent verification of its underlying source. Its ledger rows say "supplied by user, not independently verified". Its claims carry `S#` IDs like any supplied fact (§7) |
+
+**When source reading is unavailable or fails** (unreadable page, paywall, timeout): produce a useful scoped research plan, list the missing evidence, and draft only from supplied evidence with its provenance and limits labelled. Report unreadable sources by name. Never fabricate ledger rows and never silently lower the standard to fill the requested format. A `[DATA NEEDED: ...]` gap is the correct output, not an invented number.
+
+**Conflicting retrieved sources:** show both, with each source's basis; do not pick silently (procedure in Step 7).
+
+**IDs.** `S#`/`I#` are claim IDs and stay stable through research → whitepaper → slides. `[n]` are the bot's clickable source-link IDs from `web_search` and are never reused as claim IDs. A ledger row keeps the actual source reference (URL or document name), so a `[n]` can be mapped to it.
+
+---
+
 ## 6. Source capability, not prestige
 
 Rank by **what a source can bear**.
@@ -179,7 +197,7 @@ Rank by **what a source can bear**.
 
 **Rules**
 - Match claim to capability. A vendor's "$12B market" bears *"vendor asserts $12B"* — write it that way.
-- Never cite a source you have not read. Never cite a search snippet.
+- Never cite a source you have not read in full this session. Never cite a search snippet or remembered URL as evidence; per §5a they are unverified leads.
 - Cite the primary even when you found it via secondary.
 - Wikipedia, Reddit and forums: use them to find leads and the primary source behind them; never cite them.
 
@@ -282,6 +300,8 @@ Length matches the decision. Scoping question: 1 page. Market entry: 3–5. Neve
 ## 11. Handoff
 
 Pass to `whitepaper-writing` / `consulting-slides`: primary question, scope contract, §2 takeaway, findings with S-IDs, the ledger unchanged, limitations, open questions.
+
+Pass S#/I# unchanged with their actual source references; mark unsupported claims as gaps ([DATA NEEDED: ...]), never as facts.
 
 Do **not** pass source dumps or the research conversation.
 
