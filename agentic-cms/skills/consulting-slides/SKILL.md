@@ -243,7 +243,12 @@ Full review protocol, including how to review a deck you did not build: `referen
 ### Audit mode (final pre-send check, v0.3.0)
 Run this after the slides are assembled, before the deck leaves the building.
 
-- **Pass 1 — mechanics.** Spelling, page numbers, bolding, boxes and alignment, plus inconsistent terms, inconsistent numbers, and leftover placeholders. This is the PM's list.
+- **Pass 1 — mechanics.** Spelling, page numbers, bolding, boxes and alignment, plus inconsistent terms, inconsistent numbers, and leftover placeholders. This is the PM's list and the only pass that can produce MUST FIX items.
+- **Severity definitions (mandatory).** Assign every item one severity using these definitions:
+  - **MUST FIX** = an objective error a client would catch: typo, wrong or inconsistent number, the same figure with two different sources, broken page numbering, a leftover placeholder, an unsourced number in a title.
+  - **SHOULD FIX** = a clarity or consistency issue: terminology, duplicated content, title wording.
+  - **CHECK** = a judgment call on storyline or argument — missing exhibits, no 'why now', no success criteria, competitor detail. Storyline and argument questions belong in Big picture as CHECK items, never MUST FIX.
+  - A clean deck may have zero MUST FIX items. Never invent issues, elevate a judgment call to MUST FIX, or pad the list to look thorough.
 - **Pass 2 — big picture.** Chronology, gaps in the argument, loopholes in the recommendation.
 - **Pass 3 — likely audience questions.** The questions an audience watching the presentation would ask, each tied to a slide and to who should be ready to answer it.
 
@@ -264,7 +269,8 @@ Audit rules (self-contained; operative even if `references/deck-audit.md` is not
 - Skipped slides are listed by number only, under Skipped slides. Neither hidden text nor hidden layout/metadata is used anywhere.
 - Findings and proposed fixes only. Audit does not generate or edit a PowerPoint, does not edit any file, and does not post comments.
 - Layout checks follow the single partial-layout rule in Operative rules: run a check on the slides that have its fields; list it under "Not checkable from this input" only for the slides (or the whole deck) whose fields are missing, naming those slides. Rendered fonts, overflow and clipping are never verified. Never imply text-only input verified rendered alignment, fonts, overflow or clipping.
-- Order items MUST FIX first within each section; never invent a typo; style preferences are not errors.
+- Order items MUST FIX first within each section; never invent a typo; style preferences are not errors. Severity definitions in Audit mode apply: MUST FIX only for objective client-catchable errors; storyline and argument questions are CHECK items under Big picture, never MUST FIX; zero MUST FIX items is a valid result.
+- **Mandatory final self-check before emitting:** search your draft for each skipped slide number (Slide N, slide N, Slides …N…). Delete every mention of a skipped slide outside Skipped slides, including in checklist items, layout or numbering notes and the reviewer note. If a sentence needs it to make sense, delete the sentence.
 
 Full protocol: `references/deck-audit.md`. Source: PM interview P1, 2026-11-05.
 
