@@ -1,0 +1,31 @@
+import { AgentService } from '../../agent/agent.service';
+import { ConversationStore } from '../../agent/conversation.store';
+import { FeatureFlagsService } from '../../../feature-flags/feature-flags.service';
+import { assistantMessage, type ModelClient, type ModelRequest } from '../../model/model-client';
+import { TavilySearchClient } from '../../search/tavily-search.client';
+import { SkillLibrary } from '../../skills/skill-library';
+import { LoadSkillTool } from '../../tools/load-skill.tool';
+import { MockWorkstreamTool } from '../../tools/mock-workstream.tool';
+import { ToolRegistry } from '../../tools/tool-registry';
+import { WebSearchTool } from '../../tools/web-search.tool';
+
+const words = (n: number) => Array.from({ length: n }, (_, i) => `w${i}`).join(' ');
+it('notice reaches next-turn history as assistant content', async () => {
+  const settings: Record<string, string> = { AGENTIC_CMS_ENABLED: 'true' };
+  const config = { get: (k: string) => settings[k] } as never;
+  const texts = [words(486), words(400), words(380), 'you are welcome'];
+  const seen: ModelRequest[] = [];
+  const model: ModelClient = { name: 'q', async stream(req, onText) { seen.push(req); const t = texts.shift()!; onText(t); return { text: t, toolCalls: [], message: assistantMessage(t, []) }; } };
+  const skills = new SkillLibrary(config);
+  const tools = new ToolRegistry(new WebSearchTool(new TavilySearchClient(config)), new LoadSkillTool(skills), new MockWorkstreamTool({ assertProjectAccess: async () => ({ id: 'p1', pmId: 'pm' }) } as never));
+  const svc = new AgentService(model, new ConversationStore(), new FeatureFlagsService(config), tools, skills, config);
+  const ev: any[] = [];
+  const u = { id: 'u1', email: 'a@illinois.edu', role: 'CONSULTANT' };
+  await svc.run({ user: u, projectId: 'p1', sprintId: 's1', message: 'Write a 350-word summary', signal: new AbortController().signal }, (e) => ev.push(e));
+  const id = ev.find((e) => e.type === 'conversation').id;
+  await svc.run({ user: u, projectId: 'p1', sprintId: 's1', message: 'thanks', conversationId: id, signal: new AbortController().signal }, () => undefined);
+  const msgs = seen[seen.length - 1].messages;
+  const a = msgs.filter((m) => m.role === 'assistant').pop()!;
+  console.log(JSON.stringify(String(a.content).slice(-120)));
+  expect(String(a.content)).toMatch(/_\(This draft is 380 words, over the 350-word limit\. Cut it before using it\.\)_$/);
+});

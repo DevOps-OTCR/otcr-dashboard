@@ -19,7 +19,8 @@
     "prisma:seed": "ts-node prisma/seed.ts",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:cov": "jest --coverage"
+    "test:cov": "jest --coverage",
+    "test:redteam": "jest --testPathIgnorePatterns /node_modules/ --testPathPattern __redteam__"
   },
   "keywords": [],
   "_moduleAliases": {

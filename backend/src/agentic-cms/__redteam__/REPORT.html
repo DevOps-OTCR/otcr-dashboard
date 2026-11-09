@@ -1,0 +1,122 @@
+<title>PR #176 Word-Limit Red Team</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600&display=swap">
+<style>
+/* Layout: single reading column, severity-striped finding rows, mono for code */
+:root{
+  --bg:#f6f7f9; --surface:#ffffff; --fg:#1b2230; --muted:#5b6577; --line:#dde1e8; --accent:#2f5bd3;
+  --high:#c0392b; --med:#b7791f; --low:#4a7a5c; --codebg:#eef1f6;
+  --display:"Fraunces",Georgia,serif; --body:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12161d;--surface:#1a2029;--fg:#e4e8ef;--muted:#9aa4b5;--line:#2c3440;--accent:#7ea0ff;--high:#ef6a5b;--med:#e0a94a;--low:#7fbf95;--codebg:#232b37;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#12161d;--surface:#1a2029;--fg:#e4e8ef;--muted:#9aa4b5;--line:#2c3440;--accent:#7ea0ff;--high:#ef6a5b;--med:#e0a94a;--low:#7fbf95;--codebg:#232b37;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:15px/1.55 var(--body);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:32px 56px}
+main{max-width:860px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
+h1{font:600 2rem/1.15 var(--display);margin:0;text-wrap:balance}
+h2{font:600 1.25rem/1.3 var(--display);margin:0 0 10px;text-wrap:balance}
+p{margin:0;max-width:68ch}
+.meta{color:var(--muted);font-size:.9rem}
+code{font:500 .85em var(--mono);background:var(--codebg);padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
+.verdict{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px 18px;display:flex;flex-direction:column;gap:8px}
+.counts{display:flex;flex-wrap:wrap;gap:8px}
+.pill{font:500 .78rem var(--mono);padding:3px 9px;border-radius:999px;border:1px solid var(--line);letter-spacing:.02em}
+.pill.h{color:var(--high);border-color:var(--high)} .pill.m{color:var(--med);border-color:var(--med)} .pill.l{color:var(--low);border-color:var(--low)}
+ol.f{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+ol.f li{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--low);border-radius:6px;padding:12px 14px;min-width:0;display:flex;flex-direction:column;gap:6px}
+ol.f li.h{border-left-color:var(--high)} ol.f li.m{border-left-color:var(--med)}
+.loc{font:500 .8rem var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.t{font-weight:600}
+.row{display:grid;grid-template-columns:64px 1fr;gap:4px 10px;font-size:.92rem}
+.row b{font:500 .72rem var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding-top:3px}
+.row span{min-width:0}
+.wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.88rem;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:500 .72rem var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+td:first-child{font-family:var(--mono);font-size:.82rem;white-space:nowrap}
+ul.plain{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+</style>
+<main>
+<header style="display:flex;flex-direction:column;gap:8px">
+  <h1>PR #176 Word-Limit Red Team</h1>
+  <p class="meta">DevOps-OTCR/otcr-dashboard · branch <code>feat/agentic-cms-chat-endpoint</code> · commit <code>da2c1df1</code> · 2026-11-09 · 8 attack angles, every finding re-run by an independent skeptic, plus a completeness critic. 42 confirmed / 9 refuted, deduplicated below.</p>
+</header>
+
+<section class="verdict">
+  <h2>Verdict: the retry loop is solid, the parser and counter are not</h2>
+  <p>The existing suite still passes, 160/160. The cut-and-retry loop does what the PR describes: it keeps the longest attempt that fits, keeps the shortest one if every attempt is over, buffers the cut so the reader never loses the draft, and saves no internal prompts. The weak spots are earlier in the chain. <code>requestedWordLimit()</code> misses or misreads common phrasings, and <code>countDraftWords()</code> can skip most of a draft. In those cases the loop never runs, or it cuts text it should have left alone. Two of Isaiah's three required cases (sectioned paper, strict-cap revision) get no check at all.</p>
+  <div class="counts"><span class="pill h">4 high</span><span class="pill m">8 medium</span><span class="pill l">10 low</span></div>
+</section>
+
+<section>
+  <h2>Reproduced directly</h2>
+  <div class="wrap"><table>
+    <thead><tr><th>Input</th><th>Got</th><th>Should be</th></tr></thead>
+    <tbody>
+      <tr><td>"no more than 400 words"</td><td>undefined (no check)</td><td>400</td></tr>
+      <tr><td>"Each slide under 50 words"</td><td>50 for the whole deck</td><td>undefined, or a per-slide check</td></tr>
+      <tr><td>"1,500 words: intro 200 words, analysis 900 words, recommendation 400 words"</td><td>undefined</td><td>1500</td></tr>
+      <tr><td>"500 words minimum"</td><td>500 as a hard cap</td><td>undefined</td></tr>
+      <tr><td>"Cut the 486-word summary to 350 words"</td><td>undefined</td><td>350</td></tr>
+      <tr><td>400-word draft with a mid-document <code>---</code></td><td>counted as 100</td><td>400</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>High</h2>
+  <ol class="f">
+    <li class="h"><span class="loc">word-limit.ts:6 · FLOOR_WORDING</span><span class="t">"No more than N", "not over N" and "not above N" are read as floors, so the cap is skipped</span>
+      <div class="row"><b>Why</b><span>The 20-character lookbehind ends in <code>more than </code> / <code>over </code> even after "no" or "not". A 600-word draft for "no more than 400 words" goes out uncut with no notice.</span><b>Fix</b><span>Add a negative lookbehind for <code>no|not|never|n't|don't go</code> before <code>more than|over|above</code>, and an <code>it.each</code> covering every FLOOR_WORDING alternative, both plain and negated.</span></div></li>
+    <li class="h"><span class="loc">word-limit.ts:35–37 · countDraftWords</span><span class="t">Any <code>---</code> line hides everything below it from the count</span>
+      <div class="row"><b>Why</b><span>The split happens at the last <code>---</code> whether or not a reviewer note follows. A section break, YAML front matter or a setext H2 drops most of the body, so an over-limit draft passes. A cut that puts its tail behind <code>---</code> also passes.</span><b>Fix</b><span>Strip the tail only when it looks like the skill's reviewer note: it starts with <code>Word count (estimate):</code> or is ≤ about 3 sentences / 80 words. Ignore front matter at line 1 and rules directly under a text line.</span></div></li>
+    <li class="h"><span class="loc">word-limit.ts:19 · requestedWordLimit</span><span class="t">Per-slide or per-section limits become a limit on the whole draft</span>
+      <div class="row"><b>Why</b><span>For "Each slide under 50 words", a compliant 8-slide deck (360 words) is cut to about 48 words and swapped in with <code>text_replace</code>. This hits the consulting-slides skill directly.</span><b>Fix</b><span>Return undefined when <code>each|per|every</code> + unit (slide, section, paragraph, bullet) sits next to the match.</span></div></li>
+    <li class="h"><span class="loc">word-limit.ts:26 · single-limit rule</span><span class="t">Sectioned paper with section budgets gets no check (Isaiah case 2)</span>
+      <div class="row"><b>Why</b><span>The parser requires exactly one distinct number, so the 1,500 / 200 / 900 / 400 message returns undefined.</span><b>Fix</b><span>Use the number marked total/overall, or the largest when the rest add up to it. Add the case to <code>agent.service.spec.ts</code>.</span></div></li>
+  </ol>
+</section>
+
+<section>
+  <h2>Medium</h2>
+  <ol class="f">
+    <li class="m"><span class="loc">word-limit.ts:26</span><span class="t">A revision that names the old length is not checked (Isaiah case 3)</span><div class="row"><b>Fix</b><span>Prefer the number after <code>to|into|under|down to</code>, and ignore <code>N-word draft/summary/report</code> that describes the input.</span></div></li>
+    <li class="m"><span class="loc">word-limit.ts:26</span><span class="t">The length of pasted source material cancels the real limit or becomes the limit</span><div class="row"><b>Fix</b><span>Rank the matches: an output verb or cap phrase beats a source noun (report, transcript, article).</span></div></li>
+    <li class="m"><span class="loc">word-limit.ts:20</span><span class="t">Floors written after the number ("500 words minimum", "or more", "not fewer than") become caps</span><div class="row"><b>Why</b><span>A compliant 700-word draft is cut below the user's minimum.</span><b>Fix</b><span>Check the text after the match too, and add <code>not fewer|not less</code>.</span></div></li>
+    <li class="m"><span class="loc">agent.service.ts:174</span><span class="t">The limit comes from the current message only</span><div class="row"><b>Why</b><span>Follow-ups under an earlier cap ("now add a risks paragraph") are not checked.</span><b>Fix</b><span>Store the active limit with the conversation and reuse it on revise turns.</span></div></li>
+    <li class="m"><span class="loc">word-limit.ts:19</span><span class="t">"Words" used for something other than a limit ("300 words per minute", "list 100 words to avoid") sets a cap</span><div class="row"><b>Fix</b><span>Negative lookahead for <code>per (minute|second|hour)</code> and list phrasings.</span></div></li>
+    <li class="m"><span class="loc">word-limit.ts:39</span><span class="t">Prose inside <code>[ESTIMATE: …]</code> is not counted</span><div class="row"><b>Fix</b><span>Strip only <code>[ESTIMATE: S3, I2]</code>-style ID lists and count everything else.</span></div></li>
+    <li class="m"><span class="loc">agent.service.ts:145</span><span class="t">If the user aborts during the cut, the draft they already received is dropped from history</span><div class="row"><b>Fix</b><span>On abort inside <code>enforceWordLimit</code>, save the original draft with the over-limit notice.</span></div></li>
+    <li class="m"><span class="loc">skill-library.ts:58 · load-skill.tool.ts:36 · tool-registry.ts:10</span><span class="t">Isaiah's shared-contract requirement is not met</span>
+      <div class="row"><b>Why</b><span>The loader returns only <code>SKILL.md</code>. <code>shared/evidence-format.md</code> and <code>shared/otcr-quality-standards.md</code> (stack #168→#171) never reach the model, and some guardrails exist only there. Skill text also arrives as an ordinary tool result, which the system prompt treats as untrusted. Adding the shared files would push it past the 30k tool-output cap and cut off the end, including the safety sections.</span><b>Fix</b><span>Add a frontmatter <code>requires: [shared/evidence-format.md, shared/otcr-quality-standards.md]</code> entry, resolved only inside <code>skills/shared</code> (filename regex, no <code>..</code>). Wrap each file in a server delimiter like <code>&lt;otcr_skill source=library&gt;</code> that the system prompt marks as trusted, below security rules. Exempt <code>load_skill</code> from the 30k cap with one combined budget. Add a compatibility spec that loads the real checked-in library.</span></div></li>
+  </ol>
+</section>
+
+<section>
+  <h2>Low</h2>
+  <ol class="f">
+    <li><span class="loc">agent.service.ts:198–204</span><span class="t">A cut can add citations the draft never had, drop <code>[DATA NEEDED]</code> flags, or come back degenerate, and it is still accepted</span><div class="row"><b>Fix</b><span>Reject an attempt whose <code>[n]</code>/S#/I# set is not a subset of the draft's, or that loses flags.</span></div></li>
+    <li><span class="loc">agent.service.ts:116</span><span class="t">Text written before a tool call is not counted, but it is shown in <code>text_replace</code></span><div class="row"><b>Fix</b><span>Count <code>shownBefore + final</code>, or drop <code>shownBefore</code> on replace.</span></div></li>
+    <li><span class="loc">agent.service.ts:49</span><span class="t">Cut calls are not counted against the hourly limit, so a message can cost up to 3× the model calls</span><div class="row"><b>Fix</b><span>Count model calls or tokens per user. Set <code>max_tokens</code> on cut rounds from the limit.</span></div></li>
+    <li><span class="loc">word-limit.ts:40</span><span class="t">Quadratic regex on unclosed <code>[ESTIMATE:</code> blocks the event loop</span><div class="row"><b>Fix</b><span>Use <code>/\[ESTIMATE:[^\]\n]{0,200}\]/</code>.</span></div></li>
+    <li><span class="loc">word-limit.ts:41 · :39</span><span class="t">Tag forms the skills use (<code>[1-3]</code>, <code>[S1; I2]</code>, <code>(S1, I2)</code>, list markers) are counted as words</span><div class="row"><b>Fix</b><span>Widen the strip regex.</span></div></li>
+    <li><span class="loc">word-limit.ts:42</span><span class="t">CJK and other space-less scripts count as one word per run</span><div class="row"><b>Fix</b><span><code>Intl.Segmenter</code> with <code>isWordLike</code>.</span></div></li>
+    <li><span class="loc">word-limit.ts:22</span><span class="t">Missed phrasings: "word count of", "1.5k words", spelled-out numbers</span><div class="row"><b>Fix</b><span>Add <code>count</code>, <code>\d+(\.\d+)?k</code>, NFKC normalisation.</span></div></li>
+    <li><span class="loc">citations.ts:8</span><span class="t"><code>checkCitations</code> ignores grouped <code>[1, 2]</code>, which the counter does support</span><div class="row"><b>Fix</b><span>Parse groups, or tell the model to use single <code>[n]</code> only.</span></div></li>
+    <li><span class="loc">skill-library.ts:82</span><span class="t">A <code>SKILL.md</code> over 40k characters is truncated silently</span><div class="row"><b>Fix</b><span>Log a warning and add a truncation marker, or reject the skill.</span></div></li>
+    <li><span class="loc">word-limit.spec.ts · agent.service.spec.ts</span><span class="t">Hand-mutation testing: surviving mutants</span><div class="row"><b>Why</b><span>Removing <code>if (!revised) break</code> or <code>if (input.signal.aborted) throw</code>, changing <code>&gt;</code> to <code>&gt;=</code> at the limit, changing <code>ceil</code> to <code>floor</code> in <code>isTooShort</code>, or removing the flag recheck in the loop all pass the current tests.</span><b>Fix</b><span>Add tests for the empty cut, abort mid-cut, limit vs limit+1, <code>isTooShort(266,333)</code>, flag off mid-cut, and the retry message history.</span></div></li>
+  </ol>
+</section>
+
+<section>
+  <h2>Checked and held up</h2>
+  <ul class="plain">
+    <li>Retry selection: keeps the longest attempt within the limit, otherwise the shortest over-limit one plus a visible notice. The cut is buffered, and the internal correction prompts are never saved.</li>
+    <li>Tool calls during a cut are disabled (<code>tools: []</code>). The flag is rechecked before every cut.</li>
+    <li>Thrown errors are logged and the original draft is kept.</li>
+    <li>Refuted by skeptics: the too-short result being shipped, the 95% vs 85% target conflict, the server instruction being spoofable as a user message, and the frontend <code>text_replace</code> handling.</li>
+  </ul>
+</section>
+
+<p class="meta">Probes: <code>backend/src/agentic-cms/__redteam__/</code> in a local worktree (not pushed). Re-run: <code>npx jest src/agentic-cms/__redteam__</code>. Failing probes mark open bugs.</p>
+</main>
