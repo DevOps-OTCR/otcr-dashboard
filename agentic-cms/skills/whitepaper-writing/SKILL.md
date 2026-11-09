@@ -1,7 +1,7 @@
 ---
-name: otcr-whitepaper-writing
+name: whitepaper-writing
 description: Use when research or analysis must become a client-facing written deliverable — whitepaper, strategy report, decision memo, findings document, or a revision of an existing draft — that argues a position and must survive LC/PM review. Consumes an Evidence Ledger and preserves claim traceability. Do not use for slides (use consulting-slides), for gathering evidence (use research), or for short chat answers.
-version: 0.2.1
+version: 0.3.0
 owner: Group 3 (Aritro, Teja)
 release: 1
 metadata:
@@ -130,7 +130,15 @@ For documents > ~1,500 words: output the outline (section → argument → IDs �
 ### Step 6 — Draft with budgets
 Per §7. A section that overshoots is usually two sections or one unresolved question.
 
-**Length limits are hard ceilings (v0.3.1 — Lumen length test, 6 Nov.).** When the user states a word limit, convert it to a sentence budget: divide the limit by 30 and round down (350 words -> 11 sentences). Stay under that sentence count in at most 3 paragraphs. Do not count words. If you are over, cut in this order: restated facts, worked arithmetic (keep the result and its `[ESTIMATE]` label), secondary caveats. Never cut the recommendation, the stop condition, or a `[DATA NEEDED]` flag. Inline estimate labels carry IDs only, e.g. `[ESTIMATE: S3, S4]`. Put the arithmetic in the reviewer note, not inline. The reviewer note sits outside the sentence budget but must be at most 3 sentences. When cutting to fit, use only the facts the user supplied; anything else the argument needs becomes a [DATA NEEDED: ...] flag, never a new S# or a new number.
+**Length limits (v0.3.0 — LC review, 8 Nov).** A word limit is a hard ceiling with different mechanics depending on the piece.
+
+(a) **Short executive summary or single-section piece (limit ≤ 500 words).** Use the sentence-budget rule: divide the limit by 30 and round down (350 words -> 11 sentences), and stay at or under that sentence count in at most 3 paragraphs.
+
+(b) **Full multi-section paper.** Do not use the 3-paragraph rule. Give every section a word budget that sums to the limit, show the budget in the outline (Step 5), and draft each section to its budget.
+
+(c) **Reviewer note.** The reviewer note does not count toward the word limit. It must be at most 3 sentences.
+
+(d) **Verify before returning.** Count the words actually written in the deliverable body, headings excluded. Report `Word count: N / LIMIT` on one line. If over, cut in this order: restated facts, worked arithmetic (keep the result and its `[ESTIMATE]` label), secondary caveats. Never cut the recommendation, the stop condition, or a `[DATA NEEDED]` flag. A sentence count is only a drafting aid, not proof of compliance. Inline estimate labels carry IDs only, e.g. `[ESTIMATE: S3, S4]`. Put the arithmetic in the reviewer note, not inline. When cutting to fit, use only the facts the user supplied; anything else the argument needs becomes a [DATA NEEDED: ...] flag, never a new S# or a new number.
 
 ### Step 7 — Consistency and traceability pass
 - Every number appears in the ledger or is derived and labelled.

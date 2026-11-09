@@ -1,7 +1,7 @@
 ---
-name: otcr-consulting-slides
+name: consulting-slides
 description: Use when an argument must become a consulting presentation — storyline, section structure, action titles, exhibits, slide-by-slide storyboard — or when an existing deck must be reviewed, or when a finished deck needs a final pre-send audit checklist. Produces a storyboard, a severity-ranked review, or an audit checklist, never a PowerPoint file. Do not use for visual formatting of a file, for gathering evidence (use research), or for writing the document (use whitepaper-writing).
-version: 0.3.2
+version: 0.3.3
 owner: Group 3 (Aritro, Teja)
 release: 1
 metadata:
@@ -223,6 +223,14 @@ When reviewing an existing deck, do **not** rebuild it. Report findings with sev
 
 Each finding: **issue → significance → fix.** No finding without all three.
 
+**Review-only contract and hidden/confidential slides (v0.2.4 — LC review, 8 Nov)**
+
+- Review mode outputs findings and suggested fixes only. Never rewrite or return an edited deck, never claim to have edited a file or posted a comment; no editing or comment tool exists.
+- Input contract: each visible slide arrives with its stable `number` and the available content/layout fields (title, body, notes, optional layout fields). A withheld slide arrives only as `{number, hidden: true, skipped: true}`.
+- For a skipped record: list only its number under "Skipped slides"; do not guess, infer or describe its content; do not cite it as evidence.
+- Fallback only: if a slide marked hidden, or tagged CONFIDENTIAL / PROPRIETARY / [HIDDEN] / [CONFIDENTIAL] / [PROPRIETARY], still arrives with content, treat it as skipped: list its number only, do not quote, paraphrase, summarise or use any of its text, notes or metadata anywhere in the output. State once: "Slide N arrived with content but is marked hidden/confidential; it was not reviewed. Upstream filtering should have removed it."
+- This instruction is not a security boundary: the backend must remove hidden/confidential content before any model prompt, tool result, history entry or log is built.
+
 Separate "critical problem" from "optional improvement". A 40-item list is not a review.
 
 Full review protocol, including how to review a deck you did not build: `references/deck-review.md`.
@@ -234,7 +242,7 @@ Run this after the slides are assembled, before the deck leaves the building.
 - **Pass 2 — big picture.** Chronology, gaps in the argument, loopholes in the recommendation.
 - **Pass 3 — likely audience questions.** The questions an audience watching the presentation would ask, each tied to a slide and to who should be ready to answer it.
 
-Return `- [ ]` checklist items, each citing every slide it affects ("Slide N", "Slides N, M"). Follow the review-only contract (`shared/otcr-quality-standards.md` §6.1) and the hidden/confidential rule (§6.2). Never invent a typo.
+Return `- [ ]` checklist items, each citing every slide it affects ("Slide N", "Slides N, M"). Follow the review-only contract and hidden/confidential slides rule set out in Review mode above. Never invent a typo.
 
 Operative rules:
 - Output sections in order: Skipped slides; Mechanics; Big picture; Likely audience questions; Not checkable from this input; Summary (one-line count).
@@ -245,6 +253,13 @@ Operative rules:
 - Run each layout check on whatever layout fields are present: if any box has left_in, compare left edges across visible slides; if footer_page is present, compare it with the slide number. Only a check whose fields are entirely missing goes under Not checkable.
 - A hidden or confidential slide appears only in Skipped slides. Never cite it, its layout or its numbering in any finding.
 
+
+Audit rules (self-contained; operative even if `references/deck-audit.md` is not loaded):
+- Audit uses the same input contract as Review mode above: each visible slide arrives with its stable `number` and available content/layout fields; a withheld slide arrives only as `{number, hidden: true, skipped: true}`.
+- Skipped slides are listed by number only, under Skipped slides. Neither hidden text nor hidden layout/metadata is used anywhere.
+- Findings and proposed fixes only. Audit does not generate or edit a PowerPoint, does not edit any file, and does not post comments.
+- For every check that needs a field the input lacks (for example layout, position or font data absent in a text-only export), write "Not checkable from this input" for that check. Never imply text-only input verified rendered alignment, fonts, overflow or clipping.
+- Order items MUST FIX first within each section; never invent a typo; style preferences are not errors.
 
 Full protocol: `references/deck-audit.md`. Source: PM interview P1, 2026-11-05.
 

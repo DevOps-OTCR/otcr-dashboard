@@ -1,7 +1,7 @@
 ---
-name: otcr-research
+name: research
 description: Use when a consulting question needs external evidence — market size, competitors, customers, technology, policy — and the answer must be traceable to sources. Produces a Research Brief with a typed Evidence Ledger. Handles quick lookups, standard research, and deep investigation. Do not use for internal project facts (use CMS tools), for writing the client document (use whitepaper-writing), or for deck construction (use consulting-slides).
-version: 0.3.0
+version: 0.3.1
 owner: Group 3 (Aritro, Teja)
 release: 1
 metadata:
