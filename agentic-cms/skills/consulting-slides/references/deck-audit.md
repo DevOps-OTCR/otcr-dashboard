@@ -1,5 +1,7 @@
 # Deck audit — the PM's final pre-send check (v0.3.0)
 
+Optional depth. The operative audit rules are in `consulting-slides/SKILL.md`; if they differ, SKILL.md wins.
+
 The PM's last pass before a deck goes to the client. Assembled by consultants, checked once, sent. Audit is a tick-box job: mechanics, big picture, and the questions the client is likely to ask.
 
 ## 1. Purpose and triggers
@@ -17,7 +19,7 @@ The deck is finished in substance. The user is not asking for an argument critiq
 | | `deck-review.md` | This file |
 |---|---|---|
 | Job | Argument critique | Mechanics + big picture + likely questions |
-| Output | Severity-ranked findings | Tick-box checklist |
+| Output | Severity-ranked findings (BLOCKING / MATERIAL / MINOR) | Tick-box checklist (MUST FIX / SHOULD FIX / CHECK) |
 | Unit | The argument | The slide |
 | Question | Is this right? | Is this safe to send? |
 
@@ -27,17 +29,19 @@ If the deck still needs an argument critique, say so in one line and point to `d
 
 Per slide: number, hidden flag, title, body, notes. Optional: `footer_page`, `layout` (for example `title_bold`, box positions).
 
-Skipped slides arrive as metadata only: `{number, hidden: true, skipped: true}`, with no title, body or notes (README §6.1). List them from that metadata.
+Skipped slides arrive as metadata only: `{number, hidden: true, skipped: true}`, with no title, body or notes (README §3a (Review-input contract)). List them from that metadata.
 
-Accept JSON or the README §6.1 shape. If `layout` is absent, skip the visual checks and report that under 'Not checkable from this input'. Do not guess a layout. If `footer_page` is absent, the footer comparison is not checkable: put it under 'Not checkable from this input' and never infer it.
+Accept JSON or the README §3a (Review-input contract) shape. If `layout` is absent, skip the visual checks and report that under 'Not checkable from this input'. Do not guess a layout. If `footer_page` is absent, the footer comparison is not checkable: put it under 'Not checkable from this input' and never infer it.
 
 ## 4. Skip rule
 
 Hidden or confidential slides are never read, quoted or summarised (`shared/otcr-quality-standards.md` §6.2). List them only:
 
 ```
-Slide 5 skipped (hidden/confidential)
+Slide 5
 ```
+
+The operative copy of this rule is in consulting-slides/SKILL.md (Review mode); the backend filter is the enforcement point.
 
 ## 5. Pass 1 — mechanics
 
@@ -72,7 +76,7 @@ Format: `Ready: presenter of slide N`.
 # Deck audit — <name> — <date>
 
 ## Skipped slides
-Slide N skipped (hidden/confidential)
+Slide N
 
 ## Mechanics
 - [ ] Slide N — MUST FIX — issue — why it matters — suggested fix (one sentence)
@@ -110,7 +114,7 @@ Synthetic deck, fictional client. Six slides; slide 5 is hidden and never read. 
 # Deck audit — Northwind Bikes board deck — 2026-11-04
 
 ## Skipped slides
-Slide 5 skipped (hidden/confidential)
+Slide 5
 
 ## Mechanics
 - [ ] Slide 6 — MUST FIX — "see slide 9" — slide 9 does not exist — point to a slide in 1–6 or delete the reference
