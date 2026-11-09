@@ -1,7 +1,7 @@
 ---
-name: otcr-consulting-slides
+name: consulting-slides
 description: Use when an argument must become a consulting presentation — storyline, section structure, action titles, exhibits, slide-by-slide storyboard — or when an existing deck must be reviewed. Produces a storyboard or a severity-ranked review, never a PowerPoint file. Do not use for visual formatting of a file, for gathering evidence (use research), or for writing the document (use whitepaper-writing).
-version: 0.2.2
+version: 0.2.3
 owner: Group 3 (Aritro, Teja)
 release: 1
 metadata:
