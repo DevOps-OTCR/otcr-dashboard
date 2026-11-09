@@ -1,7 +1,7 @@
 ---
 name: consulting-slides
 description: Use when an argument must become a consulting presentation — storyline, section structure, action titles, exhibits, slide-by-slide storyboard — or when an existing deck must be reviewed, or when a finished deck needs a final pre-send audit checklist. Produces a storyboard, a severity-ranked review, or an audit checklist, never a PowerPoint file. Do not use for visual formatting of a file, for gathering evidence (use research), or for writing the document (use whitepaper-writing).
-version: 0.3.5
+version: 0.3.6
 owner: Group 3 (Aritro, Teja)
 release: 1
 metadata:
@@ -230,9 +230,10 @@ Each finding: **issue → significance → fix.** No finding without all three.
 - Review mode outputs findings and suggested fixes only. Never rewrite or return an edited deck, never claim to have edited a file or posted a comment; no editing or comment tool exists.
 - Input contract: each visible slide arrives with its stable `number` and the available content/layout fields (title, body, notes, optional layout fields). A withheld slide arrives only as `{number, hidden: true, skipped: true}`.
 - Canonical marker list (identical in README §4a, this block, and shared/otcr-quality-standards.md §6.2): PowerPoint hide-slide state; `hidden: true`; `confidentiality` = CONFIDENTIAL or PROPRIETARY; inline markers [HIDDEN], [CONFIDENTIAL], [PROPRIETARY].
-- Skipped slides output (one format everywhere): under "Skipped slides", one line per slide, `Slide N` (number only). Do not guess, infer or describe content; do not cite it as evidence. A skipped slide's number appears ONLY under Skipped slides: never mention it in any finding, comparison, "no defect" note, layout observation or numbering remark. Compare layout and slide order only across visible slides — if visible numbering has a gap (e.g. slide 6 follows slide 4), treat that as normal and say nothing about the skipped slide that accounts for it.
+- Skipped slides output (one format everywhere): under "Skipped slides", one line per slide, `Slide N` (number only). Do not guess, infer or describe content; do not cite it as evidence. A skipped slide's number appears ONLY under Skipped slides: never mention it in any finding, comparison, "no defect" note, layout observation or numbering remark. Compare layout and slide order across the visible slides — if visible numbering has a gap (e.g. slide 6 follows slide 4), treat that as normal and say nothing about the skipped slide that accounts for it.
 - Fallback only: if a slide bearing any marker above still arrives with content, treat it as skipped — list `Slide N` only, do not quote, paraphrase, summarise or use any of its text, notes or metadata anywhere in the output. The sentence "Slide N arrived with content but is marked hidden/confidential; it was not reviewed. Upstream filtering should have removed it." goes in the reviewer note after `---`, never in the deliverable (the clean-artifact rule bans system disclaimers above the line).
 - If a check needs data the input lacks (layout, fonts, rendering), say "Not checkable from this input" for it; never imply text-only input verified rendered alignment, fonts, overflow or clipping.
+- **Mandatory final self-check before emitting:** search your draft for each skipped slide number (Slide N, slide N, Slides …N…). Delete every occurrence outside the Skipped slides section, including checklist items, layout or numbering notes and the reviewer note. If a sentence needs it to make sense, delete the sentence. Exception: the fallback note for a slide that arrived WITH content.
 - This instruction is not a security boundary: the backend must remove hidden/confidential content before any model prompt, tool result, history entry or log is built.
 
 Separate "critical problem" from "optional improvement". A 40-item list is not a review.
@@ -242,7 +243,12 @@ Full review protocol, including how to review a deck you did not build: `referen
 ### Audit mode (final pre-send check, v0.3.0)
 Run this after the slides are assembled, before the deck leaves the building.
 
-- **Pass 1 — mechanics.** Spelling, page numbers, bolding, boxes and alignment, plus inconsistent terms, inconsistent numbers, and leftover placeholders. This is the PM's list.
+- **Pass 1 — mechanics.** Spelling, page numbers, bolding, boxes and alignment, plus inconsistent terms, inconsistent numbers, and leftover placeholders. This is the PM's list and the only pass that can produce MUST FIX items.
+- **Severity definitions (mandatory).** Assign every item one severity using these definitions:
+  - **MUST FIX** = an objective error a client would catch: typo, wrong or inconsistent number, the same figure with two different sources, broken page numbering, a leftover placeholder, an unsourced number in a title.
+  - **SHOULD FIX** = a clarity or consistency issue: terminology, duplicated content, title wording.
+  - **CHECK** = a judgment call on storyline or argument — missing exhibits, no 'why now', no success criteria, competitor detail. Storyline and argument questions belong in Big picture as CHECK items, never MUST FIX.
+  - A clean deck may have zero MUST FIX items. Never invent issues, elevate a judgment call to MUST FIX, or pad the list to look thorough.
 - **Pass 2 — big picture.** Chronology, gaps in the argument, loopholes in the recommendation.
 - **Pass 3 — likely audience questions.** The questions an audience watching the presentation would ask, each tied to a slide and to who should be ready to answer it.
 
@@ -263,7 +269,8 @@ Audit rules (self-contained; operative even if `references/deck-audit.md` is not
 - Skipped slides are listed by number only, under Skipped slides. Neither hidden text nor hidden layout/metadata is used anywhere.
 - Findings and proposed fixes only. Audit does not generate or edit a PowerPoint, does not edit any file, and does not post comments.
 - Layout checks follow the single partial-layout rule in Operative rules: run a check on the slides that have its fields; list it under "Not checkable from this input" only for the slides (or the whole deck) whose fields are missing, naming those slides. Rendered fonts, overflow and clipping are never verified. Never imply text-only input verified rendered alignment, fonts, overflow or clipping.
-- Order items MUST FIX first within each section; never invent a typo; style preferences are not errors.
+- Order items MUST FIX first within each section; never invent a typo; style preferences are not errors. Severity definitions in Audit mode apply: MUST FIX only for objective client-catchable errors; storyline and argument questions are CHECK items under Big picture, never MUST FIX; zero MUST FIX items is a valid result.
+- **Mandatory final self-check before emitting:** search your draft for each skipped slide number (Slide N, slide N, Slides …N…). Delete every mention of a skipped slide outside Skipped slides, including in checklist items, layout or numbering notes and the reviewer note. If a sentence needs it to make sense, delete the sentence.
 
 Full protocol: `references/deck-audit.md`. Source: PM interview P1, 2026-11-05.
 
