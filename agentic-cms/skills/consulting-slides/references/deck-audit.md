@@ -29,17 +29,13 @@ If the deck still needs an argument critique, say so in one line and point to `d
 
 Per slide: number, hidden flag, title, body, notes. Optional: `footer_page`, `layout` (for example `title_bold`, box positions).
 
-Skipped slides arrive as metadata only: `{number, hidden: true, skipped: true}`, with no title, body or notes (README §3a (Review-input contract)). List them from that metadata.
+Skipped slides arrive as metadata only: `{number, hidden: true, skipped: true}`, with no title, body or notes (README §4a (Review-input contract)). List them from that metadata.
 
-Accept JSON or the README §3a (Review-input contract) shape. If `layout` is absent, skip the visual checks and report that under 'Not checkable from this input'. Do not guess a layout. If `footer_page` is absent, the footer comparison is not checkable: put it under 'Not checkable from this input' and never infer it.
+Accept JSON or the README §4a (Review-input contract) shape. Run each layout check on the slides that have its fields; if `layout` (or a box's `left_in`) is absent on some slides, put the alignment check under 'Not checkable from this input' for those slides only, naming them. Do not guess a layout. If `footer_page` is absent on some slides, the footer comparison is not checkable for those slides: name them under 'Not checkable from this input' and never infer it.
 
 ## 4. Skip rule
 
-Hidden or confidential slides are never read, quoted or summarised (`shared/otcr-quality-standards.md` §6.2). List them only:
-
-```
-Slide 5
-```
+Hidden or confidential slides are never read, quoted or summarised (`shared/otcr-quality-standards.md` §6.2). Under "Skipped slides", list one line per slide, `Slide N` (number only) — the same format Review mode uses. Do not cite a skipped slide, its layout or its numbering in any finding, and a page-number gap caused only by a skipped slide is not a finding.
 
 The operative copy of this rule is in consulting-slides/SKILL.md (Review mode); the backend filter is the enforcement point.
 
@@ -98,7 +94,7 @@ n items: n mechanics, n big picture, n questions.
 
 ## 9. Rules
 
-- No rewritten deck (`shared/otcr-quality-standards.md` §6.1). Findings only. One sentence per fix.
+- No rewritten deck (`shared/otcr-quality-standards.md` §6.1; review-input contract README §4a (Review-input contract)). Findings only. One sentence per fix.
 - At most 25 items.
 - Every item cites a slide. A finding that spans slides cites every affected slide ('Slides 2 and 4 — …').
 - Quote at most 12 words of the original.
