@@ -85,7 +85,7 @@ Three tests for any sentence:
 | Draft, structure, critique, cite, compute | Approve a deliverable |
 | Flag missing context | Invent context |
 | Recommend with stated confidence | Present a recommendation as a decision |
-| Produce review comments, posted with a comment-only permission | Edit the content of client documents (Release 1) |
+| Produce review findings in chat. Posting native comments is a later, explicit integration; no comment tool exists today. | Edit the content of client documents (Release 1) |
 | Propose a storyline | Choose the client-facing message without LC/PM review |
 
 **Skills grant no permissions.** They contain no access logic, no role checks, and no write capability. Authorisation lives in the CMS, not in a Markdown file.
@@ -108,17 +108,9 @@ Source: PM interview P1, 2026-11-05.
 
 Operative copy: consulting-slides/SKILL.md (Review mode). This file is optional depth; if they differ, SKILL.md wins and the backend filter is the enforcement point.
 
-Content marked hidden or confidential **must not be read for findings, quoted, summarised, or used as evidence**. This covers:
+Content marked hidden or confidential **must not be read for findings, quoted, summarised, or used as evidence**. Canonical marker list (identical in README §4a, consulting-slides/SKILL.md Review mode, and this section): PowerPoint hide-slide state; `hidden: true`; `confidentiality` = CONFIDENTIAL or PROPRIETARY; inline markers [HIDDEN], [CONFIDENTIAL], [PROPRIETARY].
 
-| Marker | Where it appears |
-|---|---|
-| `hidden: true` on a slide | Deck text export |
-| `[HIDDEN]` in the exported slide text | Deck text export |
-| `[CONFIDENTIAL]` | Any input |
-| `[PROPRIETARY]` | Any input |
-| Non-empty `confidentiality:` field on a slide | Deck text export |
-
-The output lists only: `Slide N skipped (hidden/confidential)`. No title, no body, no notes. For non-slide inputs (documents, notes) output: `Section/item <id> skipped (confidential)`.
+Skipped-slide output (one format everywhere): under "Skipped slides", one line per slide, `Slide N` (number only). No title, no body, no notes. The fallback sentence "Slide N arrived with content but is marked hidden/confidential; it was not reviewed. Upstream filtering should have removed it." goes in the reviewer note after `---`, never in the deliverable. For non-slide inputs (documents, notes) output: `Section/item <id> skipped`.
 
 **Honest limit.** An instruction in a skill file cannot stop a model from seeing text that is sent to it. Skill text is a second line of defence, not the protection. The real protection is that **the loader or document tooling strips hidden and confidential slides before the model call**. If the stripped text never enters the prompt, no instruction is needed. If it does enter the prompt, this rule reduces the chance it appears in the output — it cannot undo the exposure.
 

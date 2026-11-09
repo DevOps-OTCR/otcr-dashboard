@@ -224,8 +224,10 @@ Each finding: **issue → significance → fix.** No finding without all three.
 
 - Review mode outputs findings and suggested fixes only. Never rewrite or return an edited deck, never claim to have edited a file or posted a comment; no editing or comment tool exists.
 - Input contract: each visible slide arrives with its stable `number` and the available content/layout fields (title, body, notes, optional layout fields). A withheld slide arrives only as `{number, hidden: true, skipped: true}`.
-- For a skipped record: list only its number under "Skipped slides"; do not guess, infer or describe its content; do not cite it as evidence.
-- Fallback only: if a slide marked hidden, or tagged CONFIDENTIAL / PROPRIETARY / [HIDDEN] / [CONFIDENTIAL] / [PROPRIETARY], still arrives with content, treat it as skipped: list its number only, do not quote, paraphrase, summarise or use any of its text, notes or metadata anywhere in the output. State once: "Slide N arrived with content but is marked hidden/confidential; it was not reviewed. Upstream filtering should have removed it."
+- Canonical marker list (identical in README §4a, this block, and shared/otcr-quality-standards.md §6.2): PowerPoint hide-slide state; `hidden: true`; `confidentiality` = CONFIDENTIAL or PROPRIETARY; inline markers [HIDDEN], [CONFIDENTIAL], [PROPRIETARY].
+- Skipped slides output (one format everywhere): under "Skipped slides", one line per slide, `Slide N` (number only). Do not guess, infer or describe content; do not cite it as evidence.
+- Fallback only: if a slide bearing any marker above still arrives with content, treat it as skipped — list `Slide N` only, do not quote, paraphrase, summarise or use any of its text, notes or metadata anywhere in the output. The sentence "Slide N arrived with content but is marked hidden/confidential; it was not reviewed. Upstream filtering should have removed it." goes in the reviewer note after `---`, never in the deliverable (the clean-artifact rule bans system disclaimers above the line).
+- If a check needs data the input lacks (layout, fonts, rendering), say "Not checkable from this input" for it; never imply text-only input verified rendered alignment, fonts, overflow or clipping.
 - This instruction is not a security boundary: the backend must remove hidden/confidential content before any model prompt, tool result, history entry or log is built.
 
 Separate "critical problem" from "optional improvement". A 40-item list is not a review.
