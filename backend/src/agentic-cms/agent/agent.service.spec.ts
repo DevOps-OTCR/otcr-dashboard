@@ -18,6 +18,7 @@ import { WebSearchTool } from '../tools/web-search.tool';
 // release-flag rechecks from docs/agentic-cms.md. No database, network or real model.
 
 const user = { id: 'u1', email: 'a@illinois.edu', role: 'CONSULTANT' };
+const last = <T>(items: T[]) => items[items.length - 1];
 
 async function runTurn(svc: AgentService, message: string, conversationId?: string, u = user) {
   const events: AgentEvent[] = [];
@@ -143,6 +144,218 @@ describe('AgentService.run', () => {
     const { text } = await runTurn(svc, 'loop');
     expect(calls).toBe(MAX_ROUNDS);
     expect(text).toMatch(/too many steps/);
+  });
+
+  /** Fails like a strict provider if any tool call lacks a result before the next non-tool message. */
+  const assertValidToolHistory = (messages: ModelRequest['messages']) => {
+    messages.forEach((message, i) => {
+      if (message.role !== 'assistant' || !message.tool_calls) return;
+      const results = [];
+      for (let j = i + 1; j < messages.length && messages[j].role === 'tool'; j++) results.push(messages[j]);
+      expect(results.map((r) => (r.role === 'tool' ? r.tool_call_id : ''))).toEqual(message.tool_calls.map((c) => c.id));
+    });
+  };
+
+  it('keeps history valid at the step limit, and the same chat can continue', async () => {
+    let calls = 0;
+    const seen: ModelRequest[] = [];
+    const loopsThenAnswers: ModelClient = {
+      name: 'loops-then-answers',
+      async stream(req, onText) {
+        seen.push(req);
+        assertValidToolHistory(req.messages);
+        if (++calls > MAX_ROUNDS) {
+          onText('back on track');
+          return { text: 'back on track', toolCalls: [], message: assistantMessage('back on track', []) };
+        }
+        const toolCalls = [{ id: `a${calls}`, name: 'again', args: {} }, { id: `b${calls}`, name: 'again', args: {} }];
+        return { text: '', toolCalls, message: assistantMessage('', toolCalls) };
+      },
+    };
+    const { svc, store } = setup(loopsThenAnswers);
+    const first = await runTurn(svc, 'loop');
+    expect(first.text).toMatch(/too many steps/);
+
+    const saved = await store.history(first.conversationId!);
+    assertValidToolHistory(saved);
+    expect(saved[saved.length - 1]).toMatchObject({ role: 'assistant', content: expect.stringMatching(/too many steps/) });
+    expect(saved.slice(-3, -1)).toEqual([
+      { role: 'tool', tool_call_id: `a${MAX_ROUNDS}`, content: expect.stringMatching(/step limit/) },
+      { role: 'tool', tool_call_id: `b${MAX_ROUNDS}`, content: expect.stringMatching(/step limit/) },
+    ]);
+
+    const second = await runTurn(svc, 'continue', first.conversationId);
+    expect(second.text).toBe('back on track');
+    expect(last(seen[seen.length - 1].messages)).toEqual({ role: 'user', content: 'continue' });
+  });
+
+  it('refuses to reopen a conversation under a different workstream, before any model call', async () => {
+    const stream = jest.fn(async () => ({ text: 'ok', toolCalls: [], message: assistantMessage('ok', []) }));
+    const { svc } = setup({ name: 'spy', stream });
+    const first = await runTurn(svc, 'week one');
+    stream.mockClear();
+    await expect(
+      svc.run(
+        { user, projectId: 'p1', sprintId: 's2', conversationId: first.conversationId, message: 'week two', signal: new AbortController().signal },
+        () => undefined,
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(stream).not.toHaveBeenCalled();
+  });
+
+  describe('word limit check', () => {
+    const words = (n: number) => Array.from({ length: n }, (_, i) => `w${i}`).join(' ');
+    /** Answers with each scripted text in turn, streaming the text like a real model. */
+    const answers = (texts: (string | Error)[], seen: ModelRequest[] = []): ModelClient => ({
+      name: 'answers',
+      async stream(req, onText) {
+        seen.push(req);
+        const next = texts[seen.length - 1];
+        if (next instanceof Error) throw next;
+        onText(next);
+        return { text: next, toolCalls: [], message: assistantMessage(next, []) };
+      },
+    });
+    const replaced = (events: AgentEvent[]) => events.flatMap((e) => (e.type === 'text_replace' ? [e.text] : []));
+
+    it('leaves a draft within the limit alone and makes no extra model call', async () => {
+      const seen: ModelRequest[] = [];
+      const { svc } = setup(answers([words(100)], seen));
+      const { events } = await runTurn(svc, 'Write a 100-word summary');
+      expect(seen).toHaveLength(1);
+      expect(replaced(events)).toEqual([]);
+    });
+
+    it('makes no check when the user set no limit', async () => {
+      const seen: ModelRequest[] = [];
+      const { svc } = setup(answers([words(900)], seen));
+      await runTurn(svc, 'Write a summary');
+      expect(seen).toHaveLength(1);
+    });
+
+    it('cuts an over-limit draft once and saves only the final text', async () => {
+      const seen: ModelRequest[] = [];
+      const { svc, store } = setup(answers([words(486), words(300)], seen));
+      const { events, conversationId } = await runTurn(svc, 'Write a 350-word summary');
+
+      expect(seen).toHaveLength(2);
+      expect(seen[1].tools).toEqual([]);
+      expect(last(seen[1].messages)).toMatchObject({ role: 'user', content: expect.stringContaining('486 words') });
+      expect(replaced(events)).toEqual([words(300)]);
+      expect(events.find((e) => e.type === 'tool_end')).toMatchObject({ ok: true, note: '486 → 300 words' });
+      expect(await store.history(conversationId!)).toEqual([
+        { role: 'user', content: 'Write a 350-word summary' },
+        { role: 'assistant', content: words(300) },
+      ]);
+    });
+
+    it('does not count the reviewer note toward the limit', async () => {
+      const seen: ModelRequest[] = [];
+      const { svc } = setup(answers([`${words(100)}\n\n---\n${words(50)}`], seen));
+      await runTurn(svc, 'Write a 100-word summary');
+      expect(seen).toHaveLength(1);
+    });
+
+    it('retries a cut that is still over, then accepts one that fits', async () => {
+      const seen: ModelRequest[] = [];
+      const { svc, store } = setup(answers([words(486), words(400), words(330)], seen));
+      const { events, conversationId } = await runTurn(svc, 'Write a 350-word summary');
+      expect(seen).toHaveLength(3);
+      expect(last(seen[2].messages)).toMatchObject({ role: 'user', content: expect.stringMatching(/still has 400 words/) });
+      expect(replaced(events)).toEqual([words(330)]);
+      expect(events.find((e) => e.type === 'tool_end')).toMatchObject({ ok: true, note: '486 → 330 words' });
+      expect((await store.history(conversationId!)).map((m) => m.role)).toEqual(['user', 'assistant']);
+    });
+
+    it('retries a cut that lost too much, and uses the fuller version', async () => {
+      const seen: ModelRequest[] = [];
+      const { svc } = setup(answers([words(486), words(100), words(330)], seen));
+      const { events } = await runTurn(svc, 'Write a 350-word summary');
+      expect(last(seen[2].messages)).toMatchObject({ role: 'user', content: expect.stringMatching(/only 100 words/) });
+      expect(seen[2].tools).toEqual([]);
+      expect(replaced(events)).toEqual([words(330)]);
+    });
+
+    it('does not retry a cut that lands near the limit', async () => {
+      const seen: ModelRequest[] = [];
+      const { svc } = setup(answers([words(486), words(280)], seen));
+      await runTurn(svc, 'Write a 350-word summary');
+      expect(seen).toHaveLength(2);
+    });
+
+    it('keeps the longer of two short cuts rather than warning', async () => {
+      const { svc } = setup(answers([words(486), words(200), words(150)]));
+      const { events } = await runTurn(svc, 'Write a 350-word summary');
+      expect(replaced(events)).toEqual([words(200)]);
+      expect(events.find((e) => e.type === 'tool_end')).toMatchObject({ ok: true, note: '486 → 200 words' });
+    });
+
+    it('keeps a short cut if the retry goes back over the limit', async () => {
+      const { svc } = setup(answers([words(486), words(200), words(500)]));
+      const { events } = await runTurn(svc, 'Write a 350-word summary');
+      expect(replaced(events)).toEqual([words(200)]);
+    });
+
+    it('stops after one retry and tells the reader when the draft is still over', async () => {
+      const seen: ModelRequest[] = [];
+      const { svc, store } = setup(answers([words(486), words(400), words(380), words(10)], seen));
+      const { events, conversationId } = await runTurn(svc, 'Write a 350-word summary');
+      expect(seen).toHaveLength(3);
+      expect(replaced(events)[0]).toMatch(/^w0[\s\S]*This draft is 380 words, over the 350-word limit/);
+      expect(events.find((e) => e.type === 'tool_end')).toMatchObject({ ok: false, note: 'Still 380 words' });
+      expect(last(await store.history(conversationId!)).content).toContain('over the 350-word limit');
+    });
+
+    it('keeps the original draft with a warning when the cut fails', async () => {
+      const { svc } = setup(answers([words(486), new AgentError('model', 'nope', true)]));
+      const { events } = await runTurn(svc, 'Write a 350-word summary');
+      expect(replaced(events)[0]).toContain(words(486));
+      expect(replaced(events)[0]).toContain('This draft is 486 words');
+    });
+
+    it('keeps the original draft when the cut comes back longer', async () => {
+      const { svc } = setup(answers([words(486), words(600), words(700)]));
+      const { events } = await runTurn(svc, 'Write a 350-word summary');
+      expect(replaced(events)[0]).toContain('This draft is 486 words');
+      expect(replaced(events)[0]).not.toContain('w599');
+    });
+
+    it('rechecks the release flag before the cut', async () => {
+      const seen: ModelRequest[] = [];
+      const model: ModelClient = {
+        name: 'flips-off',
+        async stream(req, onText) {
+          seen.push(req);
+          settings.AGENTIC_CMS_ENABLED = 'false';
+          onText(words(486));
+          return { text: words(486), toolCalls: [], message: assistantMessage(words(486), []) };
+        },
+      };
+      const { svc } = setup(model);
+      await expect(runTurn(svc, 'Write a 350-word summary')).rejects.toMatchObject({ kind: 'disabled' });
+      expect(seen).toHaveLength(1);
+    });
+
+    it('keeps text written before a tool call when replacing the final draft', async () => {
+      let round = 0;
+      const model: ModelClient = {
+        name: 'talks-tool-drafts-cuts',
+        async stream(_req, onText) {
+          round++;
+          if (round === 1) {
+            onText('Let me check.');
+            const call = { id: 'c1', name: 'lookup', args: {} };
+            return { text: 'Let me check.', toolCalls: [call], message: assistantMessage('Let me check.', [call]) };
+          }
+          const text = round === 2 ? words(486) : words(300);
+          if (round === 2) onText(text);
+          return { text, toolCalls: [], message: assistantMessage(text, []) };
+        },
+      };
+      const { svc } = setup(model);
+      const { events } = await runTurn(svc, 'Write a 350-word summary');
+      expect(replaced(events)).toEqual([`Let me check.\n\n${words(300)}`]);
+    });
   });
 
   it('rethrows model errors and keeps only the user message in history', async () => {
@@ -322,6 +535,80 @@ describe('AgentService.run', () => {
       expect(lists[0].map((s) => s.title)).toEqual(['Cited', 'Unused']); // available while streaming
       expect(lists[1]).toEqual([{ id: 1, title: 'Cited', url: 'https://example.com/cited' }]);
       expect(warn).toHaveBeenCalledWith(expect.stringMatching(/unknown sources \[7\]/));
+    });
+
+    describe('citations across turns', () => {
+      const a = { id: 1, title: 'A', url: 'https://a.test/' };
+      const b = { id: 2, title: 'B', url: 'https://b.test/' };
+      const c = { id: 3, title: 'C', url: 'https://c.test/' };
+      let results: { title: string; url: string }[][];
+
+      /** Each turn: search if a batch is queued for it, then answer with the scripted text. */
+      const chat = (answers: string[], searchOnTurn: boolean[]): ModelClient => {
+        let turn = 0;
+        let searched = false;
+        return {
+          name: 'cites-across-turns',
+          async stream(_req, onText) {
+            if (searchOnTurn[turn] && !searched) {
+              searched = true;
+              const call = { id: `c${turn}`, name: 'web_search', args: { query: 'e-bikes' } };
+              return { text: '', toolCalls: [call], message: assistantMessage('', [call]) };
+            }
+            const text = answers[turn++];
+            searched = false;
+            onText(text);
+            return { text, toolCalls: [], message: assistantMessage(text, []) };
+          },
+        };
+      };
+      const lastSources = (events: AgentEvent[]) => last(events.filter((e) => e.type === 'sources'));
+
+      beforeEach(() => {
+        settings.TAVILY_API_KEY = 'tvly-test';
+        jest.spyOn(global, 'fetch').mockImplementation(async (input, init) => {
+          if (String(input) !== 'https://api.tavily.com/search') return realFetch(input, init);
+          const batch = results.shift() ?? [];
+          return new Response(JSON.stringify({ results: batch.map((r) => ({ ...r, content: 'x' })) }), { status: 200 });
+        });
+      });
+
+      it('restores an earlier source when a follow-up cites only old numbers', async () => {
+        results = [[a, b]];
+        const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+        const { svc } = setup(chat(['First [1] and [2].', 'As noted, [2].'], [true, false]));
+        const first = await runTurn(svc, 'research');
+        const second = await runTurn(svc, 'tell me more', first.conversationId);
+        expect(lastSources(second.events)).toEqual({ type: 'sources', sources: [b] });
+        expect(warn).not.toHaveBeenCalledWith(expect.stringMatching(/unknown sources/));
+      });
+
+      it('gives new sources new numbers and resolves mixed old and new citations', async () => {
+        results = [[a, b], [c]];
+        const { svc } = setup(chat(['First [1].', 'Old [1], new [3].'], [true, true]));
+        const first = await runTurn(svc, 'research');
+        const second = await runTurn(svc, 'more', first.conversationId);
+        expect(lastSources(second.events)).toEqual({ type: 'sources', sources: [a, c] });
+      });
+
+      it('never reuses a number for a different URL, and reuses the number of a repeat URL', async () => {
+        results = [[a], [{ title: 'B', url: b.url }, { title: 'A again', url: a.url }]];
+        const { svc, store } = setup(chat(['One [1].', 'Two [2], one [1].'], [true, true]));
+        const first = await runTurn(svc, 'research');
+        const second = await runTurn(svc, 'more', first.conversationId);
+        const streamed = second.events.filter((e) => e.type === 'sources')[0];
+        expect(streamed).toEqual({ type: 'sources', sources: [{ id: 2, title: 'B', url: b.url }, a] });
+        expect(await store.sources(first.conversationId!)).toEqual([a, { id: 2, title: 'B', url: b.url }]);
+      });
+
+      it('still warns about a number no source in the conversation has', async () => {
+        results = [[a]];
+        const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+        const { svc } = setup(chat(['One [1].', 'Invented [9].'], [true, false]));
+        const first = await runTurn(svc, 'research');
+        await runTurn(svc, 'more', first.conversationId);
+        expect(warn).toHaveBeenCalledWith(expect.stringMatching(/unknown sources \[9\]/));
+      });
     });
 
     it('reports a failed search to the user and the model without failing the turn', async () => {

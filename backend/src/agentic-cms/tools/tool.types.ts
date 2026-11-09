@@ -12,8 +12,8 @@ export interface ToolContext {
   projectId: string;
   sprintId?: string;
   signal: AbortSignal;
-  /** Registers citable sources for this answer and returns their [n] numbers. */
-  addSources(sources: Omit<AgentSource, 'id'>[]): number[];
+  /** Registers citable sources and returns their [n] numbers, which stay the same for the whole conversation. */
+  addSources(sources: Omit<AgentSource, 'id'>[]): Promise<number[]>;
 }
 
 export interface ToolOutput {

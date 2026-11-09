@@ -1,19 +1,21 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { FeatureFlagsService } from '../../feature-flags/feature-flags.service';
-import { ChatMessage, MODEL_CLIENT, ModelClient } from '../model/model-client';
+import { assistantMessage, ChatMessage, MODEL_CLIENT, ModelClient, ModelRequest } from '../model/model-client';
 import { SkillLibrary } from '../skills/skill-library';
 import { ToolRegistry } from '../tools/tool-registry';
 import type { ToolContext } from '../tools/tool.types';
-import { featureDisabled, userRateLimited } from './agent-errors';
+import { AgentError, featureDisabled, userRateLimited } from './agent-errors';
 import type { AgentSource } from './agent.events';
 import type { AgentUser, RunInput, SendEvent } from './agent.types';
 import { checkCitations } from './citations';
 import { ConversationStore } from './conversation.store';
 import { buildSystemPrompt } from './prompt';
+import { countDraftWords, isTooShort, requestedWordLimit, wordLimitCorrection, wordLimitRetry } from './word-limit';
 
 export const MAX_ROUNDS = 6;
 export const DEFAULT_MAX_MESSAGES_PER_HOUR = 60;
+const MAX_WORD_LIMIT_ATTEMPTS = 2; // the first cut plus one retry
 
 @Injectable()
 export class AgentService {
@@ -72,45 +74,63 @@ export class AgentService {
     });
     const schemas = this.tools.schemas(tools);
 
-    // Sources found this turn, numbered [1], [2]… in the order tools found them.
+    // Sources this turn's tools returned. Their [n] numbers come from the conversation's
+    // registry, so a number means the same URL in every turn.
     const sources: AgentSource[] = [];
     const ctx: ToolContext = {
       user: input.user,
       projectId: input.projectId,
       sprintId: input.sprintId,
       signal: input.signal,
-      addSources: (found) =>
-        found.map((s) => {
-          const existing = sources.find((x) => x.url === s.url);
-          if (existing) return existing.id;
-          const source = { id: sources.length + 1, title: s.title, url: s.url };
-          sources.push(source);
-          return source.id;
-        }),
+      addSources: async (found) => {
+        const registered = await this.store.addSources(convo.id, found);
+        for (const source of registered) if (!sources.some((x) => x.id === source.id)) sources.push(source);
+        return registered.map((source) => source.id);
+      },
     };
 
     // 4. The loop: ask the model; if it wants tools, run them and ask again.
-    let streamedText = false;
+    let shown = ''; // everything sent to the browser so far
     let answer = '';
     try {
       for (let round = 0; round < MAX_ROUNDS; round++) {
         this.assertStillEnabled(input.user);
         let roundText = false;
+        const shownBefore = shown;
         const turn = await this.model.stream(
           { system, messages: [...history, ...turnMessages], tools: schemas, signal: input.signal },
           (delta) => {
             // Separate text written before a tool call from the text after it.
-            if (!roundText && streamedText) send({ type: 'text_delta', text: '\n\n' });
-            roundText = streamedText = true;
+            if (!roundText && shown) {
+              shown += '\n\n';
+              send({ type: 'text_delta', text: '\n\n' });
+            }
+            roundText = true;
+            shown += delta;
             send({ type: 'text_delta', text: delta });
           },
         );
-        answer += turn.text;
         turnMessages.push(turn.message);
-        if (!turn.toolCalls.length) break; // model answered: done
+
+        if (!turn.toolCalls.length) {
+          const final = await this.enforceWordLimit(input, { system, messages: [...history, ...turnMessages] }, turn.text, send);
+          if (final !== turn.text) {
+            turnMessages[turnMessages.length - 1] = assistantMessage(final, []);
+            send({ type: 'text_replace', text: `${shownBefore}${shownBefore && final ? '\n\n' : ''}${final}` });
+          }
+          answer += final;
+          break; // model answered: done
+        }
+        answer += turn.text;
 
         if (round === MAX_ROUNDS - 1) {
-          send({ type: 'text_delta', text: '\n\n_(Stopped after too many steps. Try a more specific question.)_' });
+          // Every tool call in saved history needs a result, or the next turn is invalid.
+          for (const call of turn.toolCalls) {
+            turnMessages.push({ role: 'tool', tool_call_id: call.id, content: 'Not run: this reply reached its step limit.' });
+          }
+          const notice = '_(Stopped after too many steps. Try a more specific question.)_';
+          turnMessages.push({ role: 'assistant', content: notice });
+          send({ type: 'text_delta', text: `\n\n${notice}` });
           break;
         }
 
@@ -128,12 +148,77 @@ export class AgentService {
       throw err;
     }
 
-    // 5. Sources stream as found so [n] links work live. The final list keeps only cited ones.
-    const { cited, invalid } = checkCitations(answer, sources);
-    if (sources.length) send({ type: 'sources', sources: cited });
+    // 5. Sources stream as found so [n] links work live. The final list holds only the cited
+    // ones, checked against the whole conversation so a follow-up can cite an earlier source.
+    const registry = await this.store.sources(convo.id);
+    const { cited, invalid } = checkCitations(answer, registry);
+    if (sources.length || cited.length) send({ type: 'sources', sources: cited });
     if (invalid.length) this.log.warn(`Model cited unknown sources [${invalid.join(', ')}] in ${convo.id}`);
 
     // 6. Save the finished turn (with its sources, for the history UI later).
     await this.store.append(convo.id, turnMessages, cited.length ? { sources: cited } : undefined);
+  }
+
+  /**
+   * Counts the finished draft against a word limit the user asked for and, if it's over,
+   * cuts it, retrying once if the cut is still over or much too short. Cuts are buffered,
+   * so the reader never loses the original if they fail. Returns the text to keep.
+   * The internal instructions are never saved.
+   */
+  private async enforceWordLimit(
+    input: RunInput,
+    request: Pick<ModelRequest, 'system' | 'messages'>,
+    draft: string,
+    send: SendEvent,
+  ): Promise<string> {
+    const limit = requestedWordLimit(input.message);
+    if (!limit) return draft;
+    const words = countDraftWords(draft);
+    if (words <= limit) return draft;
+
+    this.assertStillEnabled(input.user);
+    const id = 'word-limit';
+    send({ type: 'tool_start', id, name: 'word_limit', label: `Cutting the draft to ${limit} words` });
+    let messages: ChatMessage[] = [...request.messages, { role: 'user', content: wordLimitCorrection(words, limit) }];
+    let withinLimit: { text: string; words: number } | undefined; // the longest attempt that fits
+    let overLimit = { text: draft, words }; // the shortest text that doesn't
+
+    for (let attempt = 0; attempt < MAX_WORD_LIMIT_ATTEMPTS; attempt++) {
+      this.assertStillEnabled(input.user);
+      let revised: string;
+      try {
+        const turn = await this.model.stream(
+          { system: request.system, messages, tools: [], signal: input.signal }, // these rounds only rewrite text
+          () => undefined,
+        );
+        revised = turn.text.trim();
+      } catch (err) {
+        if (input.signal.aborted) throw err;
+        this.log.warn(`Word-limit cut failed: ${err instanceof AgentError ? err.kind : 'unexpected error'}`);
+        break;
+      }
+      if (!revised) break;
+
+      const revisedWords = countDraftWords(revised);
+      if (revisedWords > limit) {
+        if (revisedWords < overLimit.words) overLimit = { text: revised, words: revisedWords };
+      } else {
+        if (!withinLimit || revisedWords > withinLimit.words) withinLimit = { text: revised, words: revisedWords };
+        if (!isTooShort(revisedWords, limit)) break;
+      }
+      messages = [
+        ...messages,
+        { role: 'assistant', content: revised },
+        { role: 'user', content: wordLimitRetry(revisedWords, limit) },
+      ];
+    }
+
+    if (withinLimit) {
+      send({ type: 'tool_end', id, ok: true, note: `${words} → ${withinLimit.words} words` });
+      return withinLimit.text;
+    }
+    // Still over, or the cut failed: keep the shortest text and say so rather than pass it off as within the limit.
+    send({ type: 'tool_end', id, ok: false, note: `Still ${overLimit.words} words` });
+    return `${overLimit.text}\n\n_(This draft is ${overLimit.words} words, over the ${limit}-word limit. Cut it before using it.)_`;
   }
 }

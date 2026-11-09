@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import OpenAI, { APIError } from 'openai';
 import {
   AgentError,
   modelConfigProblem,
@@ -9,8 +10,8 @@ import {
 } from '../agent/agent-errors';
 import { assistantMessage, ModelClient, ModelRequest, ModelTurn, ToolCall } from './model-client';
 
-// Works with any OpenAI-style /chat/completions endpoint that supports streaming + tool calling.
-// Configured from the LUMEN_* settings in model.provider.ts:
+// Uses the OpenAI SDK against any OpenAI-style /chat/completions endpoint that supports
+// streaming + tool calling. Configured from the LUMEN_* settings in model.provider.ts:
 //   LUMEN_BASE_URL   e.g. https://lumen.ncsa.illinois.edu/v1
 //   LUMEN_API_KEY
 //   LUMEN_MODEL      e.g. deepseek-v4.1-flash
@@ -19,71 +20,60 @@ import { assistantMessage, ModelClient, ModelRequest, ModelTurn, ToolCall } from
 export class OpenAICompatibleClient implements ModelClient {
   readonly name = 'openai-compatible';
   private readonly log = new Logger('OtcrBotModel');
+  private readonly client: OpenAI;
 
   constructor(
-    private readonly baseUrl: string,
-    private readonly apiKey: string,
+    baseUrl: string,
+    apiKey: string,
     private readonly model: string,
     private readonly timeoutMs = 60_000,
-  ) {}
+  ) {
+    this.client = new OpenAI({
+      baseURL: baseUrl.replace(/\/+$/, ''),
+      apiKey,
+      organization: null, // don't pick up OPENAI_* settings from the server's environment
+      project: null,
+      maxRetries: 0, // failures go straight to the user with a clear message and a Retry button
+      logLevel: 'off', // SDK logs can include response text; see the logging rule in httpError
+      fetch: keepTopLevelErrorCode,
+    });
+  }
 
   async stream(req: ModelRequest, onText: (delta: string) => void): Promise<ModelTurn> {
+    // The SDK's own timeout stops once headers arrive, so this signal covers the whole stream.
     const timeout = AbortSignal.timeout(this.timeoutMs);
     const signal = AbortSignal.any([req.signal, timeout]);
-    let res: Response;
+    let text = '';
+    const calls = new Map<number, { id: string; name: string; args: string }>();
     try {
-      res = await fetch(`${this.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-        method: 'POST',
-        signal,
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.apiKey}` },
-        body: JSON.stringify({
+      const stream = await this.client.chat.completions.create(
+        {
           model: this.model,
           stream: true,
           messages: [{ role: 'system', content: req.system }, ...req.messages],
           ...(req.tools.length
-            ? { tools: req.tools.map((t) => ({ type: 'function', function: t })), tool_choice: 'auto' }
+            ? { tools: req.tools.map((t) => ({ type: 'function' as const, function: t })), tool_choice: 'auto' as const }
             : {}),
-        }),
-      });
-    } catch (e) {
-      throw this.networkError(e, timeout);
-    }
-
-    if (!res.ok || !res.body) throw await this.httpError(res);
-
-    let text = '';
-    const calls = new Map<number, { id: string; name: string; args: string }>();
-    const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
-    let buf = '';
-    try {
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += value;
-        let nl: number;
-        while ((nl = buf.indexOf('\n')) >= 0) {
-          const line = buf.slice(0, nl).trim();
-          buf = buf.slice(nl + 1);
-          if (!line.startsWith('data:')) continue;
-          const data = line.slice(5).trim();
-          if (data === '[DONE]') continue;
-          const delta = JSON.parse(data).choices?.[0]?.delta;
-          if (!delta) continue;
-          if (delta.content) {
-            text += delta.content;
-            onText(delta.content);
-          }
-          for (const tc of delta.tool_calls ?? []) {
-            const cur = calls.get(tc.index) ?? { id: '', name: '', args: '' };
-            if (tc.id) cur.id = tc.id;
-            if (tc.function?.name) cur.name += tc.function.name;
-            if (tc.function?.arguments) cur.args += tc.function.arguments;
-            calls.set(tc.index, cur);
-          }
+        },
+        { signal },
+      );
+      for await (const chunk of stream) {
+        const delta = chunk.choices?.[0]?.delta;
+        if (!delta) continue;
+        if (delta.content) {
+          text += delta.content;
+          onText(delta.content);
+        }
+        for (const tc of delta.tool_calls ?? []) {
+          const cur = calls.get(tc.index) ?? { id: '', name: '', args: '' };
+          if (tc.id) cur.id = tc.id;
+          if (tc.function?.name) cur.name += tc.function.name;
+          if (tc.function?.arguments) cur.args += tc.function.arguments;
+          calls.set(tc.index, cur);
         }
       }
     } catch (e) {
-      throw this.networkError(e, timeout);
+      throw e instanceof APIError && e.status ? this.httpError(e) : this.networkError(e, timeout);
     }
 
     const toolCalls: ToolCall[] = [...calls.values()].map((c, i) => ({
@@ -101,15 +91,16 @@ export class OpenAICompatibleClient implements ModelClient {
   }
 
   /** Maps Lumen's documented statuses/codes to clear errors. Logs only status + code, never bodies or keys. */
-  private async httpError(res: Response): Promise<AgentError> {
-    const code = await upstreamCode(res);
-    this.log.warn(`Model request failed: HTTP ${res.status}${code ? ` (${code})` : ''}`);
-    const cause = `HTTP ${res.status}${code ? ` ${code}` : ''}`;
-    if (res.status === 401) return modelConfigProblem('auth', cause);
-    if (res.status === 403) return modelConfigProblem(code === 'consent_required' ? 'consent' : 'access', cause);
-    if (res.status === 404) return modelConfigProblem('model', cause);
-    if (res.status === 429) return code === 'insufficient_quota' ? modelQuotaExhausted(cause) : modelRateLimited(cause);
-    if (res.status === 408 || res.status === 504) return modelTimedOut(cause);
+  private httpError(e: APIError): AgentError {
+    const status = e.status as number;
+    const code = typeof e.code === 'string' && /^[a-z0-9_.-]{1,64}$/i.test(e.code) ? e.code : undefined;
+    this.log.warn(`Model request failed: HTTP ${status}${code ? ` (${code})` : ''}`);
+    const cause = `HTTP ${status}${code ? ` ${code}` : ''}`;
+    if (status === 401) return modelConfigProblem('auth', cause);
+    if (status === 403) return modelConfigProblem(code === 'consent_required' ? 'consent' : 'access', cause);
+    if (status === 404) return modelConfigProblem('model', cause);
+    if (status === 429) return code === 'insufficient_quota' ? modelQuotaExhausted(cause) : modelRateLimited(cause);
+    if (status === 408 || status === 504) return modelTimedOut(cause);
     return modelUnavailable(cause);
   }
 }
@@ -123,13 +114,17 @@ function parseArgs(raw: string): unknown {
   }
 }
 
-/** Reads only the machine-readable error code (OpenAI style `error.code` or top-level `code`). */
-async function upstreamCode(res: Response): Promise<string | undefined> {
+/** The SDK reads only `error.code`, but an error body can also put `code` at the top level. */
+const keepTopLevelErrorCode: typeof fetch = async (url, init) => {
+  const res = await fetch(url, init);
+  if (res.ok) return res;
+  const raw = await res.text();
+  let body = raw;
   try {
-    const body = JSON.parse(await res.text()) as { code?: unknown; error?: { code?: unknown } };
-    const code = body?.error?.code ?? body?.code;
-    return typeof code === 'string' && /^[a-z0-9_.-]{1,64}$/i.test(code) ? code : undefined;
+    const parsed = JSON.parse(raw) as { code?: unknown; error?: unknown };
+    if (parsed && !parsed.error && parsed.code) body = JSON.stringify({ error: { code: parsed.code } });
   } catch {
-    return undefined;
+    // Not JSON: the SDK handles a plain-text error body.
   }
-}
+  return new Response(body, { status: res.status, headers: res.headers });
+};

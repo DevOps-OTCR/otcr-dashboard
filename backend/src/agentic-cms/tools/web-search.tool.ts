@@ -51,7 +51,7 @@ export class WebSearchTool implements AgentTool<typeof input> {
     if (!results.length) {
       return { content: `No web results for "${query}". Try a different query or tell the user nothing was found.`, note: 'No results' };
     }
-    const ids = ctx.addSources(results.map(({ title, url }) => ({ title, url })));
+    const ids = await ctx.addSources(results.map(({ title, url }) => ({ title, url })));
     const lines = results.map((r, i) =>
       `[${ids[i]}] ${r.title}\nURL: ${r.url}${r.publishedDate ? `\nPublished: ${r.publishedDate}` : ''}\nExcerpt: ${r.excerpt}`);
     return {

@@ -6,8 +6,9 @@ import { useAuth } from '@/components/AuthContext';
 import { projectsAPI } from '@/lib/api';
 import { ChatRequestError, streamChat, type AgentEvent, type AgentSource } from './chat-stream';
 import { MessageText } from './MessageText';
+import { pickWorkstream, type WorkstreamOption } from './workstream';
 
-type Option = { id: string; name: string };
+type ProjectOption = { id: string; name: string; sprintTimezone?: string };
 type ToolStep = { id: string; label: string; status: 'running' | 'ok' | 'failed'; note?: string };
 type UserEntry = { id: string; role: 'user'; text: string };
 type BotEntry = {
@@ -52,17 +53,22 @@ const newId = () => `m${++nextId}`;
 export function OtcrBot() {
   const { getToken } = useAuth();
   const [open, setOpen] = useState(false);
-  const [projects, setProjects] = useState<Option[] | null>(null);
+  const [projects, setProjects] = useState<ProjectOption[] | null>(null);
   const [projectsError, setProjectsError] = useState(false);
   const [projectId, setProjectId] = useState('');
-  const [sprints, setSprints] = useState<Option[]>([]);
+  const [sprints, setSprints] = useState<WorkstreamOption[]>([]);
   const [sprintId, setSprintId] = useState('');
+  // Which project's workstreams are loaded. Chat waits for them so the default week
+  // can't change after a conversation has started.
+  const [sprintsFor, setSprintsFor] = useState('');
   const [entries, setEntries] = useState<Entry[]>([]);
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [width, setWidth] = useState(savedWidth);
   const abortRef = useRef<AbortController | null>(null);
+  const chatGeneration = useRef(0); // bumped on every reset so an older request's events are ignored
+  const workstreamsReady = sprintsFor === projectId;
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -76,7 +82,7 @@ export function OtcrBot() {
     projectsAPI.getAll({ limit: 100 })
       .then((res) => {
         if (cancelled) return;
-        const list = ((res.data?.projects ?? []) as Option[]).map(({ id, name }) => ({ id, name }));
+        const list = ((res.data?.projects ?? []) as ProjectOption[]).map(({ id, name, sprintTimezone }) => ({ id, name, sprintTimezone }));
         setProjects(list);
         setProjectId((current) => current || list[0]?.id || '');
       })
@@ -84,23 +90,25 @@ export function OtcrBot() {
     return () => { cancelled = true; };
   }, [open, projects]);
 
-  // Load the project's workstreams (sprints) and select the most recent one.
+  // Load the project's workstreams (sprints) and select the current one, if any.
   useEffect(() => {
     if (!projectId) return; // the project-change handler already cleared the workstreams
     let cancelled = false;
+    const timeZone = projects?.find((p) => p.id === projectId)?.sprintTimezone;
     projectsAPI.getSprints(projectId)
       .then((res) => {
         if (cancelled) return;
         // Draft workstreams are hidden from consultants, and the backend refuses them.
-        const list = ((res.data ?? []) as Array<{ id: string; label: string; status: string }>)
+        const list = ((res.data ?? []) as Array<{ id: string; label: string; status: string; weekStartDate: string; weekEndDate: string }>)
           .filter((s) => s.status === 'RELEASED')
-          .map((s) => ({ id: s.id, name: s.label }));
+          .map((s) => ({ id: s.id, name: s.label, weekStartDate: s.weekStartDate, weekEndDate: s.weekEndDate }));
         setSprints(list);
-        setSprintId(list[list.length - 1]?.id ?? '');
+        setSprintId((current) => pickWorkstream(list, current, timeZone, new Date()));
+        setSprintsFor(projectId);
       })
-      .catch(() => { if (!cancelled) { setSprints([]); setSprintId(''); } });
+      .catch(() => { if (!cancelled) { setSprints([]); setSprintId(''); setSprintsFor(projectId); } });
     return () => { cancelled = true; };
-  }, [projectId]);
+  }, [projectId, projects]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
@@ -127,6 +135,7 @@ export function OtcrBot() {
   }, []);
 
   const newChat = useCallback(() => {
+    chatGeneration.current += 1;
     abortRef.current?.abort();
     setEntries([]);
     setConversationId(undefined);
@@ -134,7 +143,8 @@ export function OtcrBot() {
 
   const send = useCallback(async (text: string) => {
     const message = text.trim();
-    if (!message || busy || !projectId) return;
+    if (!message || busy || !projectId || !workstreamsReady) return;
+    const generation = chatGeneration.current;
     const botId = newId();
     setEntries((list) => [
       ...list,
@@ -147,12 +157,16 @@ export function OtcrBot() {
     abortRef.current = abort;
 
     const onEvent = (event: AgentEvent) => {
+      if (generation !== chatGeneration.current) return; // the chat was reset: this reply no longer belongs to it
       switch (event.type) {
         case 'conversation':
           setConversationId(event.id);
           break;
         case 'text_delta':
           updateBot(botId, (e) => ({ ...e, text: e.text + event.text }));
+          break;
+        case 'text_replace':
+          updateBot(botId, (e) => ({ ...e, text: event.text }));
           break;
         case 'tool_start':
           updateBot(botId, (e) => ({ ...e, tools: [...e.tools, { id: event.id, label: event.label, status: 'running' }] }));
@@ -190,7 +204,7 @@ export function OtcrBot() {
       if (abortRef.current === abort) abortRef.current = null;
       setBusy(false);
     }
-  }, [busy, projectId, sprintId, conversationId, getToken, updateBot]);
+  }, [busy, projectId, sprintId, workstreamsReady, conversationId, getToken, updateBot]);
 
   const retry = (botId: string) => {
     const index = entries.findIndex((e) => e.id === botId);
@@ -270,14 +284,14 @@ export function OtcrBot() {
             className={selectClass}
             value={projectId}
             disabled={busy || !projects?.length}
-            onChange={(e) => { newChat(); setSprints([]); setSprintId(''); setProjectId(e.target.value); }}
+            onChange={(e) => { newChat(); setSprints([]); setSprintId(''); setSprintsFor(''); setProjectId(e.target.value); }}
           >
             {projects === null && <option value="">Loading projects…</option>}
             {projects?.length === 0 && <option value="">No projects</option>}
             {projects?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
           <label className="sr-only" htmlFor="otcr-bot-workstream">Workstream</label>
-          <select id="otcr-bot-workstream" className={selectClass} value={sprintId} disabled={busy} onChange={(e) => setSprintId(e.target.value)}>
+          <select id="otcr-bot-workstream" className={selectClass} value={sprintId} disabled={busy || !workstreamsReady} onChange={(e) => { newChat(); setSprintId(e.target.value); }}>
             <option value="">No workstream</option>
             {sprints.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
@@ -292,7 +306,7 @@ export function OtcrBot() {
             <p>Ask about your workstream, research a topic with cited sources, or draft text for a whitepaper or slides. Check everything before you use it.</p>
             <div className="flex flex-col gap-2">
               {EXAMPLES.map((example) => (
-                <button key={example} type="button" onClick={() => void send(example)} disabled={busy}
+                <button key={example} type="button" onClick={() => void send(example)} disabled={busy || !workstreamsReady}
                   className="rounded-lg border border-slate-200 px-3 py-2 text-left text-xs hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
                   {example}
                 </button>
@@ -367,7 +381,7 @@ export function OtcrBot() {
               <Square className="h-4 w-4" aria-hidden />
             </button>
           ) : (
-            <button type="submit" disabled={!draft.trim() || !projectId} className="rounded-lg bg-blue-700 p-2.5 text-white hover:bg-blue-800 disabled:opacity-40" aria-label="Send">
+            <button type="submit" disabled={!draft.trim() || !projectId || !workstreamsReady} className="rounded-lg bg-blue-700 p-2.5 text-white hover:bg-blue-800 disabled:opacity-40" aria-label="Send">
               <Send className="h-4 w-4" aria-hidden />
             </button>
           )}

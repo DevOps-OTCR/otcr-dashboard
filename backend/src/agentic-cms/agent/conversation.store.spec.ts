@@ -32,6 +32,46 @@ describe('ConversationStore', () => {
     await expect(store.open({ ...who, conversationId: id })).rejects.toBeInstanceOf(NotFoundException);
   });
 
+  it.each([
+    ['another workstream', 's1', 's2'],
+    ['no workstream', 's1', undefined],
+    ['a workstream on a no-workstream chat', undefined, 's1'],
+  ])('returns 404 when reopened with %s', async (_label, stored, requested) => {
+    const store = new ConversationStore();
+    const { id } = await store.open({ userId: 'u1', projectId: 'p1', sprintId: stored });
+    await expect(store.open({ userId: 'u1', projectId: 'p1', sprintId: requested, conversationId: id })).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('reopens with the same workstream, and treats blank as no workstream', async () => {
+    const store = new ConversationStore();
+    const week = await store.open({ userId: 'u1', projectId: 'p1', sprintId: 's1' });
+    const none = await store.open({ userId: 'u1', projectId: 'p1' });
+    await expect(store.open({ userId: 'u1', projectId: 'p1', sprintId: 's1', conversationId: week.id })).resolves.toEqual(week);
+    await expect(store.open({ userId: 'u1', projectId: 'p1', sprintId: '', conversationId: none.id })).resolves.toEqual(none);
+  });
+
+  it('gives a URL one permanent source number within a conversation', async () => {
+    const store = new ConversationStore();
+    const { id } = await store.open({ userId: 'u1', projectId: 'p1' });
+    const a1 = { title: 'A', url: 'https://a.test' };
+    const b1 = { title: 'B', url: 'https://b.test' };
+    expect((await store.addSources(id, [a1, b1])).map((s) => s.id)).toEqual([1, 2]);
+    expect((await store.addSources(id, [{ title: 'C', url: 'https://c.test' }, { ...a1, title: 'A renamed' }])).map((s) => s.id)).toEqual([3, 1]);
+    expect(await store.sources(id)).toEqual([
+      { id: 1, title: 'A', url: 'https://a.test' },
+      { id: 2, title: 'B', url: 'https://b.test' },
+      { id: 3, title: 'C', url: 'https://c.test' },
+    ]);
+  });
+
+  it('numbers sources separately for each conversation', async () => {
+    const store = new ConversationStore();
+    const c1 = await store.open({ userId: 'u1', projectId: 'p1' });
+    const c2 = await store.open({ userId: 'u1', projectId: 'p1' });
+    await store.addSources(c1.id, [{ title: 'A', url: 'https://a.test' }]);
+    expect((await store.addSources(c2.id, [{ title: 'B', url: 'https://b.test' }]))[0].id).toBe(1);
+  });
+
   it('returns 404 for an id that does not exist', async () => {
     const store = new ConversationStore();
     await expect(store.open({ userId: 'u1', projectId: 'p1', conversationId: 'nope' })).rejects.toBeInstanceOf(NotFoundException);

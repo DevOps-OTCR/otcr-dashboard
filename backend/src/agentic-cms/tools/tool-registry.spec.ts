@@ -19,7 +19,7 @@ const registryWith = (...tools: AgentTool[]) => {
   return registry;
 };
 const ctx = (signal = new AbortController().signal): ToolContext => ({
-  user: { id: 'u', email: 'u@x.test', role: 'CONSULTANT' }, projectId: 'p1', signal, addSources: () => [],
+  user: { id: 'u', email: 'u@x.test', role: 'CONSULTANT' }, projectId: 'p1', signal, addSources: async () => [],
 });
 
 async function exec(registry: ToolRegistry, name: string, args: unknown, c = ctx()) {

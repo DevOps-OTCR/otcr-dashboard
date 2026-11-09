@@ -144,6 +144,61 @@ describe('OpenAICompatibleClient', () => {
     }
   });
 
+  it('does not retry a failed request', async () => {
+    let requests = 0;
+    const counting = http.createServer((_req, res) => {
+      requests++;
+      res.writeHead(429, { 'Content-Type': 'application/json' });
+      res.end('{}');
+    });
+    await new Promise<void>((r) => counting.listen(0, '127.0.0.1', () => r()));
+    try {
+      const url = `http://127.0.0.1:${(counting.address() as AddressInfo).port}/v1`;
+      await expect(new OpenAICompatibleClient(url, 'k', 'm').stream(req(), () => undefined)).rejects.toMatchObject({ kind: 'rate_limit' });
+      expect(requests).toBe(1);
+    } finally {
+      counting.closeAllConnections();
+      await new Promise<void>((r) => counting.close(() => r()));
+    }
+  });
+
+  it('turns an error sent inside the stream into a model error', async () => {
+    script = { frames: [delta({ content: 'partial' }), { error: { message: 'upstream failed with private text' } }] };
+    const err = await new OpenAICompatibleClient(base, 'k', 'm').stream(req(), () => undefined).catch((e) => e);
+    expect(err).toMatchObject({ kind: 'model', retryable: true });
+    expect(err.userMessage).not.toContain('private text');
+  });
+
+  it('stops when the caller aborts', async () => {
+    script = { frames: [] };
+    const hanging = http.createServer(() => undefined);
+    await new Promise<void>((r) => hanging.listen(0, '127.0.0.1', () => r()));
+    try {
+      const url = `http://127.0.0.1:${(hanging.address() as AddressInfo).port}/v1`;
+      const abort = new AbortController();
+      const pending = new OpenAICompatibleClient(url, 'k', 'm').stream(req({ signal: abort.signal }), () => undefined);
+      abort.abort();
+      await expect(pending).rejects.toMatchObject({ kind: 'model', userMessage: expect.stringMatching(/couldn't respond/) });
+    } finally {
+      hanging.closeAllConnections();
+      await new Promise<void>((r) => hanging.close(() => r()));
+    }
+  });
+
+  it('ignores OPENAI_* settings in the server environment', async () => {
+    process.env.OPENAI_ORG_ID = 'org-should-not-be-sent';
+    process.env.OPENAI_PROJECT_ID = 'proj-should-not-be-sent';
+    try {
+      script = { frames: [delta({ content: 'ok' })] };
+      await new OpenAICompatibleClient(base, 'k', 'm').stream(req(), () => undefined);
+      expect(lastRequest.headers['openai-organization']).toBeUndefined();
+      expect(lastRequest.headers['openai-project']).toBeUndefined();
+    } finally {
+      delete process.env.OPENAI_ORG_ID;
+      delete process.env.OPENAI_PROJECT_ID;
+    }
+  });
+
   it('maps a network failure to a model error', async () => {
     const dead = new OpenAICompatibleClient('http://127.0.0.1:1/v1', 'k', 'm');
     await expect(dead.stream(req(), () => undefined)).rejects.toMatchObject({ kind: 'model' });

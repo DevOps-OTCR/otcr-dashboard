@@ -63,6 +63,41 @@ test('citations: never links a source without an http(s) URL', () => {
   assert.equal(linkCitations('Claim [1].', []), 'Claim [1].');
 });
 
+const { pickWorkstream } = load('workstream.ts');
+const week = (id, start, end) => ({ id, name: id, weekStartDate: `${start}T00:00:00.000Z`, weekEndDate: `${end}T00:00:00.000Z` });
+const weeks = [week('w3', '2026-11-16', '2026-11-22'), week('w2', '2026-11-09', '2026-11-15'), week('w1', '2026-11-02', '2026-11-08')]; // newest first, like the API
+const chicago = 'America/Chicago';
+
+test('workstream: picks the week containing today, whatever the list order', () => {
+  const now = new Date('2026-11-11T18:00:00Z');
+  assert.equal(pickWorkstream(weeks, '', chicago, now), 'w2');
+  assert.equal(pickWorkstream([...weeks].reverse(), '', chicago, now), 'w2');
+});
+
+test('workstream: decides today in the project timezone', () => {
+  const sundayNightInChicago = new Date('2026-11-09T03:00:00Z'); // already Monday in UTC
+  assert.equal(pickWorkstream(weeks, '', chicago, sundayNightInChicago), 'w1');
+  assert.equal(pickWorkstream(weeks, '', 'UTC', sundayNightInChicago), 'w2');
+});
+
+test('workstream: keeps a selection that is still listed', () => {
+  assert.equal(pickWorkstream(weeks, 'w3', chicago, new Date('2026-11-11T18:00:00Z')), 'w3');
+});
+
+test('workstream: replaces a selection that is no longer listed', () => {
+  assert.equal(pickWorkstream(weeks, 'gone', chicago, new Date('2026-11-11T18:00:00Z')), 'w2');
+});
+
+test('workstream: leaves No workstream selected when no released week contains today', () => {
+  assert.equal(pickWorkstream(weeks, '', chicago, new Date('2026-12-25T18:00:00Z')), '');
+  assert.equal(pickWorkstream(weeks, '', chicago, new Date('2026-10-01T18:00:00Z')), '');
+  assert.equal(pickWorkstream([], '', chicago, new Date('2026-11-11T18:00:00Z')), '');
+});
+
+test('workstream: an unrecognized project timezone falls back to Chicago', () => {
+  assert.equal(pickWorkstream(weeks, '', 'Not/AZone', new Date('2026-11-09T03:00:00Z')), 'w1');
+});
+
 test('citations: copied text appends a numbered source list', () => {
   assert.equal(withSourceList('Answer [1].', sources.slice(0, 1)), 'Answer [1].\n\nSources:\n[1] A https://a.test/x');
   assert.equal(withSourceList('No sources.', []), 'No sources.');

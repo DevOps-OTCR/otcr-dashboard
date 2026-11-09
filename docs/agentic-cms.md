@@ -90,13 +90,27 @@ OtcrBot sidebar (frontend/features/agentic-cms)
        ChatController   flag + sign-in + pilot (global guard), project access
        AgentService     loop: model → tools → model, max 6 rounds, flag rechecked
                         before every model and tool call, per-user hourly limit
-         ├─ OpenAICompatibleClient → Lumen /chat/completions (streaming, tools)
+         ├─ OpenAICompatibleClient → OpenAI SDK → Lumen /chat/completions (streaming, tools)
          ├─ ToolRegistry
          │    web_search              Tavily; results become numbered sources
          │    load_skill              agentic-cms/skills/<name>/SKILL.md
          │    get_workstream_summary  MOCK data until Group 2's MCP tools
-         └─ ConversationStore   in memory (lost on restart) — history per user+project
+         └─ ConversationStore   in memory (lost on restart) — history and source
+                                numbers per user+project+workstream
 ```
+
+A conversation belongs to one user, project and workstream ("no workstream"
+counts as its own). Reusing its id with a different one returns "conversation
+not found", so the sidebar starts a new chat when either selection changes.
+
+If the user's message states one word limit ("a 350-word summary") and the
+finished draft's body is over it, the backend cuts it automatically, aiming just
+under the limit. It retries once if the cut is still over or below 80% of the
+limit. The count excludes headings, citation and claim tags, and the reviewer note
+below the last `---` line. If the draft is still over, or the cut fails, the reply
+says so.
+Limits are read only from the current message, so a limit from an earlier message
+or a skill's own default isn't enforced.
 
 ### Chat API
 
@@ -114,8 +128,9 @@ otherwise the response is a plain 403 before any model call. The reply is a
 | --- | --- |
 | `{"type":"conversation","id"}` | Send this id back as `conversationId` to continue the chat |
 | `{"type":"text_delta","text"}` | Next piece of the answer |
+| `{"type":"text_replace","text"}` | Replaces this reply's text so far (sent after a word-limit cut) |
 | `{"type":"tool_start","id","name","label"}` / `{"type":"tool_end","id","ok","note?"}` | Tool progress for the UI |
-| `{"type":"sources","sources":[{"id","title","url"}]}` | All sources so far, so `[id]` links work while streaming; the last event of a turn lists only the cited ones |
+| `{"type":"sources","sources":[{"id","title","url"}]}` | Sources found so far this turn, so `[id]` links work while streaming; the last event of a turn lists only the cited ones, including any from earlier turns. An `id` means the same URL for the whole conversation |
 | `{"type":"error","kind","retryable","message"}` | A user-safe error (see below) |
 | `{"type":"done"}` | End of the reply |
 
@@ -178,7 +193,6 @@ the skills folder copied in (or `AGENTIC_CMS_SKILLS_DIR` pointed at it).
   server instances. The per-user hourly limit resets with it.
 - `get_workstream_summary` returns mock data. Real project context arrives with
   Group 2's MCP tools.
-- Source numbers restart with each answer.
 
 ## Where each group builds
 

@@ -16,7 +16,7 @@ export function buildSystemPrompt(input: PromptInput): string {
   const skills = input.skills ?? [];
 
   const research = tools.has('web_search')
-    ? `- For current facts, figures, companies, markets or news, call web_search before answering. Cite supporting results inline as [n] using the numbers in the results, and only for claims those results support. Never invent sources, URLs or numbers. If the results are thin or conflicting, say so.`
+    ? `- For current facts, figures, companies, markets or news, call web_search before answering. Cite supporting results inline as [n] using the numbers in the results, and only for claims those results support. A source keeps its number for the whole conversation, so reuse that number to cite it again. Never invent sources, URLs or numbers. If the results are thin or conflicting, say so.`
     : `- You can't search the web right now. If asked for current facts or figures, say so plainly instead of guessing. Never invent numbers, sources or client statements.`;
 
   const projectData = tools.has('get_workstream_summary')
