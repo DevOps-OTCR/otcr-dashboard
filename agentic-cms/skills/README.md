@@ -93,6 +93,17 @@ the system security instructions and never replace them.
 - Review mode outputs findings and suggested fixes only. Skills cannot edit
   documents or post native comments.
 
+## 3a. Review-input contract (review and audit modes)
+
+- **Enforcement point is backend preprocessing**, not this file. The component that reads or accepts deck content removes hidden/confidential content *before* constructing any model prompt, tool result, history entry or output log. Loading `SKILL.md` cannot remove data already sent.
+- **Visible slide record:** `number` (stable), `title`, `body`, `notes` (optional), confidentiality tag (optional), optional layout fields.
+- **Withheld slide record:** exactly `{number, hidden: true, skipped: true}` — no text, notes, metadata or layout.
+- **Tags applied during preprocessing:** `CONFIDENTIAL`, `PROPRIETARY`, and the PowerPoint hide-slide state.
+- **Ownership:** Group 3 owns this spec and the synthetic canary fixture; Group 1 owns the runtime review-input adapter.
+- **Scope until verified:** review supports only already-visible/sanitized material. Protected hidden-slide ingestion is not advertised until filtering exists and is verified.
+- **Acceptance:** inspect the exact model input and assert the canary is absent; then check the output lists only skipped slide numbers. A model choosing not to repeat a canary it received is a failure, not a pass.
+- Native comments and document editing are a later explicit integration.
+
 ## 4. Routing
 
 Route by task, not by keyword. At most one skill per turn.
@@ -115,7 +126,7 @@ Deck review is not a fourth skill. It is `consulting-slides` in review mode.
 |---|---|
 | research | 0.2.2 |
 | whitepaper-writing | 0.3.0 |
-| consulting-slides | 0.2.3 |
+| consulting-slides | 0.2.4 |
 
 Loader compatibility: run through #176 loader — see PR test evidence.
 

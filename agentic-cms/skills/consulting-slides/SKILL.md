@@ -1,7 +1,7 @@
 ---
 name: consulting-slides
 description: Use when an argument must become a consulting presentation — storyline, section structure, action titles, exhibits, slide-by-slide storyboard — or when an existing deck must be reviewed. Produces a storyboard or a severity-ranked review, never a PowerPoint file. Do not use for visual formatting of a file, for gathering evidence (use research), or for writing the document (use whitepaper-writing).
-version: 0.2.3
+version: 0.2.4
 owner: Group 3 (Aritro, Teja)
 release: 1
 metadata:
@@ -217,6 +217,14 @@ When reviewing an existing deck, do **not** rebuild it. Report findings with sev
 | **MINOR** | Polish | Inconsistent terminology; redundant slide; note-to-self text left in |
 
 Each finding: **issue → significance → fix.** No finding without all three.
+
+**Review-only contract and hidden/confidential slides (v0.2.4 — LC review, 8 Nov)**
+
+- Review mode outputs findings and suggested fixes only. Never rewrite or return an edited deck, never claim to have edited a file or posted a comment; no editing or comment tool exists.
+- Input contract: each visible slide arrives with its stable `number` and the available content/layout fields (title, body, notes, optional layout fields). A withheld slide arrives only as `{number, hidden: true, skipped: true}`.
+- For a skipped record: list only its number under "Skipped slides"; do not guess, infer or describe its content; do not cite it as evidence.
+- Fallback only: if a slide marked hidden, or tagged CONFIDENTIAL / PROPRIETARY / [HIDDEN] / [CONFIDENTIAL] / [PROPRIETARY], still arrives with content, treat it as skipped: list its number only, do not quote, paraphrase, summarise or use any of its text, notes or metadata anywhere in the output. State once: "Slide N arrived with content but is marked hidden/confidential; it was not reviewed. Upstream filtering should have removed it."
+- This instruction is not a security boundary: the backend must remove hidden/confidential content before any model prompt, tool result, history entry or log is built.
 
 Separate "critical problem" from "optional improvement". A 40-item list is not a review.
 
