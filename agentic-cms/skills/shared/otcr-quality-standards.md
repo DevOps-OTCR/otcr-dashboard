@@ -106,6 +106,8 @@ Source: PM interview P1, 2026-11-05.
 
 ### 6.2 Confidential and hidden content
 
+Operative copy: consulting-slides/SKILL.md (Review mode). This file is optional depth; if they differ, SKILL.md wins and the backend filter is the enforcement point.
+
 Content marked hidden or confidential **must not be read for findings, quoted, summarised, or used as evidence**. This covers:
 
 | Marker | Where it appears |
