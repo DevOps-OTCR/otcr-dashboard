@@ -99,11 +99,11 @@ services firms (do it for you), and the spreadsheet (the real default).
 
 | ID | Claim | Type | Source | Data date | Confidence |
 |---|---|---|---|---|---|
-| S1 | Regulatory applicability is defined by employee count and sector | FACT | [ILLUSTRATIVE] Regulation summary, official journal | 2024 | High |
-| S2 | Commencement is phased over three reporting years | FACT | [ILLUSTRATIVE] Regulator guidance | 2025 | High |
-| S3 | 4 of 5 mid-market operators handle compliance manually/periodically | FACT (n=5) | [ILLUSTRATIVE] practitioner interviews | 2026 | Low |
-| I1 | Comparable modules list at €18k–€30k ACV | ESTIMATE | [ILLUSTRATIVE] 6 vendor price pages | 2026 | Medium |
-| S5 | Suite vendors include reporting/compliance in standard editions | FACT | [ILLUSTRATIVE] product documentation | 2026 | Medium |
+| S1 | Regulatory applicability is defined by employee count and sector | FACT | [ILLUSTRATIVE] Regulation summary, official journal — https://example.org/regulation-summary | 2024 | High |
+| S2 | Commencement is phased over three reporting years | FACT | [ILLUSTRATIVE] Regulator guidance — https://example.org/regulator-guidance | 2025 | High |
+| S3 | 4 of 5 mid-market operators handle compliance manually/periodically | FACT (n=5) | [ILLUSTRATIVE] practitioner interviews — https://example.org/practitioner-interviews | 2026 | Low |
+| I1 | Comparable modules list at €18k–€30k ACV | ESTIMATE | [ILLUSTRATIVE] 6 vendor price pages — https://example.org/vendor-price-pages | 2026 | Medium |
+| S5 | Suite vendors include reporting/compliance in standard editions | FACT | [ILLUSTRATIVE] product documentation — https://example.org/product-documentation | 2026 | Medium |
 | I2 | Suite bundling has historically commoditised point solutions | INFERENCE | S5 + category history | — | Medium |
 | S7 | Mid-market operators will pay a premium for audit-ready exports | ASSUMPTION | PM hypothesis, untested | — | Low |
 
