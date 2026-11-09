@@ -121,7 +121,7 @@ Deck review is not a fourth skill. It is `consulting-slides` in review mode.
 |---|---|
 | research | 0.2.2 |
 | whitepaper-writing | 0.4.1 |
-| consulting-slides | 0.2.5 |
+| consulting-slides | 0.2.6 |
 
 Loader compatibility: discovery through #176 `SkillLibrary` (names, one-line descriptions, 40k cap) is checked; behaviour tests through the #176 agent loop are reported in the PR, tied to the tested commit.
 
