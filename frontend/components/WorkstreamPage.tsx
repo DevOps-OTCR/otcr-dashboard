@@ -18,6 +18,7 @@ import { getEffectiveRole, type AppRole } from '@/lib/permissions';
 import { reconcileDraftDeliverables, type DraftDeliverable } from '@/lib/deliverables-parser';
 import { dispatchNotificationsRefresh } from '@/lib/notification-events';
 import { buildSprintDeadlineInChicago } from '@/lib/sprint-deadlines';
+import { deliverablesInSprint } from '@/lib/workstream-weeks';
 
 type ProjectOption = {
   id: string;
@@ -81,19 +82,6 @@ function formatWeekLabel(value: string, fallbackIndex?: number) {
 function extractWeekNumber(value: string, fallbackIndex?: number) {
   const match = formatWeekLabel(value, fallbackIndex).match(/\bWeek\s+(\d+)\b/i);
   return match?.[1] ?? String((fallbackIndex ?? 0) + 1);
-}
-
-function isDeliverableInSelectedWeek(
-  deliverable: DeliverableItem,
-  selected: SprintItem,
-  selectedIndex: number,
-) {
-  if (deliverable.sprintId) {
-    return deliverable.sprintId === selected.id;
-  }
-  const selectedWeek = extractWeekNumber(selected.label, selectedIndex);
-  const deliverableWeek = extractWeekNumber(deliverable.title, selectedIndex);
-  return selectedWeek === deliverableWeek;
 }
 
 function buildDraftDeliverableDeadline(sprint: SprintItem) {
@@ -299,12 +287,10 @@ export default function WorkstreamPage() {
 
     return items;
   }, [addWhitepaperSubmission, selectedSprint, sprintIndex]);
-  const selectedSprintDeliverables = useMemo(() => {
-    if (!selectedSprint) return [];
-    return (selectedSprint.deliverables ?? []).filter((deliverable) =>
-      isDeliverableInSelectedWeek(deliverable, selectedSprint, sprintIndex),
-    );
-  }, [selectedSprint, sprintIndex]);
+  const selectedSprintDeliverables = useMemo(
+    () => (selectedSprint ? deliverablesInSprint(selectedSprint) : []),
+    [selectedSprint],
+  );
 
   const handleProjectChange = async (projectId: string) => {
     projectRef.current = projectId;

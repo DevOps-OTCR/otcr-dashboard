@@ -101,6 +101,11 @@ describe('ProjectsService.listSprints submissions (#30)', () => {
     expect(item.latestSubmission?.fileUrl).toBe('https://x/b-final');
   });
 
+  it('includes the sprint association on each nested deliverable', async () => {
+    const [result] = await buildService(queryRawImplFor([])).listSprints('project-1');
+    expect(result.deliverables[0].sprintId).toBe('sprint-1');
+  });
+
   it('keeps working for a single-assignee deliverable', async () => {
     const singleAssignments = [assignments[0]];
     const submissions = [
