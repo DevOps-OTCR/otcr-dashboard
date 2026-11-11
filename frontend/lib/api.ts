@@ -453,6 +453,8 @@ export const deliverablesAPI = {
   deleteSubtask: (id: string) => api.delete(`/deliverables/subtasks/${id}`),
   submitLink: (id: string, link: string) =>
     api.post(`/deliverables/${id}/submissions`, { link }),
+  setWorkingLink: (id: string, link: string | null) =>
+    api.patch(`/deliverables/${id}/working-link`, { link }),
   delete: (id: string) => api.delete(`/deliverables/${id}`),
 };
 

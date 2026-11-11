@@ -149,7 +149,8 @@ export class ProjectsController {
     }
 
     await this.ensureProjectAccess(project, user);
-    return this.projectsService.listSprints(id);
+    const canManage = ['ADMIN', 'LC'].includes(user.role) || project.pmId === user.id;
+    return this.projectsService.listSprints(id, { includeDraftWorkingLinks: canManage });
   }
 
   @Post(':id/sprints/generate-next')
