@@ -35,6 +35,163 @@ it hides the feature on a failed check or sign-out. Already-running work needs
 the explicit checks described below; changing a flag does not cancel an
 in-flight request or undo a completed write.
 
+## Run OTCR Bot locally
+
+1. Create a Lumen API key at <https://lumen.ncsa.illinois.edu> (Profile → API
+   Keys). Open the model list in Lumen and acknowledge the notice for the
+   configured model (DeepSeek models require it). Otherwise every reply fails
+   with "must accept this model's notice".
+2. Optional: create a free Tavily key at <https://app.tavily.com> for web
+   search. Without it, the bot works but has no `web_search` tool.
+3. Set up the backend and frontend as in the README. Then copy the Agentic CMS
+   lines from [`backend/.env.example`](../backend/.env.example) into
+   `backend/.env`, enable the flag and limit it to yourself:
+
+   ```dotenv
+   AGENTIC_CMS_ENABLED=true
+   AGENTIC_CMS_ALLOWED_EMAILS=you@illinois.edu
+   LUMEN_API_KEY=<your own Lumen key>
+   TAVILY_API_KEY=<your own Tavily key, optional>
+   ```
+
+   `backend/.env` is ignored by Git. Never put a key in `env/env.example`,
+   frontend code, a `NEXT_PUBLIC_` variable, a PR, a screenshot or Slack.
+   If a key is ever committed, revoke it immediately: deleting the line does
+   not remove it from Git history.
+4. Start the backend (`npm --prefix backend run start:dev`) and the frontend
+   (`npm --prefix frontend run dev`). Restart the backend after editing `.env`.
+5. Sign in. An **OTCR Bot** button appears at the bottom right within 30
+   seconds. Choose a project and workstream, then try:
+   - "Summarize my current workstream" → calls the CMS read tools for the selected project.
+   - "Research the size of the US campus e-bike market, with sources" →
+     web search with numbered citations and a Sources list.
+   - "Write an executive summary of our findings so far" → loads whitepaper-writing.
+6. Check the configuration without calling a model. `/agentic-cms/status`
+   requires a verified Microsoft token, an active enrollment, and pilot access.
+   An email-only bearer is rejected before any model call. A permitted response
+   looks like:
+
+   ```json
+   {"enabled":true,"model":"deepseek-v4.1-flash","modelConfigured":true,"webSearchConfigured":true,"skills":["consulting-slides","research","whitepaper-writing"]}
+   ```
+
+7. Test the flag. Set `AGENTIC_CMS_ENABLED=false` (or remove your email from
+   the allowlist) and restart. The button disappears within 30 seconds,
+   `/agentic-cms/*` returns 404, and Lumen usage (`GET /v1/usage`) does not
+   increase. Normal CMS pages keep working.
+
+## How OTCR Bot works
+
+```
+OtcrBot sidebar (frontend/features/agentic-cms)
+  └─ POST /agentic-cms/chat  (Server-Sent Events)
+       ChatController   flag + sign-in + pilot (global guard), project access
+       AgentService     loop: model → tools → model, max 6 rounds, flag rechecked
+                        before every model and tool call, per-user hourly limit
+         ├─ OpenAICompatibleClient → OpenAI SDK → Lumen /chat/completions (streaming, tools)
+         ├─ ToolRegistry
+         │    web_search              Tavily; results become numbered sources
+         │    load_skill              agentic-cms/skills/<name>/SKILL.md
+         │    get_project_context, list_workstreams, get_workstream,
+         │    list_deliverables, get_deliverable   CmsReadService, selected project
+         └─ ConversationStore   in memory (lost on restart) — history and source
+                                numbers per user+project+workstream
+```
+
+A conversation belongs to one user, project and workstream ("no workstream"
+counts as its own). Reusing its id with a different one returns "conversation
+not found", so the sidebar starts a new chat when either selection changes.
+
+If the user's message states one word limit ("a 350-word summary") and the
+finished draft's body is over it, the backend cuts it automatically, aiming just
+under the limit. It retries once if the cut is still over or below 80% of the
+limit. The count excludes headings, citation and claim tags, and the reviewer note
+below the last `---` line. If the draft is still over, or the cut fails, the reply
+says so.
+Limits are read only from the current message, so a limit from an earlier message
+or a skill's own default isn't enforced.
+
+### Chat API
+
+`POST /agentic-cms/chat` with the user's CMS token:
+
+```json
+{ "projectId": "…", "sprintId": "… (optional)", "conversationId": "… (optional)", "message": "…" }
+```
+
+The user must have access to `projectId` (same rules as the projects pages);
+otherwise the response is a plain 403 before any model call. The reply is a
+`text/event-stream` of `data: <json>` events, always ending with `done`:
+
+| Event | Meaning |
+| --- | --- |
+| `{"type":"conversation","id"}` | Send this id back as `conversationId` to continue the chat |
+| `{"type":"text_delta","text"}` | Next piece of the answer |
+| `{"type":"text_replace","text"}` | Replaces this reply's text so far (sent after a word-limit cut) |
+| `{"type":"tool_start","id","name","label"}` / `{"type":"tool_end","id","ok","note?"}` | Tool progress for the UI |
+| `{"type":"sources","sources":[{"id","title","url"}]}` | Sources found so far this turn, so `[id]` links work while streaming; the last event of a turn lists only the cited ones, including any from earlier turns. An `id` means the same URL for the whole conversation |
+| `{"type":"error","kind","retryable","message"}` | A user-safe error (see below) |
+| `{"type":"done"}` | End of the reply |
+
+Error `kind`s: `config` (server setting such as a missing/rejected key, model
+notice not accepted, wrong `LUMEN_MODEL` — an admin must fix it), `rate_limit`
+(Lumen busy, budget used up, or the user's hourly limit), `model` (Lumen down
+or timed out — retry), `disabled` (flag switched off), `internal`. A failed
+tool or search does not end the reply: the tool reports `ok: false` with a
+note, and the model is told to explain the failure. Logs contain only error
+classes and HTTP statuses — never keys, prompts, queries or replies.
+
+### Adding a tool
+
+Implement `AgentTool` (`backend/src/agentic-cms/tools/tool.types.ts`): a
+name, a description saying when to use it, a zod `input` schema (also sent to
+the model as JSON Schema), a progress `label`, and `run(input, ctx)`. Register
+it in `AgenticCmsModule` and `ToolRegistry`. Tools must read the project from
+`ctx.projectId`/`ctx.sprintId` — already access-checked — and never accept a
+project id from the model. Throw `ToolFailure(note, modelMessage)` for an
+expected failure. The five CMS read tools are registered this way over CmsReadService.
+
+### Adding a skill
+
+See [agentic-cms/skills/README.md](../agentic-cms/skills/README.md). The bot
+sees each skill's name and description, and loads the full instructions with
+`load_skill` when a request matches.
+
+### Shared deployment configuration
+
+The agent runs inside the existing NestJS backend service, so there is no
+separate service. Set these on that backend's Render Environment settings
+(staging: `otcr-dashboard-staging-api`) and redeploy:
+
+| Variable | Value |
+| --- | --- |
+| `LUMEN_API_KEY` | Isaiah's key (secret; enter it only in Render) |
+| `LUMEN_BASE_URL` | `https://lumen.ncsa.illinois.edu/v1` (the default if unset) |
+| `LUMEN_MODEL` | `deepseek-v4.1-flash` (the default if unset) |
+| `TAVILY_API_KEY` | Shared Tavily key for web search (secret; optional) |
+| `OTCR_BOT_MAX_MESSAGES_PER_HOUR` | Per-user limit, default `60` |
+| `AGENTIC_CMS_ALLOWED_EMAILS` | Pilot emails, comma-separated |
+| `AGENTIC_CMS_ENABLED` | `true` only when the pilot starts; otherwise `false` |
+
+The Lumen account behind `LUMEN_API_KEY` must have acknowledged the model's
+notice. Verify the deployment with `GET /agentic-cms/status` as a pilot user:
+`modelConfigured` should be `true`, and `skills` should list the skills.
+
+The backend looks for skills at `<repo>/agentic-cms/skills/`. After deploying,
+check that `/agentic-cms/status` lists the skills: if it is empty, the service
+cannot see files outside `backend/`, so set `AGENTIC_CMS_SKILLS_DIR` or copy
+the folder in during the build. Two further caveats need review before a pilot: the staging Blueprint's `buildFilter` does not include
+`agentic-cms/**`, so skill-only changes do not trigger a redeploy; and
+`backend/Dockerfile.prod` copies only `backend/`, so a Docker deployment needs
+the skills folder copied in (or `AGENTIC_CMS_SKILLS_DIR` pointed at it).
+
+### Known limitations (Week 1 prototype)
+
+- Conversation history is in memory: lost on restart and not shared between
+  server instances. The per-user hourly limit resets with it.
+- Search excerpts are unverified leads. There is no full-page `read_web_source` yet.
+- Week 2 review UI, review skills, and native document comments are not connected.
+
 ## Where each group builds
 
 | Group                        | Required integration boundary                                                                                                                                                                                          |
@@ -122,8 +279,11 @@ workers/listeners in constructors, module imports or startup hooks. Standalone
 MCP servers and WebSockets are not automatically covered by the HTTP guard;
 they require an equivalent server-side gate and review before integration.
 
-The Lumen variables are a configuration contract for Group 1. The MCP transport
-and read tools are implemented; they do not require an LLM client or model key.
+OTCR Bot calls CmsReadService in-process for get_project_context, list_workstreams,
+get_workstream, list_deliverables and get_deliverable. The MCP HTTP endpoint remains
+for independent clients. Skills loaded are research, whitepaper-writing and
+consulting-slides. Web search citations are live when a search key is configured.
+Full-source web reading, persistent chat history, document review and editors are not.
 
 ## Required checks and PR review
 
