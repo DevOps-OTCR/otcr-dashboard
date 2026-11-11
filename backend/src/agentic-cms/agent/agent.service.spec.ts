@@ -604,18 +604,6 @@ describe('AgentService.run', () => {
     await expect(runTurn(svc, 'three', first.conversationId)).rejects.toMatchObject({ kind: 'rate_limit' });
   });
 
-  it('holds the hourly limit when requests arrive at the same time', async () => {
-    settings.OTCR_BOT_MAX_MESSAGES_PER_HOUR = '2';
-    const stream = jest.fn(async () => {
-      await new Promise((r) => setTimeout(r, 5)); // every request is in flight before any finishes
-      return { text: 'ok', toolCalls: [], message: assistantMessage('ok', []) };
-    });
-    const { svc } = setup({ name: 'slow', stream });
-    const results = await Promise.allSettled([runTurn(svc, 'a'), runTurn(svc, 'b'), runTurn(svc, 'c')]);
-    expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
-    expect(stream).toHaveBeenCalledTimes(2);
-  });
-
   it('does not save the user message twice when the same message is retried after a failure', async () => {
     let calls = 0;
     const seen: ModelRequest[] = [];

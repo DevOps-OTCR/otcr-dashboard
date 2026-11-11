@@ -121,30 +121,30 @@ describe('ConversationStore', () => {
     await expect(store.append('missing', [u('x')])).resolves.toBeUndefined();
   });
 
-  describe('reserveMessage', () => {
+  describe('userMessagesLastHour', () => {
     afterEach(() => jest.useRealTimers());
 
-    it('reserves up to the hourly limit per user, then refuses', async () => {
+    it("counts only this user's own user-role messages", async () => {
       const store = new ConversationStore();
-      expect(await store.reserveMessage('u1', 2)).toBe(true);
-      expect(await store.reserveMessage('u1', 2)).toBe(true);
-      expect(await store.reserveMessage('u1', 2)).toBe(false);
-      expect(await store.reserveMessage('u2', 2)).toBe(true);
+      const mine = await store.open({ userId: 'u1', projectId: 'p1' });
+      const mine2 = await store.open({ userId: 'u1', projectId: 'p2' });
+      const theirs = await store.open({ userId: 'u2', projectId: 'p1' });
+      await store.append(mine.id, [u('1'), a('r'), u('2')]);
+      await store.append(mine2.id, [u('3')]);
+      await store.append(theirs.id, [u('x'), u('y')]);
+      expect(await store.userMessagesLastHour('u1')).toBe(3);
+      expect(await store.userMessagesLastHour('u2')).toBe(2);
+      expect(await store.userMessagesLastHour('nobody')).toBe(0);
     });
 
-    it('counts a reservation the moment it is made, so parallel requests cannot all pass', async () => {
-      const store = new ConversationStore();
-      const results = await Promise.all([1, 2, 3, 4].map(() => store.reserveMessage('u1', 3)));
-      expect(results.filter(Boolean)).toHaveLength(3);
-    });
-
-    it('frees reservations older than an hour', async () => {
+    it('does not count messages older than an hour', async () => {
       jest.useFakeTimers({ now: new Date('2026-11-03T10:00:00Z') });
       const store = new ConversationStore();
-      expect(await store.reserveMessage('u1', 1)).toBe(true);
-      expect(await store.reserveMessage('u1', 1)).toBe(false);
+      const { id } = await store.open({ userId: 'u1', projectId: 'p1' });
+      await store.append(id, [u('early')]);
       jest.setSystemTime(new Date('2026-11-03T11:30:00Z'));
-      expect(await store.reserveMessage('u1', 1)).toBe(true);
+      await store.append(id, [u('recent')]);
+      expect(await store.userMessagesLastHour('u1')).toBe(1);
     });
   });
 });

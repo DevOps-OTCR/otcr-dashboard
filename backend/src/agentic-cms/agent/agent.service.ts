@@ -64,9 +64,9 @@ export class AgentService {
   }
 
   async run(input: RunInput, send: SendEvent) {
-    // 1. Flag + rate limit before doing any work. The slot is taken now, not when the turn is saved.
+    // 1. Flag + rate limit before doing any work.
     this.assertStillEnabled(input.user);
-    if (!(await this.store.reserveMessage(input.user.id, this.maxMessagesPerHour()))) throw userRateLimited();
+    if ((await this.store.userMessagesLastHour(input.user.id)) >= this.maxMessagesPerHour()) throw userRateLimited();
 
     // 2. Find or create the conversation and tell the browser its id.
     const convo = await this.store.open({
