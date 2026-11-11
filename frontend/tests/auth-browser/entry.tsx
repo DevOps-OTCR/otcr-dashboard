@@ -7,7 +7,7 @@ import { AuthApiSync } from '@/components/AuthApiSync';
 import { RoleDashboardRedirect } from '@/components/RoleDashboardRedirect';
 import { usePathname, useRouter } from 'next/navigation';
 import { msalConfig } from '@/lib/msal-config';
-import { beginCmsSignIn, completeCmsSignIn, CMS_SESSION_KEY } from '@/lib/cms-session';
+import { beginCmsSignIn, completeCmsSignIn, shareCmsSignIn, CMS_SESSION_KEY } from '@/lib/cms-session';
 import { api } from '@/lib/api';
 
 const tenant = '00000000-0000-4000-8000-000000000002';
@@ -29,6 +29,14 @@ const actualAcquire = instance.acquireTokenSilent.bind(instance);
 let interactiveLogins = 0;
 let releaseToken: (() => Promise<void>) | undefined;
 let sessionToken: Promise<string | null> | undefined;
+let heldSessionEvents: StorageEvent[] | null = null;
+const holdSessionEvent = (event: StorageEvent) => {
+  if (heldSessionEvents === null || event.key !== CMS_SESSION_KEY) return;
+  event.stopImmediatePropagation();
+  heldSessionEvents.push(event);
+};
+// Register before React mounts the provider's storage listener.
+window.addEventListener('storage', holdSessionEvent);
 
 function resultFor(email = 'pm@example.test'): AuthenticationResult {
   const now = Math.floor(Date.now() / 1000);
@@ -47,20 +55,26 @@ function resultFor(email = 'pm@example.test'): AuthenticationResult {
 
 // Only the identity-provider exchange is simulated. The SDK initializes, encrypts,
 // stores, imports, reads and clears real MSAL caches in independent browser pages.
-async function seed(email = 'pm@example.test') {
+async function seed(email = 'pm@example.test', shareAfterSession = false) {
   await instance.initialize();
   beginCmsSignIn();
   const result = resultFor(email);
   await instance.hydrateCache(result, { scopes: ['User.Read'], account: result.account });
+  // Real MSAL v5 broadcasts only the account with LOGIN_SUCCESS.
   const events = new BroadcastChannel('msal.broadcast.event');
   events.postMessage({ eventType: EventType.LOGIN_SUCCESS, interactionType: InteractionType.Redirect,
-    payload: result, error: null, correlationId: result.correlationId, timestamp: Date.now() });
+    payload: result.account, error: null, correlationId: result.correlationId, timestamp: Date.now() });
   events.close();
+  if (!shareAfterSession) shareCmsSignIn(result);
   completeCmsSignIn(result.account.homeAccountId);
+  if (shareAfterSession) shareCmsSignIn(result);
   instance.setActiveAccount(result.account);
   window.dispatchEvent(new StorageEvent('storage', { key: CMS_SESSION_KEY }));
 }
-instance.loginRedirect = async () => { interactiveLogins += 1; await seed(); };
+// `?realRedirect` keeps MSAL's real redirect flow; the test serves the identity provider.
+if (!new URLSearchParams(location.search).has('realRedirect')) {
+  instance.loginRedirect = async () => { interactiveLogins += 1; await seed(); };
+}
 instance.logoutRedirect = async () => { throw new Error('Must not sign out of Microsoft'); };
 instance.logoutPopup = async () => { throw new Error('Must not sign out of Microsoft'); };
 
@@ -74,6 +88,17 @@ if (new URLSearchParams(location.search).has('slow')) {
 
 const testApi = {
   seed,
+  holdSessionNotifications: () => {
+    heldSessionEvents = [];
+  },
+  pendingSessionNotifications: () => heldSessionEvents?.length ?? 0,
+  releaseSessionNotifications: () => {
+    const events = heldSessionEvents ?? [];
+    heldSessionEvents = null;
+    for (const event of events) window.dispatchEvent(new StorageEvent('storage', {
+      key: event.key, oldValue: event.oldValue, newValue: event.newValue, storageArea: localStorage,
+    }));
+  },
   interactiveLogins: () => interactiveLogins,
   accounts: () => instance.getAllAccounts().map(account => account.username),
   authHeader: () => api.defaults.headers.common.Authorization ?? null,

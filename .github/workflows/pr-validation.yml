@@ -123,6 +123,7 @@ jobs:
         working-directory: backend
     env:
       DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      CMS_READ_TEST_DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
     steps:
       - uses: actions/checkout@v4
         with:
@@ -143,7 +144,8 @@ jobs:
       - name: Check TypeScript
         run: npx tsc --noEmit
       - name: Run unit tests
-        run: npm test -- --runInBand
+        # ioredis keeps retrying when Redis is down, so Jest will not exit on its own.
+        run: npm test -- --runInBand --forceExit
       - name: Enforce Agentic CMS feature boundaries
         run: |
           node ../scripts/check-agentic-boundaries.cjs

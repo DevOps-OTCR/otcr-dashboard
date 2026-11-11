@@ -5,7 +5,7 @@ const ts = require('../backend/node_modules/typescript');
 const backendFeature = 'backend/src/agentic-cms/';
 const frontendFeature = 'frontend/features/agentic-cms/';
 const frontendGate = 'frontend/components/AgenticCmsFeature.tsx';
-const aiPackage = /^(?:openai(?:\/|$)|@anthropic-ai\/sdk(?:\/|$)|@modelcontextprotocol\/sdk(?:\/|$)|@langchain\/|langgraph(?:\/|$))/;
+const aiPackage = /^(?:openai(?:\/|$)|@anthropic-ai\/sdk(?:\/|$)|@modelcontextprotocol\/|@langchain\/|langgraph(?:\/|$))/;
 
 function sourceFiles(root, directory) {
   const absolute = path.join(root, directory);
