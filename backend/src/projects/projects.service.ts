@@ -3,6 +3,7 @@ import {
   BadRequestException,
   NotFoundException,
   InternalServerErrorException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -903,6 +904,31 @@ export class ProjectsService {
     });
 
     return !!member;
+  }
+
+  async assertProjectAccess(projectId: string, user: { id: string; role: string }) {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, pmId: true },
+    });
+    if (!project) throw new NotFoundException('Project not found');
+    await this.assertAccessToLoadedProject(project, user);
+    return project;
+  }
+
+  async assertAccessToLoadedProject(project: { id: string; pmId: string }, user: { id: string; role: string }) {
+    if (user.role === 'ADMIN' || user.role === 'LC' || user.role === 'EXECUTIVE') {
+      return;
+    }
+
+    if (user.role === 'PM' && project.pmId === user.id) {
+      return;
+    }
+
+    const isMember = await this.isMember(project.id, user.id);
+    if (!isMember) {
+      throw new ForbiddenException('You do not have access to this project');
+    }
   }
 
   async getSprintConfig(projectId: string) {

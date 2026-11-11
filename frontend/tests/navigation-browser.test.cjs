@@ -24,7 +24,7 @@ async function setup(t, initialPath, role = 'PM') {
     return route.fulfill({ contentType: 'text/html', body: '<p>Calendar fixture</p>' });
   });
   await context.route('http://navigation.test/**', route => route.fulfill({
-    contentType: route.request().url().endsWith('/bundle.js') ? 'text/javascript' : 'text/html',
+    contentType: route.request().url().endsWith('/bundle.js') ? 'text/javascript; charset=utf-8' : 'text/html',
     body: route.request().url().endsWith('/bundle.js') ? bundle : document,
   }));
   const page = await context.newPage();
@@ -32,7 +32,7 @@ async function setup(t, initialPath, role = 'PM') {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   t.after(() => assert.deepEqual(errors, []));
-  const state = { calls: [], gate: null, failSprints: false, slowGate: null, calendarLoads: 0, eventTitle: 'Team weekly check-in',
+  const state = { role, calls: [], gate: null, failSprints: false, slowGate: null, calendarLoads: 0, eventTitle: 'Team weekly check-in',
     alumniGate: null, failAlumni: false };
   await page.route('**/api/**', async route => {
     const pathname = new URL(route.request().url()).pathname.slice(4);
@@ -41,7 +41,7 @@ async function setup(t, initialPath, role = 'PM') {
     if (state.gate && pathname !== '/auth/role' && pathname !== '/notifications/my') await state.gate;
     if (state.alumniGate && pathname === '/alumni') await state.alumniGate;
     if (pathname === '/test-write') state.eventTitle = 'Updated team check-in';
-    const payload = responseFor(pathname, role);
+    const payload = responseFor(pathname, state.role);
     if (pathname === '/attendance/events') payload.events = payload.events.map(event => ({ ...event, title: state.eventTitle }));
     const failed = (state.failSprints && pathname.endsWith('/sprints')) || (state.failAlumni && pathname === '/alumni');
     await route.fulfill({ status: failed ? 503 : 200, contentType: 'application/json',
@@ -182,6 +182,7 @@ for (const width of [375, 768, 1440]) {
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify(payload) });
     });
     await open();
+    await page.getByRole('button', { name: 'Subtasks · 0/1 done', exact: true }).click();
     await page.getByLabel('Subtask title', { exact: true }).waitFor();
     await page.addStyleTag({ content: styles });
     await page.getByLabel('New subtask title', { exact: true }).fill('New subtask');
@@ -203,6 +204,47 @@ for (const width of [375, 768, 1440]) {
     }
   });
 }
+
+test('deliverable subtasks start collapsed, toggle independently, and keep unsaved input', async t => {
+  const { page, open } = await setup(t, '/deliverables');
+  await page.route('**/api/projects/*/sprints', route => {
+    const payload = responseFor('/projects/team-1/sprints', 'PM');
+    payload[0].deliverables.push({ id: 'team-1-analysis', title: 'team-1 Analysis', status: 'IN_PROGRESS',
+      deadline: '2026-10-18T23:00:00Z', assignees: [], subtasks: [
+        { id: 'subtask-1', title: 'Gather data', assigneeId: 'u-1', dueDate: null, completed: true },
+        { id: 'subtask-2', title: 'Build model', assigneeId: null, dueDate: null, completed: false },
+      ] });
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(payload) });
+  });
+  await open();
+  const toggles = page.getByRole('button', { name: /^Subtasks · \d+\/\d+ done$/ });
+  await toggles.first().waitFor();
+  assert.deepEqual(await toggles.allTextContents(), ['Subtasks · 0/0 done', 'Subtasks · 1/2 done']);
+  for (const toggle of await toggles.all()) {
+    assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+    const panel = page.locator(`[id="${await toggle.getAttribute('aria-controls')}"]`);
+    assert.equal(await panel.isHidden(), true);
+  }
+  assert.equal(await page.getByText('No subtasks yet.').first().isVisible(), false);
+  assert.equal(await page.getByLabel('New subtask title', { exact: true }).first().isVisible(), false);
+  assert.equal(await page.getByLabel('Subtask title', { exact: true }).first().isVisible(), false);
+
+  const [first, second] = await toggles.all();
+  await first.focus();
+  await page.keyboard.press('Enter');
+  assert.equal(await first.getAttribute('aria-expanded'), 'true');
+  assert.equal(await second.getAttribute('aria-expanded'), 'false');
+  const firstPanel = page.locator(`[id="${await first.getAttribute('aria-controls')}"]`);
+  await firstPanel.getByText('No subtasks yet.').waitFor();
+  await firstPanel.getByLabel('New subtask title', { exact: true }).fill('Draft subtask');
+
+  await first.focus();
+  await page.keyboard.press('Space');
+  assert.equal(await first.getAttribute('aria-expanded'), 'false');
+  assert.equal(await firstPanel.isHidden(), true);
+  await first.click();
+  assert.equal(await firstPanel.getByLabel('New subtask title', { exact: true }).inputValue(), 'Draft subtask');
+});
 
 test('navigation stays usable during loading and Slides does not fetch twice', async t => {
   const { page, state, nav, open } = await setup(t, '/deliverables');
@@ -247,6 +289,120 @@ test('returning to a tab restores its project and content during a failed refres
   release();
   await page.getByText('Failed to load slides. Please try again.', { exact: true }).waitFor();
   assert.equal(await page.getByText('team-2 Draft deck', { exact: true }).isVisible(), true);
+});
+
+test('Teams first visit keeps the navbar visible and return visits restore the selected team without requests', async t => {
+  const { page, state, nav, open } = await setup(t, '/teams');
+  let release;
+  state.gate = new Promise(resolve => { release = resolve; });
+  await open();
+  await page.getByText('Loading teams...', { exact: true }).waitFor();
+  assert.equal(await nav('Attendance').isVisible(), true);
+  release();
+  await page.getByRole('button', { name: /Team Two/ }).click();
+  await page.getByRole('heading', { name: 'Team Two', exact: true }).waitFor();
+  await page.waitForFunction(() => window.navigationTest.readSnapshot(JSON.stringify(['teams', 'pm@example.test', null]))?.selectedTeamId === 'team-2');
+  const requests = state.calls.length;
+  await nav('Attendance').click();
+  await page.getByText('Team weekly check-in', { exact: true }).waitFor();
+  const afterAttendance = state.calls.length;
+  await nav('Teams').click();
+  assert.equal(await page.getByRole('heading', { name: 'Team Two', exact: true }).isVisible(), true);
+  assert.equal(await page.getByText('Loading teams...', { exact: true }).count(), 0);
+  await page.getByRole('button', { name: 'Back to teams', exact: true }).waitFor();
+  // Only the role and notification checks may run while cached team data is fresh.
+  assert.deepEqual(state.calls.slice(afterAttendance).filter(path => path !== '/auth/role' && path !== '/notifications/my'), []);
+  assert.ok(requests > 0);
+});
+
+test('Deliverables and Client Notes keep restored content when an expired refresh fails', async t => {
+  const { page, state, nav, open } = await setup(t, '/deliverables');
+  let failNotes = false;
+  await page.route(url => url.pathname === '/api/deliverables', route => route.fulfill({ status: failNotes ? 503 : 200,
+    contentType: 'application/json', body: JSON.stringify(failNotes ? { message: 'Temporary outage' } : responseFor('/deliverables', 'PM')) }));
+  await open();
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  await nav('Client Call Notes').click();
+  await page.getByText('Client kickoff notes', { exact: true }).waitFor();
+  await nav('Attendance').click();
+  await page.getByText('Team weekly check-in', { exact: true }).waitFor();
+  await page.clock.install({ time: new Date() });
+  await page.clock.fastForward(121000);
+  state.failSprints = true;
+  failNotes = true;
+  await nav('Deliverables').click();
+  assert.equal(await page.getByText('team-1 Research', { exact: true }).isVisible(), true);
+  await page.getByText('Temporary outage', { exact: true }).waitFor();
+  assert.equal(await page.getByText('team-1 Research', { exact: true }).isVisible(), true);
+  await nav('Client Call Notes').click();
+  assert.equal(await page.getByText('Client kickoff notes', { exact: true }).isVisible(), true);
+  await page.getByRole('alert').getByText('Could not refresh client notes. Showing previously loaded notes.', { exact: true }).waitFor();
+  assert.equal(await page.getByText('Client kickoff notes', { exact: true }).isVisible(), true);
+  assert.equal(await page.getByRole('status').count(), 0);
+});
+
+test('Client Notes discards restored data after a confirmed role change, including a failed refresh', async t => {
+  const { page, state, nav, open } = await setup(t, '/client-notes', 'ADMIN');
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  let failNotes = true;
+  await page.route(url => url.pathname === '/api/deliverables', async route => {
+    const admin = state.role === 'ADMIN';
+    if (!admin) await gate;
+    const notes = responseFor('/deliverables', state.role).map(note => ({
+      ...note, title: admin ? 'Admin client note' : 'PM client note',
+    }));
+    await route.fulfill({ status: !admin && failNotes ? 503 : 200, contentType: 'application/json',
+      body: JSON.stringify(!admin && failNotes ? { message: 'Temporary outage' } : notes) });
+  });
+  await page.route(url => url.pathname === '/api/projects', route => route.fulfill({ contentType: 'application/json',
+    body: JSON.stringify({ projects: responseFor('/projects', state.role).projects.slice(state.role === 'ADMIN' ? 0 : 1) }) }));
+  await open();
+  await page.getByRole('heading', { name: 'Admin client note', exact: true }).waitFor();
+  await page.clock.install({ time: new Date() });
+  await nav('Forms').click();
+  await page.getByText('Dashboard Feedback Form', { exact: true }).waitFor();
+  // Refresh the note cache just before the five-minute role cache expires.
+  await page.clock.fastForward(271000);
+  await nav('Client Call Notes').click();
+  await page.waitForFunction(() => window.navigationTest.readResource('/deliverables?limit=200'));
+  await nav('Forms').click();
+  await page.getByText('Dashboard Feedback Form', { exact: true }).waitFor();
+  await page.clock.fastForward(31000);
+  state.role = 'PM';
+  const refresh = page.waitForRequest(request => new URL(request.url()).pathname === '/api/deliverables');
+  await nav('Client Call Notes').click();
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('otcr_role_cache:pm@example.test'))?.role === 'PM');
+  await refresh;
+  assert.equal(await page.getByRole('heading', { name: 'Admin client note', exact: true }).count(), 0);
+  assert.equal(await page.evaluate(() => window.navigationTest.readSnapshot(JSON.stringify(['client-notes', 'pm@example.test', null]))), undefined);
+  release();
+  await page.getByRole('alert').getByText('Could not load client notes.', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('heading', { name: 'Admin client note', exact: true }).count(), 0);
+  assert.equal(await page.locator('main select option').filter({ hasText: 'Team One' }).count(), 0);
+  failNotes = false;
+  await page.getByRole('button', { name: 'Refresh page data', exact: true }).click();
+  await page.getByRole('heading', { name: 'PM client note', exact: true }).waitFor();
+  await page.waitForFunction(() => window.navigationTest.readSnapshot(JSON.stringify(['client-notes', 'pm@example.test', null]))?.notes[0]?.title === 'PM client note');
+});
+
+test('navbar refresh bypasses fresh cached data while restored content stays visible', async t => {
+  const { page, state, open } = await setup(t, '/alumni-database');
+  await open();
+  await page.getByRole('searchbox').fill('Example');
+  const rows = await page.locator('tbody').innerText();
+  let release;
+  state.alumniGate = new Promise(resolve => { release = resolve; });
+  const refresh = page.waitForRequest('**/api/alumni');
+  await page.getByRole('button', { name: 'Refresh page data', exact: true }).click();
+  await refresh;
+  assert.equal(await page.getByRole('searchbox').inputValue(), 'Example');
+  assert.equal(await page.locator('tbody').innerText(), rows);
+  assert.equal(await page.getByRole('status').count(), 0);
+  release();
+  await page.waitForFunction(() => window.navigationTest.readResource('/alumni'));
+  assert.equal(state.calls.filter(path => path === '/alumni').length, 2);
+  assert.equal(await page.getByRole('searchbox').inputValue(), 'Example');
 });
 
 test('writes invalidate other tabs and logout clears cached data', async t => {
@@ -484,7 +640,7 @@ test('Workstream and W2M restore selected content while expired resources refres
 });
 
 test('Overview shares sprint requests and retains the calendar across routes and failed refreshes', async t => {
-  const { page, state, nav, open } = await setup(t, '/pm');
+  const { page, state, nav, open } = await setup(t, '/overview');
   await open();
   await page.getByText('team-1 Research', { exact: true }).waitFor();
   const iframe = page.locator('iframe');
@@ -512,17 +668,31 @@ test('Overview shares sprint requests and retains the calendar across routes and
   assert.equal(await page.getByText('team-1 Research', { exact: true }).isVisible(), true);
   state.gate = null;
   state.failSprints = false;
-  for (const path of ['/lc', '/partner', '/consultant']) {
-    await page.evaluate(path => window.navigationTest.navigate(path), path);
-    await page.getByText('team-1 Draft deck', { exact: true }).waitFor();
-    assert.equal(await iframe.isVisible(), true);
-    assert.equal(await page.evaluate(() => document.querySelector('iframe') === window.originalCalendar), true);
-  }
+  await page.evaluate(() => window.navigationTest.navigate('/consultant'));
+  await page.getByText('team-1 Draft deck', { exact: true }).waitFor();
+  assert.equal(await iframe.isVisible(), true);
+  assert.equal(await page.evaluate(() => document.querySelector('iframe') === window.originalCalendar), true);
   assert.equal(state.calendarLoads, 1);
 });
 
+test('legacy role overview URLs redirect to the canonical Overview', async t => {
+  const { page, nav, open } = await setup(t, '/pm');
+  await open();
+  await page.waitForURL('**/overview');
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  await page.evaluate(() => { window.originalCalendar = document.querySelector('iframe'); });
+  for (const path of ['/lc', '/partner/', '/pm/']) {
+    await page.evaluate(path => window.navigationTest.navigate(path), path);
+    await page.waitForURL('**/overview');
+    await page.getByText('team-1 Research', { exact: true }).waitFor();
+    assert.match(await nav('Overview').getAttribute('class'), /text-\[var\(--primary\)\]/);
+    assert.equal(await page.evaluate(() => document.querySelector('iframe') === window.originalCalendar), true);
+  }
+  assert.equal(await nav('Overview').getAttribute('href'), '/overview');
+});
+
 test('Pages trailing-slash routes keep the navbar and overview calendar', async t => {
-  const { page, nav, open } = await setup(t, '/pm/');
+  const { page, nav, open } = await setup(t, '/overview/');
   await open();
   await page.getByText('team-1 Research', { exact: true }).waitFor();
   assert.equal(await nav('Workstream').isVisible(), true);
@@ -534,7 +704,7 @@ test('Pages trailing-slash routes keep the navbar and overview calendar', async 
 });
 
 test('Light/Dark toggle persists and syncs without replacing icons or reloading the calendar', async t => {
-  const { page, state, open } = await setup(t, '/pm');
+  const { page, state, open } = await setup(t, '/overview');
   await open();
   await page.getByText('team-1 Research', { exact: true }).waitFor();
   await page.locator('iframe').waitFor();
@@ -786,7 +956,7 @@ test('admin navbar retains People on Overview and fits without horizontal scroll
   await page.getByRole('heading', { name: 'People directory' }).waitFor();
   await page.addStyleTag({ content: styles });
   await nav('Overview').click();
-  await page.waitForURL('**/pm');
+  await page.waitForURL('**/overview');
   await page.getByText('team-1 Research', { exact: true }).waitFor();
   await nav('People').waitFor();
   for (const width of [1440, 375]) {
@@ -797,10 +967,28 @@ test('admin navbar retains People on Overview and fits without horizontal scroll
   await page.getByRole('heading', { name: 'People directory' }).waitFor();
 });
 
+test('admin View as on Overview updates navbar permissions without leaving the route', async t => {
+  const { page, nav, open } = await setup(t, '/overview', 'ADMIN');
+  await open();
+  await page.getByText('team-1 Research', { exact: true }).waitFor();
+  await nav('People').waitFor();
+  await page.getByRole('button', { name: /View as/ }).click();
+  await page.getByRole('button', { name: 'Lead Consultant', exact: true }).click();
+  await page.locator('header').getByText('Lead Consultant', { exact: true }).first().waitFor();
+  await nav('People').waitFor({ state: 'detached' });
+  assert.equal(new URL(page.url()).pathname, '/overview');
+  await page.getByRole('button', { name: /View as/ }).click();
+  await page.getByRole('button', { name: 'Administrator', exact: true }).click();
+  await nav('People').waitFor();
+  assert.equal(new URL(page.url()).pathname, '/overview');
+});
+
 test('admin directory filters, confirms role updates, and shows failures', async t => {
   const { page, nav, open, writes, failWrites } = await peopleSetup(t);
   await open(); await page.getByRole('heading', { name: 'People directory' }).waitFor();
   assert.equal(await nav('People').isVisible(), true);
+  await page.getByLabel('Search people', { exact: true }).fill('CASEY@EXAMPLE.TEST');
+  await page.getByText('casey@example.test', { exact: true }).waitFor();
   await page.getByLabel('Search people', { exact: true }).fill('casey');
   assert.equal(await page.getByText('riley@example.test', { exact: true }).count(), 0);
   await page.getByLabel('Role filter', { exact: true }).selectOption('PM');

@@ -160,3 +160,81 @@ describe('onboarding review', () => {
     expect(f.tx.allowedEmail.updateMany).not.toHaveBeenCalled();
   });
 });
+
+
+describe('People encoded-name normalization', () => {
+  test.each([
+  [
+    "plain names",
+    "  Casey  ",
+    " Test ",
+    "Casey",
+    "Test"
+  ],
+  [
+    "UTF-8 JSON",
+    "eyJuYW1lIjoiSm9zw6kgTXXDsW96In0",
+    null,
+    "José Muñoz",
+    null
+  ],
+  [
+    "UTF-8 JWT",
+    "eyJhbGciOiJub25lIn0.eyJuYW1lIjoiSm9zw6kgTXXDsW96In0.signature",
+    null,
+    "José Muñoz",
+    null
+  ],
+  [
+    "given and family claims",
+    "eyJhbGciOiJub25lIn0.eyJnaXZlbl9uYW1lIjoiQ2FzZXkifQ.signature",
+    "eyJhbGciOiJub25lIn0.eyJmYW1pbHlfbmFtZSI6IlRlc3QifQ.signature",
+    "Casey",
+    "Test"
+  ],
+  [
+    "encoded lastName",
+    "Casey",
+    "eyJsYXN0TmFtZSI6IlRlc3QifQ",
+    "Casey",
+    "Test"
+  ],
+  [
+    "JSON without names",
+    "eyJvaWQiOiJmaXh0dXJlIn0",
+    null,
+    null,
+    null
+  ],
+  [
+    "invalid name claim",
+    "eyJuYW1lIjp7InZhbHVlIjoiQ2FzZXkifX0",
+    null,
+    null,
+    null
+  ],
+  [
+    "malformed JWT",
+    "header.invalid.signature",
+    null,
+    null,
+    null
+  ],
+  [
+    "blank names",
+    "   ",
+    "",
+    null,
+    null
+  ]
+])('%s', async (_label, firstName, lastName, expectedFirst, expectedLast) => {
+    const prisma = { user: { findMany: jest.fn().mockResolvedValue([{
+      id: 'encoded', email: 'encoded@example.test', firstName, lastName,
+      role: 'CONSULTANT', active: true, projectAssignments: [], pmProjects: [],
+    }]) } };
+    const [person] = await new PeopleService(prisma as unknown as PrismaService).list();
+    expect(person.firstName).toBe(expectedFirst);
+    expect(person.lastName).toBe(expectedLast);
+    expect(person.email).toBe('encoded@example.test');
+  });
+});

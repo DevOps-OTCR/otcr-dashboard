@@ -1,0 +1,22 @@
+# Local test database only. Credentials are synthetic and the port is loopback-only.
+name: otcr-cms-test
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: otcr_cms_test
+      POSTGRES_USER: otcr_test
+      POSTGRES_PASSWORD: local-test-only
+    ports:
+      - "127.0.0.1:55439:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U otcr_test -d otcr_cms_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  postgres_test_data:
