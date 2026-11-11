@@ -50,6 +50,34 @@ describe('requestedWordLimit', () => {
     ['Quote: "He said 900 words is too long." Draft a 400-word op-ed.', 400],
     ['From “a 900-word brief” to a 400-word op-ed', 400],
     ['Use the 2,000-word article below. Write 300 words.', 300],
+    // Revision instructions: "<verb> [this/my/the…] <source length> … into/to/down to/as <target>".
+    ['Turn my 900-word notes into a 300-word summary', 300],
+    ['Convert this 1,200-word draft into 400 words', 400],
+    ['Get this 900-word draft down to 300 words', 300],
+    ['Take the 800-word section and cut it to 400 words', 400],
+    ['Shrink 900 words to 300 words', 300],
+    ['Boil my 2,000-word report down to a 500-word brief', 500],
+    ['Reduce from 1,200 to 800 words', 800],
+    ['Please condense my 1,500-word report into a 600-word memo', 600],
+    ['Can you shrink the 700-word intro down to 350 words?', 350],
+    ['Edit my 500-word bio to fit 150 words', 150],
+    ['Bring the 1,000-word draft down to 700 words', 700],
+    ['Rewrite the 1,200-word section as a 400-word overview', 400],
+    ['Revise our 2,500-word whitepaper into a 1,000-word brief', 1000],
+    ['Make the 900-word article into a 300-word post', 300],
+    ['Turn my 300-word notes into a 900-word whitepaper', 900],
+    ['Summarize the 900-word article for a 300-word newsletter slot', 300],
+    // Controls: a noun after the count without "each/per" is still one draft.
+    ['Write a 300-word post for the CEO', 300],
+    ['Write a 300-word executive summary for every reader to skim', 300],
+    // "per the/our…" means "according to", not a per-part budget.
+    ["Write a 500-word memo per the client's request", 500],
+    // A per-part budget for one piece leaves the whole-draft length as the cap.
+    ['Write a 1,500-word paper with a 300-word summary for each section', 1500],
+    ['Write a 500-word memo and a 100-word note for each partner', 500],
+    // Controls: a target after "it" is still a target.
+    ['Make it 250 words', 250],
+    ['Shrink it to 300 words', 300],
   ])('finds the limit in %s', (message, limit) => {
     expect(requestedWordLimit(message)).toBe(limit);
   });
@@ -87,6 +115,55 @@ describe('requestedWordLimit', () => {
     // A range whose lower bound is above the cut's too-short line (80% of 350 = 280).
     ['Write a summary of 300-350 words'],
     ['a 300–350 word summary'],
+    // Two word counts that describe, compare or ask: never a revision target.
+    ['Compare the 900-word version to the 300-word version'],
+    ['My 900-word draft got cut to 300 words by the editor. What do you think?'],
+    ['The 900-word paper was trimmed to 300 words last week; write a new intro'],
+    ['Add a 300-word section to the 900-word paper'],
+    ['Explain why going from 900 words to 300 words loses nuance'],
+    ['Explain why going from 1,200 to 800 words loses nuance'],
+    ['Last time you cut my 900-word draft to 300 words and lost the data'],
+    ['Why did the 1,000-word report shrink to 400 words?'],
+    ['Can you tell me if cutting 900 words to 300 words is too aggressive?'],
+    ['Cutting a 900-word memo to 300 words is hard; give me tips'],
+    ['Should I reduce my 900-word draft to 300 words or keep it?'],
+    ['Get feedback on the 900-word draft before we cut it to 300 words'],
+    ['Take a look at my 900-word draft and tell me if it fits into 300 words'],
+    ['Make sure the 900-word draft maps to the 300-word abstract'],
+    ['Turn off the 300-word limit for the 900-word paper'],
+    ['Cut 900 words to 300 words and also add a 50-word abstract'],
+    // Accepted misses: no direction word, or the verb is not where the sentence starts.
+    ['From 900 words to 300 words, please'],
+    ['Make my 600-word intro 250 words'],
+    ['Get me 3 sources and turn the 900-word draft into 300 words'],
+    ['Take 10 minutes to cut the 900-word draft to 300 words'],
+    ['Cut the 900-word draft for the 300-word slot'],
+    // Per-part budgets written after the noun.
+    ['Write a 300-word post for each platform'],
+    ['Write a 300-word summary per client'],
+    ['Make the 900-word article into a 300-word post for each platform'],
+    ['Turn my 900-word notes into a 300-word summary per client'],
+    // The length of the text being worked on, as the only word count: not a limit.
+    ['Translate the 1,500-word report into Spanish'],
+    ['Proofread my 900-word essay'],
+    ['Review the 900-word draft and fix the flow'],
+    ['Rewrite this 600-word intro in a warmer tone'],
+    ['Summarize this 2,000-word report'],
+    ['Edit our 1,200-word whitepaper for clarity'],
+    ['Expand this 300-word outline into a full paper'],
+    ['Can you check my 800-word draft for errors?'],
+    // An amount to remove, not a length to cut to.
+    ['Cut 300 words from the draft'],
+    ['Trim 100 words from my intro'],
+    ['Shave 50 words off the conclusion'],
+    ['Take out 200 words from the intro'],
+    // A removed amount next to another word count: the other number may limit only part of the reply.
+    ['Cut 1,000 words from the paper and add a 200-word summary'],
+    ['Trim 300 words from the draft and write a 150-word cover note'],
+    ['Remove 100 words from the intro and keep the whole thing at 400 words'],
+    // "from" without a removal verb is not an amount to remove. Must never give 200 (a 1,000-word piece cut to 200).
+    ["Write 1,000 words from the CFO's view, including a 200-word summary"],
+    ['Write a 1,000-word report per our template, with a 200-word summary'],
     // Two different caps with nothing saying which is the total: no check rather than a wrong one.
     ['Write a 350-word summary and keep the appendix under 100 words'],
     ['Write the 350-word summary and a 100-word abstract'],

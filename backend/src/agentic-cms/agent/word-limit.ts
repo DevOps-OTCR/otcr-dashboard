@@ -13,11 +13,30 @@ const NUMBER = String.raw`\d+(?:\.\d+)?k\b|\d{1,3}(?:,\d{3})+|\d+`;
 const BEFORE_FLOOR = /(?:at least|minimum(?: of)?|min\.?|no (?:fewer|less) than|not (?:fewer|less) than|more than|over|above|upwards of)\s+$/i;
 const NEGATED_CAP = /(?:\bno|\bnot|\bnever|n't|\bcannot)\s+(?:\w+\s+){0,2}?(?:more than|over|above|beyond|past|exceed(?:ing)?)\s+$/i;
 const NEGATED_FLOOR = /(?:\bno|\bnot|\bnever|n't)\s+(?:\w+\s+){0,2}?(?:under|below|shorter than|less than|fewer than)\s+$/i;
+/** "per the brief", "per our template": "according to", not a per-part budget. */
+const PER = String.raw`per\s+(?!(?:the|our|your|my|their|its|his|her)\b)\w`;
 /** "each slide", "per competitor", "every topic": any part of the draft, not only listed units. */
-const PER_PART_BEFORE = /\b(?:each|every|per)\s+\w+/i;
+const PER_PART_BEFORE = new RegExp(String.raw`\b(?:(?:each|every)\s+\w|${PER})`, 'i');
 const LIST_BEFORE = /\b(?:list|name|suggest|brainstorm|find)\s+(?:me\s+)?(?:the\s+)?$/i;
 const DESCRIBES_BEFORE = /\b(?:is|was|are|were|has|had|runs?|ran|currently|already)\s+(?:(?:a|an|about|around|roughly|nearly|over|under|just|only)\s+)*$/i;
-const TRANSFORM_THE = /\b(?:summari[sz]e|cut|trim|shorten|condense|edit|revise|rewrite|tighten|reduce|review|proofread|translate|paraphrase)\s+(?:the|this|that|my|our|your|his|her|their|its)\s+$/i;
+/**
+ * A revision instruction names its source length right after the verb that opens the sentence:
+ * "Turn my 900-word notes…", "Can you shrink the 700-word intro…", "Reduce from 1,200…".
+ * An allow-list on purpose: a sentence it doesn't recognise gets no check, never a wrong one.
+ */
+const REVISION_LEAD =
+  /^\s*(?:(?:please|now|ok(?:ay)?|so|can you|could you|would you)[\s,]+)*(?:cut|trim|shorten|condense|reduce|shrink|tighten|compress|pare|boil|bring|get|turn|convert|make|rewrite|revise|edit|summari[sz]e|take|distill|squeeze)\s+(?:(?:it|this|that|these|those|the|my|our|your|his|her|their|its|a|an|from|me)\s+){0,2}$/i;
+/**
+ * "Translate the 1,500-word report", "Proofread my 900-word essay": the length of the text being worked
+ * on. Only used to ignore a number, so a broad list is safe; never applied when the sentence has another word count.
+ */
+const WORK_ON_BEFORE =
+  /\b(?:summari[sz]e|cut|trim|shorten|condense|edit|revise|rewrite|tighten|reduce|review|proofread|translate|paraphrase|polish|improve|fix|format|check|expand|turn|convert|shrink|boil|bring|take|make|adapt|restructure|reorgani[sz]e|critique|assess|evaluate|analy[sz]e|read|update|simplify|clean up)\s+(?:the|this|that|these|those|my|our|your|his|her|their|its)\s+$/i;
+/**
+ * The target follows a direction word: "into a 300-word summary", "down to 300 words", "as a 400-word
+ * overview", "to fit 150 words", "for a 300-word newsletter slot" ("for" only with a/an).
+ */
+const REVISION_TARGET_LEAD = /\b(?:(?:into|to|as|in|fit(?: in(?:to)?)?)\s+(?:(?:a|an)\s+)?|for\s+(?:a|an)\s+)$/i;
 /** "total" next to its own number: "a total of 1,500 words", "1,500 words total", "1,500 words overall". */
 const TOTAL_BEFORE = /\b(?:total|overall|in all|altogether|combined|whole|entire)\b(?:\s+(?:of|is|limit|length|cap|draft|paper|deck))*\s*:?\s*(?:about\s+|around\s+)?$/i;
 const TOTAL_AFTER = /^\s*(?:in )?(?:total|overall|in all|altogether|combined)\b/i;
@@ -25,9 +44,23 @@ const TOTAL_AFTER = /^\s*(?:in )?(?:total|overall|in all|altogether|combined)\b/
 /** Text after "words", up to the end of its sentence. */
 const AFTER_FLOOR = /^\s*(?:minimum|min\b|or (?:more|longer|above)|at (?:the )?least)/i;
 const AFTER_RATE = /^[\s-]*(?:per|a|an|every)[\s-]+(?:minute|min|second|sec|hour)\b/i;
-/** "300 words per topic", "100 words about each competitor", "60 words each". Rates are matched first. */
-const AFTER_PER_PART = /^\s*(?:or (?:fewer|less)\s+)?(?:each\b|apiece\b|per\s+\w|(?:\w+\s+)?(?:each|every)\b)/i;
+/**
+ * "300 words per topic", "100 words about each competitor", "60 words each", and after the noun:
+ * "300-word post for each platform", "300-word summary per client". Rates are matched first.
+ * Only "per/each" after a noun: "for every reader" usually means one draft read by all.
+ */
+const AFTER_PER_PART = new RegExp(
+  String.raw`^\s*(?:or (?:fewer|less)\s+)?(?:each\b|apiece\b|${PER}|(?:\w+\s+)?(?:each|every)\b|(?:[\w-]+\s+){1,3}?(?:${PER}|for each\b|each\b))`,
+  'i',
+);
 const AFTER_SOURCE = /^\s*(?:[\w-]+\s+){0,2}?(?:below|above|attached|pasted|here|I sent|you sent|from earlier)\b/i;
+/**
+ * "Cut 300 words from the draft", "Shave 50 words off": an amount to remove, not a length to cut to.
+ * Needs a removal verb right before the number ("Write 1,000 words from the CFO's view" doesn't qualify),
+ * and applies only to a sentence's only word count (see `revisions`).
+ */
+const AFTER_REMOVED = /^\s*(?:from|off)\b/i;
+const REMOVAL_BEFORE = /\b(?:cut|trim|remove|drop|delete|shave|lose|take out)\s+(?:(?:about|around|roughly|another|an extra|at least)\s+)?$/i;
 
 /** `low` is a range's lower bound ("300-350 words"): a minimum the cut must respect. */
 type Candidate = { value: number; low?: number; start: number; end: number; plus: boolean; phrase: boolean };
@@ -63,7 +96,7 @@ function classify(message: string, c: Candidate): Kind {
   if (c.phrase) return 'cap';
   if (AFTER_RATE.test(after) || LIST_BEFORE.test(before)) return 'ignore';
   if (PER_PART_BEFORE.test(before) || AFTER_PER_PART.test(after)) return 'ignore';
-  if (DESCRIBES_BEFORE.test(before) || TRANSFORM_THE.test(before) || AFTER_SOURCE.test(after)) return 'ignore';
+  if (DESCRIBES_BEFORE.test(before) || AFTER_SOURCE.test(after)) return 'ignore';
   if (NEGATED_FLOOR.test(before)) return 'floor';
   if (NEGATED_CAP.test(before)) return 'cap';
   if (c.plus || BEFORE_FLOOR.test(before) || AFTER_FLOOR.test(after)) return 'floor';
@@ -101,13 +134,57 @@ function candidates(message: string): Candidate[] {
  */
 export function requestedWordLimit(message: string): number | undefined {
   const text = message.normalize('NFKC'); // full-width digits
-  const classified = candidates(text).map((c) => ({ ...c, kind: classify(text, c) }));
+  const found = candidates(text);
+  const { sources, changes } = revisions(text, found);
+  const classified = found.map((c) =>
+    sources.has(c.start)
+      ? { ...c, kind: 'ignore' as Kind } // the length of the text being revised
+      : { ...c, low: changes.has(c.start) ? undefined : c.low, kind: classify(text, c) },
+  );
   const caps = classified.filter((c) => c.kind === 'cap' && c.value >= MIN_LIMIT);
   const limit = pickLimit(text, caps);
   if (limit === undefined) return undefined;
   // A cut may land as low as the too-short line. If the user's own minimum is above it, a check
   // could push a good draft under that minimum, so make none.
   return isTooShort(statedMinimum(text, classified), limit) ? limit : undefined;
+}
+
+/** Text from the start of the sentence containing `index` up to `index` (not limited to a window). */
+function sentenceLead(text: string, index: number) {
+  const before = text.slice(0, index);
+  return before.slice(Math.max(...['.', '!', '?', ';', '\n'].map((c) => before.lastIndexOf(c))) + 1);
+}
+
+/**
+ * Revision instructions in the message. `sources`: word counts that are the length of the text
+ * being revised ("Turn my 900-word notes into a 300-word summary" → 900), recognised only when the
+ * sentence opens with a revision verb right before it, and exactly one other word count follows in
+ * the same sentence after a direction word. `changes`: "Reduce from 1,200 to 800 words", a
+ * from→to change rather than a range, so 1,200 is not a minimum.
+ */
+function revisions(text: string, found: Candidate[]) {
+  const sources = new Set<number>();
+  const changes = new Set<number>();
+  const separated = (a: Candidate, b: Candidate) =>
+    /[.!?;\n]/.test(text.slice(Math.min(a.end, b.end), Math.max(a.start, b.start)));
+  for (const c of found) {
+    // Ignoring a number can leave another as the only cap, so these two apply only to a sentence's only word count.
+    const alone = found.every((o) => o === c || separated(c, o));
+    const before = sentenceBefore(text, c.start);
+    const removed = AFTER_REMOVED.test(sentenceAfter(text, c.end)) && REMOVAL_BEFORE.test(before);
+    if (alone && (WORK_ON_BEFORE.test(before) || removed)) {
+      sources.add(c.start);
+      continue;
+    }
+    if (!REVISION_LEAD.test(sentenceLead(text, c.start))) continue;
+    if (c.low !== undefined && c.low > c.value) {
+      changes.add(c.start);
+      continue;
+    }
+    const sameSentence = found.filter((o) => o.start > c.start && !separated(c, o));
+    if (sameSentence.length === 1 && REVISION_TARGET_LEAD.test(sentenceBefore(text, sameSentence[0].start))) sources.add(c.start);
+  }
+  return { sources, changes };
 }
 
 /** The highest minimum the message states: floor phrases, range lower bounds, and bare "at least N". */
