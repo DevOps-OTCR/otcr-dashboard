@@ -1059,7 +1059,10 @@ export class ProjectsService {
     });
   }
 
-  async listSprints(projectId: string) {
+  async listSprints(
+    projectId: string,
+    options: { includeDraftWorkingLinks?: boolean } = {},
+  ) {
     try {
       const sprints = await this.prisma.$queryRaw<any[]>(Prisma.sql`
         SELECT
@@ -1091,7 +1094,9 @@ export class ProjectsService {
           d."templateKind"::text AS "templateKind",
           d."dueDateSource"::text AS "dueDateSource",
           d."status"::text AS "status",
-          d."completed"
+          d."completed",
+          d."workingLinkUrl",
+          d."workingLinkUpdatedAt"
         FROM "Deliverable" d
         WHERE d."sprintId" IN (${Prisma.join(sprintIds)})
         ORDER BY d."deadline" ASC
@@ -1216,6 +1221,8 @@ export class ProjectsService {
       deliverables.forEach((deliverable) => {
         const sprint = sprints.find((item) => item.id === deliverable.sprintId);
         const existing = bySprint.get(deliverable.sprintId) ?? [];
+        const canSeeWorkingLink =
+          options.includeDraftWorkingLinks === true || sprint?.status === 'RELEASED';
         existing.push({
           id: deliverable.id,
           title: deliverable.title,
@@ -1224,6 +1231,10 @@ export class ProjectsService {
           templateKind: deliverable.templateKind,
           status: deliverable.status,
           completed: deliverable.completed,
+          workingLinkUrl: canSeeWorkingLink ? deliverable.workingLinkUrl ?? null : null,
+          workingLinkUpdatedAt: canSeeWorkingLink
+            ? deliverable.workingLinkUpdatedAt ?? null
+            : null,
           assignees: assignmentsByDeliverable.get(deliverable.id) ?? [],
           subtasks: subtasksByDeliverable.get(deliverable.id) ?? [],
           latestSubmission: latestSubmissionByDeliverable.get(deliverable.id) ?? null,

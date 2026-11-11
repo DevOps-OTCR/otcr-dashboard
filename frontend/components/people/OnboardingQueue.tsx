@@ -25,13 +25,13 @@ export function OnboardingQueue({ requests, busy, onReview }: {
     {visible.map(request => <article key={request.id} aria-label={`Request from ${request.email}`} className="rounded-lg border border-[var(--border)] bg-[var(--secondary)]/50 p-4 space-y-3">
       <div><h3 className="font-semibold">{request.name}</h3><p className="text-sm break-all">{request.email}</p></div>
       <dl className="grid gap-2 text-sm sm:grid-cols-2">
-        <div><dt className="text-[var(--foreground)]/65">Requested role</dt><dd>{ROLE_FULL_LABELS[request.requestedRole]}</dd></div>
-        <div><dt className="text-[var(--foreground)]/65">Status</dt><dd>{request.status}</dd></div>
-        <div><dt className="text-[var(--foreground)]/65">Submitted</dt><dd>{new Date(request.createdAt).toLocaleString()}</dd></div>
-        {request.grantedRole && <div><dt className="text-[var(--foreground)]/65">Granted role</dt><dd>{ROLE_FULL_LABELS[request.grantedRole]}</dd></div>}
-        {request.reviewedAt && <div><dt className="text-[var(--foreground)]/65">Reviewed</dt><dd>{new Date(request.reviewedAt).toLocaleString()}</dd></div>}
-        {request.reviewer && <div><dt className="text-[var(--foreground)]/65">Reviewer</dt><dd>{personName(request.reviewer)}</dd></div>}
-        {request.reviewerNotes && <div className="sm:col-span-2"><dt className="text-[var(--foreground)]/65">Reviewer notes</dt><dd className="whitespace-pre-wrap break-words">{request.reviewerNotes}</dd></div>}
+        <div><dt className="text-[var(--text-muted)]">Requested role</dt><dd>{ROLE_FULL_LABELS[request.requestedRole]}</dd></div>
+        <div><dt className="text-[var(--text-muted)]">Status</dt><dd>{request.status}</dd></div>
+        <div><dt className="text-[var(--text-muted)]">Submitted</dt><dd>{new Date(request.createdAt).toLocaleString()}</dd></div>
+        {request.grantedRole && <div><dt className="text-[var(--text-muted)]">Granted role</dt><dd>{ROLE_FULL_LABELS[request.grantedRole]}</dd></div>}
+        {request.reviewedAt && <div><dt className="text-[var(--text-muted)]">Reviewed</dt><dd>{new Date(request.reviewedAt).toLocaleString()}</dd></div>}
+        {request.reviewer && <div><dt className="text-[var(--text-muted)]">Reviewer</dt><dd>{personName(request.reviewer)}</dd></div>}
+        {request.reviewerNotes && <div className="sm:col-span-2"><dt className="text-[var(--text-muted)]">Reviewer notes</dt><dd className="whitespace-pre-wrap break-words">{request.reviewerNotes}</dd></div>}
       </dl>
       {request.status === 'PENDING' && <div className="space-y-3">
         <label className="flex flex-col gap-1 text-sm">Grant role

@@ -90,7 +90,8 @@ export class ProjectsController {
       return this.projectsService.findByMember(user.id, parsedQuery);
     }
 
-    if (user.role === 'PM' && !query.pmId) {
+    // PMs only list projects they manage; a caller-supplied pmId is ignored.
+    if (user.role === 'PM') {
       return this.projectsService.findAll({ ...parsedQuery, pmId: user.id });
     }
 
@@ -178,7 +179,8 @@ export class ProjectsController {
     }
 
     await this.ensureProjectAccess(project, user);
-    return this.projectsService.listSprints(id);
+    const canManage = ['ADMIN', 'LC'].includes(user.role) || project.pmId === user.id;
+    return this.projectsService.listSprints(id, { includeDraftWorkingLinks: canManage });
   }
 
   @Post(':id/sprints/generate-next')
