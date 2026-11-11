@@ -9,7 +9,7 @@ import { getEffectiveRole } from '@/lib/permissions';
 import { authAPI, setAuthToken, slackAPI } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
 import type { AppRole } from '@/lib/permissions';
-import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
+import { PageLoading } from '@/components/PageLoading';
 import { AppNavbar } from '@/components/AppNavbar';
 
 function parseApiError(err: any, fallback: string): string {
@@ -197,7 +197,7 @@ export default function SlackSettingsPage() {
   };
 
   if (session.loading || !session.isLoggedIn) {
-    return <FullScreenLoader />;
+    return <PageLoading />;
   }
 
   return (

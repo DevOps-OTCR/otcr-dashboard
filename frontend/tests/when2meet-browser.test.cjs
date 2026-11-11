@@ -168,3 +168,44 @@ test('older names-only cached responses do not invent unavailable identities', a
   await popup.getByText('Refresh the page to load full availability details.').waitFor({ state: 'visible' });
   assert.equal(await popup.locator('li').count(), 0);
 });
+
+for (const [width, height] of [[375, 667], [667, 375], [899, 520], [901, 520], [1440, 600]]) {
+  test(`details stay clear of the navbar at ${width}x${height} while scrolling and resizing`, async t => {
+    const members = Array.from({ length: 40 }, (_, i) => member(`member-${i}`, `Consultant ${i} ${'LongName'.repeat(4)}`));
+    const { page, popup } = await setup(t, members, [
+      { slotIndex: 0, names: [], userIds: members.slice(0, 20).map(m => m.id) },
+    ], width, { height });
+    const clearOfNavbar = async label => {
+      const layout = await popup.evaluate(element => {
+        const navbar = document.querySelector('header').getBoundingClientRect();
+        const bounds = element.getBoundingClientRect();
+        const covered = document.elementFromPoint(navbar.left + navbar.width / 2, navbar.bottom - 2);
+        const body = element.querySelector('.w2m-availability-body').getBoundingClientRect();
+        return { navbarBottom: navbar.bottom, top: bounds.top, bottom: bounds.bottom, left: bounds.left, right: bounds.right,
+          bodyHeight: Math.min(body.bottom, bounds.bottom) - body.top,
+          coversNavbar: element.contains(covered), horizontalOverflow: element.scrollWidth > element.clientWidth };
+      });
+      const viewport = page.viewportSize();
+      assert.equal(layout.coversNavbar, false, `${label}: navbar must stay on top`);
+      if (viewport.width <= 900) {
+        assert.ok(layout.top >= layout.navbarBottom - 0.5, `${label}: details must start below the navbar`);
+        assert.ok(layout.bottom <= viewport.height, `${label}: details must stay inside the viewport`);
+        assert.ok(layout.bodyHeight >= 40, `${label}: names must still have room to scroll (${layout.bodyHeight}px)`);
+      }
+      assert.ok(layout.left >= 0 && layout.right <= viewport.width, `${label}: details must not overflow horizontally`);
+      assert.equal(layout.horizontalOverflow, false);
+    };
+    await page.locator('[data-group-slot="0"]').focus();
+    await popup.waitFor({ state: 'visible' });
+    await clearOfNavbar('opened');
+    for (const y of [0, 200, 10000]) {
+      await page.evaluate(y => scrollTo(0, y), y);
+      await clearOfNavbar(`scrolled to ${y}`);
+    }
+    // Narrowing wraps the navbar links onto more rows, so the details must shrink to stay below them.
+    await page.setViewportSize({ width: Math.max(320, width - 300), height });
+    await clearOfNavbar('resized narrower');
+    await page.setViewportSize({ width, height });
+    await clearOfNavbar('resized back');
+  });
+}

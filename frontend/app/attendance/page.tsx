@@ -13,7 +13,6 @@ import {
 } from 'lucide-react';
 import { AppNavbar } from '@/components/AppNavbar';
 import { useAuth } from '@/components/AuthContext';
-import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
 import { PageLoading } from '@/components/PageLoading';
 import { RoleDashboardRedirect } from '@/components/RoleDashboardRedirect';
 import { useNavigationSnapshot } from '@/lib/use-navigation-snapshot';
@@ -499,7 +498,7 @@ export default function AttendancePage() {
   );
 
   if (session.loading || !session.isLoggedIn) {
-    return <FullScreenLoader />;
+    return <PageLoading />;
   }
   if (roleLookupFailed) return <RoleDashboardRedirect onRetry={() => setRoleLookupFailed(false)} />;
 

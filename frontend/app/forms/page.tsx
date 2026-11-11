@@ -7,7 +7,7 @@ import { ClipboardList, MessageSquare, ShieldAlert, TriangleAlert } from 'lucide
 import { AppNavbar } from '@/components/AppNavbar';
 import { useAuth } from '@/components/AuthContext';
 import { RoleDashboardRedirect } from '@/components/RoleDashboardRedirect';
-import FullScreenLoader from '@/components/AuthContext/LoadingScreen';
+import { PageLoading } from '@/components/PageLoading';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { getEffectiveRole, type AppRole } from '@/lib/permissions';
 import { setAuthToken } from '@/lib/api';
@@ -74,7 +74,7 @@ export default function FormsPage() {
   }, [session, roleLookupFailed]);
 
   if (session.loading || !session.isLoggedIn) {
-    return <FullScreenLoader />;
+    return <PageLoading />;
   }
 
   if (roleLookupFailed) return <RoleDashboardRedirect onRetry={() => setRoleLookupFailed(false)} />;

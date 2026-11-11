@@ -233,6 +233,8 @@ model Project {
   id          String        @id @default(cuid())
   name        String
   description String?
+  overview String? @db.Text
+  scope String? @db.Text
   clientName  String?
   googleCalendarId String?
   pmId        String
@@ -254,11 +256,22 @@ model Project {
   sprints      Sprint[]
   attendanceEvents AttendanceEvent[]
   calendarSetting ProjectCalendarSetting?
+  contextNotes ProjectContextNote[]
   when2MeetPolls When2MeetPoll[]
 
   @@index([pmId])
   @@index([status])
   @@index([startDate])
+}
+
+model ProjectContextNote {
+  id String @id @default(cuid())
+  projectId String
+  title String
+  content String @db.Text
+  createdAt DateTime @default(now())
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  @@index([projectId, createdAt])
 }
 
 enum ProjectStatus {

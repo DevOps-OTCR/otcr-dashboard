@@ -4,11 +4,14 @@
  */
 
 import { authAPI } from "./api";
+import { clearNavigationSnapshots } from "./navigation-cache";
+import { clearResourceCache } from "./resource-cache";
 
 export type AppRole = 'CONSULTANT' | 'LC' | 'PM' | 'PARTNER' | 'EXECUTIVE' | 'ADMIN';
 
 const ROLES: AppRole[] = ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'EXECUTIVE', 'ADMIN'];
 const DEV_ROLE_OVERRIDE_KEY = 'otcr_dev_role_override';
+const DEV_ROLE_OVERRIDE_EVENT = 'otcr-dev-role-override';
 const ROLE_CACHE_PREFIX = 'otcr_role_cache:';
 const ROLE_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -35,6 +38,26 @@ export function setDevRoleOverride(role: AppRole | null): void {
     localStorage.setItem(DEV_ROLE_OVERRIDE_KEY, role);
   } else {
     localStorage.removeItem(DEV_ROLE_OVERRIDE_KEY);
+  }
+  window.dispatchEvent(new Event(DEV_ROLE_OVERRIDE_EVENT));
+}
+
+/** Lets a page re-resolve its role when "View as" changes without a route change. */
+export function subscribeDevRoleOverride(listener: () => void): () => void {
+  window.addEventListener(DEV_ROLE_OVERRIDE_EVENT, listener);
+  return () => window.removeEventListener(DEV_ROLE_OVERRIDE_EVENT, listener);
+}
+
+// Roles the API confirmed during this page load. A different role later means page data
+// cached under the previous permissions must not be shown again.
+const confirmedRoles = new Map<string, AppRole>();
+
+function confirmRole(email: string, role: AppRole): void {
+  const previous = confirmedRoles.get(email);
+  confirmedRoles.set(email, role);
+  if (previous && previous !== role) {
+    clearResourceCache();
+    clearNavigationSnapshots();
   }
 }
 
@@ -120,7 +143,10 @@ export async function getEffectiveRole(
   }
   const normalizedEmail = email.toLowerCase();
   const cachedRole = readCachedRole(normalizedEmail);
-  if (cachedRole) return cachedRole;
+  if (cachedRole) {
+    confirmRole(normalizedEmail, cachedRole);
+    return cachedRole;
+  }
 
   const response = await authAPI.getRole({
     headers: { Authorization: `Bearer ${token}` },
@@ -130,24 +156,14 @@ export async function getEffectiveRole(
     throw new Error('The role response did not contain a valid role');
   }
   writeCachedRole(normalizedEmail, role);
+  confirmRole(normalizedEmail, role);
   return role;
 }
 
 /** Default dashboard path for a role (for redirects and admin switcher). */
 export function getDefaultDashboardPath(role: AppRole): string {
-  switch (role) {
-    case 'PM':
-    case 'ADMIN':
-      return '/pm';
-    case 'LC':
-      return '/lc';
-    case 'PARTNER':
-    case 'EXECUTIVE':
-      return '/partner';
-    case 'CONSULTANT':
-    default:
-      return '/consultant';
-  }
+  // Consultants have a distinct assignment view; every other role shares Overview.
+  return role === 'CONSULTANT' ? '/consultant' : '/overview';
 }
 
 export async function getDefaultDashboardPathForUser(

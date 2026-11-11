@@ -27,14 +27,13 @@ otcr-dashboard/
 
 ## Current Role Routing
 
-Authenticated users are redirected to role-specific routes instead of a shared `/dashboard` page.
+Authenticated users are redirected to their role's default route. Navbar permissions come from the resolved role, not the URL.
 
 - `CONSULTANT` -> `/consultant`
-- `LC` -> `/lc`
-- `PM` -> `/pm`
-- `PARTNER` -> `/partner`
-- `EXECUTIVE` -> `/partner`
-- `ADMIN` -> `/pm` (with admin badge, admin switcher, and full access)
+- `LC`, `PM`, `PARTNER`, `EXECUTIVE` -> `/overview`
+- `ADMIN` -> `/overview` (with admin badge, admin switcher, and full access)
+
+The legacy `/pm`, `/lc`, and `/partner` URLs redirect to `/overview` on the client, so old bookmarks keep working in the static export.
 
 ## Local Development
 
@@ -98,6 +97,14 @@ Then run:
 npm run dev
 ```
 
+## Agentic CMS development
+
+All Agentic CMS work must use the backend-controlled release flag, which
+defaults to off. Read [the integration guide](docs/agentic-cms.md) before adding
+bot UI, MCP tools, context uploads, reviews or skills. It documents local Lumen
+setup, pilot access, required code boundaries, rollback and CI checks.
+For Group 2's five read-only tools, see [MCP connection and usage](docs/agentic-cms-mcp.md).
+
 ## Linting
 
 Run the same lint commands used by PR Validation from the repository root:
@@ -119,6 +126,36 @@ npm --prefix backend run lint:prune
 ```
 
 CI only runs `lint` and never updates suppressions. Do not regenerate all suppressions to make new errors pass. See [ESLint bulk suppressions](https://eslint.org/docs/latest/use/suppressions).
+
+## Local database integration tests
+
+Install the locked backend dependencies (`npm --prefix backend ci --ignore-scripts`)
+and start Docker Desktop (Docker Engine with Compose also works on Linux). Then,
+from the repository root:
+
+```bash
+npm --prefix backend run test:integration
+```
+
+This starts the dedicated PostgreSQL 18 test container, waits for it to be ready,
+generates Prisma's client and runs the CMS read-operation integration tests.
+It uses `docker-compose.test.yml`, loopback port **55439**, and a separate
+`otcr_cms_test` database with synthetic local credentials. The command overrides
+database connection variables for its child processes; no production connection
+or real client data is used. Each test run creates a unique schema, applies the
+committed migrations, inserts synthetic records and removes its schema afterward.
+
+```bash
+npm --prefix backend run test:db:up      # Start/wait for PostgreSQL only
+npm --prefix backend run test:db:status  # Show the test container
+npm --prefix backend run test:db:down    # Stop/remove the container; retain its volume
+```
+
+The database remains running after tests for reuse. These commands operate only
+on the `otcr-cms-test` Compose project. They do not start the CMS or enable Agentic
+CMS; a separate development database is still needed when running the application.
+Unit tests (`npm --prefix backend test -- --runInBand`) need no running database.
+CI supplies its own PostgreSQL service and runs the same integration suite.
 
 ## Browser navigation tests
 

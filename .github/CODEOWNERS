@@ -1,0 +1,7 @@
+# Release-boundary changes request the Agentic CMS PM's review.
+/AGENTS.md @Ithomas13
+/docs/agentic-cms.md @Ithomas13
+/backend/src/feature-flags/ @Ithomas13
+/frontend/components/AgenticCmsFeature.tsx @Ithomas13
+/scripts/check-agentic-boundaries* @Ithomas13
+/.github/ @Ithomas13

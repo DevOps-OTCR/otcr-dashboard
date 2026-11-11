@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { webpack } = require('next/dist/compiled/webpack/webpack');
 const root = path.resolve(__dirname, '../..');
-exports.document = '<!doctype html><html><body><div id="root"></div><script src="/bundle.js"></script></body></html>';
+exports.document = '<!doctype html><html><body><div id="root"></div><div id="agentic-cms-root"></div><script src="/bundle.js"></script></body></html>';
 
 // Theme tests need the production styles, including Tailwind's hover transitions.
 exports.buildStyles = async () => {
@@ -36,6 +36,7 @@ exports.buildBundle = async (options = {}) => {
     entry: options.entry ?? path.join(__dirname, 'entry.tsx'),
     output: { path: output, filename: 'bundle.js' },
     resolve: { extensions: ['.tsx', '.ts', '.js', '.cjs'], alias: {
+      ...(options.aliases ?? {}),
       '@': root, 'next/navigation$': path.join(__dirname, 'routing.cjs'),
       'next/link$': path.join(output, 'link.cjs'), 'next/image$': path.join(output, 'image.cjs'),
       'next/font/google$': path.join(output, 'fonts.cjs'),
