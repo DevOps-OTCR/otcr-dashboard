@@ -98,6 +98,11 @@ OtcrBot sidebar (frontend/features/agentic-cms)
                                 numbers per user+project+workstream
 ```
 
+A reply gets at most 6 model rounds. The last round offers no tools and, for that
+call only, tells the model to answer from what it has gathered and say what it
+couldn't check. A long, skill-guided research task therefore ends in an answer,
+not a bare "stopped" notice.
+
 Tool results reach the model in two marked forms (`tools/tool-content.ts`).
 Skills loaded by `load_skill` arrive inside `<otcr_skill>` tags as OTCR's own
 instructions, which the model follows. Everything else (web results, CMS
