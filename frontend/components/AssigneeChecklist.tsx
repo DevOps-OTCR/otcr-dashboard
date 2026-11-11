@@ -32,8 +32,8 @@ export function AssigneeChecklist({ options, selected, onChange, disabled = fals
           onChange={event => onChange(event.target.checked ? [...selected, person.id] : selected.filter(id => id !== person.id))} />
         <span className="min-w-0 break-all">{[person.firstName, person.lastName].filter(Boolean).join(' ') || person.email || person.id}</span>
       </label>)}
-      {!options.length && <p className="text-sm text-[var(--foreground)]/65">No eligible team members.</p>}
+      {!options.length && <p className="text-sm text-[var(--text-muted)]">No eligible team members.</p>}
     </div>
-    <p className="mt-2 text-xs text-[var(--foreground)]/65">{selected.length} selected</p>
+    <p className="mt-2 text-xs text-[var(--text-muted)]">{selected.length} selected</p>
   </fieldset>;
 }

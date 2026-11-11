@@ -106,7 +106,7 @@ export default function PeoplePage() {
   return <>
     <AppNavbar role={role} currentPath="/people" />
     <main className="mx-auto max-w-[1500px] space-y-6 px-4 py-8 sm:px-6">
-      <div className="flex items-center justify-between gap-3"><div><h1 className="text-2xl font-bold">People</h1><p className="text-sm text-[var(--foreground)]/65">Manage CMS users and onboarding requests.</p></div>
+      <div className="flex items-center justify-between gap-3"><div><h1 className="text-2xl font-bold">People</h1><p className="text-sm text-[var(--text-muted)]">Manage CMS users and onboarding requests.</p></div>
         <Button variant="outline" disabled={busy || loading} onClick={() => void load()}>Refresh</Button></div>
       {error && <p role="alert" className="rounded-lg border border-red-400/40 bg-red-500/10 p-3">{error}</p>}
       {message && <p role="status" className="rounded-lg border border-emerald-400/40 bg-emerald-500/10 p-3">{message}</p>}

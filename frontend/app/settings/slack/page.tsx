@@ -219,19 +219,19 @@ export default function SlackSettingsPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {loadingSlackConnections ? (
-              <p className="text-sm text-[var(--foreground)]/60">Checking Slack connection...</p>
+              <p className="text-sm text-[var(--text-muted)]">Checking Slack connection...</p>
             ) : hasSlackConnection ? (
               <div className="rounded-xl border border-[var(--border)] bg-[var(--secondary)]/50 p-3 text-sm">
                 <p className="font-medium text-[var(--foreground)]">
                   Slack is connected
                   {latestSlackConnection?.workspace?.teamName ? ` to ${latestSlackConnection.workspace.teamName}` : ''}.
                 </p>
-                <p className="mt-1 text-[var(--foreground)]/60">
+                <p className="mt-1 text-[var(--text-muted)]">
                   Alerts will be sent to your linked Slack account when notifications fire.
                 </p>
               </div>
             ) : (
-              <p className="text-sm text-[var(--foreground)]/60">
+              <p className="text-sm text-[var(--text-muted)]">
                 No Slack connection found yet.
               </p>
             )}
@@ -261,7 +261,7 @@ export default function SlackSettingsPage() {
                   value={dashboardAccessEmail}
                   onChange={(e) => setDashboardAccessEmail(e.target.value)}
                   placeholder="member@illinois.edu"
-                  className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] placeholder:text-[var(--foreground)]/50 text-sm"
+                  className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] placeholder:text-[var(--text-muted)] text-sm"
                 />
                 <Button
                   onClick={handleGrantDashboardAccess}
