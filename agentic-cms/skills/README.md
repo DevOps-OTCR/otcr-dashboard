@@ -59,8 +59,7 @@ Rules the loader enforces (`backend/src/agentic-cms/skills/skill-library.ts`):
 - Instructions are capped at 40,000 characters. Folders with a missing or
   invalid `SKILL.md` are skipped.
 
-`sample-executive-summary/`, if present, is a Group 1 placeholder for testing.
-Group 1 owns deleting it once the real skills are in place.
+The loaded skills are `research`, `whitepaper-writing`, and `consulting-slides`.
 
 To test a skill locally, run the backend with the flag enabled (see
 [docs/agentic-cms.md](../../docs/agentic-cms.md)). Check that

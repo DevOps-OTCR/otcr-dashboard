@@ -12,8 +12,9 @@ import { FakeModelClient } from '../model/fake-test-model.client';
 import { MODEL_CLIENT, type ModelClient } from '../model/model-client';
 import { TavilySearchClient } from '../search/tavily-search.client';
 import { SkillLibrary } from '../skills/skill-library';
+import { CmsReadService } from '../reads/cms-read.service';
+import { CmsReadTools } from '../tools/cms-read.tools';
 import { LoadSkillTool } from '../tools/load-skill.tool';
-import { MockWorkstreamTool } from '../tools/mock-workstream.tool';
 import { ToolRegistry } from '../tools/tool-registry';
 import { WebSearchTool } from '../tools/web-search.tool';
 import { ChatController } from './chat.controller';
@@ -60,7 +61,8 @@ describe('POST /agentic-cms/chat', () => {
         ToolRegistry,
         WebSearchTool,
         LoadSkillTool,
-        MockWorkstreamTool,
+        CmsReadTools,
+        { provide: CmsReadService, useValue: {} },
         TavilySearchClient,
         SkillLibrary,
         { provide: MODEL_CLIENT, useValue: model },

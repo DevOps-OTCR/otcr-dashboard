@@ -71,6 +71,7 @@ integration('MCP client -> Nest endpoint -> migrated PostgreSQL', () => {
       fileUrl: 'https://example.test/draft-2', fileName: 'Draft 2', fileSize: 0, version: 2,
       replacesId: 'revision-1', submittedAt: new Date('2026-11-06T12:00:00Z') } });
 
+    settings = { AGENTIC_CMS_ENABLED: 'true', AGENTIC_CMS_ALLOWED_EMAILS: 'reader@illinois.edu,pm@illinois.edu,outsider@illinois.edu' };
     const module = await Test.createTestingModule({ imports: [AgenticCmsModule] })
       .overrideProvider(PrismaService).useValue(db)
       .useMocker(token => token === ConfigService ? { get: (key: string) => settings[key] } : undefined)

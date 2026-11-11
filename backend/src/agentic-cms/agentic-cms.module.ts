@@ -14,8 +14,8 @@ import { ChatController } from './chat/chat.controller';
 import { modelClientProvider } from './model/model.provider';
 import { TavilySearchClient } from './search/tavily-search.client';
 import { SkillLibrary } from './skills/skill-library';
+import { CmsReadTools } from './tools/cms-read.tools';
 import { LoadSkillTool } from './tools/load-skill.tool';
-import { MockWorkstreamTool } from './tools/mock-workstream.tool';
 import { ToolRegistry } from './tools/tool-registry';
 import { WebSearchTool } from './tools/web-search.tool';
 
@@ -35,7 +35,7 @@ import { WebSearchTool } from './tools/web-search.tool';
     ToolRegistry,
     WebSearchTool,
     LoadSkillTool,
-    MockWorkstreamTool,
+    CmsReadTools,
   ],
 })
 export class AgenticCmsModule {}

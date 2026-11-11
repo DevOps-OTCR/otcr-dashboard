@@ -2,8 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
 import type { SendEvent } from '../agent/agent.events';
 import type { ToolCall, ToolSchema } from '../model/model-client';
+import { CmsReadTools } from './cms-read.tools';
 import { LoadSkillTool } from './load-skill.tool';
-import { MockWorkstreamTool } from './mock-workstream.tool';
 import { AgentTool, ToolContext, ToolFailure } from './tool.types';
 import { WebSearchTool } from './web-search.tool';
 
@@ -12,15 +12,15 @@ const MAX_TOOL_OUTPUT_CHARS = 30_000;
 /**
  * The tools OTCR Bot can call. To add one: implement AgentTool in this folder,
  * add it to AgenticCmsModule providers and to the constructor below.
- * Group 2's MCP tools will be adapted into AgentTools here.
+ * CMS reads are thin adapters over CmsReadService. The selected project comes from the request.
  */
 @Injectable()
 export class ToolRegistry {
   private readonly log = new Logger('OtcrBotTools');
   private readonly tools: AgentTool[];
 
-  constructor(webSearch: WebSearchTool, loadSkill: LoadSkillTool, mockWorkstream: MockWorkstreamTool) {
-    this.tools = [webSearch, loadSkill, mockWorkstream] as AgentTool[];
+  constructor(webSearch: WebSearchTool, loadSkill: LoadSkillTool, cmsReads: CmsReadTools) {
+    this.tools = [webSearch, loadSkill, ...cmsReads.tools] as AgentTool[];
   }
 
   /** Tools usable right now (configured, with content). Checked at the start of each turn. */

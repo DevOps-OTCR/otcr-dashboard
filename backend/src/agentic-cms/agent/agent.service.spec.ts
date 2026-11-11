@@ -9,8 +9,8 @@ import { FakeModelClient } from '../model/fake-test-model.client';
 import { assistantMessage, type ModelClient, type ModelRequest } from '../model/model-client';
 import { TavilySearchClient } from '../search/tavily-search.client';
 import { SkillLibrary } from '../skills/skill-library';
+import { CmsReadTools } from '../tools/cms-read.tools';
 import { LoadSkillTool } from '../tools/load-skill.tool';
-import { MockWorkstreamTool } from '../tools/mock-workstream.tool';
 import { ToolRegistry } from '../tools/tool-registry';
 import { WebSearchTool } from '../tools/web-search.tool';
 
@@ -66,7 +66,14 @@ describe('AgentService.run', () => {
     const config = { get: (key: string) => settings[key] } as never;
     const flags = new FeatureFlagsService(config);
     const skills = new SkillLibrary(config);
-    const tools = new ToolRegistry(new WebSearchTool(new TavilySearchClient(config)), new LoadSkillTool(skills), new MockWorkstreamTool({ assertProjectAccess: async () => ({ id: 'p1', pmId: 'pm' }) } as never));
+    const reads = {
+      getProjectContext: async () => ({ project: { id: 'p1', overview: 'Northwind brief' }, notes: [], truncatedFields: [] }),
+      listWorkstreams: async () => ({ workstreams: { items: [], nextCursor: null } }),
+      getWorkstream: async () => ({ workstream: { id: 's1' } }),
+      listDeliverables: async () => ({ deliverables: { items: [], nextCursor: null } }),
+      getDeliverable: async () => ({ deliverable: { id: 'd1' } }),
+    } as never;
+    const tools = new ToolRegistry(new WebSearchTool(new TavilySearchClient(config)), new LoadSkillTool(skills), new CmsReadTools(reads));
     return { store, svc: new AgentService(model, store, flags, tools, skills, config) };
   };
 
@@ -653,7 +660,7 @@ describe('AgentService.run', () => {
           round++;
           if (round === 1) {
             onText('Let me check.');
-            const call = { id: 'c1', name: 'get_workstream_summary', args: {} };
+            const call = { id: 'c1', name: 'get_project_context', args: { projectId: 'p1' } };
             return { text: 'Let me check.', toolCalls: [call], message: assistantMessage('Let me check.', [call]) };
           }
           onText('Done.');
@@ -669,9 +676,9 @@ describe('AgentService.run', () => {
       const { svc } = setup(scripted([], seen));
       await runTurn(svc, 'hi');
       const names = seen[0].tools.map((t) => t.name);
-      expect(names).toEqual(['load_skill', 'get_workstream_summary']); // no TAVILY_API_KEY -> no web_search
+      expect(names).toEqual(['load_skill', 'get_project_context', 'list_workstreams', 'get_workstream', 'list_deliverables', 'get_deliverable']);
       expect(seen[0].tools[0].parameters).toMatchObject({ type: 'object', required: ['name'] });
-      expect(seen[0].system).toContain('sample-executive-summary');
+      expect(seen[0].system).toContain('research');
       expect(seen[0].system).toMatch(/can't search the web/);
     });
 
@@ -830,17 +837,18 @@ describe('AgentService.run', () => {
       expect(text).toBe('Answer [1]');
     });
 
-    it('loads a skill and runs the mock CMS tool with the access-checked project', async () => {
+    it('loads a skill and reads project context for the selected project', async () => {
       const seen: ModelRequest[] = [];
       const { svc } = setup(scripted([
-        { name: 'load_skill', args: { name: 'sample-executive-summary' } },
-        { name: 'get_workstream_summary', args: {} },
+        { name: 'load_skill', args: { name: 'research' } },
+        { name: 'get_project_context', args: { projectId: 'other-project' } },
       ], seen));
       const { events } = await runTurn(svc, 'Write an executive summary for my workstream');
       expect(events.filter((e) => e.type === 'tool_end').every((e) => e.type === 'tool_end' && e.ok)).toBe(true);
       const tools = seen[1].messages.filter((m) => m.role === 'tool').map((m) => m.content);
-      expect(tools[0]).toContain('Executive summary (sample skill)');
-      expect(JSON.parse(tools[1])).toMatchObject({ mock: true, projectId: 'p1', workstreamId: 's1' });
+      expect(tools[0]).toContain('Research Brief');
+      expect(JSON.parse(tools[1]).project.overview).toBe('Northwind brief');
+      expect(tools[1]).not.toContain('other-project');
     });
   });
 });

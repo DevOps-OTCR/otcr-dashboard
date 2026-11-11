@@ -63,6 +63,7 @@ describe('SkillLibrary', () => {
 
   it("finds the repository's agentic-cms/skills folder by default", async () => {
     const names = (await library({}).list()).map((s) => s.name);
-    expect(names).toContain('sample-executive-summary');
+    expect(names).toEqual(expect.arrayContaining(['research', 'whitepaper-writing', 'consulting-slides']));
+    expect(names).not.toContain('sample-executive-summary');
   });
 });

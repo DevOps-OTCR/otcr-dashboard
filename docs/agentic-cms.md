@@ -62,19 +62,17 @@ in-flight request or undo a completed write.
    (`npm --prefix frontend run dev`). Restart the backend after editing `.env`.
 5. Sign in. An **OTCR Bot** button appears at the bottom right within 30
    seconds. Choose a project and workstream, then try:
-   - "Summarize my current workstream" → calls the mock CMS tool.
+   - "Summarize my current workstream" → calls the CMS read tools for the selected project.
    - "Research the size of the US campus e-bike market, with sources" →
      web search with numbered citations and a Sources list.
-   - "Write an executive summary of our findings so far" → loads the sample
-     skill.
-6. Check the configuration without calling a model (from a terminal, the
-   existing auth guard's legacy `Bearer <email>` form works for a user in your
-   local database):
+   - "Write an executive summary of our findings so far" → loads whitepaper-writing.
+6. Check the configuration without calling a model. `/agentic-cms/status`
+   requires a verified Microsoft token, an active enrollment, and pilot access.
+   An email-only bearer is rejected before any model call. A permitted response
+   looks like:
 
-   ```sh
-   curl -H "Authorization: Bearer you@illinois.edu" http://localhost:4000/agentic-cms/status
-   # {"enabled":true,"model":"deepseek-v4.1-flash","modelConfigured":true,
-   #  "webSearchConfigured":true,"skills":["sample-executive-summary"]}
+   ```json
+   {"enabled":true,"model":"deepseek-v4.1-flash","modelConfigured":true,"webSearchConfigured":true,"skills":["consulting-slides","research","whitepaper-writing"]}
    ```
 
 7. Test the flag. Set `AGENTIC_CMS_ENABLED=false` (or remove your email from
@@ -94,7 +92,8 @@ OtcrBot sidebar (frontend/features/agentic-cms)
          ├─ ToolRegistry
          │    web_search              Tavily; results become numbered sources
          │    load_skill              agentic-cms/skills/<name>/SKILL.md
-         │    get_workstream_summary  MOCK data until Group 2's MCP tools
+         │    get_project_context, list_workstreams, get_workstream,
+         │    list_deliverables, get_deliverable   CmsReadService, selected project
          └─ ConversationStore   in memory (lost on restart) — history and source
                                 numbers per user+project+workstream
 ```
@@ -150,8 +149,7 @@ the model as JSON Schema), a progress `label`, and `run(input, ctx)`. Register
 it in `AgenticCmsModule` and `ToolRegistry`. Tools must read the project from
 `ctx.projectId`/`ctx.sprintId` — already access-checked — and never accept a
 project id from the model. Throw `ToolFailure(note, modelMessage)` for an
-expected failure. Group 2's read-only MCP tools will replace
-`get_workstream_summary` this way.
+expected failure. The five CMS read tools are registered this way over CmsReadService.
 
 ### Adding a skill
 
@@ -191,8 +189,8 @@ the skills folder copied in (or `AGENTIC_CMS_SKILLS_DIR` pointed at it).
 
 - Conversation history is in memory: lost on restart and not shared between
   server instances. The per-user hourly limit resets with it.
-- `get_workstream_summary` returns mock data. Real project context arrives with
-  Group 2's MCP tools.
+- Search excerpts are unverified leads. There is no full-page `read_web_source` yet.
+- Week 2 review UI, review skills, and native document comments are not connected.
 
 ## Where each group builds
 
@@ -281,10 +279,11 @@ workers/listeners in constructors, module imports or startup hooks. Standalone
 MCP servers and WebSockets are not automatically covered by the HTTP guard;
 they require an equivalent server-side gate and review before integration.
 
-OTCR Bot (chat, the Lumen client, the tool loop, web search, and skill loading)
-and the MCP read tools are both implemented. The bot still calls a mock workstream
-tool until the integration adapters replace it with CmsReadService. Persistent chat
-history, full-source web reading, document review, and editors are not implemented.
+OTCR Bot calls CmsReadService in-process for get_project_context, list_workstreams,
+get_workstream, list_deliverables and get_deliverable. The MCP HTTP endpoint remains
+for independent clients. Skills loaded are research, whitepaper-writing and
+consulting-slides. Web search citations are live when a search key is configured.
+Full-source web reading, persistent chat history, document review and editors are not.
 
 ## Required checks and PR review
 
