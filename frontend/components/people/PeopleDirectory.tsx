@@ -67,7 +67,7 @@ export function PeopleDirectory({ people, busy, onChangeRole }: {
       </label>
     </div>
     {!people.length ? <p>No CMS users yet.</p> : !filtered.length ? <p>No people match your filters.</p> : <>
-      <p className="text-sm text-[var(--foreground)]/65">{filtered.length} people</p>
+      <p className="text-sm text-[var(--text-muted)]">{filtered.length} people</p>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead><tr>{columns.map(column => <th key={column.key} scope="col" className="px-3 py-2">{column.label}</th>)}<th scope="col" className="px-3 py-2">Change role</th></tr></thead>

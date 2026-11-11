@@ -411,7 +411,7 @@ export default function When2MeetPage() {
             ) : null}
 
             {detailLoading ? (
-              <span className="text-sm text-[var(--foreground)]/60 sm:leading-10">Refreshing poll…</span>
+              <span className="text-sm text-[var(--text-muted)] sm:leading-10">Refreshing poll…</span>
             ) : null}
           </CardContent>
         </Card>
@@ -430,7 +430,7 @@ export default function When2MeetPage() {
             onCommitAvailability={commitAvailability}
           />
         ) : !loading && pollsReady && !pollsLoading && !detailLoading && projectId && polls.length === 0 && !error ? (
-          <p className="text-center text-[var(--foreground)]/70 py-12">
+          <p className="text-center text-[var(--text-muted)] py-12">
             No polls for this team yet.
             {canCreatePoll ? ' Create one to get started.' : ''}
           </p>
@@ -504,7 +504,7 @@ export default function When2MeetPage() {
                 />
               </label>
             </div>
-            <p className="text-xs text-[var(--foreground)]/60">
+            <p className="text-xs text-[var(--text-muted)]">
               Columns show each calendar day in the range (one day only if first and last match). Rows are fifteen‑minute
               steps between start and end time.
             </p>

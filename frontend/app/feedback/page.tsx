@@ -43,7 +43,7 @@ export default function FeedbackPage() {
         <>
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <p className="text-sm font-semibold">{submission.submitterName ?? 'Team member'}</p>
-            <p className="text-xs text-[var(--foreground)]/60">
+            <p className="text-xs text-[var(--text-muted)]">
               {new Date(submission.createdAt).toLocaleString()}
             </p>
           </div>
@@ -87,7 +87,7 @@ export default function FeedbackPage() {
               value={problem}
               onChange={(event) => setProblem(event.target.value)}
               placeholder="Short summary of the issue"
-              className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] placeholder:text-[var(--foreground)]/50 text-sm"
+              className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] placeholder:text-[var(--text-muted)] text-sm"
             />
           </div>
 
@@ -99,7 +99,7 @@ export default function FeedbackPage() {
               placeholder="Include context, expected behavior, and impact"
               rows={6}
               maxLength={20000}
-              className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] placeholder:text-[var(--foreground)]/50 text-sm"
+              className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] placeholder:text-[var(--text-muted)] text-sm"
             />
           </div>
         </>

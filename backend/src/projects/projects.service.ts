@@ -894,6 +894,80 @@ export class ProjectsService {
     });
   }
 
+  async getSchedule(user: { id: string; role: string }, from: Date, to: Date) {
+    const fullAccess = ['ADMIN', 'LC', 'EXECUTIVE'].includes(user.role);
+
+    const where: Prisma.ProjectWhereInput = fullAccess
+      ? {}
+      : user.role === 'PM'
+        ? { OR: [{ pmId: user.id }, { members: { some: { userId: user.id, leftAt: null } } }] }
+        : { members: { some: { userId: user.id, leftAt: null } } };
+
+    const projects = await this.prisma.project.findMany({
+      where,
+      select: {
+        id: true,
+        name: true,
+        pmId: true,
+        sprintTimezone: true,
+      },
+      orderBy: {
+        name: 'asc',
+      },
+    });
+
+    if (projects.length === 0) {
+      return { projects: [], deliverables: [] };
+    }
+
+    const manageableIds = projects
+      .filter((project) => this.canManageProject(user, project.pmId))
+      .map((project) => project.id);
+
+    const deliverables = await this.prisma.deliverable.findMany({
+      where: {
+        projectId: { in: projects.map((project) => project.id) },
+        sprintId: { not: null },
+        deadline: { gte: from, lt: to },
+        OR: [
+          { projectId: { in: manageableIds } },
+          { sprint: { status: 'RELEASED' } },
+        ],
+      },
+      select: {
+        id: true,
+        title: true,
+        deadline: true,
+        projectId: true,
+        status: true,
+      },
+      orderBy: {
+        deadline: 'asc',
+      },
+    });
+
+    return {
+      projects: projects.map((project) => ({
+        id: project.id,
+        name: project.name,
+        timeZone: project.sprintTimezone,
+        canManage: this.canManageProject(user, project.pmId),
+      })),
+      deliverables: deliverables.map((deliverable) => ({
+        ...deliverable,
+        deadline: deliverable.deadline.toISOString(),
+      })),
+    };
+  }
+
+  private canManageProject(user: { id: string; role: string }, pmId: string | null): boolean {
+    if (user.role === 'ADMIN' || user.role === 'LC') {
+      return true;
+    }
+
+    return user.role === 'PM' && pmId === user.id;
+  }
+
   async isMember(projectId: string, userId: string): Promise<boolean> {
     const member = await this.prisma.projectMember.findFirst({
       where: {
@@ -985,7 +1059,10 @@ export class ProjectsService {
     });
   }
 
-  async listSprints(projectId: string) {
+  async listSprints(
+    projectId: string,
+    options: { includeDraftWorkingLinks?: boolean } = {},
+  ) {
     try {
       const sprints = await this.prisma.$queryRaw<any[]>(Prisma.sql`
         SELECT
@@ -1017,7 +1094,9 @@ export class ProjectsService {
           d."templateKind"::text AS "templateKind",
           d."dueDateSource"::text AS "dueDateSource",
           d."status"::text AS "status",
-          d."completed"
+          d."completed",
+          d."workingLinkUrl",
+          d."workingLinkUpdatedAt"
         FROM "Deliverable" d
         WHERE d."sprintId" IN (${Prisma.join(sprintIds)})
         ORDER BY d."deadline" ASC
@@ -1142,6 +1221,8 @@ export class ProjectsService {
       deliverables.forEach((deliverable) => {
         const sprint = sprints.find((item) => item.id === deliverable.sprintId);
         const existing = bySprint.get(deliverable.sprintId) ?? [];
+        const canSeeWorkingLink =
+          options.includeDraftWorkingLinks === true || sprint?.status === 'RELEASED';
         existing.push({
           id: deliverable.id,
           title: deliverable.title,
@@ -1150,6 +1231,10 @@ export class ProjectsService {
           templateKind: deliverable.templateKind,
           status: deliverable.status,
           completed: deliverable.completed,
+          workingLinkUrl: canSeeWorkingLink ? deliverable.workingLinkUrl ?? null : null,
+          workingLinkUpdatedAt: canSeeWorkingLink
+            ? deliverable.workingLinkUpdatedAt ?? null
+            : null,
           assignees: assignmentsByDeliverable.get(deliverable.id) ?? [],
           subtasks: subtasksByDeliverable.get(deliverable.id) ?? [],
           latestSubmission: latestSubmissionByDeliverable.get(deliverable.id) ?? null,

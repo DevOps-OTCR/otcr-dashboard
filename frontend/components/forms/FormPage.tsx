@@ -185,9 +185,9 @@ export function FormPage({
             </CardHeader>
             <CardContent className="space-y-3">
               {loadingSubmissions ? (
-                <p className="text-sm text-[var(--foreground)]/60">Loading submissions...</p>
+                <p className="text-sm text-[var(--text-muted)]">Loading submissions...</p>
               ) : submissions.length === 0 ? (
-                <p className="text-sm text-[var(--foreground)]/60">No submissions yet.</p>
+                <p className="text-sm text-[var(--text-muted)]">No submissions yet.</p>
               ) : (
                 submissions.map((submission) => (
                   <div

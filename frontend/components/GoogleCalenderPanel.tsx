@@ -1,11 +1,16 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { PageLoading } from './PageLoading';
 import { CalendarDays } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { projectsAPI, setAuthToken, type ProjectListItem } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
+import {
+  buildCalendarSources,
+  buildEmbedUrl,
+  type CalendarSource,
+} from '@/lib/calendar-sources';
 
 const DEFAULT_CALENDAR_URL =
   'https://calendar.google.com/calendar/embed?src=en.usa%23holiday%40group.v.calendar.google.com&ctz=America%2FChicago';
@@ -32,100 +37,6 @@ function sanitizeCalendarEmbedUrl(candidate: string, fallback: string): string {
   }
 }
 
-function extractGoogleCalendarSources(candidate?: string | null): string[] {
-  if (!candidate) return [];
-
-  try {
-    const parsed = new URL(candidate);
-    const host = parsed.hostname.toLowerCase();
-    const isGoogleCalendarHost =
-      host === 'calendar.google.com' || host.endsWith('.calendar.google.com');
-    if (!isGoogleCalendarHost || !parsed.pathname.startsWith('/calendar/embed')) {
-      return [];
-    }
-
-    return parsed.searchParams
-      .getAll('src')
-      .map((value) => value.trim())
-      .filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
-function buildGoogleCalendarEmbedUrlFromId(
-  calendarId?: string | null,
-  fallback?: string,
-): string | null {
-  const normalizedId = calendarId?.trim();
-  if (!normalizedId) return null;
-
-  const base = new URL(fallback || DEFAULT_CALENDAR_URL);
-  const embed = new URL('https://calendar.google.com/calendar/embed');
-  const ctz = base.searchParams.get('ctz') || 'America/Chicago';
-  const mode = base.searchParams.get('mode') || 'WEEK';
-  const showTitle = base.searchParams.get('showTitle') || '0';
-  const showPrint = base.searchParams.get('showPrint') || '0';
-  const showNav = base.searchParams.get('showNav') || '1';
-  const showTabs = base.searchParams.get('showTabs') || '0';
-  const showCalendars = base.searchParams.get('showCalendars') || '0';
-  const wkst = base.searchParams.get('wkst') || '1';
-  const height = base.searchParams.get('height');
-  const bgcolor = base.searchParams.get('bgcolor');
-
-  embed.searchParams.set('ctz', ctz);
-  embed.searchParams.set('mode', mode);
-  embed.searchParams.set('showTitle', showTitle);
-  embed.searchParams.set('showPrint', showPrint);
-  embed.searchParams.set('showNav', showNav);
-  embed.searchParams.set('showTabs', showTabs);
-  embed.searchParams.set('showCalendars', showCalendars);
-  embed.searchParams.set('wkst', wkst);
-  if (height) embed.searchParams.set('height', height);
-  if (bgcolor) embed.searchParams.set('bgcolor', bgcolor);
-  embed.searchParams.append('src', normalizedId);
-
-  return embed.toString();
-}
-
-function buildCombinedCalendarEmbedUrl(primary: string, secondary?: string | null): string {
-  const primarySources = extractGoogleCalendarSources(primary);
-  const secondarySources = extractGoogleCalendarSources(secondary);
-  const allSources = Array.from(new Set([...primarySources, ...secondarySources]));
-
-  if (allSources.length === 0) {
-    return primary;
-  }
-
-  const base = new URL(primary);
-  const ctz = base.searchParams.get('ctz') || 'America/Chicago';
-  const mode = base.searchParams.get('mode') || 'WEEK';
-  const showTitle = base.searchParams.get('showTitle') || '0';
-  const showPrint = base.searchParams.get('showPrint') || '0';
-  const showNav = base.searchParams.get('showNav') || '1';
-  const showTabs = base.searchParams.get('showTabs') || '0';
-  const showCalendars = base.searchParams.get('showCalendars') || '0';
-  const wkst = base.searchParams.get('wkst') || '1';
-  const height = base.searchParams.get('height');
-  const bgcolor = base.searchParams.get('bgcolor');
-
-  const combined = new URL('https://calendar.google.com/calendar/embed');
-  combined.searchParams.set('ctz', ctz);
-  combined.searchParams.set('mode', mode);
-  combined.searchParams.set('showTitle', showTitle);
-  combined.searchParams.set('showPrint', showPrint);
-  combined.searchParams.set('showNav', showNav);
-  combined.searchParams.set('showTabs', showTabs);
-  combined.searchParams.set('showCalendars', showCalendars);
-  combined.searchParams.set('wkst', wkst);
-  if (height) combined.searchParams.set('height', height);
-  if (bgcolor) combined.searchParams.set('bgcolor', bgcolor);
-
-  allSources.forEach((src) => combined.searchParams.append('src', src));
-
-  return combined.toString();
-}
-
 type GoogleCalendarPanelProps = {
   title?: string;
   description?: string;
@@ -146,75 +57,103 @@ export function GoogleCalendarPanel({
     () => process.env.NEXT_PUBLIC_GOOGLE_CALENDAR_EMBED_URL || DEFAULT_CALENDAR_URL,
     [],
   );
-  const [calendarUrl, setCalendarUrl] = useState<string | null>(null);
+  const [sources, setSources] = useState<CalendarSource[] | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const lastEmailRef = useRef<string | null>(null);
+
+  const getToken = session.getToken;
+  const email = session?.user?.email;
+  const isLoggedIn = session?.isLoggedIn;
 
   useEffect(() => {
     if (!active) return;
-    if (!session?.isLoggedIn || !session?.user?.email) {
-      setCalendarUrl(fallbackCalendarUrl);
+
+    if (!isLoggedIn || !email) {
+      const fallbackSources = buildCalendarSources(fallbackCalendarUrl, []);
+      setSources(fallbackSources);
+      setSelected(new Set(fallbackSources.map((source) => source.key)));
+      lastEmailRef.current = null;
       return;
     }
 
+    // Reset stale state only when the signed-in account actually changed.
+    if (lastEmailRef.current !== null && lastEmailRef.current !== email) {
+      setSources(null);
+      setSelected(new Set());
+    }
+
     let canceled = false;
-    session.getToken()
+    getToken()
       .then((token) => {
         if (canceled) return null;
-        setAuthToken(token || session.user?.email || null);
+        setAuthToken(token || email || null);
         return projectsAPI.getAll({ includeMembers: true, limit: 100 });
       })
       .then((res) => {
         if (canceled || !res) return;
         const projects = (res.data?.projects ?? []) as ProjectListItem[];
-        const normalizedEmail = (session?.user?.email ?? '').toLowerCase();
 
-        const byProjectId = projectId
-          ? projects.find((project) => project.id === projectId)
-          : undefined;
-        const byMembership = projects.find((project) =>
-          (project.members ?? []).some(
-            (member) => (member.user.email ?? '').toLowerCase() === normalizedEmail,
-          ),
-        );
-        const byPmOwnership = projects.find(
-          (project) => (project.pm?.email ?? '').toLowerCase() === normalizedEmail,
-        );
-        const firstWithCalendar = projects.find(
-          (project) =>
-            (typeof project.googleCalendarId === 'string' && project.googleCalendarId.trim()) ||
-            (typeof project.googleCalendarEmbedUrl === 'string' && project.googleCalendarEmbedUrl.trim()),
+        const nextSources = buildCalendarSources(fallbackCalendarUrl, projects);
+
+        const defaultSelected = new Set(
+          nextSources
+            .filter((source) => source.kind === 'firm')
+            .map((source) => source.key),
         );
 
-        const resolvedProject =
-          byProjectId ??
-          byMembership ??
-          byPmOwnership ??
-          firstWithCalendar ??
-          null;
-        const resolved =
-          buildGoogleCalendarEmbedUrlFromId(
-            resolvedProject?.googleCalendarId?.trim() ?? null,
-            fallbackCalendarUrl,
-          ) ??
-          resolvedProject?.googleCalendarEmbedUrl?.trim() ??
-          null;
+        if (projectId) {
+          const projectPrefix = `project:${projectId}:`;
+          const projectKey = `project:${projectId}`;
+          nextSources.forEach((source) => {
+            if (source.key === projectKey || source.key.startsWith(projectPrefix)) {
+              defaultSelected.add(source.key);
+            }
+          });
+        } else {
+          nextSources.forEach((source) => defaultSelected.add(source.key));
+        }
 
-        setCalendarUrl(
-          sanitizeCalendarEmbedUrl(
-            buildCombinedCalendarEmbedUrl(fallbackCalendarUrl, resolved),
-            fallbackCalendarUrl,
-          ),
-        );
+        setSources(nextSources);
+        setSelected(defaultSelected);
+        lastEmailRef.current = email;
       })
       .catch(() => {
-        if (!canceled) {
-          setCalendarUrl(current => current ?? fallbackCalendarUrl);
-        }
+        if (canceled) return;
+        const fallbackSources = buildCalendarSources(fallbackCalendarUrl, []);
+        setSources(fallbackSources);
+        setSelected(new Set(fallbackSources.map((source) => source.key)));
       });
 
     return () => {
       canceled = true;
     };
-  }, [session?.isLoggedIn, session?.user?.email, fallbackCalendarUrl, projectId, active, session.getToken]);
+  }, [isLoggedIn, email, fallbackCalendarUrl, projectId, active, getToken]);
+
+  const embedUrl = useMemo(() => {
+    if (!sources) return null;
+    const visible = sources.filter((source) => selected.has(source.key));
+    return sanitizeCalendarEmbedUrl(
+      buildEmbedUrl(fallbackCalendarUrl, visible),
+      fallbackCalendarUrl,
+    );
+  }, [sources, selected, fallbackCalendarUrl]);
+
+  const allSelected =
+    sources !== null && sources.length > 0 && sources.every((source) => selected.has(source.key));
+
+  const toggleSource = (key: string) => {
+    setSelected((current) => {
+      if (current.has(key)) {
+        if (current.size === 1) return current;
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      }
+      const next = new Set(current);
+      next.add(key);
+      return next;
+    });
+  };
 
   return (
     <Card className={className}>
@@ -226,10 +165,51 @@ export function GoogleCalendarPanel({
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>
+        {sources && sources.length >= 2 && (
+          <div role="group" aria-label="Calendars to show" className="mb-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              aria-pressed={allSelected}
+              onClick={() => setSelected(new Set(sources.map((source) => source.key)))}
+              className={
+                'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition' +
+                (allSelected
+                  ? ' border-[var(--primary)] bg-[var(--primary)]/10 font-medium text-[var(--foreground)]'
+                  : ' border-dashed border-[var(--border)] text-[var(--foreground)]/70')
+              }
+            >
+              All calendars
+            </button>
+            {sources.map((source) => {
+              const isSelected = selected.has(source.key);
+              return (
+                <button
+                  key={source.key}
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() => toggleSource(source.key)}
+                  className={
+                    'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition' +
+                    (isSelected
+                      ? ' border-[var(--primary)] bg-[var(--primary)]/10 font-medium text-[var(--foreground)]'
+                      : ' border-dashed border-[var(--border)] text-[var(--foreground)]/70')
+                  }
+                >
+                  <span
+                    className={'h-2.5 w-2.5 rounded-full' + (isSelected ? '' : ' opacity-40')}
+                    style={{ backgroundColor: source.color }}
+                    aria-hidden
+                  />
+                  {source.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <div className="rounded-xl border border-[var(--border)] overflow-hidden bg-[var(--secondary)]/50 h-[430px]">
-          {calendarUrl ? <iframe
+          {embedUrl ? <iframe
             title="OTCR Google Calendar"
-            src={calendarUrl}
+            src={embedUrl}
             className="google-calendar-embed w-full h-full"
             frameBorder="0"
             scrolling="no"

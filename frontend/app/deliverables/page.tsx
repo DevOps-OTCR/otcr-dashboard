@@ -35,6 +35,8 @@ type DeliverableItem = {
   templateKind?: string;
   status: string;
   completed?: boolean;
+  workingLinkUrl?: string | null;
+  workingLinkUpdatedAt?: string | null;
   assignees?: Array<{
     id: string;
     email?: string;
@@ -163,6 +165,7 @@ export default function DeliverablesPage() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [busyDeliverableId, setBusyDeliverableId] = useState<string | null>(null);
   const [submitLinks, setSubmitLinks] = useState<Record<string, string>>({});
+  const [workingLinks, setWorkingLinks] = useState<Record<string, string>>({});
   const [assignmentTargets, setAssignmentTargets] = useState<Record<string, string[]>>({});
   const [deadlineInputs, setDeadlineInputs] = useState<Record<string, string>>({});
   const [subtaskEdits, setSubtaskEdits] = useState<
@@ -446,6 +449,48 @@ export default function DeliverablesPage() {
     }
   };
 
+  const handleSaveWorkingLink = async (deliverable: DeliverableItem, clear = false) => {
+    if (!selectedProjectId) return;
+    const link = clear ? '' : (workingLinks[deliverable.id] ?? '').trim();
+
+    if (!clear) {
+      if (!link) {
+        setLoadError('Add a working file link first.');
+        return;
+      }
+      if (!/^https:\/\//i.test(link)) {
+        setLoadError('Use the https link to the file on Teams or SharePoint.');
+        return;
+      }
+    }
+
+    const assignedToCurrentUser = Boolean(
+      deliverable.assignees?.some(
+        (assignee) => assignee.email?.toLowerCase() === currentEmail,
+      ),
+    );
+    if (!canManage && !assignedToCurrentUser) {
+      setLoadError('Assign yourself to this deliverable before linking a working file.');
+      return;
+    }
+
+    setBusyDeliverableId(deliverable.id);
+    try {
+      await deliverablesAPI.setWorkingLink(deliverable.id, clear ? null : link);
+      setWorkingLinks((current) => ({ ...current, [deliverable.id]: '' }));
+      await loadSprints(selectedProjectId);
+      setFeedback(clear ? 'Working file link removed' : 'Working file link saved');
+    } catch (error: any) {
+      const message =
+        error?.response?.data?.message ??
+        error?.message ??
+        'Failed to save working file link.';
+      setLoadError(Array.isArray(message) ? message.join(', ') : String(message));
+    } finally {
+      setBusyDeliverableId(null);
+    }
+  };
+
   const handleSubmitLink = async (deliverable: DeliverableItem) => {
     if (!selectedProjectId) return;
     const link = (submitLinks[deliverable.id] ?? '').trim();
@@ -629,6 +674,7 @@ export default function DeliverablesPage() {
             <CardContent className="space-y-5">
               <div className="flex flex-wrap items-center gap-3">
                 <select
+                  aria-label="Project"
                   value={selectedProjectId}
                   onChange={(e) => void handleProjectChange(e.target.value)}
                   className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
@@ -649,7 +695,7 @@ export default function DeliverablesPage() {
 
               <div className="flex flex-wrap gap-2">
                 {visibleSprints.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-[var(--border)] px-4 py-4 text-sm text-[var(--foreground)]/60">
+                  <div className="rounded-xl border border-dashed border-[var(--border)] px-4 py-4 text-sm text-[var(--text-muted)]">
                     {canManage ? 'No non-slide deliverables yet.' : 'No released non-slide deliverables yet.'}
                   </div>
                 ) : (
@@ -681,11 +727,11 @@ export default function DeliverablesPage() {
                           visibleSprints.findIndex((item) => item.id === selectedSprint.id),
                         )}
                       </h3>
-                      <p className="text-sm text-[var(--foreground)]/60">
+                      <p className="text-sm text-[var(--text-muted)]">
                         {new Date(selectedSprint.weekStartDate).toLocaleDateString()} - {new Date(selectedSprint.weekEndDate).toLocaleDateString()}
                       </p>
                     </div>
-                    <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                    <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--success)_30%,transparent)] bg-[var(--success-bg)] px-2 py-0.5 text-xs font-semibold text-[var(--success)]">
                       {selectedSprint.status}
                     </span>
                   </div>
@@ -719,7 +765,7 @@ export default function DeliverablesPage() {
                               <p className="text-sm font-semibold text-[var(--foreground)]">
                                 {normalizeWeekText(deliverable.title)}
                               </p>
-                              <p className="mt-1 text-xs text-[var(--foreground)]/55">
+                              <p className="mt-1 text-xs text-[var(--text-muted)]">
                                 Due {new Date(deliverable.deadline).toLocaleString()}
                               </p>
                               {deliverable.description?.trim() ? (
@@ -728,14 +774,14 @@ export default function DeliverablesPage() {
                                 </p>
                               ) : null}
                             </div>
-                            <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                            <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--success)_30%,transparent)] bg-[var(--success-bg)] px-2 py-0.5 text-xs font-semibold text-[var(--success)]">
                               {deliverable.status.replace(/_/g, ' ')}
                             </span>
                           </div>
 
                           <div className="mt-4 space-y-3">
                             <div>
-                              <p className="text-xs font-medium text-[var(--foreground)]/70">Assigned</p>
+                              <p className="text-xs font-medium text-[var(--text-muted)]">Assigned</p>
                               <p className="text-sm text-[var(--foreground)]">{formatAssignees(deliverable.assignees)}</p>
                             </div>
 
@@ -760,6 +806,7 @@ export default function DeliverablesPage() {
                                 <>
                                   <input
                                     type="datetime-local"
+                                    aria-label={`Due date for ${deliverable.title}`}
                                     value={deadlineInputs[deliverable.id] ?? ''}
                                     onChange={(e) =>
                                       setDeadlineInputs((current) => ({
@@ -806,10 +853,75 @@ export default function DeliverablesPage() {
                                 {deliverable.completed ? (
                                   <CheckSquare className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                                 ) : (
-                                  <Square className="w-4 h-4 text-[var(--foreground)]/55" />
+                                  <Square className="w-4 h-4 text-[var(--text-muted)]" />
                                 )}
                                 {deliverable.completed ? 'Completed' : 'Complete'}
                               </button>
+                            </div>
+
+                            <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-3">
+                              <div className="flex items-center gap-2">
+                                <LinkIcon className="w-4 h-4 text-[var(--primary)]" />
+                                <p className="text-sm font-medium text-[var(--foreground)]">
+                                  Live working file
+                                </p>
+                              </div>
+                              <p className="mt-2 text-xs text-[var(--foreground)]/60">
+                                Link the PowerPoint or doc on Teams so your PM can open the latest version any time. This does not submit the deliverable.
+                              </p>
+                              {deliverable.workingLinkUrl && (
+                                <div className="mt-3 flex flex-wrap items-center gap-3">
+                                  <a
+                                    href={deliverable.workingLinkUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--primary)] underline-offset-2 hover:underline"
+                                  >
+                                    <LinkIcon className="w-4 h-4" />
+                                    Open live file
+                                  </a>
+                                  {deliverable.workingLinkUpdatedAt && (
+                                    <span className="text-xs text-[var(--foreground)]/60">
+                                      Updated {new Date(deliverable.workingLinkUpdatedAt).toLocaleString()}
+                                    </span>
+                                  )}
+                                  {canSubmit && (
+                                    <button
+                                      type="button"
+                                      className="text-xs font-medium text-[var(--foreground)]/70 hover:text-[var(--foreground)]"
+                                      disabled={busyDeliverableId === deliverable.id}
+                                      onClick={() => void handleSaveWorkingLink(deliverable, true)}
+                                    >
+                                      Remove
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                                <input
+                                  value={workingLinks[deliverable.id] ?? ''}
+                                  onChange={(e) =>
+                                    setWorkingLinks((current) => ({
+                                      ...current,
+                                      [deliverable.id]: e.target.value,
+                                    }))
+                                  }
+                                  placeholder="https://teams.microsoft.com/... or https://...sharepoint.com/..."
+                                  aria-label="Live working file link"
+                                  className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                                />
+                                <Button
+                                  size="sm"
+                                  disabled={
+                                    busyDeliverableId === deliverable.id ||
+                                    !canSubmit ||
+                                    !(workingLinks[deliverable.id] ?? '').trim()
+                                  }
+                                  onClick={() => void handleSaveWorkingLink(deliverable)}
+                                >
+                                  Save link
+                                </Button>
+                              </div>
                             </div>
 
                             <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-3">
@@ -844,7 +956,7 @@ export default function DeliverablesPage() {
                                 </Button>
                               </div>
                               {!canSubmit && (
-                                <p className="mt-2 text-xs text-[var(--foreground)]/60">
+                                <p className="mt-2 text-xs text-[var(--text-muted)]">
                                   Assign yourself first to submit this deliverable.
                                 </p>
                               )}
@@ -855,7 +967,7 @@ export default function DeliverablesPage() {
                                       key={submission.id}
                                       className="rounded-lg border border-[var(--border)] bg-[var(--secondary)]/60 p-3"
                                     >
-                                      <p className="text-xs font-medium text-[var(--foreground)]/70">
+                                      <p className="text-xs font-medium text-[var(--text-muted)]">
                                         Submitted by {formatSubmitter(submission.submitter)}
                                       </p>
                                       <a
@@ -866,7 +978,7 @@ export default function DeliverablesPage() {
                                       >
                                         View submission
                                       </a>
-                                      <p className="mt-1 text-xs text-[var(--foreground)]/60">
+                                      <p className="mt-1 text-xs text-[var(--text-muted)]">
                                         {new Date(submission.submittedAt).toLocaleString()}
                                       </p>
                                     </div>
@@ -876,7 +988,7 @@ export default function DeliverablesPage() {
                                       key={assignee.id}
                                       className="rounded-lg border border-[var(--border)] bg-[var(--secondary)]/60 p-3"
                                     >
-                                      <p className="text-xs font-medium text-[var(--foreground)]/70">
+                                      <p className="text-xs font-medium text-[var(--text-muted)]">
                                         {formatPerson(assignee)} - Not submitted
                                       </p>
                                     </div>
@@ -900,7 +1012,7 @@ export default function DeliverablesPage() {
                               >
                                 <span className="min-w-0 text-sm font-medium text-[var(--foreground)]">
                                   Subtasks
-                                  <span className="font-normal text-[var(--foreground)]/55">
+                                  <span className="font-normal text-[var(--text-muted)]">
                                     {' · '}
                                     {(deliverable.subtasks ?? []).filter((subtask) => subtask.completed).length}/
                                     {(deliverable.subtasks ?? []).length} done
@@ -909,18 +1021,18 @@ export default function DeliverablesPage() {
                                 <ChevronDown
                                   aria-hidden="true"
                                   className={cn(
-                                    'h-4 w-4 shrink-0 text-[var(--foreground)]/60 transition-transform',
+                                    'h-4 w-4 shrink-0 text-[var(--text-muted)] transition-transform',
                                     subtasksExpanded && 'rotate-180',
                                   )}
                                 />
                               </button>
 
                               <div id={subtasksPanelId} hidden={!subtasksExpanded} className="mt-3 space-y-3">
-                                <p className="text-xs text-[var(--foreground)]/60">
+                                <p className="text-xs text-[var(--text-muted)]">
                                   Split the deliverable into smaller assigned steps.
                                 </p>
                                 {(deliverable.subtasks ?? []).length === 0 && (
-                                  <div className="rounded-lg border border-dashed border-[var(--border)] p-3 text-xs text-[var(--foreground)]/60">
+                                  <div className="rounded-lg border border-dashed border-[var(--border)] p-3 text-xs text-[var(--text-muted)]">
                                     No subtasks yet.
                                   </div>
                                 )}
@@ -1022,7 +1134,7 @@ export default function DeliverablesPage() {
                                             <p className={cn('text-sm font-medium text-[var(--foreground)]', subtask.completed && 'line-through opacity-60')}>
                                               {subtask.title}
                                             </p>
-                                            <p className="mt-1 text-xs text-[var(--foreground)]/60">
+                                            <p className="mt-1 text-xs text-[var(--text-muted)]">
                                               {formatPerson(subtask.assignee)}
                                               {subtask.dueDate ? ` • Due ${new Date(subtask.dueDate).toLocaleString()}` : ''}
                                             </p>
@@ -1037,7 +1149,7 @@ export default function DeliverablesPage() {
                                               {subtask.completed ? 'Mark Open' : 'Mark Done'}
                                             </Button>
                                           ) : (
-                                            <span className="text-xs text-[var(--foreground)]/55">
+                                            <span className="text-xs text-[var(--text-muted)]">
                                               {subtask.completed ? 'Done' : 'Open'}
                                             </span>
                                           )}

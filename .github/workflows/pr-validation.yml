@@ -84,6 +84,8 @@ jobs:
         run: npx tsc --noEmit
       - name: Run frontend unit tests
         run: npm test
+      - name: Check the staging sign-in URL matcher
+        run: node --test scripts/check-staging.test.cjs
       - name: Run navigation browser tests
         timeout-minutes: 5
         run: npm run test:navigation:browser
