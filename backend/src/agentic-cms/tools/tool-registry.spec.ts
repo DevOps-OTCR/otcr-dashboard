@@ -9,7 +9,7 @@ const tool = (over: Partial<AgentTool<typeof echoInput>> = {}): AgentTool<typeof
   description: 'Echo text',
   input: echoInput,
   label: ({ text }) => `Echoing ${text}`,
-  run: async ({ text }) => ({ content: `echo: ${text}`, note: 'done' }),
+  run: async ({ text }, _ctx) => ({ content: `echo: ${text}`, note: 'done' }),
   ...over,
 });
 // The constructor only collects tools; build one around arbitrary test tools.
@@ -27,6 +27,8 @@ async function exec(registry: ToolRegistry, name: string, args: unknown, c = ctx
   const content = await registry.execute({ id: 'c1', name, args }, await registry.available(), c, (e) => events.push(e));
   return { content, events };
 }
+
+const CMS_SUFFIX = '\n\nSome fields are shortened; see truncatedFields.';
 
 describe('ToolRegistry', () => {
   it('lists only available tools and builds JSON schemas from their zod input', async () => {
@@ -86,5 +88,92 @@ describe('ToolRegistry', () => {
     const { content } = await exec(registryWith(big), 'echo', { text: 'x' });
     expect(content.length).toBeLessThan(31_000);
     expect(content).toMatch(/\[truncated\]$/);
+  });
+
+  it('shortens oversized JSON tool output while keeping it parseable, preserving nextCursor and noting the shortening', async () => {
+    const content = JSON.stringify({
+      projectId: 'p1',
+      detailText: 'd'.repeat(20_000),
+      pages: [
+        { source: 'cms', url: 'https://x.test/a', text: 'a'.repeat(12_000) },
+        { source: 'cms', url: 'https://x.test/b', text: 'b'.repeat(12_000) },
+      ],
+      nextCursor: 'cursor-abc-123',
+      truncatedFields: [],
+    });
+    expect(content.length).toBeGreaterThan(30_000);
+
+    const big = tool({ run: async () => ({ content }) });
+    const { content: out } = await exec(registryWith(big), 'echo', { text: 'x' });
+
+    expect(out.length).toBeLessThan(30_000);
+    const parsed = JSON.parse(out) as {
+      nextCursor?: unknown;
+      truncatedFields?: string[];
+    };
+    expect(parsed.nextCursor).toBe('cursor-abc-123');
+    expect(Array.isArray(parsed.truncatedFields)).toBe(true);
+    expect(parsed.truncatedFields!.some((s) => /shortened/i.test(s))).toBe(true);
+  });
+
+  it('preserves every nextCursor across nested objects and arrays', async () => {
+    const content = JSON.stringify({
+      batches: [
+        { nextCursor: 'cur-1', text: 'x'.repeat(20_000) },
+        { nextCursor: 'cur-2', text: 'y'.repeat(20_000) },
+      ],
+      truncatedFields: [],
+    });
+    expect(content.length).toBeGreaterThan(30_000);
+
+    const big = tool({ run: async () => ({ content }) });
+    const { content: out } = await exec(registryWith(big), 'echo', { text: 'x' });
+    expect(out.length).toBeLessThan(30_000);
+    const parsed = JSON.parse(out) as { batches: { nextCursor?: string }[] };
+    expect(parsed.batches.map((b) => b.nextCursor)).toEqual(['cur-1', 'cur-2']);
+  });
+
+  it('shortens oversized JSON with the CMS truncation suffix appended, keeping the suffix and nextCursor without parsing it', async () => {
+    const json = JSON.stringify({
+      projectId: 'p1',
+      detailText: 'd'.repeat(20_000),
+      pages: [
+        { source: 'cms', url: 'https://x.test/a', text: 'a'.repeat(12_000) },
+        { source: 'cms', url: 'https://x.test/b', text: 'b'.repeat(12_000) },
+      ],
+      nextCursor: 'cursor-cms-xyz',
+      truncatedFields: ['detailText'],
+    });
+    const content = `${json}${CMS_SUFFIX}`;
+    expect(json.length).toBeGreaterThan(30_000);
+    expect(content.length).toBeGreaterThan(30_000);
+
+    // Guard: JSON.parse must never be called on the suffix.
+    const parseSpy = jest.spyOn(JSON, 'parse');
+    const big = tool({ run: async () => ({ content }) });
+    const { content: out } = await exec(registryWith(big), 'echo', { text: 'x' });
+    const parsedArgs = parseSpy.mock.calls.map((c) => c[0]);
+    parseSpy.mockRestore();
+
+    // Every parse invocation receives a string; none includes the suffix.
+    for (const arg of parsedArgs) {
+      expect(typeof arg).toBe('string');
+      expect((arg as string).endsWith(CMS_SUFFIX.trim())).toBe(false);
+    }
+
+    expect(out.length).toBeLessThan(30_000);
+    expect(out.endsWith(CMS_SUFFIX)).toBe(true);
+
+    const jsonPart = out.slice(0, out.length - CMS_SUFFIX.length);
+    expect(jsonPart.trimEnd()).toBe(jsonPart);
+    const parsed = JSON.parse(jsonPart) as {
+      nextCursor?: unknown;
+      truncatedFields?: string[];
+    };
+    expect(parsed.nextCursor).toBe('cursor-cms-xyz');
+    expect(Array.isArray(parsed.truncatedFields)).toBe(true);
+    // Original truncatedFields entry was preserved.
+    expect(parsed.truncatedFields).toContain('detailText');
+    expect(parsed.truncatedFields!.some((s) => /shortened/i.test(s))).toBe(true);
   });
 });
