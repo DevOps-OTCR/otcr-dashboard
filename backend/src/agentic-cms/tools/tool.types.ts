@@ -37,6 +37,8 @@ export interface AgentTool<Input extends z.ZodType = z.ZodType> {
    * or user-written text.
    */
   readonly returnsInstructions?: boolean;
+  /** Largest output passed to the model; longer output is cut. Default 30,000 characters. */
+  readonly maxOutputChars?: number;
   /** False hides the tool from the model (e.g. missing API key). Default true. */
   isAvailable?(): boolean | Promise<boolean>;
   /** Short progress label for the sidebar, e.g. `Searching the web for "x"`. */

@@ -71,9 +71,10 @@ export class ToolRegistry {
       const out = await tool.run(parsed.data, ctx);
       send({ type: 'tool_end', id: call.id, ok: true, ...(out.note ? { note: out.note } : {}) });
       // Only OTCR's own skill library is passed through as instructions; all else is marked as
-      // data. The marker tags count toward the limit, so shortening leaves room for them.
+      // data. A tool may set its own output limit; the marker tags count toward it.
       const reserved = tool.returnsInstructions ? 0 : asToolData(tool.name, '').length;
-      const content = out.content.length + reserved <= MAX_TOOL_OUTPUT_CHARS ? out.content : this.shorten(out.content, reserved);
+      const limit = (tool.maxOutputChars ?? MAX_TOOL_OUTPUT_CHARS) - reserved;
+      const content = out.content.length <= limit ? out.content : this.shorten(out.content, limit);
       return tool.returnsInstructions ? content : asToolData(tool.name, content);
     } catch (err) {
       if (ctx.signal.aborted) throw err;
@@ -94,12 +95,13 @@ export class ToolRegistry {
    * is preserved verbatim after the shortened JSON. Everything else falls back to a
    * plain character clip.
    */
-  private shorten(content: string, reservedChars = 0): string {
+  private shorten(content: string, limit = MAX_TOOL_OUTPUT_CHARS): string {
     const json = this.tryParseJsonObject(content);
     if (!json) {
-      return `${content.slice(0, MAX_TOOL_OUTPUT_CHARS - reservedChars)}\n[truncated]`;
+      return `${content.slice(0, limit)}\n[truncated]`;
     }
-    const shortened = this.shortenJson(json.value, json.suffix.length + reservedChars);
+    // shortenJson aims for MAX_TOOL_OUTPUT_CHARS minus what it reserves; reserve the gap to `limit` too.
+    const shortened = this.shortenJson(json.value, json.suffix.length + MAX_TOOL_OUTPUT_CHARS - limit);
     return `${shortened}${json.suffix}`;
   }
 

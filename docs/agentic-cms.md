@@ -166,6 +166,14 @@ See [agentic-cms/skills/README.md](../agentic-cms/skills/README.md). The bot
 sees each skill's name and description, and loads the full instructions with
 `load_skill` when a request matches.
 
+A skill can list the shared contracts it needs in its front matter, for example
+`shared: evidence-format` or `shared: [evidence-format, otcr-quality-standards]`.
+`load_skill` then adds `agentic-cms/skills/shared/<name>.md` after the skill, each
+as its own `<otcr_skill>` block. A skill and its contracts must fit in 64,000
+characters. A contract that is missing, misnamed or over that budget is left out,
+and the skill's block says which. `shared/`, `references/` and `examples/` are
+never loaded unless a skill lists them this way.
+
 ### Shared deployment configuration
 
 The agent runs inside the existing NestJS backend service, so there is no
