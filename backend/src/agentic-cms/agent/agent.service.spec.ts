@@ -212,15 +212,23 @@ describe('AgentService.run', () => {
 
   describe('word limit check', () => {
     const words = (n: number) => Array.from({ length: n }, (_, i) => `w${i}`).join(' ');
-    /** Answers with each scripted text in turn, streaming the text like a real model. */
-    const answers = (texts: (string | Error)[], seen: ModelRequest[] = []): ModelClient => ({
+    /** A cut reply sent exactly as written, without the <draft> markers answers() adds. */
+    const raw = (text: string) => ({ raw: text });
+    /**
+     * Answers with each scripted text in turn, streaming the text like a real model. Cut
+     * requests (sent with no tools) get their text wrapped in <draft> markers, as the
+     * cut instructions ask, unless the script uses raw().
+     */
+    const answers = (texts: (string | Error | { raw: string })[], seen: ModelRequest[] = []): ModelClient => ({
       name: 'answers',
       async stream(req, onText) {
         seen.push(req);
         const next = texts[seen.length - 1];
         if (next instanceof Error) throw next;
-        onText(next);
-        return { text: next, toolCalls: [], message: assistantMessage(next, []) };
+        const isCut = req.tools.length === 0;
+        const text = typeof next === 'string' ? (isCut && next.trim() ? `<draft>\n${next}\n</draft>` : next) : next.raw;
+        onText(text);
+        return { text, toolCalls: [], message: assistantMessage(text, []) };
       },
     });
     const replaced = (events: AgentEvent[]) => events.flatMap((e) => (e.type === 'text_replace' ? [e.text] : []));
@@ -354,7 +362,7 @@ describe('AgentService.run', () => {
             const call = { id: 'c1', name: 'lookup', args: {} };
             return { text: 'Let me check.', toolCalls: [call], message: assistantMessage('Let me check.', [call]) };
           }
-          const text = round === 2 ? words(486) : words(300);
+          const text = round === 2 ? words(486) : `<draft>\n${words(300)}\n</draft>`;
           if (round === 2) onText(text);
           return { text, toolCalls: [], message: assistantMessage(text, []) };
         },
@@ -362,6 +370,46 @@ describe('AgentService.run', () => {
       const { svc } = setup(model);
       const { events } = await runTurn(svc, 'Write a 350-word summary');
       expect(replaced(events)).toEqual([`Let me check.\n\n${words(300)}`]);
+    });
+
+    describe('cut replies must mark the draft', () => {
+      // Live run: the model answered the private instruction before rewriting, and that
+      // commentary replaced the user's answer.
+      const commentary = "I'll trim the body while keeping the recommendation. I can't verify a server count.";
+
+      it('shows only the text between the markers, never the commentary around it', async () => {
+        const { svc, store } = setup(answers([words(486), raw(`${commentary}\n\n<draft>\n${words(300)}\n</draft>\n\nHope that helps!`)]));
+        const { events, conversationId } = await runTurn(svc, 'Write a 350-word summary');
+        expect(replaced(events)).toEqual([words(300)]);
+        expect(last(await store.history(conversationId!)).content).toBe(words(300));
+        expect(JSON.stringify(events)).not.toContain('server count');
+      });
+
+      it('rejects a cut without markers and asks again, so commentary never replaces the draft', async () => {
+        const seen: ModelRequest[] = [];
+        const { svc } = setup(answers([words(486), raw(`${commentary}\n\n${words(300)}`), words(320)], seen));
+        const { events } = await runTurn(svc, 'Write a 350-word summary');
+        expect(seen).toHaveLength(3);
+        expect(seen[2].messages[seen[2].messages.length - 1].content).toMatch(/did not put the rewrite between <draft> and <\/draft>/);
+        expect(replaced(events)).toEqual([words(320)]);
+      });
+
+      it('keeps the original with the notice when no attempt is marked', async () => {
+        const { svc } = setup(answers([words(486), raw(`${commentary} ${words(300)}`), raw(words(300))]));
+        const { events } = await runTurn(svc, 'Write a 350-word summary');
+        expect(replaced(events)[0]).toContain(words(486));
+        expect(replaced(events)[0]).toContain('This draft is 486 words');
+        expect(JSON.stringify(events)).not.toContain('server count');
+      });
+
+      it('asks for the markers in every cut instruction', async () => {
+        const seen: ModelRequest[] = [];
+        const { svc } = setup(answers([words(486), words(400), words(330)], seen));
+        await runTurn(svc, 'Write a 350-word summary');
+        for (const req of seen.slice(1)) {
+          expect(req.messages[req.messages.length - 1].content).toMatch(/between a line with only <draft> and a line with only <\/draft>/);
+        }
+      });
     });
 
     describe("Isaiah's required scenarios", () => {

@@ -281,7 +281,20 @@ const targetWords = (limit: number) => Math.floor(limit * 0.95);
 const SAME_RULES =
   'The reviewer note below the --- line and headings do not count. Keep the recommendation, any stop condition and every [DATA NEEDED] flag. ' +
   'Keep every remaining citation number and claim ID exactly as written. Do not add facts, sources, links or numbers. Update any word-count line in the reviewer note. ' +
-  'Reply with only the rewritten draft, plus its reviewer note if it had one.';
+  'Put the rewritten draft, plus its reviewer note if it had one, between a line with only <draft> and a line with only </draft>. ' +
+  'Write nothing else inside the markers. Anything outside them is discarded and never shown to the user.';
+
+/**
+ * The rewrite between <draft> and </draft>, or undefined if the reply has no such pair.
+ * In a live run the model ignored "reply with only the draft" and put commentary on the
+ * server's private instruction ("I can't verify a server count…") above the rewrite, which
+ * then replaced the user's answer. The markers let the server keep only the draft itself.
+ * The last pair wins, in case the commentary mentions the markers.
+ */
+export function extractDraft(reply: string): string | undefined {
+  const pairs = [...reply.matchAll(/<draft>([\s\S]*?)<\/draft>/gi)];
+  return pairs.length ? pairs[pairs.length - 1][1].trim() : undefined;
+}
 
 /** A cut below this share of the limit has lost more content than it needed to. */
 export function isTooShort(words: number, limit: number): boolean {

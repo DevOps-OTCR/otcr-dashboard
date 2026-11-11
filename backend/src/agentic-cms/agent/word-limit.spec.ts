@@ -1,4 +1,4 @@
-import { countDraftWords, isTooShort, requestedWordLimit, wordLimitCorrection, wordLimitRetry } from './word-limit';
+import { countDraftWords, extractDraft, isTooShort, requestedWordLimit, wordLimitCorrection, wordLimitRetry } from './word-limit';
 
 describe('requestedWordLimit', () => {
   it.each([
@@ -288,6 +288,22 @@ describe('countDraftWords', () => {
     const start = Date.now();
     countDraftWords(`[ESTIMATE: ${'a '.repeat(20_000)}`);
     expect(Date.now() - start).toBeLessThan(500);
+  });
+});
+
+describe('extractDraft', () => {
+  it('returns only the text between the markers, trimmed', () => {
+    expect(extractDraft('Sure, trimming now.\n<draft>\nThe draft.\n\n---\nReviewer note.\n</draft>\nDone!')).toBe('The draft.\n\n---\nReviewer note.');
+  });
+
+  it('uses the last pair when the commentary mentions the markers, and ignores case', () => {
+    expect(extractDraft('I will use <draft>x</draft> as asked.\n<DRAFT>\nReal draft\n</Draft>')).toBe('Real draft');
+  });
+
+  it('returns undefined without a complete pair, and empty text for an empty pair', () => {
+    expect(extractDraft('Just the draft, no markers.')).toBeUndefined();
+    expect(extractDraft('<draft>\nunclosed draft')).toBeUndefined();
+    expect(extractDraft('<draft>\n  \n</draft>')).toBe('');
   });
 });
 

@@ -117,6 +117,9 @@ under the limit. It retries once if the cut is still over or below 80% of the
 limit. The count excludes headings, citation and claim tags, and the reviewer note
 below the last `---` line. If the draft is still over, or the cut fails, the reply
 says so.
+The model must return each rewrite between `<draft>` and `</draft>` lines; only
+that text can replace the draft, so commentary on the server's instruction is
+never shown. A rewrite without the markers is rejected like any other bad cut.
 Limits are read only from the current message, so a limit from an earlier message
 or a skill's own default isn't enforced.
 

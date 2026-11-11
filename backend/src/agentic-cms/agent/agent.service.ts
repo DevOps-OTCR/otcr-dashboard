@@ -12,7 +12,7 @@ import { checkCitations } from './citations';
 import { ConversationStore } from './conversation.store';
 import { buildSystemPrompt } from './prompt';
 import { claimIds, dataFlagCount, sourceIds } from './evidence-tags';
-import { countDraftWords, isTooShort, requestedWordLimit, wordLimitCorrection, wordLimitRejected, wordLimitRetry } from './word-limit';
+import { countDraftWords, extractDraft, isTooShort, requestedWordLimit, wordLimitCorrection, wordLimitRejected, wordLimitRetry } from './word-limit';
 
 export const MAX_ROUNDS = 6;
 export const DEFAULT_MAX_MESSAGES_PER_HOUR = 60;
@@ -209,18 +209,33 @@ export class AgentService {
 
     for (let attempt = 0; attempt < MAX_WORD_LIMIT_ATTEMPTS; attempt++) {
       this.assertStillEnabled(input.user);
-      let revised: string;
+      let reply: string;
       try {
         const turn = await this.model.stream(
           { system: request.system, messages, tools: [], signal: input.signal }, // these rounds only rewrite text
           () => undefined,
         );
-        revised = turn.text.trim();
+        reply = turn.text.trim();
       } catch (err) {
         if (input.signal.aborted) throw err;
         this.log.warn(`Word-limit cut failed: ${err instanceof AgentError ? err.kind : 'unexpected error'}`);
         break;
       }
+      if (!reply) break;
+
+      // Only the text between the <draft> markers can replace the user's draft: anything the
+      // model writes around it answers this private instruction and must never be shown.
+      const marked = extractDraft(reply);
+      if (marked === undefined) {
+        this.log.warn('Word-limit cut rejected: no <draft> markers');
+        messages = [
+          ...messages,
+          { role: 'assistant', content: reply },
+          { role: 'user', content: wordLimitRejected('it did not put the rewrite between <draft> and </draft>', limit) },
+        ];
+        continue;
+      }
+      const revised = marked;
       if (!revised) break;
 
       const revisedWords = countDraftWords(revised);
