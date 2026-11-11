@@ -5,6 +5,9 @@ import { AuthGuard } from '../auth/auth.guard';
 import { AuthModule } from '../auth/auth.module';
 import { AgenticCmsModule } from '../agentic-cms/agentic-cms.module';
 import { FeatureFlagsService } from './feature-flags.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { ProjectsModule } from '../projects/projects.module';
+import { ProjectsService } from '../projects/projects.service';
 
 const effects = jest.fn();
 @Controller('agentic-cms/test')
@@ -24,6 +27,10 @@ const auth = {
     return true;
   }),
 };
+
+@Module({ providers: [{ provide: ProjectsService, useValue: {} }], exports: [ProjectsService] })
+class TestProjectsModule {}
+
 @Module({ providers: [{ provide: AuthGuard, useValue: auth }], exports: [AuthGuard] })
 class TestAuthModule {}
 
@@ -39,6 +46,8 @@ describe('Agentic CMS feature boundary', () => {
       imports: [AgenticCmsModule],
       controllers: [AgenticTestController, OrdinaryController],
     }).overrideModule(AuthModule).useModule(TestAuthModule)
+      .overrideProvider(PrismaService).useValue({})
+      .overrideModule(ProjectsModule).useModule(TestProjectsModule)
       .overrideGuard(AuthGuard).useValue(auth)
       .useMocker(token => token === ConfigService ? { get: (key: string) => settings[key] } : undefined)
       .compile();
@@ -59,7 +68,7 @@ describe('Agentic CMS feature boundary', () => {
 
   it('requires authentication even when enabled', async () => {
     settings.AGENTIC_CMS_ENABLED = 'true';
-    expect((await fetch(`${base}/agentic-cms/status`)).status).toBe(403);
+    expect((await fetch(`${base}/agentic-cms/status`)).status).toBe(401);
     expect((await fetch(`${base}/feature-flags`)).status).toBe(403);
   });
 
