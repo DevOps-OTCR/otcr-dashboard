@@ -31,9 +31,9 @@ describe('requestedWordLimit', () => {
     // A floor and a cap together: the cap applies.
     ['at least 500 and at most 800 words', 800],
     ['minimum of 500 words, maximum 800 words', 800],
-    // Ranges: the upper bound is the cap.
-    ['Write a summary of 300-350 words', 350],
-    ['a 300–350 word summary', 350],
+    // Ranges: the upper bound is the cap, when a cut can't fall below the lower bound.
+    ['Write a summary of 200-350 words', 350],
+    ['a 250–400 word summary', 400],
     ['Write between 200 and 300 words', 300],
     // "over" used as time, not as a floor.
     ['over the next week, 400 words', 400],
@@ -76,6 +76,17 @@ describe('requestedWordLimit', () => {
     ['3 slides, 60 words each'],
     ['300 words or fewer per section, 3 sections'],
     ['The deck has 10 slides; each under 50 words'],
+    // Per-part budgets with any noun, not just slide/section/paragraph.
+    ['300 words per topic'],
+    ['Write 300 words on each of 3 topics'],
+    ['Write 100 words about each competitor'],
+    ['per competitor, 100 words'],
+    // Negated "under"/"shorter than" is a minimum.
+    ['not under 400 words'],
+    ['not shorter than 400 words'],
+    // A range whose lower bound is above the cut's too-short line (80% of 350 = 280).
+    ['Write a summary of 300-350 words'],
+    ['a 300–350 word summary'],
     // Two different caps with nothing saying which is the total: no check rather than a wrong one.
     ['Write a 350-word summary and keep the appendix under 100 words'],
     ['Write the 350-word summary and a 100-word abstract'],
@@ -165,6 +176,16 @@ describe('countDraftWords', () => {
 
   it('never drops a paragraph written straight above the reviewer-note line', () => {
     expect(countDraftWords(`${words(400)}\n---\nWord count (estimate): 340 / 350`)).toBe(400);
+  });
+
+  it('drops a long reviewer note that starts with a review label', () => {
+    for (const label of ['Reviewer checklist:', '**Notes for the reviewer**', 'Self-check', 'Sources checked:']) {
+      expect(countDraftWords(`${words(300)}\n\n---\n${label} ${words(100, 'n')}`)).toBe(300);
+    }
+  });
+
+  it('still counts a long closing section after a break', () => {
+    expect(countDraftWords(`${words(300)}\n\n---\n\nIn conclusion ${words(100, 'c')}`)).toBe(402);
   });
 
   it('drops a reviewer note after a spaced rule', () => {

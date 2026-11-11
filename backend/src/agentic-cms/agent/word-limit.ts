@@ -8,13 +8,13 @@ import { stripEvidenceTags } from './evidence-tags';
 
 const MIN_LIMIT = 50; // below this, "N words" is rarely a length limit on a draft
 const NUMBER = String.raw`\d+(?:\.\d+)?k\b|\d{1,3}(?:,\d{3})+|\d+`;
-const UNITS = String.raw`slides?|sections?|paragraphs?|bullets?|bullet points?|pages?|points?|cards?|questions?|answers?|items?|chapters?|parts?|responses?|posts?|tweets?|captions?|headlines?`;
 
 /** Text before the number, back to the start of its sentence. */
 const BEFORE_FLOOR = /(?:at least|minimum(?: of)?|min\.?|no (?:fewer|less) than|not (?:fewer|less) than|more than|over|above|upwards of)\s+$/i;
 const NEGATED_CAP = /(?:\bno|\bnot|\bnever|n't|\bcannot)\s+(?:\w+\s+){0,2}?(?:more than|over|above|beyond|past|exceed(?:ing)?)\s+$/i;
-const PER_UNIT_BEFORE = new RegExp(String.raw`\b(?:each|every|per)\s+(?:of the\s+)?(?:${UNITS})\b`, 'i');
-const PER_EACH_BEFORE = /\b(?:each|every)\s+(?:(?:one|of them|under|below|at most|max(?:imum)?|no more than|up to|within)\s+)*$/i;
+const NEGATED_FLOOR = /(?:\bno|\bnot|\bnever|n't)\s+(?:\w+\s+){0,2}?(?:under|below|shorter than|less than|fewer than)\s+$/i;
+/** "each slide", "per competitor", "every topic": any part of the draft, not only listed units. */
+const PER_PART_BEFORE = /\b(?:each|every|per)\s+\w+/i;
 const LIST_BEFORE = /\b(?:list|name|suggest|brainstorm|find)\s+(?:me\s+)?(?:the\s+)?$/i;
 const DESCRIBES_BEFORE = /\b(?:is|was|are|were|has|had|runs?|ran|currently|already)\s+(?:(?:a|an|about|around|roughly|nearly|over|under|just|only)\s+)*$/i;
 const TRANSFORM_THE = /\b(?:summari[sz]e|cut|trim|shorten|condense|edit|revise|rewrite|tighten|reduce|review|proofread|translate|paraphrase)\s+(?:the|this|that|my|our|your|his|her|their|its)\s+$/i;
@@ -25,13 +25,12 @@ const TOTAL_AFTER = /^\s*(?:in )?(?:total|overall|in all|altogether|combined)\b/
 /** Text after "words", up to the end of its sentence. */
 const AFTER_FLOOR = /^\s*(?:minimum|min\b|or (?:more|longer|above)|at (?:the )?least)/i;
 const AFTER_RATE = /^[\s-]*(?:per|a|an|every)[\s-]+(?:minute|min|second|sec|hour)\b/i;
-const AFTER_PER_UNIT = new RegExp(
-  String.raw`^\s*(?:or (?:fewer|less)\s+)?(?:each|apiece|(?:per|for each|in each|on each|in every|a)\s+(?:${UNITS})\b)`,
-  'i',
-);
+/** "300 words per topic", "100 words about each competitor", "60 words each". Rates are matched first. */
+const AFTER_PER_PART = /^\s*(?:or (?:fewer|less)\s+)?(?:each\b|apiece\b|per\s+\w|(?:\w+\s+)?(?:each|every)\b)/i;
 const AFTER_SOURCE = /^\s*(?:[\w-]+\s+){0,2}?(?:below|above|attached|pasted|here|I sent|you sent|from earlier)\b/i;
 
-type Candidate = { value: number; start: number; end: number; plus: boolean; phrase: boolean };
+/** `low` is a range's lower bound ("300-350 words"): a minimum the cut must respect. */
+type Candidate = { value: number; low?: number; start: number; end: number; plus: boolean; phrase: boolean };
 /** cap: limits the whole draft. floor: a minimum. ignore: per-unit, a rate, a list, or the source's length. */
 type Kind = 'cap' | 'floor' | 'ignore';
 
@@ -63,8 +62,9 @@ function classify(message: string, c: Candidate): Kind {
   if (insideQuotes(message, c.start)) return 'ignore';
   if (c.phrase) return 'cap';
   if (AFTER_RATE.test(after) || LIST_BEFORE.test(before)) return 'ignore';
-  if (PER_UNIT_BEFORE.test(before) || PER_EACH_BEFORE.test(before) || AFTER_PER_UNIT.test(after)) return 'ignore';
+  if (PER_PART_BEFORE.test(before) || AFTER_PER_PART.test(after)) return 'ignore';
   if (DESCRIBES_BEFORE.test(before) || TRANSFORM_THE.test(before) || AFTER_SOURCE.test(after)) return 'ignore';
+  if (NEGATED_FLOOR.test(before)) return 'floor';
   if (NEGATED_CAP.test(before)) return 'cap';
   if (c.plus || BEFORE_FLOOR.test(before) || AFTER_FLOOR.test(after)) return 'floor';
   return 'cap';
@@ -87,7 +87,8 @@ function candidates(message: string): Candidate[] {
   const pattern = String.raw`((?<![\d,.])(?:${NUMBER})\s*(?:-|–|—|to|and)\s*)?(?<![\d,.])(${NUMBER})(\+)?[\s-]*words?\b`;
   for (const m of message.matchAll(new RegExp(pattern, 'gi'))) {
     if (phraseNumbers.has(m.index + (m[1]?.length ?? 0))) continue;
-    found.push({ value: parseNumber(m[2]), start: m.index, end: m.index + m[0].length, plus: Boolean(m[3]), phrase: false });
+    const low = m[1] ? parseNumber(new RegExp(NUMBER).exec(m[1])![0]) : undefined;
+    found.push({ value: parseNumber(m[2]), low, start: m.index, end: m.index + m[0].length, plus: Boolean(m[3]), phrase: false });
   }
   return found;
 }
@@ -100,19 +101,24 @@ function candidates(message: string): Candidate[] {
  */
 export function requestedWordLimit(message: string): number | undefined {
   const text = message.normalize('NFKC'); // full-width digits
-  const found = candidates(text);
-  const caps = found.filter((c) => c.value >= MIN_LIMIT && classify(text, c) === 'cap');
+  const classified = candidates(text).map((c) => ({ ...c, kind: classify(text, c) }));
+  const caps = classified.filter((c) => c.kind === 'cap' && c.value >= MIN_LIMIT);
   const limit = pickLimit(text, caps);
   if (limit === undefined) return undefined;
   // A cut may land as low as the too-short line. If the user's own minimum is above it, a check
   // could push a good draft under that minimum, so make none.
-  const floors = [
-    ...found.filter((c) => classify(text, c) === 'floor').map((c) => c.value),
+  return isTooShort(statedMinimum(text, classified), limit) ? limit : undefined;
+}
+
+/** The highest minimum the message states: floor phrases, range lower bounds, and bare "at least N". */
+function statedMinimum(text: string, classified: (Candidate & { kind: Kind })[]): number {
+  return Math.max(
+    0,
+    ...classified.filter((c) => c.kind === 'floor').map((c) => c.value),
+    ...classified.filter((c) => c.kind === 'cap' && c.low !== undefined).map((c) => c.low!),
     // "at least 750 and at most 800 words": the minimum's number has no "words" of its own.
     ...[...text.matchAll(new RegExp(String.raw`\b(?:at least|minimum(?: of)?|no (?:fewer|less) than)\s+(${NUMBER})`, 'gi'))].map((m) => parseNumber(m[1])),
-  ];
-  const floor = Math.max(0, ...floors);
-  return isTooShort(floor, limit) ? limit : undefined;
+  );
 }
 
 function pickLimit(text: string, caps: Candidate[]): number | undefined {
@@ -133,7 +139,9 @@ function pickLimit(text: string, caps: Candidate[]): number | undefined {
 const RULE = /^\s{0,3}(?:-{3,}|\*{3,}|_{3,}|(?:[-*_]\s+){2,}[-*_])\s*$/;
 const SETEXT_H1 = /^\s{0,3}={3,}\s*$/;
 const ATX_HEADING = /^\s{0,3}#{1,6}\s/;
-const NOTE_START = /^\s*(?:[*_]{1,2})?(?:word count|reviewer note|notes? (?:to|for) (?:the )?reviewer|self-check|qa note)/i;
+/** First line of a reviewer note: a review label, optionally bold, e.g. "Reviewer checklist:", "**Notes for the reviewer**". */
+const NOTE_START =
+  /^\s*(?:[*_]{1,2})?(?:word count|reviewer\b|review notes?|notes? (?:to|for) (?:the )?reviewer|self-check|qa\b|quality check|sources? (?:checked|used)\b)/i;
 const MAX_NOTE_WORDS = 80;
 
 const countTokens = (text: string) =>
