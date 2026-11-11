@@ -4,6 +4,7 @@ import type { SendEvent } from '../agent/agent.events';
 import type { ToolCall, ToolSchema } from '../model/model-client';
 import { CmsReadTools } from './cms-read.tools';
 import { LoadSkillTool } from './load-skill.tool';
+import { asToolData } from './tool-content';
 import { AgentTool, ToolContext, ToolFailure } from './tool.types';
 import { WebSearchTool } from './web-search.tool';
 
@@ -69,8 +70,12 @@ export class ToolRegistry {
     try {
       const out = await tool.run(parsed.data, ctx);
       send({ type: 'tool_end', id: call.id, ok: true, ...(out.note ? { note: out.note } : {}) });
-      if (out.content.length <= MAX_TOOL_OUTPUT_CHARS) return out.content;
-      return this.shorten(out.content);
+      // Only OTCR's own skill library is passed through as instructions; all else is marked as
+      // data. A tool may set its own output limit; the marker tags count toward it.
+      const reserved = tool.returnsInstructions ? 0 : asToolData(tool.name, '').length;
+      const limit = (tool.maxOutputChars ?? MAX_TOOL_OUTPUT_CHARS) - reserved;
+      const content = out.content.length <= limit ? out.content : this.shorten(out.content, limit);
+      return tool.returnsInstructions ? content : asToolData(tool.name, content);
     } catch (err) {
       if (ctx.signal.aborted) throw err;
       if (err instanceof ToolFailure) {
@@ -90,12 +95,13 @@ export class ToolRegistry {
    * is preserved verbatim after the shortened JSON. Everything else falls back to a
    * plain character clip.
    */
-  private shorten(content: string): string {
+  private shorten(content: string, limit = MAX_TOOL_OUTPUT_CHARS): string {
     const json = this.tryParseJsonObject(content);
     if (!json) {
-      return `${content.slice(0, MAX_TOOL_OUTPUT_CHARS)}\n[truncated]`;
+      return `${content.slice(0, limit)}\n[truncated]`;
     }
-    const shortened = this.shortenJson(json.value, json.suffix.length);
+    // shortenJson aims for MAX_TOOL_OUTPUT_CHARS minus what it reserves; reserve the gap to `limit` too.
+    const shortened = this.shortenJson(json.value, json.suffix.length + MAX_TOOL_OUTPUT_CHARS - limit);
     return `${shortened}${json.suffix}`;
   }
 

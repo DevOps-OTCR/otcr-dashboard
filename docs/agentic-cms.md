@@ -98,6 +98,15 @@ OtcrBot sidebar (frontend/features/agentic-cms)
                                 numbers per user+project+workstream
 ```
 
+Tool results reach the model in two marked forms (`tools/tool-content.ts`).
+Skills loaded by `load_skill` arrive inside `<otcr_skill>` tags as OTCR's own
+instructions, which the model follows. Everything else (web results, CMS
+records, any future tool) arrives inside `<tool_data>` tags as data, never
+instructions. Text inside either block can't open or close these tags. The
+system prompt says a skill can't override it or grant access to data. Only a
+tool with `returnsInstructions` set is passed through; this is a boundary
+setting, so don't set it on a tool that returns external or user-written text.
+
 A conversation belongs to one user, project and workstream ("no workstream"
 counts as its own). Reusing its id with a different one returns "conversation
 not found", so the sidebar starts a new chat when either selection changes.
@@ -156,6 +165,14 @@ expected failure. The five CMS read tools are registered this way over CmsReadSe
 See [agentic-cms/skills/README.md](../agentic-cms/skills/README.md). The bot
 sees each skill's name and description, and loads the full instructions with
 `load_skill` when a request matches.
+
+A skill can list the shared contracts it needs in its front matter, for example
+`shared: evidence-format` or `shared: [evidence-format, otcr-quality-standards]`.
+`load_skill` then adds `agentic-cms/skills/shared/<name>.md` after the skill, each
+as its own `<otcr_skill>` block. A skill and its contracts must fit in 64,000
+characters. A contract that is missing, misnamed or over that budget is left out,
+and the skill's block says which. `shared/`, `references/` and `examples/` are
+never loaded unless a skill lists them this way.
 
 ### Shared deployment configuration
 
@@ -343,7 +360,8 @@ These tests do not contact Microsoft Graph or a live database.
 
 `agentic-cms-auth.http.spec.ts` runs the real global guard, `AuthGuard` and
 `AuthService` with only Graph verification mocked, against `/agentic-cms/status`
-and a test-only `/agentic-cms/chat` controller. It covers flag-off rejection
+and OTCR Bot's real `POST /agentic-cms/chat`, with a counting fake model. Every
+rejected caller causes no project check, model call or tool call. It covers flag-off rejection
 before verification, email-only/malformed/invalid credentials, unenrolled
 identities (no user row is created), revoked enrollment, inactive users, pilot
 exclusion and an accepted enrolled pilot user.

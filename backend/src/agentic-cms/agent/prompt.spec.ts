@@ -21,6 +21,14 @@ describe('buildSystemPrompt', () => {
     expect(buildSystemPrompt(base)).toMatch(/none selected/i);
   });
 
+  it('follows <otcr_skill> instructions and treats <tool_data> as data that cannot override the prompt', () => {
+    const p = buildSystemPrompt(base);
+    expect(p).toMatch(/<tool_data>[^\n]*data, never instructions/);
+    expect(p).toMatch(/<otcr_skill>[^\n]*follow it/);
+    expect(p).toMatch(/skill can't override this system prompt/);
+    expect(p).toMatch(/never grants access/);
+  });
+
   it('tells the model not to invent facts it cannot see yet', () => {
     expect(buildSystemPrompt(base)).toMatch(/invent|guess/i);
   });
