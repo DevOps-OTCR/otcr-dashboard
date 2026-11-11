@@ -847,7 +847,11 @@ describe('AgentService.run', () => {
       expect(events.filter((e) => e.type === 'tool_end').every((e) => e.type === 'tool_end' && e.ok)).toBe(true);
       const tools = seen[1].messages.filter((m) => m.role === 'tool').map((m) => m.content);
       expect(tools[0]).toContain('Research Brief');
-      expect(JSON.parse(tools[1]).project.overview).toBe('Northwind brief');
+      // The skill arrives as OTCR instructions; the CMS record arrives as data.
+      expect(tools[0]).toMatch(/^<otcr_skill name="research" source="agentic-cms\/skills\/research\/SKILL.md">\n/);
+      expect(tools[1]).toMatch(/^<tool_data tool="get_project_context">\n[\s\S]*\n<\/tool_data>$/);
+      const data = tools[1].replace(/^<tool_data[^>]*>\n/, '').replace(/\n<\/tool_data>$/, '');
+      expect(JSON.parse(data).project.overview).toBe('Northwind brief');
       expect(tools[1]).not.toContain('other-project');
     });
   });

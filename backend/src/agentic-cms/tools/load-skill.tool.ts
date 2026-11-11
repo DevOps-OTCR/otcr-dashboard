@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
-import { SkillLibrary } from '../skills/skill-library';
+import { MAX_SKILL_PACKAGE_CHARS, SkillLibrary } from '../skills/skill-library';
+import { asSkill } from './tool-content';
 import { AgentTool, ToolFailure } from './tool.types';
 
 const input = z.object({
@@ -15,6 +16,10 @@ export class LoadSkillTool implements AgentTool<typeof input> {
     'Load the full instructions for one of the listed skills. Call this before doing a task that matches a ' +
     "skill's description, then follow the instructions.";
   readonly input = input;
+  /** Skills are OTCR's own instruction library (agentic-cms/skills), so the model follows them. */
+  readonly returnsInstructions = true;
+  /** The library keeps a skill and its contracts within budget, so they always arrive whole. */
+  readonly maxOutputChars = MAX_SKILL_PACKAGE_CHARS + 2_000;
 
   constructor(private readonly skills: SkillLibrary) {}
 
@@ -32,9 +37,17 @@ export class LoadSkillTool implements AgentTool<typeof input> {
       const names = (await this.skills.list()).map((s) => s.name).join(', ');
       throw new ToolFailure('Skill not found', `No skill named "${name}". Available skills: ${names || 'none'}.`);
     }
+    const unavailable = skill.missing.length
+      ? `\n\n(Shared contracts not available: ${skill.missing.join(', ')}. Follow this skill's own rules for them.)`
+      : '';
+    const blocks = [
+      asSkill(skill.name, `agentic-cms/skills/${skill.name}/SKILL.md`, skill.instructions + unavailable),
+      // Shared contracts the skill depends on, after the skill itself.
+      ...skill.contracts.map((c) => asSkill(c.name, `agentic-cms/skills/shared/${c.name}.md`, c.instructions)),
+    ];
     return {
-      content: `Skill "${skill.name}" instructions. Follow them for this task:\n\n${skill.instructions}`,
-      note: skill.name,
+      content: blocks.join('\n\n'),
+      note: skill.contracts.length ? `${skill.name} + ${skill.contracts.map((c) => c.name).join(', ')}` : skill.name,
     };
   }
 }
