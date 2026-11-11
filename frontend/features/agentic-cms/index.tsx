@@ -28,6 +28,7 @@ export default function AgenticCms() {
   const [mount, setMount] = useState<HTMLElement | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Each load/selection invalidates pending reads and write-side UI updates.
   const requestId = useRef(0);
   const [panel, setPanel] = useState<'context' | 'notes'>('context');
 
@@ -37,6 +38,9 @@ export default function AgenticCms() {
     setOverview('');
     setScope('');
     setNotes([]);
+    setTitle('');
+    setContent('');
+    setSaving(false);
     setCanManage(false);
     setError('');
     clearActionError();
@@ -72,6 +76,7 @@ export default function AgenticCms() {
 
   useEffect(() => {
     let active = true;
+    const invalidateRequests = () => { ++requestId.current; };
     void (async () => {
       const token = await getToken();
       if (!active) return;
@@ -93,44 +98,48 @@ export default function AgenticCms() {
         setLoading(false);
       }
     });
-    return () => { active = false; };
+    return () => { active = false; invalidateRequests(); };
   }, [getToken, user?.email]);
 
   const save = async () => {
     const target = projectId;
+    const request = requestId.current;
     const values = { overview, scope };
     setSaving(true);
     clearActionError();
     setMessage('');
     try {
       await api.put(`/agentic-cms/context/projects/${target}`, values);
-      if (projectId === target) setMessage('Context saved.');
+      if (request === requestId.current) setMessage('Context saved.');
     } catch {
-      if (projectId === target) failAction('Unable to save context. Check your access and try again.', { kind: 'save' });
-    } finally { setSaving(false); }
+      if (request === requestId.current) failAction('Unable to save context. Check your access and try again.', { kind: 'save' });
+    } finally { if (request === requestId.current) setSaving(false); }
   };
   const addNote = async () => {
     const target = projectId;
+    const request = requestId.current;
     setSaving(true);
     clearActionError();
     setMessage('');
     try {
       const { data } = await api.post(`/agentic-cms/context/projects/${target}/notes`, { title, content });
-      if (projectId === target) { setNotes(current => [data, ...current]); setTitle(''); setContent(''); setMessage('Note added.'); }
-    } catch { if (projectId === target) failAction('Unable to add note. Check your access and try again.', { kind: 'note' }); }
-    finally { setSaving(false); }
+      if (request === requestId.current) { setNotes(current => [data, ...current]); setTitle(''); setContent(''); setMessage('Note added.'); }
+    } catch { if (request === requestId.current) failAction('Unable to add note. Check your access and try again.', { kind: 'note' }); }
+    finally { if (request === requestId.current) setSaving(false); }
   };
   const removeNote = async (id: string) => {
     const target = projectId;
+    const request = requestId.current;
     clearActionError();
     setMessage('');
     try {
       await api.delete(`/agentic-cms/context/projects/${target}/notes/${id}`);
-      if (projectId === target) setNotes(current => current.filter(n => n.id !== id));
-    } catch { if (projectId === target) failAction('Unable to delete note. Check your access and try again.', { kind: 'delete', id }); }
+      if (request === requestId.current) setNotes(current => current.filter(n => n.id !== id));
+    } catch { if (request === requestId.current) failAction('Unable to delete note. Check your access and try again.', { kind: 'delete', id }); }
   };
 
   // Retry resends the drafts currently on screen, which a failed write never clears.
+  // Late results from a previous project are ignored above, so they never offer Retry.
   const retry = () => {
     if (retryAction?.kind === 'save') return save();
     if (retryAction?.kind === 'note') return addNote();

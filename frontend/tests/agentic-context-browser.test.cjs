@@ -147,3 +147,98 @@ test('keeps a current-project note draft after a failed add and adds it on retry
   await page.getByRole('tab', { name: 'Client Call Notes' }).click();
   assert.equal(await page.locator('article').filter({ hasText: 'Synthetic call 7' }).count(), 1);
 });
+
+async function editablePage(t, held = true) {
+  const context = await browser.newContext(); t.after(() => context.close());
+  await context.route('**/*', route => route.fulfill({ contentType: route.request().url().endsWith('/bundle.js') ? 'text/javascript' : 'text/html', body: route.request().url().endsWith('/bundle.js') ? bundle : document }));
+  const page = await context.newPage();
+  await page.goto(`http://context.test/agentic-cms?role=ADMIN${held ? '&holdWrites' : ''}`);
+  await page.getByRole('textbox', { name: 'Overview', exact: true }).waitFor();
+  return page;
+}
+async function finishWrite(page, index, fail = false) {
+  await page.evaluate(async ({ index, fail }) => {
+    window.contextWrites.pending[index].finish(fail);
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  }, { index, fail });
+}
+async function startWrite(page, method) {
+  if (method === 'PUT') {
+    await page.getByRole('textbox', { name: 'Overview', exact: true }).fill('Updated overview');
+    await page.getByRole('button', { name: 'Save context' }).click();
+  } else {
+    await page.getByRole('tab', { name: 'Client Call Notes' }).click();
+    if (method === 'DELETE') await page.getByRole('button', { name: 'Delete Kickoff' }).click();
+    else {
+      await page.getByRole('textbox', { name: 'Note title' }).fill('Project One only');
+      await page.getByRole('textbox', { name: 'Note text' }).fill('Original project note');
+      await page.getByRole('button', { name: 'Add note' }).click();
+    }
+  }
+}
+for (const method of ['POST', 'PUT', 'DELETE']) for (const fail of [false, true]) {
+  test(`ignores late ${method} ${fail ? 'failure' : 'success'} after switching projects`, async t => {
+    const page = await editablePage(t);
+    await startWrite(page, method);
+    await page.waitForFunction(() => window.contextWrites.pending.length === 1);
+    await page.getByRole('combobox', { name: 'Project' }).selectOption('p2');
+    if (method === 'PUT') {
+      await page.getByRole('textbox', { name: 'Overview', exact: true }).waitFor();
+      assert.equal(await page.getByRole('button', { name: 'Save context' }).isEnabled(), true);
+      await startWrite(page, 'PUT');
+      await page.waitForFunction(() => window.contextWrites.pending.length === 2);
+    } else {
+      await page.getByRole('textbox', { name: 'Note title' }).waitFor();
+      assert.equal(await page.getByRole('textbox', { name: 'Note title' }).inputValue(), '');
+      await page.getByRole('textbox', { name: 'Note title' }).fill('Project Two draft');
+      await page.getByRole('textbox', { name: 'Note text' }).fill('Do not clear this draft');
+    }
+    await finishWrite(page, 0, fail);
+    assert.equal(await page.getByRole('alert').count(), 0);
+    assert.equal(await page.getByRole('status').count(), 0);
+    if (method === 'PUT') {
+      assert.equal(await page.getByRole('button', { name: 'Saving...' }).isDisabled(), true);
+      await finishWrite(page, 1);
+      await page.getByRole('status').getByText('Context saved.', { exact: true }).waitFor();
+    } else {
+      assert.equal(await page.locator('article').count(), 0);
+      assert.equal(await page.getByRole('textbox', { name: 'Note title' }).inputValue(), 'Project Two draft');
+      assert.equal(await page.getByRole('textbox', { name: 'Note text' }).inputValue(), 'Do not clear this draft');
+    }
+    if (method === 'POST' && !fail) {
+      await page.getByRole('combobox', { name: 'Project' }).selectOption('p1');
+      await page.locator('article').filter({ hasText: 'Project One only' }).waitFor();
+    }
+  });
+}
+
+test('switching A to B to A still invalidates an earlier note creation', async t => {
+  const page = await editablePage(t);
+  await startWrite(page, 'POST');
+  await page.waitForFunction(() => window.contextWrites.pending.length === 1);
+  const project = page.getByRole('combobox', { name: 'Project' });
+  await project.selectOption('p2');
+  await page.getByRole('textbox', { name: 'Note title' }).waitFor();
+  await project.selectOption('p1');
+  await page.getByRole('button', { name: 'Delete Kickoff' }).waitFor();
+  await page.getByRole('textbox', { name: 'Note title' }).fill('New visit draft');
+  await finishWrite(page, 0);
+  assert.equal(await page.getByRole('textbox', { name: 'Note title' }).inputValue(), 'New visit draft');
+  assert.equal(await page.locator('article').filter({ hasText: 'Project One only' }).count(), 0);
+  assert.equal(await page.getByRole('status').count(), 0);
+});
+
+test('note creation and deletion still update the current project and persist on reload', async t => {
+  const page = await editablePage(t, false);
+  await startWrite(page, 'POST');
+  await page.locator('article').filter({ hasText: 'Project One only' }).waitFor();
+  assert.equal(await page.getByRole('textbox', { name: 'Note title' }).inputValue(), '');
+  await page.reload();
+  await page.getByRole('tab', { name: 'Client Call Notes' }).click();
+  await page.getByRole('button', { name: 'Delete Project One only' }).click();
+  await page.locator('article').filter({ hasText: 'Project One only' }).waitFor({ state: 'detached' });
+  await page.reload();
+  await page.getByRole('tab', { name: 'Client Call Notes' }).click();
+  await page.getByRole('button', { name: 'Delete Kickoff' }).waitFor();
+  assert.equal(await page.locator('article').count(), 1);
+});

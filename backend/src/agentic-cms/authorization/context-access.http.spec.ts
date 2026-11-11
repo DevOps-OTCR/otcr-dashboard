@@ -11,13 +11,13 @@ import { AgenticCmsModule } from '../agentic-cms.module';
 jest.mock('../../common/utils/verify', () => ({ getVerifiedUser: jest.fn() }));
 const verify = jest.mocked(getVerifiedUser);
 const resolveUser = jest.fn();
-const enrolled = jest.fn();
+const isEmailAllowed = jest.fn();
 const prisma = {
   project: { findUnique: jest.fn(), update: jest.fn() },
   projectContextNote: { findMany: jest.fn(), create: jest.fn(), findFirst: jest.fn(), delete: jest.fn() },
 };
 @Module({
-  providers: [AuthGuard, { provide: AuthService, useValue: { getUserByEmail: resolveUser, isEmailAllowed: enrolled } }],
+  providers: [AuthGuard, { provide: AuthService, useValue: { getUserByEmail: resolveUser, isEmailAllowed } }],
   exports: [AuthGuard, AuthService],
 })
 class TestAuthModule {}
@@ -56,10 +56,10 @@ describe('Project-context HTTP security', () => {
   };
   beforeEach(async () => {
     jest.resetAllMocks();
+    isEmailAllowed.mockResolvedValue(true);
     settings = { AGENTIC_CMS_ENABLED: 'true', AGENTIC_CMS_ALLOWED_EMAILS: 'pilot@illinois.edu' };
     role = 'PM'; member = true; owner = 'reader';
     verify.mockResolvedValue('pilot@illinois.edu');
-    enrolled.mockResolvedValue(true);
     resolveUser.mockImplementation(async () => ({ id: 'reader', email: 'pilot@illinois.edu', role, active: true }));
     prisma.project.findUnique.mockImplementation(async ({ where, select }) => {
       if (select.overview) return { id: where.id, name: 'Synthetic project', overview: 'Overview', scope: 'Scope' };
@@ -104,6 +104,14 @@ describe('Project-context HTTP security', () => {
     }
     expectNoDataAccess();
   });
+  it('rejects an unenrolled email before resolving the CMS user or touching project data', async () => {
+    isEmailAllowed.mockResolvedValue(false);
+    for (const op of operations) expect((await request(op)).status).toBe(401);
+    expect(isEmailAllowed).toHaveBeenCalledWith('pilot@illinois.edu');
+    expect(resolveUser).not.toHaveBeenCalled();
+    expectNoDataAccess();
+  });
+
   it('denies non-pilot users before data access', async () => {
     settings.AGENTIC_CMS_ALLOWED_EMAILS = 'other@illinois.edu';
     for (const op of operations) expect((await request(op)).status).toBe(404);

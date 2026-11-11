@@ -121,6 +121,28 @@ integration('MCP client -> Nest endpoint -> migrated PostgreSQL', () => {
     return result.structuredContent;
   }
 
+  it('denies context and MCP after CMS email access is revoked with membership intact', async () => {
+    const client = await connect();
+    await call(client, 'get_project_context', { projectId: 'project' });
+    const where = { email: 'reader@illinois.edu' };
+    await db.allowedEmail.update({ where, data: { active: false } });
+    try {
+      const authorization = 'Bearer token-reader';
+      const context = await fetch(endpoint.replace('/mcp', '/context/projects/project'), { headers: { authorization } });
+      expect(context.status).toBe(401);
+      const mcp = await fetch(endpoint, {
+        method: 'POST',
+        headers: { authorization, 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: {
+          name: 'get_project_context', arguments: { projectId: 'project' },
+        } }),
+      });
+      expect(mcp.status).toBe(401);
+    } finally {
+      await db.allowedEmail.update({ where, data: { active: true } });
+    }
+  });
+
   it('discovers exactly five read-only tools with input and output schemas', async () => {
     const client = await connect();
     const result = await client.listTools();
