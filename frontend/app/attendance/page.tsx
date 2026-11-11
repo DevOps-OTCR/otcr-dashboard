@@ -882,7 +882,7 @@ export default function AttendancePage() {
             {attendanceEvent.locationType === 'ONLINE' && attendanceEvent.canControlOnlineCode && canCreate && (
               <div className="flex flex-wrap items-center gap-3">
                 <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2">
-                  <p className="text-xs uppercase tracking-[0.18em] text-[var(--foreground)]/55">4-digit code</p>
+                  <p className="text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">4-digit code</p>
                   <p className="text-2xl font-semibold tracking-[0.3em] text-[var(--primary)]">
                     {attendanceEvent.verificationCode ?? '----'}
                   </p>
@@ -1036,7 +1036,7 @@ export default function AttendancePage() {
           {upcomingEvents.length === 0 ? (
             <Card>
               <CardContent>
-                <p className="text-sm text-[var(--foreground)]/65">No upcoming attendance events are visible to you right now.</p>
+                <p className="text-sm text-[var(--text-muted)]">No upcoming attendance events are visible to you right now.</p>
               </CardContent>
             </Card>
           ) : (
@@ -1241,9 +1241,9 @@ export default function AttendancePage() {
         size="lg"
       >
         {loadingRoster ? (
-          <p className="text-sm text-[var(--foreground)]/65">Loading attendance records...</p>
+          <p className="text-sm text-[var(--text-muted)]">Loading attendance records...</p>
         ) : roster.length === 0 ? (
-          <p className="text-sm text-[var(--foreground)]/65">No one has checked in yet.</p>
+          <p className="text-sm text-[var(--text-muted)]">No one has checked in yet.</p>
         ) : (
           <div className="space-y-3 max-h-[60vh] overflow-y-auto">
             {roster.map((row) => (
@@ -1251,7 +1251,7 @@ export default function AttendancePage() {
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <div>
                     <p className="text-sm font-semibold">{row.name}</p>
-                    <p className="text-xs text-[var(--foreground)]/65">{row.email}</p>
+                    <p className="text-xs text-[var(--text-muted)]">{row.email}</p>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <Badge variant="success">{row.present ? 'Present' : 'Not present'}</Badge>
@@ -1260,7 +1260,7 @@ export default function AttendancePage() {
                     </Badge>
                   </div>
                 </div>
-                <p className="text-xs text-[var(--foreground)]/65 mt-3">
+                <p className="text-xs text-[var(--text-muted)] mt-3">
                   Checked in at {new Date(row.checkedInAt).toLocaleString()}
                 </p>
               </div>

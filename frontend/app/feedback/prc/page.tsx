@@ -46,7 +46,7 @@ export default function PrcFormPage() {
             <p className="text-sm font-semibold">
               {submission.contactName || submission.contactEmail ? 'Contact information provided' : 'Anonymous PRC submission'}
             </p>
-            <p className="text-xs text-[var(--foreground)]/60">
+            <p className="text-xs text-[var(--text-muted)]">
               {new Date(submission.createdAt).toLocaleString()}
             </p>
           </div>
@@ -87,7 +87,7 @@ export default function PrcFormPage() {
               value={contactName}
               onChange={(event) => setContactName(event.target.value)}
               placeholder="Optional name"
-              className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] placeholder:text-[var(--foreground)]/50 text-sm"
+              className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] placeholder:text-[var(--text-muted)] text-sm"
             />
           </div>
 
@@ -98,7 +98,7 @@ export default function PrcFormPage() {
               value={contactEmail}
               onChange={(event) => setContactEmail(event.target.value)}
               placeholder="Optional email address"
-              className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] placeholder:text-[var(--foreground)]/50 text-sm"
+              className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] placeholder:text-[var(--text-muted)] text-sm"
             />
           </div>
 
@@ -111,7 +111,7 @@ export default function PrcFormPage() {
               onChange={(event) => setDescription(event.target.value)}
               placeholder="Describe the concern in detail"
               rows={8}
-              className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] placeholder:text-[var(--foreground)]/50 text-sm"
+              className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] placeholder:text-[var(--text-muted)] text-sm"
             />
           </div>
         </>
