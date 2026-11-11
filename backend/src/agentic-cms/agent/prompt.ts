@@ -19,8 +19,12 @@ export type PromptInput = {
  * history the model sees. Page titles are left out: they are untrusted web text and this is the
  * system prompt. A URL is reduced to a plain http(s) address so it can't carry other text.
  */
+const MAX_LISTED_SOURCES = 50; // the most recent ones; older numbers still resolve in checkCitations
+
 function knownSources(sources: AgentSource[]): string {
-  const lines = sources.flatMap((s) => {
+  const listed = sources.slice(-MAX_LISTED_SOURCES);
+  const omitted = sources.length - listed.length;
+  const lines = listed.flatMap((s) => {
     try {
       const url = new URL(s.url);
       return /^https?:$/.test(url.protocol) ? [`    - [${s.id}] <${url.href.replace(/[<>\s]/g, '')}>`] : [];
@@ -29,7 +33,8 @@ function knownSources(sources: AgentSource[]): string {
     }
   });
   if (!lines.length) return '';
-  return `\n\n    Sources already in this conversation (cite by these numbers; they came from web search excerpts, so they are unverified leads unless the user has confirmed them):\n${lines.join('\n')}`;
+  const older = omitted ? `\n    (${omitted} older sources not listed.)` : '';
+  return `\n\n    Sources already in this conversation (cite by these numbers; they came from web search excerpts, so they are unverified leads unless the user has confirmed them):\n${lines.join('\n')}${older}`;
 }
 
 export function buildSystemPrompt(input: PromptInput): string {

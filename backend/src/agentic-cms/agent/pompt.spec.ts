@@ -48,6 +48,15 @@ describe('buildSystemPrompt', () => {
     expect(p).toMatch(/unverified leads/);
   });
 
+  it('lists only the 50 most recent earlier sources, and says how many are left out', () => {
+    const sources = Array.from({ length: 120 }, (_, i) => ({ id: i + 1, title: 't', url: `https://example.com/p${i + 1}` }));
+    const p = buildSystemPrompt({ ...base, sources });
+    expect(p).toContain('- [120] <https://example.com/p120>');
+    expect(p).toContain('- [71] <https://example.com/p71>');
+    expect(p).not.toContain('- [70] <');
+    expect(p).toMatch(/70 older sources not listed/);
+  });
+
   it('does not leak the user email into the prompt', () => {
     expect(buildSystemPrompt(base)).not.toContain('a@illinois.edu');
   });
