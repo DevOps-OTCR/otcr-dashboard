@@ -23,14 +23,18 @@ const safeNotes: Record<string, string> = {
 };
 
 const FALLBACK_CODE = 'CMS_UNAVAILABLE';
+const NOT_FOUND_CODE = 'FEATURE_UNAVAILABLE';
 
 function failureFromHttp(error: HttpException): ToolFailure {
   const response = error.getResponse();
-  let code = FALLBACK_CODE;
+  let code: string | undefined;
   if (response && typeof response === 'object' && 'code' in response
     && typeof (response as { code?: unknown }).code === 'string') {
     const candidate = (response as { code: string }).code;
     if (candidate in safeErrors) code = candidate;
+  }
+  if (code === undefined) {
+    code = error.getStatus() === 404 ? NOT_FOUND_CODE : FALLBACK_CODE;
   }
   const note = safeNotes[code] ?? 'CMS request failed';
   const modelMessage = safeErrors[code] ?? 'Agentic CMS is unavailable.';

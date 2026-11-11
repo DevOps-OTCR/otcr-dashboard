@@ -81,4 +81,21 @@ describe('CmsReadTools', () => {
       expect(f.modelMessage).toBe('The requested CMS record is unavailable.');
     }
   });
+
+  it('maps bare 404 to FEATURE_UNAVAILABLE without leaking the exception message', async () => {
+    const getProjectContext = jest.fn().mockRejectedValue(new NotFoundException());
+    const reads = fakeReads({ getProjectContext });
+    const tools = new CmsReadTools(reads);
+    const tool = toolNamed(tools, 'get_project_context');
+    const parsed = tool.input.parse({ projectId: 'selected' });
+    await expect(tool.run(parsed as never, makeCtx())).rejects.toBeInstanceOf(ToolFailure);
+    try {
+      await tool.run(parsed as never, makeCtx());
+    } catch (err) {
+      const f = err as ToolFailure;
+      expect(f.modelMessage).toBe('Agentic CMS is unavailable.');
+      expect(f.note).not.toContain('temporarily');
+      expect(f.modelMessage).not.toContain('temporarily');
+    }
+  });
 });
