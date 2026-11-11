@@ -347,7 +347,7 @@ export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotif
                   </div>
                   <div className="max-h-[360px] overflow-y-auto p-3 space-y-2">
                     {notifications.length === 0 ? (
-                      <p className="text-sm text-[var(--foreground)]/60 text-center py-6">No notifications yet</p>
+                      <p className="text-sm text-[var(--text-muted)] text-center py-6">No notifications yet</p>
                     ) : (
                       notifications.map((n) => (
                         <button
@@ -383,7 +383,7 @@ export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotif
                                 {!n.read && <span className="w-2 h-2 rounded-full bg-[var(--primary)] shrink-0" />}
                               </div>
                               <p className="text-xs text-[var(--foreground)]/75 mt-1">{n.message}</p>
-                              <p className="text-xs text-[var(--foreground)]/55 mt-1">
+                              <p className="text-xs text-[var(--text-muted)] mt-1">
                                 {formatNotificationTime(n.at)}
                               </p>
                             </div>
@@ -429,10 +429,10 @@ export function PersistentNavbar({ role, currentPath = '/dashboard', unreadNotif
               return (
                 <span
                   key={item.id}
-                  className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs lg:text-sm transition-colors whitespace-nowrap text-[var(--foreground)]/35 cursor-not-allowed"
+                  className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs lg:text-sm transition-colors whitespace-nowrap text-[var(--text-muted)] cursor-not-allowed"
                   title="You do not have access to this page"
                 >
-                  <Icon className="w-4 h-4 text-[var(--foreground)]/35" />
+                  <Icon className="w-4 h-4 text-[var(--text-muted)]" />
                   <span>{item.label}</span>
                 </span>
               );

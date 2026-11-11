@@ -32,9 +32,14 @@ export function WeeklyDeliverablesCard({
         </CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4 max-h-[400px] overflow-y-auto">
+      <CardContent
+        className="space-y-4 max-h-[400px] overflow-y-auto"
+        tabIndex={0}
+        role="region"
+        aria-label="This week's deliverables"
+      >
         {loading ? <PageLoading /> : items.length === 0 ? (
-          <div className="p-4 rounded-xl border border-dashed border-[var(--border)] text-sm text-[var(--foreground)]/60">
+          <div className="p-4 rounded-xl border border-dashed border-[var(--border)] text-sm text-[var(--text-muted)]">
             {emptyMessage}
           </div>
         ) : (
@@ -49,7 +54,7 @@ export function WeeklyDeliverablesCard({
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1 break-words">
                     <h5 className="font-semibold text-[var(--foreground)]">{item.title}</h5>
-                    <p className="text-xs text-[var(--foreground)]/70">
+                    <p className="text-xs text-[var(--text-muted)]">
                       {item.projectName} • {item.sprintLabel}
                     </p>
                   </div>
@@ -57,7 +62,7 @@ export function WeeklyDeliverablesCard({
                     {isOverdue ? 'Overdue' : 'Due'}
                   </Badge>
                 </div>
-                <p className="mt-2 text-sm text-[var(--foreground)]/70">
+                <p className="mt-2 text-sm text-[var(--text-muted)]">
                   {item.deadline.toLocaleString()}
                 </p>
               </div>

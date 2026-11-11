@@ -524,6 +524,56 @@ export class DeliverablesService {
     } as any);
   }
 
+  async setWorkingLink(id: string, userId: string, link: string | null) {
+    const trimmed = link == null ? null : link.trim();
+
+    if (!trimmed) {
+      return this.prisma.deliverable.update({
+        where: { id },
+        data: {
+          workingLinkUrl: null,
+          workingLinkUpdatedAt: null,
+          workingLinkUpdatedById: null,
+        },
+        select: {
+          id: true,
+          workingLinkUrl: true,
+          workingLinkUpdatedAt: true,
+          workingLinkUpdatedById: true,
+        },
+      });
+    }
+
+    if (trimmed.length > 2048) {
+      throw new BadRequestException('Working link is too long (max 2048 characters)');
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(trimmed);
+    } catch {
+      throw new BadRequestException('Working link must be an https URL');
+    }
+
+    if (parsed.protocol !== 'https:') {
+      throw new BadRequestException('Working link must be an https URL');
+    }
+
+    return this.prisma.deliverable.update({
+      where: { id },
+      data: {
+        workingLinkUrl: trimmed,
+        workingLinkUpdatedAt: new Date(),
+        workingLinkUpdatedById: userId,
+      },
+      select: {
+        id: true,
+        workingLinkUrl: true,
+        workingLinkUpdatedAt: true,
+        workingLinkUpdatedById: true,
+      },
+    });
+  }
+
   async submitLink(id: string, userId: string, link: string) {
     const trimmedLink = link.trim();
 

@@ -90,11 +90,42 @@ export class ProjectsController {
       return this.projectsService.findByMember(user.id, parsedQuery);
     }
 
-    if (user.role === 'PM' && !query.pmId) {
+    // PMs only list projects they manage; a caller-supplied pmId is ignored.
+    if (user.role === 'PM') {
       return this.projectsService.findAll({ ...parsedQuery, pmId: user.id });
     }
 
     return this.projectsService.findAll(parsedQuery);
+  }
+
+  @Get('schedule')
+  @Roles('ADMIN', 'PM', 'LC', 'CONSULTANT', 'PARTNER', 'EXECUTIVE')
+  async getSchedule(
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @GetUser() user: { id: string; role: string }
+  ) {
+    const fromDate = this.parseIsoInstant(from);
+    const toDate = this.parseIsoInstant(to);
+
+    if (!fromDate || !toDate) {
+      throw new BadRequestException('from and to must be ISO dates');
+    }
+
+    if (toDate <= fromDate) {
+      throw new BadRequestException('to must be after from');
+    }
+
+    const rangeMs = toDate.getTime() - fromDate.getTime();
+    if (rangeMs > 62 * 24 * 60 * 60 * 1000) {
+      throw new BadRequestException('Range must be 62 days or less');
+    }
+
+    return this.projectsService.getSchedule(
+      { id: user.id, role: user.role },
+      fromDate,
+      toDate
+    );
   }
 
   @Get(':id/sprint-config')
@@ -148,7 +179,8 @@ export class ProjectsController {
     }
 
     await this.ensureProjectAccess(project, user);
-    return this.projectsService.listSprints(id);
+    const canManage = ['ADMIN', 'LC'].includes(user.role) || project.pmId === user.id;
+    return this.projectsService.listSprints(id, { includeDraftWorkingLinks: canManage });
   }
 
   @Post(':id/sprints/generate-next')
@@ -432,6 +464,73 @@ export class ProjectsController {
     }
 
     return this.projectsService.removeMember(id, userId);
+  }
+
+  private parseIsoInstant(value: string | undefined): Date | null {
+    if (!value) {
+      return null;
+    }
+
+    const isoInstantPattern =
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
+
+    if (!isoInstantPattern.test(value)) {
+      return null;
+    }
+
+    const groups = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?(Z|[+-](\d{2}):(\d{2}))$/.exec(
+      value,
+    );
+    if (!groups) {
+      return null;
+    }
+
+    const year = Number(groups[1]);
+    const month = Number(groups[2]);
+    const day = Number(groups[3]);
+    const hour = Number(groups[4]);
+    const minute = Number(groups[5]);
+    const second = groups[6] === undefined ? 0 : Number(groups[6]);
+    const offsetHours = groups[8] === undefined ? 0 : Number(groups[8]);
+    const offsetMinutes = groups[9] === undefined ? 0 : Number(groups[9]);
+
+    if (month < 1 || month > 12) {
+      return null;
+    }
+
+    const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+    const daysInMonth = [
+      31,
+      isLeapYear ? 29 : 28,
+      31,
+      30,
+      31,
+      30,
+      31,
+      31,
+      30,
+      31,
+      30,
+      31,
+    ];
+    if (day < 1 || day > daysInMonth[month - 1]) {
+      return null;
+    }
+
+    if (hour > 23 || minute > 59 || second > 59) {
+      return null;
+    }
+
+    if (offsetHours > 23 || offsetMinutes > 59) {
+      return null;
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return null;
+    }
+
+    return parsed;
   }
 
   private parsePositiveInt(value: string | undefined, fallback: number): number {

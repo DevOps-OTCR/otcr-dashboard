@@ -171,7 +171,7 @@ function AlumniTable() {
               Alumni Database
             </CardTitle>
             {dataset && (
-              <p className="text-xs text-[var(--foreground)]/55 pt-1">
+              <p className="text-xs text-[var(--text-muted)] pt-1">
                 Last imported {new Date(dataset.generatedAt).toLocaleString(undefined, {
                   dateStyle: 'medium',
                   timeStyle: 'short',
@@ -191,7 +191,7 @@ function AlumniTable() {
             {dataset && (
               <>
                 <div className="relative max-w-2xl">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--foreground)]/40" />
+                  <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
                   <input
                     ref={searchInputRef}
                     type="search"
@@ -213,7 +213,7 @@ function AlumniTable() {
                       type="button"
                       aria-label="Clear search"
                       onClick={clearSearch}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1 text-[var(--foreground)]/50 hover:bg-[var(--accent)] hover:text-[var(--foreground)]"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1 text-[var(--text-muted)] hover:bg-[var(--accent)] hover:text-[var(--foreground)]"
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -221,7 +221,7 @@ function AlumniTable() {
                 </div>
 
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <p className="text-sm text-[var(--foreground)]/65">
+                  <p className="text-sm text-[var(--text-muted)]">
                     {totalCount === 0 ? (
                       'No matching records.'
                     ) : (
@@ -245,7 +245,7 @@ function AlumniTable() {
                         className={cn(
                           'inline-flex items-center justify-center rounded-xl border px-3 py-2 transition-colors',
                           safePage <= 0
-                            ? 'border-[var(--border)] text-[var(--foreground)]/35 cursor-not-allowed'
+                            ? 'border-[var(--border)] text-[var(--text-muted)] cursor-not-allowed'
                             : 'border-[var(--border)] hover:bg-[var(--accent)] text-[var(--foreground)]',
                         )}
                       >
@@ -262,7 +262,7 @@ function AlumniTable() {
                         className={cn(
                           'inline-flex items-center justify-center rounded-xl border px-3 py-2 transition-colors',
                           safePage >= totalPages - 1
-                            ? 'border-[var(--border)] text-[var(--foreground)]/35 cursor-not-allowed'
+                            ? 'border-[var(--border)] text-[var(--text-muted)] cursor-not-allowed'
                             : 'border-[var(--border)] hover:bg-[var(--accent)] text-[var(--foreground)]',
                         )}
                       >
@@ -275,7 +275,7 @@ function AlumniTable() {
                 <div className="rounded-2xl border border-[var(--border)] bg-[var(--secondary)]/30 overflow-hidden overflow-x-auto">
                   <table className="min-w-[960px] w-full text-sm">
                     <thead>
-                      <tr className="bg-[var(--card)] border-b border-[var(--border)] text-left text-xs uppercase tracking-wide text-[var(--foreground)]/55">
+                      <tr className="bg-[var(--card)] border-b border-[var(--border)] text-left text-xs uppercase tracking-wide text-[var(--text-muted)]">
                         {COLUMNS.map(({ key, label, className }) => {
                           const active = sort.key === key;
                           const SortIcon = !active ? ArrowUpDown : sort.direction === 'asc' ? ArrowUp : ArrowDown;
@@ -335,7 +335,7 @@ function AlumniTable() {
                               {displayOrDash(alumniMajors(r))}
                             </td>
                             <td className="py-3 px-2 text-[var(--foreground)]">
-                              <span className={cn(normalizedEmployer(r) === '' && 'italic text-[var(--foreground)]/50')}>
+                              <span className={cn(normalizedEmployer(r) === '' && 'italic text-[var(--text-muted)]')}>
                                 {displayOrDash(alumniField(r, 'employer'))}
                               </span>
                             </td>
