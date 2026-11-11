@@ -6,6 +6,10 @@ const frontend = process.env.STAGING_FRONTEND_URL || 'https://otcr-dashboard-sta
 const api = process.env.STAGING_API_URL || 'https://otcr-dashboard-staging-api.onrender.com';
 const revision = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 
+function waitForSignIn(page) {
+  return page.waitForURL(/\/sign-in\/?$/);
+}
+
 async function waitForDeployment() {
   const deadline = Date.now() + 12 * 60 * 1000;
   while (Date.now() < deadline) {
@@ -43,7 +47,7 @@ async function main() {
     const pageErrors = [];
     page.on('pageerror', error => pageErrors.push(error.message));
     await page.goto(frontend, { waitUntil: 'domcontentloaded' });
-    await page.waitForURL(/\/sign-in\/?$/);
+    await waitForSignIn(page);
     await page.getByRole('button', { name: 'Sign in with NetID', exact: true }).waitFor();
     const result = await page.evaluate(async apiUrl => {
       const response = await fetch(`${apiUrl}/__meta`, {
@@ -72,7 +76,12 @@ async function main() {
   }
 }
 
-main().catch(error => {
-  console.error(error);
-  process.exitCode = 1;
-});
+module.exports = { waitForSignIn };
+
+if (require.main === module) {
+  main().catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
+
