@@ -9,7 +9,7 @@ const tool = (over: Partial<AgentTool<typeof echoInput>> = {}): AgentTool<typeof
   description: 'Echo text',
   input: echoInput,
   label: ({ text }) => `Echoing ${text}`,
-  run: async ({ text }, _ctx) => ({ content: `echo: ${text}`, note: 'done' }),
+  run: async ({ text }) => ({ content: `echo: ${text}`, note: 'done' }),
   ...over,
 });
 // The constructor only collects tools; build one around arbitrary test tools.

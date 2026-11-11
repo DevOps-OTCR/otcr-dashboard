@@ -314,7 +314,7 @@ export class ToolRegistry {
     walk(doc, []);
 
     let out = serialized;
-    for (const { path, arr } of arrays) {
+    for (const { arr } of arrays) {
       if (out.length <= budget) break;
       while (arr.length > 0 && out.length > budget) {
         arr.pop();

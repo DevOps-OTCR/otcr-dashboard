@@ -1,6 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
 import type { AgentUser } from '../agent/agent.types';
-import type { CmsReader } from '../authorization/cms-read-access.service';
 import type { CmsReadService } from '../reads/cms-read.service';
 import { CmsReadTools } from './cms-read.tools';
 import { ToolFailure } from './tool.types';
