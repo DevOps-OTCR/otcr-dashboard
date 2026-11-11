@@ -61,7 +61,7 @@ describe('Agentic CMS feature boundary', () => {
 
   it('requires authentication even when enabled', async () => {
     settings.AGENTIC_CMS_ENABLED = 'true';
-    expect((await fetch(`${base}/agentic-cms/status`)).status).toBe(403);
+    expect((await fetch(`${base}/agentic-cms/status`)).status).toBe(401);
     expect((await fetch(`${base}/feature-flags`)).status).toBe(403);
   });
 

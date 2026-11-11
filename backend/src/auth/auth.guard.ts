@@ -29,6 +29,8 @@ export class AuthGuard implements CanActivate {
       return false;
     }
     if (!email || typeof email !== 'string') return false;
+    // Verified callers must already be enrolled; never auto-create a CMS user for them.
+    if (options?.verifiedOnly && !await this.authService.isEmailAllowed(email)) return false;
     const user = await this.authService.getUserByEmail(email);
     if (!user || (options?.verifiedOnly && !user.active)) return false;
     request.user = user;

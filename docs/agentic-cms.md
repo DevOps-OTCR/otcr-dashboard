@@ -89,12 +89,16 @@ folder with a literal `@Controller('agentic-cms/...')` prefix. Import the featur
 module only from `AppModule`; share ordinary CMS services into the feature,
 rather than importing AI services into existing CMS modules.
 
-HTTP routes at `/agentic-cms/mcp` and `/agentic-cms/context` (including their
-subpaths) use verified-only CMS authentication:
-the global guard rejects email-only bearer credentials before identity resolution
-and requires an active CMS user. Other CMS routes retain their current sign-in
-behavior. This uses the existing Microsoft Graph token verifier; interoperable
-remote MCP OAuth discovery/resource-token support is not implemented yet.
+Every HTTP route under `/agentic-cms` (context, MCP, status, chat and future
+handlers) uses one verified-only CMS authentication policy in the global guard.
+After the flag-off check, it rejects email-only or malformed bearer credentials
+before identity resolution, verifies the Microsoft Graph token, requires an
+active CMS enrollment (`AllowedEmail`) before looking up or creating a user, and
+requires an active CMS user. The pilot allowlist is checked afterwards. Group 1
+consumes this boundary and must not add a second authentication policy.
+Ordinary CMS routes outside the prefix keep their current sign-in behavior.
+Interoperable remote MCP OAuth discovery/resource-token support is not
+implemented yet.
 
 `CmsReadAccessService` supplies project-authorized workstream/deliverable query
 scopes and individual-record checks. Read handlers must combine these scopes with
@@ -176,6 +180,16 @@ CMS route still accepts its existing credentials with the feature off. Context
 handlers recheck the feature before writes and before returning fetched context.
 These tests do not contact Microsoft Graph or a live database.
 
+`agentic-cms-auth.http.spec.ts` runs the real global guard, `AuthGuard` and
+`AuthService` with only Graph verification mocked, against `/agentic-cms/status`
+and a test-only `/agentic-cms/chat` controller. It covers flag-off rejection
+before verification, email-only/malformed/invalid credentials, unenrolled
+identities (no user row is created), revoked enrollment, inactive users, pilot
+exclusion and an accepted enrolled pilot user.
+
+The context browser test also covers a failed save and a failed note add on the
+current project: drafts stay on screen, Retry resends the same text, and the
+saved values survive reload.
 
 ### Read-operation evidence (Step 3)
 

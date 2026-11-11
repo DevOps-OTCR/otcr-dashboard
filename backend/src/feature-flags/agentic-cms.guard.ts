@@ -23,11 +23,12 @@ export class AgenticCmsGuard implements CanActivate {
 
     // Registered globally: a new endpoint cannot forget its feature/auth guard.
     if (!this.flags.isAgenticCmsEnabled()) this.flags.assertAgenticCmsEnabledFor();
-    const verifiedRoute = paths.some(path => /^agentic-cms\/(?:mcp|context)(?:\/|$)/i.test(path));
-    if (verifiedRoute) {
-      // This must run in the global guard, before legacy auth resolves identity.
-      if (!await this.auth.canActivate(context, { verifiedOnly: true })) throw new UnauthorizedException();
-    } else if (!await this.auth.canActivate(context)) return false;
+    // The single Agentic CMS authentication policy for every route under this
+    // prefix (context, MCP, chat, status and future handlers): a verified
+    // Microsoft token, active CMS enrollment and an active user. It runs here,
+    // before legacy auth could resolve an email-only identity. Do not add a
+    // second policy in feature controllers.
+    if (!await this.auth.canActivate(context, { verifiedOnly: true })) throw new UnauthorizedException();
     const request = context.switchToHttp().getRequest<{ user?: { email?: string } }>();
     this.flags.assertAgenticCmsEnabledFor(request.user?.email);
     return true;

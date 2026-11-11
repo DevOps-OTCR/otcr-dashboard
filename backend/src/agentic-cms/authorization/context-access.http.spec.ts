@@ -11,12 +11,13 @@ import { AgenticCmsModule } from '../agentic-cms.module';
 jest.mock('../../common/utils/verify', () => ({ getVerifiedUser: jest.fn() }));
 const verify = jest.mocked(getVerifiedUser);
 const resolveUser = jest.fn();
+const enrolled = jest.fn();
 const prisma = {
   project: { findUnique: jest.fn(), update: jest.fn() },
   projectContextNote: { findMany: jest.fn(), create: jest.fn(), findFirst: jest.fn(), delete: jest.fn() },
 };
 @Module({
-  providers: [AuthGuard, { provide: AuthService, useValue: { getUserByEmail: resolveUser } }],
+  providers: [AuthGuard, { provide: AuthService, useValue: { getUserByEmail: resolveUser, isEmailAllowed: enrolled } }],
   exports: [AuthGuard, AuthService],
 })
 class TestAuthModule {}
@@ -58,6 +59,7 @@ describe('Project-context HTTP security', () => {
     settings = { AGENTIC_CMS_ENABLED: 'true', AGENTIC_CMS_ALLOWED_EMAILS: 'pilot@illinois.edu' };
     role = 'PM'; member = true; owner = 'reader';
     verify.mockResolvedValue('pilot@illinois.edu');
+    enrolled.mockResolvedValue(true);
     resolveUser.mockImplementation(async () => ({ id: 'reader', email: 'pilot@illinois.edu', role, active: true }));
     prisma.project.findUnique.mockImplementation(async ({ where, select }) => {
       if (select.overview) return { id: where.id, name: 'Synthetic project', overview: 'Overview', scope: 'Scope' };

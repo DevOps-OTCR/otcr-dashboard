@@ -13,6 +13,7 @@ import { CmsReadAccessService, CmsReader } from './cms-read-access.service';
 jest.mock('../../common/utils/verify', () => ({ getVerifiedUser: jest.fn() }));
 const verify = jest.mocked(getVerifiedUser);
 const resolveUser = jest.fn();
+const enrolled = jest.fn();
 const effects = jest.fn();
 const prisma = {
   project: { findUnique: jest.fn() },
@@ -20,7 +21,7 @@ const prisma = {
 };
 
 @Module({
-  providers: [AuthGuard, { provide: AuthService, useValue: { getUserByEmail: resolveUser } }],
+  providers: [AuthGuard, { provide: AuthService, useValue: { getUserByEmail: resolveUser, isEmailAllowed: enrolled } }],
   exports: [AuthGuard, AuthService],
 })
 class TestAuthModule {}
@@ -58,6 +59,7 @@ describe('MCP HTTP authentication and feature ordering', () => {
     jest.resetAllMocks();
     settings = { AGENTIC_CMS_ENABLED: 'true', AGENTIC_CMS_ALLOWED_EMAILS: 'pilot@illinois.edu' };
     verify.mockResolvedValue('pilot@illinois.edu');
+    enrolled.mockResolvedValue(true);
     resolveUser.mockResolvedValue({ id: 'reader', email: 'pilot@illinois.edu', role: 'CONSULTANT', active: true });
     prisma.project.findUnique.mockResolvedValue({ id: 'project', pmId: 'other', members: [{ userId: 'reader' }] });
     prisma.deliverable.findFirst.mockResolvedValue({ id: 'item' });
