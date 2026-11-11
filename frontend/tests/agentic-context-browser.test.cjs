@@ -98,3 +98,52 @@ test('does not show the context tabs when the account has no accessible projects
   assert.equal(await page.getByRole('heading', { name: 'Agentic CMS' }).count(), 0);
   assert.equal(await page.getByRole('tablist', { name: 'Agentic CMS tools' }).count(), 0);
 });
+
+const openContext = async (t, query) => {
+  const context = await browser.newContext(); t.after(() => context.close());
+  await context.route('**/*', route => route.fulfill({ contentType: route.request().url().endsWith('/bundle.js') ? 'text/javascript' : 'text/html', body: route.request().url().endsWith('/bundle.js') ? bundle : document }));
+  const page = await context.newPage(); await page.goto(`http://context.test/agentic-cms?${query}`);
+  await page.getByRole('tab', { name: 'Project Context' }).waitFor();
+  return page;
+};
+
+test('keeps current-project context drafts after a failed save and saves them on retry', async t => {
+  const page = await openContext(t, 'role=PM&failSaveOnce');
+  const overview = page.getByRole('textbox', { name: 'Overview' });
+  const scope = page.getByRole('textbox', { name: 'SOW / Scope' });
+  await overview.fill('Draft overview — line 1\nline 2');
+  await scope.fill('Draft scope: phase A & B');
+  await page.getByRole('button', { name: 'Save context' }).click();
+  await page.getByRole('alert').getByText('Unable to save context. Check your access and try again.').waitFor();
+  assert.equal(await overview.inputValue(), 'Draft overview — line 1\nline 2');
+  assert.equal(await scope.inputValue(), 'Draft scope: phase A & B');
+  await page.getByRole('button', { name: 'Retry' }).click();
+  await page.getByRole('status').getByText('Context saved.').waitFor();
+  assert.equal(await page.getByRole('alert').count(), 0);
+  await page.reload();
+  await page.getByRole('tab', { name: 'Project Context' }).waitFor();
+  assert.equal(await page.getByRole('textbox', { name: 'Overview' }).inputValue(), 'Draft overview — line 1\nline 2');
+  assert.equal(await page.getByRole('textbox', { name: 'SOW / Scope' }).inputValue(), 'Draft scope: phase A & B');
+});
+
+test('keeps a current-project note draft after a failed add and adds it on retry', async t => {
+  const page = await openContext(t, 'role=PM&failNoteOnce');
+  await page.getByRole('tab', { name: 'Client Call Notes' }).click();
+  const title = page.getByRole('textbox', { name: 'Note title' });
+  const text = page.getByRole('textbox', { name: 'Note text' });
+  await title.fill('Synthetic call 7');
+  await text.fill('Client asked for\nweekly updates.');
+  await page.getByRole('button', { name: 'Add note' }).click();
+  await page.getByRole('alert').getByText('Unable to add note. Check your access and try again.').waitFor();
+  assert.equal(await title.inputValue(), 'Synthetic call 7');
+  assert.equal(await text.inputValue(), 'Client asked for\nweekly updates.');
+  await page.getByRole('button', { name: 'Retry' }).click();
+  await page.getByRole('status').getByText('Note added.').waitFor();
+  const note = page.locator('article').filter({ hasText: 'Synthetic call 7' });
+  assert.equal(await note.count(), 1);
+  assert.equal(await note.locator('p').textContent(), 'Client asked for\nweekly updates.');
+  assert.equal(await title.inputValue(), '');
+  await page.reload();
+  await page.getByRole('tab', { name: 'Client Call Notes' }).click();
+  assert.equal(await page.locator('article').filter({ hasText: 'Synthetic call 7' }).count(), 1);
+});

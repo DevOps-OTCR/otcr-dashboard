@@ -6,6 +6,8 @@ const initial: Record<string, any> = {
 const readAll = () => JSON.parse(localStorage.getItem(storageKey) || JSON.stringify(initial));
 const projectId = (url: string) => url.match(/projects\/(p[12])/)?.[1] ?? 'p1';
 const editable = (id: string) => ['ADMIN', 'LC'].includes((window as any).testRole) || ((window as any).testRole === 'PM' && id === 'p1');
+// Fails the first matching write only, so Retry exercises the same request again.
+const failOnce = (flag: string) => { if (!(window as any)[flag]) return false; (window as any)[flag] = false; return true; };
 export const api = {
   get: async (url: string) => {
     const id = projectId(url);
@@ -14,8 +16,8 @@ export const api = {
     const data = readAll()[id];
     return { data: { ...data, canEdit: editable(id) } };
   },
-  put: async (url: string, body: { overview: string; scope: string }) => { const id = projectId(url); const all = readAll(); all[id].project.overview = body.overview; all[id].project.scope = body.scope; localStorage.setItem(storageKey, JSON.stringify(all)); return { data: all[id].project }; },
-  post: async (url: string, body: { title: string; content: string }) => { const id = projectId(url); const all = readAll(); const note = { id: `n${Date.now()}`, ...body, createdAt: new Date().toISOString() }; all[id].notes.unshift(note); localStorage.setItem(storageKey, JSON.stringify(all)); return { data: note }; },
+  put: async (url: string, body: { overview: string; scope: string }) => { if (failOnce('failSaveOnce')) throw new Error('Synthetic save failure'); const id = projectId(url); const all = readAll(); all[id].project.overview = body.overview; all[id].project.scope = body.scope; localStorage.setItem(storageKey, JSON.stringify(all)); return { data: all[id].project }; },
+  post: async (url: string, body: { title: string; content: string }) => { if (failOnce('failNoteOnce')) throw new Error('Synthetic note failure'); const id = projectId(url); const all = readAll(); const note = { id: `n${Date.now()}`, ...body, createdAt: new Date().toISOString() }; all[id].notes.unshift(note); localStorage.setItem(storageKey, JSON.stringify(all)); return { data: note }; },
   delete: async (url: string) => { const id = projectId(url); const all = readAll(); all[id].notes.shift(); localStorage.setItem(storageKey, JSON.stringify(all)); return { data: {} }; },
 };
 export const setAuthToken = () => {};

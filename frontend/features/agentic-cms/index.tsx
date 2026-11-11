@@ -17,7 +17,10 @@ export default function AgenticCms() {
   const [notes, setNotes] = useState<any[]>([]);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  // Load failures replace the panel; write failures keep drafts on screen.
   const [error, setError] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [retryAction, setRetryAction] = useState<null | { kind: 'save' } | { kind: 'note' } | { kind: 'delete'; id: string }>(null);
   const [message, setMessage] = useState('');
   const [roleReady, setRoleReady] = useState(false);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
@@ -36,6 +39,7 @@ export default function AgenticCms() {
     setNotes([]);
     setCanManage(false);
     setError('');
+    clearActionError();
     setMessage('');
     if (!id) { setLoading(false); return; }
     setLoading(true);
@@ -52,6 +56,9 @@ export default function AgenticCms() {
       if (request === requestId.current) setLoading(false);
     }
   };
+
+  const clearActionError = () => { setActionError(''); setRetryAction(null); };
+  const failAction = (text: string, retry: NonNullable<typeof retryAction>) => { setActionError(text); setRetryAction(retry); };
 
   // The layout can create the portal target after this component mounts (for
   // example, when navigating here from another CMS page), so watch for it.
@@ -93,30 +100,41 @@ export default function AgenticCms() {
     const target = projectId;
     const values = { overview, scope };
     setSaving(true);
-    setError('');
+    clearActionError();
     setMessage('');
     try {
       await api.put(`/agentic-cms/context/projects/${target}`, values);
       if (projectId === target) setMessage('Context saved.');
     } catch {
-      if (projectId === target) setError('Unable to save context. Check your access and try again.');
+      if (projectId === target) failAction('Unable to save context. Check your access and try again.', { kind: 'save' });
     } finally { setSaving(false); }
   };
   const addNote = async () => {
     const target = projectId;
-    setError('');
+    setSaving(true);
+    clearActionError();
     setMessage('');
     try {
       const { data } = await api.post(`/agentic-cms/context/projects/${target}/notes`, { title, content });
       if (projectId === target) { setNotes(current => [data, ...current]); setTitle(''); setContent(''); setMessage('Note added.'); }
-    } catch { if (projectId === target) setError('Unable to add note. Check your access and try again.'); }
+    } catch { if (projectId === target) failAction('Unable to add note. Check your access and try again.', { kind: 'note' }); }
+    finally { setSaving(false); }
   };
   const removeNote = async (id: string) => {
     const target = projectId;
+    clearActionError();
+    setMessage('');
     try {
       await api.delete(`/agentic-cms/context/projects/${target}/notes/${id}`);
       if (projectId === target) setNotes(current => current.filter(n => n.id !== id));
-    } catch { if (projectId === target) setError('Unable to delete note. Check your access and try again.'); }
+    } catch { if (projectId === target) failAction('Unable to delete note. Check your access and try again.', { kind: 'delete', id }); }
+  };
+
+  // Retry resends the drafts currently on screen, which a failed write never clears.
+  const retry = () => {
+    if (retryAction?.kind === 'save') return save();
+    if (retryAction?.kind === 'note') return addNote();
+    if (retryAction?.kind === 'delete') return removeNote(retryAction.id);
   };
 
   if (pathname !== '/agentic-cms' || !mount) return null;
@@ -127,7 +145,8 @@ export default function AgenticCms() {
     {projects.length > 0 && <div role="tablist" aria-label="Agentic CMS tools" className="flex gap-2 border-b pb-2"><button role="tab" aria-selected={panel === 'context'} onClick={() => setPanel('context')}>Project Context</button><button role="tab" aria-selected={panel === 'notes'} onClick={() => setPanel('notes')}>Client Call Notes</button></div>}
     {projects.length > 0 && <select aria-label="Project" value={projectId} onChange={e => void load(e.target.value)} className="my-2 w-full rounded border p-2">{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>}
     {error && <p role="alert" className="text-sm">{error}</p>}
+    {actionError && !error && <div role="alert" className="flex items-center gap-3 text-sm"><span>{actionError}</span>{retryAction && <button disabled={saving} className="rounded border px-3 py-1" onClick={() => void retry()}>Retry</button>}</div>}
     {message && <p role="status" className="text-sm">{message}</p>}
-    {loading ? <p role="status">Loading project context...</p> : error ? (projects.length > 0 && <button className="rounded border px-3 py-2" onClick={() => void load(projectId)}>Retry</button>) : panel === 'context' && projects.length > 0 ? <section><h2>Project overview and SOW / scope</h2>{canManage ? <><label className="block text-sm">Overview<textarea aria-label="Overview" value={overview} onChange={e => setOverview(e.target.value)} className="my-1 w-full rounded border p-2" /></label><label className="block text-sm">SOW / Scope<textarea aria-label="SOW / Scope" value={scope} onChange={e => setScope(e.target.value)} className="my-1 w-full rounded border p-2" /></label><button disabled={saving} onClick={() => void save()} className="rounded bg-blue-600 px-3 py-2 text-white">{saving ? 'Saving...' : 'Save context'}</button></> : <div className="space-y-3"><div><h3>Overview</h3><p className="whitespace-pre-wrap">{overview}</p></div><div><h3>SOW / Scope</h3><p className="whitespace-pre-wrap">{scope}</p></div></div>}</section> : panel === 'notes' && projects.length > 0 ? <section><h2>Client call notes</h2>{canManage && <><input aria-label="Note title" value={title} onChange={e => setTitle(e.target.value)} placeholder="Title" className="my-1 w-full rounded border p-2" /><textarea aria-label="Note text" value={content} onChange={e => setContent(e.target.value)} placeholder="Paste note text" className="my-1 w-full rounded border p-2" /><button onClick={() => void addNote()} className="rounded border px-3 py-2">Add note</button></>}{notes.map(n => <article key={n.id} className="my-2 border-t pt-2"><strong>{n.title}</strong><p className="whitespace-pre-wrap">{n.content}</p><small>{new Date(n.createdAt).toLocaleString()}</small>{canManage && <button aria-label={`Delete ${n.title}`} onClick={() => void removeNote(n.id)} className="ml-3 underline">Delete</button>}</article>)}</section> : null}
+    {loading ? <p role="status">Loading project context...</p> : error ? (projects.length > 0 && <button className="rounded border px-3 py-2" onClick={() => void load(projectId)}>Retry</button>) : panel === 'context' && projects.length > 0 ? <section><h2>Project overview and SOW / scope</h2>{canManage ? <><label className="block text-sm">Overview<textarea aria-label="Overview" value={overview} onChange={e => setOverview(e.target.value)} className="my-1 w-full rounded border p-2" /></label><label className="block text-sm">SOW / Scope<textarea aria-label="SOW / Scope" value={scope} onChange={e => setScope(e.target.value)} className="my-1 w-full rounded border p-2" /></label><button disabled={saving} onClick={() => void save()} className="rounded bg-blue-600 px-3 py-2 text-white">{saving ? 'Saving...' : 'Save context'}</button></> : <div className="space-y-3"><div><h3>Overview</h3><p className="whitespace-pre-wrap">{overview}</p></div><div><h3>SOW / Scope</h3><p className="whitespace-pre-wrap">{scope}</p></div></div>}</section> : panel === 'notes' && projects.length > 0 ? <section><h2>Client call notes</h2>{canManage && <><input aria-label="Note title" value={title} onChange={e => setTitle(e.target.value)} placeholder="Title" className="my-1 w-full rounded border p-2" /><textarea aria-label="Note text" value={content} onChange={e => setContent(e.target.value)} placeholder="Paste note text" className="my-1 w-full rounded border p-2" /><button disabled={saving} onClick={() => void addNote()} className="rounded border px-3 py-2">Add note</button></>}{notes.map(n => <article key={n.id} className="my-2 border-t pt-2"><strong>{n.title}</strong><p className="whitespace-pre-wrap">{n.content}</p><small>{new Date(n.createdAt).toLocaleString()}</small>{canManage && <button aria-label={`Delete ${n.title}`} onClick={() => void removeNote(n.id)} className="ml-3 underline">Delete</button>}</article>)}</section> : null}
   </main>, mount);
 }
