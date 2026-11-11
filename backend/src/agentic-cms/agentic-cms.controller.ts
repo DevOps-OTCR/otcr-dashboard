@@ -1,18 +1,36 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Req, BadRequestException, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { CmsReadAccessService, CmsReader } from './authorization/cms-read-access.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FeatureFlagsService } from '../feature-flags/feature-flags.service';
+import { DEFAULT_LUMEN_MODEL } from './model/model.provider';
+import { TavilySearchClient } from './search/tavily-search.client';
+import { SkillLibrary } from './skills/skill-library';
 
 type ContextRequest = { user: CmsReader };
 
 // All agent endpoints belong under this prefix; the global guard protects them.
 @Controller('agentic-cms')
 export class AgenticCmsController {
-  constructor(private readonly access: CmsReadAccessService, private readonly prisma: PrismaService, private readonly flags: FeatureFlagsService) {}
+  constructor(
+    private readonly access: CmsReadAccessService,
+    private readonly prisma: PrismaService,
+    private readonly flags: FeatureFlagsService,
+    private readonly config: ConfigService,
+    private readonly search: TavilySearchClient,
+    private readonly skills: SkillLibrary,
+  ) {}
 
+  // Configuration check for setup: says whether keys are set, never their values. Makes no external request.
   @Get('status')
-  getStatus() {
-    return { enabled: true };
+  async getStatus() {
+    return {
+      enabled: true,
+      model: this.config.get<string>('LUMEN_MODEL')?.trim() || DEFAULT_LUMEN_MODEL,
+      modelConfigured: Boolean(this.config.get<string>('LUMEN_API_KEY')?.trim()),
+      webSearchConfigured: this.search.isConfigured(),
+      skills: (await this.skills.list()).map((s) => s.name),
+    };
   }
 
   @Get('context/projects/:projectId')

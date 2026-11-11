@@ -6,6 +6,8 @@ import { AuthModule } from '../auth/auth.module';
 import { AgenticCmsModule } from '../agentic-cms/agentic-cms.module';
 import { FeatureFlagsService } from './feature-flags.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ProjectsModule } from '../projects/projects.module';
+import { ProjectsService } from '../projects/projects.service';
 
 const effects = jest.fn();
 @Controller('agentic-cms/test')
@@ -25,6 +27,10 @@ const auth = {
     return true;
   }),
 };
+
+@Module({ providers: [{ provide: ProjectsService, useValue: {} }], exports: [ProjectsService] })
+class TestProjectsModule {}
+
 @Module({ providers: [{ provide: AuthGuard, useValue: auth }], exports: [AuthGuard] })
 class TestAuthModule {}
 
@@ -41,6 +47,7 @@ describe('Agentic CMS feature boundary', () => {
       controllers: [AgenticTestController, OrdinaryController],
     }).overrideModule(AuthModule).useModule(TestAuthModule)
       .overrideProvider(PrismaService).useValue({})
+      .overrideModule(ProjectsModule).useModule(TestProjectsModule)
       .overrideGuard(AuthGuard).useValue(auth)
       .useMocker(token => token === ConfigService ? { get: (key: string) => settings[key] } : undefined)
       .compile();

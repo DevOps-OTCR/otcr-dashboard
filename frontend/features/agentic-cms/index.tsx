@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { api, setAuthToken, projectsAPI } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
 import { getEffectiveRole } from '@/lib/permissions';
+import { OtcrBot } from './OtcrBot';
 
 export default function AgenticCms() {
   const pathname = usePathname();
@@ -146,10 +147,8 @@ export default function AgenticCms() {
     if (retryAction?.kind === 'delete') return removeNote(retryAction.id);
   };
 
-  if (pathname !== '/agentic-cms' || !mount) return null;
-  if (roleReady && projectsLoaded && projects.length === 0 && !error) return null;
-
-  return createPortal(<main className="mx-auto max-w-5xl space-y-4 p-6">
+  const showEditor = pathname === '/agentic-cms' && mount && !(roleReady && projectsLoaded && projects.length === 0 && !error);
+  const editor = showEditor ? createPortal(<main className="mx-auto max-w-5xl space-y-4 p-6">
     <h1 className="text-2xl font-semibold">Agentic CMS</h1>
     {projects.length > 0 && <div role="tablist" aria-label="Agentic CMS tools" className="flex gap-2 border-b pb-2"><button role="tab" aria-selected={panel === 'context'} onClick={() => setPanel('context')}>Project Context</button><button role="tab" aria-selected={panel === 'notes'} onClick={() => setPanel('notes')}>Client Call Notes</button></div>}
     {projects.length > 0 && <select aria-label="Project" value={projectId} onChange={e => void load(e.target.value)} className="my-2 w-full rounded border p-2">{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>}
@@ -157,5 +156,12 @@ export default function AgenticCms() {
     {actionError && !error && <div role="alert" className="flex items-center gap-3 text-sm"><span>{actionError}</span>{retryAction && <button disabled={saving} className="rounded border px-3 py-1" onClick={() => void retry()}>Retry</button>}</div>}
     {message && <p role="status" className="text-sm">{message}</p>}
     {loading ? <p role="status">Loading project context...</p> : error ? (projects.length > 0 && <button className="rounded border px-3 py-2" onClick={() => void load(projectId)}>Retry</button>) : panel === 'context' && projects.length > 0 ? <section><h2>Project overview and SOW / scope</h2>{canManage ? <><label className="block text-sm">Overview<textarea aria-label="Overview" value={overview} onChange={e => setOverview(e.target.value)} className="my-1 w-full rounded border p-2" /></label><label className="block text-sm">SOW / Scope<textarea aria-label="SOW / Scope" value={scope} onChange={e => setScope(e.target.value)} className="my-1 w-full rounded border p-2" /></label><button disabled={saving} onClick={() => void save()} className="rounded bg-blue-600 px-3 py-2 text-white">{saving ? 'Saving...' : 'Save context'}</button></> : <div className="space-y-3"><div><h3>Overview</h3><p className="whitespace-pre-wrap">{overview}</p></div><div><h3>SOW / Scope</h3><p className="whitespace-pre-wrap">{scope}</p></div></div>}</section> : panel === 'notes' && projects.length > 0 ? <section><h2>Client call notes</h2>{canManage && <><input aria-label="Note title" value={title} onChange={e => setTitle(e.target.value)} placeholder="Title" className="my-1 w-full rounded border p-2" /><textarea aria-label="Note text" value={content} onChange={e => setContent(e.target.value)} placeholder="Paste note text" className="my-1 w-full rounded border p-2" /><button disabled={saving} onClick={() => void addNote()} className="rounded border px-3 py-2">Add note</button></>}{notes.map(n => <article key={n.id} className="my-2 border-t pt-2"><strong>{n.title}</strong><p className="whitespace-pre-wrap">{n.content}</p><small>{new Date(n.createdAt).toLocaleString()}</small>{canManage && <button aria-label={`Delete ${n.title}`} onClick={() => void removeNote(n.id)} className="ml-3 underline">Delete</button>}</article>)}</section> : null}
-  </main>, mount);
+  </main>, mount) : null;
+
+  return (
+    <>
+      <OtcrBot />
+      {editor}
+    </>
+  );
 }
