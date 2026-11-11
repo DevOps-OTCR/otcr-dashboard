@@ -894,6 +894,80 @@ export class ProjectsService {
     });
   }
 
+  async getSchedule(user: { id: string; role: string }, from: Date, to: Date) {
+    const fullAccess = ['ADMIN', 'LC', 'EXECUTIVE'].includes(user.role);
+
+    const where: Prisma.ProjectWhereInput = fullAccess
+      ? {}
+      : user.role === 'PM'
+        ? { OR: [{ pmId: user.id }, { members: { some: { userId: user.id, leftAt: null } } }] }
+        : { members: { some: { userId: user.id, leftAt: null } } };
+
+    const projects = await this.prisma.project.findMany({
+      where,
+      select: {
+        id: true,
+        name: true,
+        pmId: true,
+        sprintTimezone: true,
+      },
+      orderBy: {
+        name: 'asc',
+      },
+    });
+
+    if (projects.length === 0) {
+      return { projects: [], deliverables: [] };
+    }
+
+    const manageableIds = projects
+      .filter((project) => this.canManageProject(user, project.pmId))
+      .map((project) => project.id);
+
+    const deliverables = await this.prisma.deliverable.findMany({
+      where: {
+        projectId: { in: projects.map((project) => project.id) },
+        sprintId: { not: null },
+        deadline: { gte: from, lt: to },
+        OR: [
+          { projectId: { in: manageableIds } },
+          { sprint: { status: 'RELEASED' } },
+        ],
+      },
+      select: {
+        id: true,
+        title: true,
+        deadline: true,
+        projectId: true,
+        status: true,
+      },
+      orderBy: {
+        deadline: 'asc',
+      },
+    });
+
+    return {
+      projects: projects.map((project) => ({
+        id: project.id,
+        name: project.name,
+        timeZone: project.sprintTimezone,
+        canManage: this.canManageProject(user, project.pmId),
+      })),
+      deliverables: deliverables.map((deliverable) => ({
+        ...deliverable,
+        deadline: deliverable.deadline.toISOString(),
+      })),
+    };
+  }
+
+  private canManageProject(user: { id: string; role: string }, pmId: string | null): boolean {
+    if (user.role === 'ADMIN' || user.role === 'LC') {
+      return true;
+    }
+
+    return user.role === 'PM' && pmId === user.id;
+  }
+
   async isMember(projectId: string, userId: string): Promise<boolean> {
     const member = await this.prisma.projectMember.findFirst({
       where: {
