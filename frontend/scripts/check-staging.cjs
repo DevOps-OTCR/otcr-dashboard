@@ -1,40 +1,47 @@
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
-const { chromium } = require('playwright');
 
 const frontend = process.env.STAGING_FRONTEND_URL || 'https://otcr-dashboard-staging.onrender.com';
 const api = process.env.STAGING_API_URL || 'https://otcr-dashboard-staging-api.onrender.com';
-const revision = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 
-async function waitForDeployment() {
-  const deadline = Date.now() + 12 * 60 * 1000;
-  while (Date.now() < deadline) {
-    try {
-      const [backendResponse, frontendResponse] = await Promise.all([
-        fetch(`${api}/__meta`, { signal: AbortSignal.timeout(45000), cache: 'no-store' }),
-        fetch(`${frontend}/__build.json?revision=${revision}`, {
-          signal: AbortSignal.timeout(15000), cache: 'no-store',
-        }),
-      ]);
-      assert.equal(backendResponse.status, 200);
-      assert.equal(frontendResponse.status, 200);
-      const [backendBuild, frontendBuild] = await Promise.all([
-        backendResponse.json(), frontendResponse.json(),
-      ]);
-      if (backendBuild.render?.gitCommit === revision && frontendBuild.gitCommit === revision) {
-        console.log(`Both staging services are running ${revision}`);
-        return;
-      }
-      console.log('Waiting for both Render services to deploy the staging revision');
-    } catch (error) {
-      console.log(`Waiting for staging: ${error.message}`);
-    }
-    await new Promise(resolve => setTimeout(resolve, 10000));
-  }
-  throw new Error(`Staging did not deploy ${revision} within 12 minutes`);
+function waitForSignIn(page) {
+  return page.waitForURL(/\/sign-in\/?$/);
 }
 
 async function main() {
+  const revision = execFileSync('git', ['-c', 'safe.directory=*', 'rev-parse', 'HEAD'], {
+    encoding: 'utf8',
+  }).trim();
+  const { chromium } = require('playwright');
+
+  async function waitForDeployment() {
+    const deadline = Date.now() + 12 * 60 * 1000;
+    while (Date.now() < deadline) {
+      try {
+        const [backendResponse, frontendResponse] = await Promise.all([
+          fetch(`${api}/__meta`, { signal: AbortSignal.timeout(45000), cache: 'no-store' }),
+          fetch(`${frontend}/__build.json?revision=${revision}`, {
+            signal: AbortSignal.timeout(15000), cache: 'no-store',
+          }),
+        ]);
+        assert.equal(backendResponse.status, 200);
+        assert.equal(frontendResponse.status, 200);
+        const [backendBuild, frontendBuild] = await Promise.all([
+          backendResponse.json(), frontendResponse.json(),
+        ]);
+        if (backendBuild.render?.gitCommit === revision && frontendBuild.gitCommit === revision) {
+          console.log(`Both staging services are running ${revision}`);
+          return;
+        }
+        console.log('Waiting for both Render services to deploy the staging revision');
+      } catch (error) {
+        console.log(`Waiting for staging: ${error.message}`);
+      }
+      await new Promise(resolve => setTimeout(resolve, 10000));
+    }
+    throw new Error(`Staging did not deploy ${revision} within 12 minutes`);
+  }
+
   await waitForDeployment();
   const browser = await chromium.launch({ headless: true });
   try {
@@ -43,7 +50,7 @@ async function main() {
     const pageErrors = [];
     page.on('pageerror', error => pageErrors.push(error.message));
     await page.goto(frontend, { waitUntil: 'domcontentloaded' });
-    await page.waitForURL('**/sign-in/**');
+    await waitForSignIn(page);
     await page.getByRole('button', { name: 'Sign in with NetID', exact: true }).waitFor();
     const result = await page.evaluate(async apiUrl => {
       const response = await fetch(`${apiUrl}/__meta`, {
@@ -72,7 +79,11 @@ async function main() {
   }
 }
 
-main().catch(error => {
-  console.error(error);
-  process.exitCode = 1;
-});
+module.exports = { waitForSignIn };
+
+if (require.main === module) {
+  main().catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
