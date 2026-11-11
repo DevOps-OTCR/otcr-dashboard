@@ -303,7 +303,12 @@ they require an equivalent server-side gate and review before integration.
 
 OTCR Bot calls CmsReadService in-process for get_project_context, list_workstreams,
 get_workstream, list_deliverables and get_deliverable. The MCP HTTP endpoint remains
-for independent clients. Skills loaded are research, whitepaper-writing and
+for independent clients. When a result contains timestamps, the bot adds a
+`localTimes` field to its JSON: with the project's timezone (the workstream tools
+return it) the server converts each deadline and other instant itself, because the
+model's own conversions used the wrong daylight-saving offset; without it the times
+are marked UTC. `weekStartDate`/`weekEndDate` are calendar dates and are never
+converted. Skills loaded are research, whitepaper-writing and
 consulting-slides. Web search citations are live when a search key is configured.
 Full-source web reading, persistent chat history, document review and editors are not.
 
