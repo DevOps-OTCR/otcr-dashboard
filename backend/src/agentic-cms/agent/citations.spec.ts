@@ -22,6 +22,14 @@ describe('checkCitations', () => {
     expect(checkCitations('No citations here.', sources)).toEqual({ cited: [], invalid: [] });
   });
 
+  it('reads grouped and ranged citations such as [1, 2] and [2-3]', () => {
+    expect(checkCitations('Both [1, 2]. Range [2-3].', sources)).toEqual({ cited: sources, invalid: [] });
+  });
+
+  it('does not treat claim IDs such as [S3] as source numbers', () => {
+    expect(checkCitations('Claim [S3] and [I1].', sources)).toEqual({ cited: [], invalid: [] });
+  });
+
   it('ignores markdown links such as [1](https://example.com)', () => {
     expect(checkCitations('See [1](https://example.com).', sources)).toEqual({ cited: [], invalid: [] });
   });
