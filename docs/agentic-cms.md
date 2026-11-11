@@ -343,7 +343,8 @@ These tests do not contact Microsoft Graph or a live database.
 
 `agentic-cms-auth.http.spec.ts` runs the real global guard, `AuthGuard` and
 `AuthService` with only Graph verification mocked, against `/agentic-cms/status`
-and a test-only `/agentic-cms/chat` controller. It covers flag-off rejection
+and OTCR Bot's real `POST /agentic-cms/chat`, with a counting fake model. Every
+rejected caller causes no project check, model call or tool call. It covers flag-off rejection
 before verification, email-only/malformed/invalid credentials, unenrolled
 identities (no user row is created), revoked enrollment, inactive users, pilot
 exclusion and an accepted enrolled pilot user.
