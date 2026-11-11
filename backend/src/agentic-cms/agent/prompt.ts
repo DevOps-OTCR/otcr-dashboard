@@ -1,4 +1,5 @@
 import type { SkillSummary } from '../skills/skill-library';
+import type { AgentSource } from './agent.events';
 import type { AgentUser } from './agent.types';
 
 export type PromptInput = {
@@ -9,14 +10,35 @@ export type PromptInput = {
   /** Names of the tools available this turn. */
   tools?: string[];
   skills?: SkillSummary[];
+  /** Sources already numbered in this conversation. */
+  sources?: AgentSource[];
 };
+
+/**
+ * The [n] → URL map for sources found in earlier turns, whose search results may be outside the
+ * history the model sees. Page titles are left out: they are untrusted web text and this is the
+ * system prompt. A URL is reduced to a plain http(s) address so it can't carry other text.
+ */
+function knownSources(sources: AgentSource[]): string {
+  const lines = sources.flatMap((s) => {
+    try {
+      const url = new URL(s.url);
+      return /^https?:$/.test(url.protocol) ? [`    - [${s.id}] <${url.href.replace(/[<>\s]/g, '')}>`] : [];
+    } catch {
+      return [];
+    }
+  });
+  if (!lines.length) return '';
+  return `\n\n    Sources already in this conversation (cite by these numbers; they came from web search excerpts, so they are unverified leads unless the user has confirmed them):\n${lines.join('\n')}`;
+}
 
 export function buildSystemPrompt(input: PromptInput): string {
   const tools = new Set(input.tools ?? []);
   const skills = input.skills ?? [];
 
   const research = tools.has('web_search')
-    ? `- For current facts, figures, companies, markets or news, call web_search before answering. Cite supporting results inline as [n] using the numbers in the results, and only for claims those results support. A source keeps its number for the whole conversation, so reuse that number to cite it again. Never invent sources, URLs or numbers. If the results are thin or conflicting, say so.`
+    ? `- For current facts, figures, companies, markets or news, call web_search before answering. Cite supporting results inline as [n] using the numbers in the results, and only for claims those results support. A source keeps its number for the whole conversation, so reuse that number to cite it again. Never invent sources, URLs or numbers. If the results are thin or conflicting, say so.
+    - Search results are short excerpts, not the full source, and nobody has opened the page yet: treat them as unverified leads. You can plan research and draft from them, but say which claims rest only on an excerpt, list the missing evidence a consultant still needs to check, and never call your output a verified research brief.`
     : `- You can't search the web right now. If asked for current facts or figures, say so plainly instead of guessing. Never invent numbers, sources or client statements.`;
 
   const projectData = tools.has('get_workstream_summary')
@@ -44,5 +66,5 @@ export function buildSystemPrompt(input: PromptInput): string {
     - Separate facts from judgment: label your own reasoning as "Analysis:".
     - Lead with the answer, then the support. Write so it can be pasted into a Google Doc or slide with light editing.
     - If the request is ambiguous or the deliverable's goal is unclear, ask one short question before writing a long answer.
-    - The consultant owns the work. Offer drafts and options; don't present your output as final or approved.${skillList}`;
+    - The consultant owns the work. Offer drafts and options; don't present your output as final or approved.${skillList}${knownSources(input.sources ?? [])}`;
 }

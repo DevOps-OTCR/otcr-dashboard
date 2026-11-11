@@ -11,11 +11,30 @@ import type { AgentUser, RunInput, SendEvent } from './agent.types';
 import { checkCitations } from './citations';
 import { ConversationStore } from './conversation.store';
 import { buildSystemPrompt } from './prompt';
-import { countDraftWords, isTooShort, requestedWordLimit, wordLimitCorrection, wordLimitRetry } from './word-limit';
+import { claimIds, dataFlagCount, sourceIds } from './evidence-tags';
+import { countDraftWords, isTooShort, requestedWordLimit, wordLimitCorrection, wordLimitRejected, wordLimitRetry } from './word-limit';
 
 export const MAX_ROUNDS = 6;
 export const DEFAULT_MAX_MESSAGES_PER_HOUR = 60;
 const MAX_WORD_LIMIT_ATTEMPTS = 2; // the first cut plus one retry
+const MIN_CUT_SHARE = 0.25; // a "cut" under a quarter of the limit has thrown the draft away
+
+const URL_PATTERN = /\bhttps?:\/\/[^\s)\]>]+/gi;
+
+/** Why a cut can't replace the draft, or undefined if it only shortened it. */
+function cutProblem(draft: string, revised: string, revisedWords: number, limit: number): string | undefined {
+  const draftSources = new Set(sourceIds(draft));
+  const addedSources = sourceIds(revised).filter((id) => !draftSources.has(id));
+  if (addedSources.length) return `it cites ${addedSources.map((id) => `[${id}]`).join(', ')}, which your draft did not cite`;
+  const draftClaims = new Set(claimIds(draft));
+  const addedClaims = claimIds(revised).filter((id) => !draftClaims.has(id));
+  if (addedClaims.length) return `it adds claim IDs ${addedClaims.join(', ')} that your draft did not have`;
+  if (dataFlagCount(revised) < dataFlagCount(draft)) return 'it drops a [DATA NEEDED] flag';
+  const draftLinks = new Set(draft.match(URL_PATTERN) ?? []);
+  if ((revised.match(URL_PATTERN) ?? []).some((url) => !draftLinks.has(url))) return 'it adds a link your draft did not have';
+  if (revisedWords < Math.ceil(limit * MIN_CUT_SHARE)) return `it keeps only ${revisedWords} words of the draft`;
+  return undefined;
+}
 
 @Injectable()
 export class AgentService {
@@ -45,9 +64,9 @@ export class AgentService {
   }
 
   async run(input: RunInput, send: SendEvent) {
-    // 1. Flag + rate limit before doing any work.
+    // 1. Flag + rate limit before doing any work. The slot is taken now, not when the turn is saved.
     this.assertStillEnabled(input.user);
-    if ((await this.store.userMessagesLastHour(input.user.id)) >= this.maxMessagesPerHour()) throw userRateLimited();
+    if (!(await this.store.reserveMessage(input.user.id, this.maxMessagesPerHour()))) throw userRateLimited();
 
     // 2. Find or create the conversation and tell the browser its id.
     const convo = await this.store.open({
@@ -61,7 +80,10 @@ export class AgentService {
     // 3. Build what the model sees: earlier turns + this message, available tools and skills.
     const history = await this.store.history(convo.id);
     const userMsg: ChatMessage = { role: 'user', content: input.message };
-    const turnMessages: ChatMessage[] = [userMsg];
+    // A failed turn keeps its user message (below). Retrying that same message reuses it rather than saving it twice.
+    const prior = history[history.length - 1];
+    const retrying = prior?.role === 'user' && prior.content === input.message;
+    const turnMessages: ChatMessage[] = retrying ? [] : [userMsg];
     const tools = await this.tools.available();
     const skills = tools.some((t) => t.name === 'load_skill') ? await this.skills.list() : [];
     const system = buildSystemPrompt({
@@ -71,6 +93,8 @@ export class AgentService {
       today: new Date().toISOString().slice(0, 10),
       tools: tools.map((t) => t.name),
       skills,
+      // Older turns' search results may have dropped out of the history window; this keeps their [n] meaning visible.
+      sources: await this.store.sources(convo.id),
     });
     const schemas = this.tools.schemas(tools);
 
@@ -144,7 +168,7 @@ export class AgentService {
       }
     } catch (err) {
       // Keep the user's message so the conversation isn't lost; drop the half-finished turn.
-      await this.store.append(convo.id, [userMsg]).catch(() => undefined);
+      if (!retrying) await this.store.append(convo.id, [userMsg]).catch(() => undefined);
       throw err;
     }
 
@@ -200,6 +224,17 @@ export class AgentService {
       if (!revised) break;
 
       const revisedWords = countDraftWords(revised);
+      const problem = cutProblem(draft, revised, revisedWords, limit);
+      if (problem) {
+        // A cut may only shorten the draft. One that changes its evidence is never shown or saved.
+        this.log.warn(`Word-limit cut rejected: ${problem}`);
+        messages = [
+          ...messages,
+          { role: 'assistant', content: revised },
+          { role: 'user', content: wordLimitRejected(problem, limit) },
+        ];
+        continue;
+      }
       if (revisedWords > limit) {
         if (revisedWords < overLimit.words) overLimit = { text: revised, words: revisedWords };
       } else {

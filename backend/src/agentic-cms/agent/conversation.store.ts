@@ -23,6 +23,8 @@ type Conversation = {
 @Injectable()
 export class ConversationStore {
   private readonly conversations = new Map<string, Conversation>();
+  /** Per user: when each message slot in the last hour was taken. */
+  private readonly reservations = new Map<string, number[]>();
   private counter = 0;
 
   /** Returns this user's conversation for this project and workstream, or creates a new one. */
@@ -82,14 +84,21 @@ export class ConversationStore {
     return (this.conversations.get(conversationId)?.sources ?? []).map((s) => ({ ...s }));
   }
 
-  /** User messages sent in the last hour, for the per-user rate limit. */
-  async userMessagesLastHour(userId: string) {
+  /**
+   * Takes one of the user's hourly message slots, or returns false when they are all used.
+   * The slot is counted the moment it's taken, before any model call, so requests sent at
+   * the same time can't all pass a check that only counted finished turns. Check and record
+   * happen with no await between them; the Prisma version needs one atomic insert-if-under-limit.
+   */
+  async reserveMessage(userId: string, maxPerHour: number): Promise<boolean> {
     const since = Date.now() - 60 * 60 * 1000;
-    let count = 0;
-    for (const c of this.conversations.values()) {
-      if (c.userId !== userId) continue;
-      count += c.messages.filter((m) => m.message.role === 'user' && m.createdAt >= since).length;
+    const recent = (this.reservations.get(userId) ?? []).filter((at) => at >= since);
+    if (recent.length >= maxPerHour) {
+      this.reservations.set(userId, recent);
+      return false;
     }
-    return count;
+    recent.push(Date.now());
+    this.reservations.set(userId, recent);
+    return true;
   }
 }
