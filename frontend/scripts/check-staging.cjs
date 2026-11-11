@@ -43,7 +43,7 @@ async function main() {
     const pageErrors = [];
     page.on('pageerror', error => pageErrors.push(error.message));
     await page.goto(frontend, { waitUntil: 'domcontentloaded' });
-    await page.waitForURL('**/sign-in/**');
+    await page.waitForURL(/\/sign-in\/?$/);
     await page.getByRole('button', { name: 'Sign in with NetID', exact: true }).waitFor();
     const result = await page.evaluate(async apiUrl => {
       const response = await fetch(`${apiUrl}/__meta`, {
