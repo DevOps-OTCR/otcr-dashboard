@@ -30,6 +30,13 @@ export interface AgentTool<Input extends z.ZodType = z.ZodType> {
   readonly description: string;
   /** Validates the model's arguments; also generates the JSON schema sent to the model. */
   readonly input: Input;
+  /**
+   * True only for tools that return OTCR's own instructions (load_skill). Their output is
+   * passed through for the model to follow; every other tool's output is wrapped as untrusted
+   * data (tool-content.ts). A boundary setting: don't set it on a tool that returns external
+   * or user-written text.
+   */
+  readonly returnsInstructions?: boolean;
   /** False hides the tool from the model (e.g. missing API key). Default true. */
   isAvailable?(): boolean | Promise<boolean>;
   /** Short progress label for the sidebar, e.g. `Searching the web for "x"`. */

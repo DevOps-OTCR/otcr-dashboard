@@ -98,6 +98,15 @@ OtcrBot sidebar (frontend/features/agentic-cms)
                                 numbers per user+project+workstream
 ```
 
+Tool results reach the model in two marked forms (`tools/tool-content.ts`).
+Skills loaded by `load_skill` arrive inside `<otcr_skill>` tags as OTCR's own
+instructions, which the model follows. Everything else (web results, CMS
+records, any future tool) arrives inside `<tool_data>` tags as data, never
+instructions. Text inside either block can't open or close these tags. The
+system prompt says a skill can't override it or grant access to data. Only a
+tool with `returnsInstructions` set is passed through; this is a boundary
+setting, so don't set it on a tool that returns external or user-written text.
+
 A conversation belongs to one user, project and workstream ("no workstream"
 counts as its own). Reusing its id with a different one returns "conversation
 not found", so the sidebar starts a new chat when either selection changes.
