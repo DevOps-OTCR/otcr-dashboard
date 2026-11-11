@@ -43,3 +43,14 @@ test('allows canonical gated imports and internal feature modules', t => {
     'backend/src/agentic-cms/chat.controller.ts': "@Controller('agentic-cms/chat') class Chat {}",
   }), []);
 });
+test('keeps split MCP SDK packages inside the backend feature boundary', t => {
+  for (const pkg of ['server', 'node', 'client', 'express', 'sdk']) {
+    assert.equal(fixture(t, {
+      'backend/src/tasks/mcp.ts': `import { Tool } from '@modelcontextprotocol/${pkg}';`,
+      'frontend/lib/mcp.ts': `import('@modelcontextprotocol/${pkg}');`,
+    }).length, 2);
+    assert.deepEqual(fixture(t, {
+      'backend/src/agentic-cms/mcp/internal.ts': `import { Tool } from '@modelcontextprotocol/${pkg}';`,
+    }), []);
+  }
+});

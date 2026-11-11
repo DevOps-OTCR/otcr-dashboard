@@ -538,17 +538,6 @@ export class ProjectsController {
   }
 
   private async ensureProjectAccess(project: any, user: any) {
-    if (user.role === 'ADMIN' || user.role === 'LC' || user.role === 'EXECUTIVE') {
-      return;
-    }
-
-    if (user.role === 'PM' && project.pmId === user.id) {
-      return;
-    }
-
-    const isMember = await this.projectsService.isMember(project.id, user.id);
-    if (!isMember) {
-      throw new ForbiddenException('You do not have access to this project');
-    }
+    await this.projectsService.assertAccessToLoadedProject(project, user);
   }
 }
