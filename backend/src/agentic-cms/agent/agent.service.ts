@@ -15,6 +15,13 @@ import { claimIds, dataFlagCount, sourceIds } from './evidence-tags';
 import { countDraftWords, isTooShort, requestedWordLimit, wordLimitCorrection, wordLimitRejected, wordLimitRetry } from './word-limit';
 
 export const MAX_ROUNDS = 6;
+/**
+ * Added to the system prompt for the last round only (never saved). That round offers no tools,
+ * so a thorough task such as a skill-guided research brief still ends in an answer built from
+ * what it found, instead of a bare "stopped" notice that throws the gathered evidence away.
+ */
+export const ANSWER_NOW =
+  'Step limit: this is your last step for this reply, and no more tools are available. Write your answer now from what you have already found. Say plainly what you could not check or look up, and what the user could ask next.';
 export const DEFAULT_MAX_MESSAGES_PER_HOUR = 60;
 const MAX_WORD_LIMIT_ATTEMPTS = 2; // the first cut plus one retry
 const MIN_CUT_SHARE = 0.25; // a "cut" under a quarter of the limit has thrown the draft away
@@ -121,8 +128,14 @@ export class AgentService {
         this.assertStillEnabled(input.user);
         let roundText = false;
         const shownBefore = shown;
+        const lastRound = round === MAX_ROUNDS - 1;
         const turn = await this.model.stream(
-          { system, messages: [...history, ...turnMessages], tools: schemas, signal: input.signal },
+          {
+            system: lastRound ? `${system}\n\n${ANSWER_NOW}` : system,
+            messages: [...history, ...turnMessages],
+            tools: lastRound ? [] : schemas,
+            signal: input.signal,
+          },
           (delta) => {
             // Separate text written before a tool call from the text after it.
             if (!roundText && shown) {
@@ -147,8 +160,9 @@ export class AgentService {
         }
         answer += turn.text;
 
-        if (round === MAX_ROUNDS - 1) {
-          // Every tool call in saved history needs a result, or the next turn is invalid.
+        if (lastRound) {
+          // A model that asks for tools anyway, even with none offered. Every tool call in saved
+          // history needs a result, or the next turn is invalid.
           for (const call of turn.toolCalls) {
             turnMessages.push({ role: 'tool', tool_call_id: call.id, content: 'Not run: this reply reached its step limit.' });
           }

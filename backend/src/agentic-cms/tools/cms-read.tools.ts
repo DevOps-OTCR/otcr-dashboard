@@ -46,6 +46,110 @@ function resultHasTruncation(output: unknown): boolean {
     && ((output as { truncatedFields: unknown[] }).truncatedFields.length > 0);
 }
 
+// CMS timestamps are UTC instants, while weekStartDate/weekEndDate are calendar-day labels stored
+// at UTC midnight (docs/agentic-cms-mcp-contracts.md); converting those would shift the day.
+// In live runs the model showed a 23:00Z November deadline as 11:00 pm, then 6:00 pm, in Chicago
+// (it is 5:00 pm CST), so the server converts the instants itself when it knows the timezone.
+const SKIPPED_TIME_FIELDS = new Set(['weekStartDate', 'weekEndDate', 'retrievedAt', 'updatedAt', 'sourceUpdatedAt', 'effectiveAsOf']);
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z$/;
+const MAX_LOCAL_TIMES = 200;
+
+interface CollectedTimes {
+  times: Record<string, string>;
+  truncated: boolean;
+}
+
+/** Collects each instant worth showing a user, as { "/json/pointer": "formatted time" }. */
+function collectLocalTimes(output: unknown, zone?: string): CollectedTimes {
+  let format: Intl.DateTimeFormat | undefined;
+  try {
+    if (zone) {
+      format = new Intl.DateTimeFormat('en-US', {
+        timeZone: zone, weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+        hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+      });
+    }
+  } catch {
+    format = undefined; // unrecognised timezone: the instants stay labelled as UTC
+  }
+  const times: Record<string, string> = {};
+  let truncated = false;
+  const walk = (value: unknown, pointer: string, key: string) => {
+    if (typeof value === 'string') {
+      if (SKIPPED_TIME_FIELDS.has(key) || !ISO_INSTANT.test(value)) return;
+      if (Object.keys(times).length >= MAX_LOCAL_TIMES) {
+        truncated = true;
+        return;
+      }
+      times[pointer] = format ? format.format(new Date(value)) : `${value} (UTC)`;
+    } else if (Array.isArray(value)) {
+      value.forEach((item, i) => walk(item, `${pointer}/${i}`, key));
+    } else if (value && typeof value === 'object') {
+      for (const [k, v] of Object.entries(value)) walk(v, `${pointer}/${k}`, k);
+    }
+  };
+  walk(output, '', '');
+  return { times, truncated };
+}
+
+/** Each instant worth showing a user, as { "/json/pointer": "Sat, Nov 14, 2026, 5:00 PM CST" }. */
+export function localTimes(output: unknown, zone?: string): Record<string, string> {
+  return collectLocalTimes(output, zone).times;
+}
+
+/** True if any object (nested through arrays and objects) has a weekStartDate or weekEndDate key. */
+export function hasCalendarWeekDates(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some((item) => hasCalendarWeekDates(item));
+  }
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    if ('weekStartDate' in record || 'weekEndDate' in record) return true;
+    return Object.values(record).some((v) => hasCalendarWeekDates(v));
+  }
+  return false;
+}
+
+/**
+ * Adds a `localTimes` field to a CMS result that contains timestamps, inside the JSON so the
+ * registry's JSON-aware shortening keeps working. With the project's timezone (the workstream
+ * tools return it) the times are converted on the server; without it they are marked UTC.
+ */
+export function withLocalTimes<R>(result: R): R {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return result;
+  const record = result as Record<string, unknown>;
+  const zone = typeof record.timezone === 'string' && record.timezone ? record.timezone : undefined;
+  const { times, truncated } = collectLocalTimes(record, zone);
+  const hasWeekDates = hasCalendarWeekDates(record);
+  const timeCount = Object.keys(times).length;
+  if (timeCount === 0 && !hasWeekDates) return result;
+
+  const calendarNote = 'weekStartDate and weekEndDate are calendar dates: use their date part only and never convert them.';
+
+  let about: string;
+  let converted = false;
+  if (timeCount === 0) {
+    about = 'WeekStartDate and weekEndDate are calendar dates: use their date part only and never convert them.';
+  } else {
+    converted = !!zone && !Object.values(times).some((t) => t.endsWith('(UTC)'));
+    const base = converted
+      ? `Server-converted local times (${zone}) for the UTC timestamps above. Show these; don't convert times yourself.`
+      : "The timestamps above are UTC. Label them UTC, or read the project's timezone from list_workstreams or get_workstream; don't guess a conversion.";
+    about = `${base} ${calendarNote}`;
+  }
+  if (truncated) {
+    about += ' This map is incomplete: only the first 200 timestamps are shown. Timestamps missing from times are still UTC.';
+  }
+  return {
+    ...record,
+    localTimes: {
+      about,
+      ...(converted && zone ? { timezone: zone } : {}),
+      times,
+    },
+  } as R;
+}
+
 @Injectable()
 export class CmsReadTools {
   readonly tools: AgentTool[];
@@ -69,9 +173,10 @@ export class CmsReadTools {
       throw new ToolFailure('CMS request failed', safeErrors[FALLBACK_CODE]);
     }
     const truncated = resultHasTruncation(result);
+    const shown = withLocalTimes(result);
     const content = truncated
-      ? `${JSON.stringify(result)}\n\nSome fields are shortened; see truncatedFields.`
-      : JSON.stringify(result);
+      ? `${JSON.stringify(shown)}\n\nSome fields are shortened; see truncatedFields.`
+      : JSON.stringify(shown);
     return { content, note: truncated ? 'Results shortened' : undefined };
   }
 

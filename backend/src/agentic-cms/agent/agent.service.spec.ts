@@ -3,7 +3,7 @@ import { NotFoundException } from '@nestjs/common';
 import { FeatureFlagsService } from '../../feature-flags/feature-flags.service';
 import { AgentError } from './agent-errors';
 import type { AgentEvent } from './agent.events';
-import { AgentService, MAX_ROUNDS } from './agent.service';
+import { AgentService, ANSWER_NOW, MAX_ROUNDS } from './agent.service';
 import { ConversationStore } from './conversation.store';
 import { FakeModelClient } from '../model/fake-test-model.client';
 import { assistantMessage, type ModelClient, type ModelRequest } from '../model/model-client';
@@ -151,6 +151,35 @@ describe('AgentService.run', () => {
     const { text } = await runTurn(svc, 'loop');
     expect(calls).toBe(MAX_ROUNDS);
     expect(text).toMatch(/too many steps/);
+  });
+
+  it('answers from what it gathered on the last round, with no tools offered, instead of stopping empty-handed', async () => {
+    const seen: ModelRequest[] = [];
+    const researcher: ModelClient = {
+      name: 'keeps-researching',
+      async stream(req, onText) {
+        seen.push(req);
+        if (req.tools.length) {
+          const call = { id: `c${seen.length}`, name: 'load_skill', args: { name: 'sample-executive-summary' } };
+          return { text: '', toolCalls: [call], message: assistantMessage('', [call]) };
+        }
+        onText('Here is what I found so far.');
+        return { text: 'Here is what I found so far.', toolCalls: [], message: assistantMessage('Here is what I found so far.', []) };
+      },
+    };
+    const { svc, store } = setup(researcher);
+    const { text, conversationId } = await runTurn(svc, 'research this thoroughly');
+    expect(seen).toHaveLength(MAX_ROUNDS);
+    // Every round before the last offers tools; the last offers none and asks for the answer.
+    expect(seen.slice(0, -1).every((req) => req.tools.length > 0 && !req.system.includes(ANSWER_NOW))).toBe(true);
+    expect(seen[MAX_ROUNDS - 1].tools).toEqual([]);
+    expect(seen[MAX_ROUNDS - 1].system).toContain(ANSWER_NOW);
+    expect(text).toBe('Here is what I found so far.');
+    expect(text).not.toMatch(/too many steps/);
+    // The step-limit note is never saved, and the saved turn ends with the answer.
+    const saved = await store.history(conversationId);
+    expect(JSON.stringify(saved)).not.toContain('Step limit');
+    expect(saved[saved.length - 1]).toMatchObject({ role: 'assistant', content: 'Here is what I found so far.' });
   });
 
   /** Fails like a strict provider if any tool call lacks a result before the next non-tool message. */
