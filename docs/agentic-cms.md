@@ -308,7 +308,7 @@ for independent clients. When a result contains timestamps, the bot adds a
 return it) the server converts each deadline and other instant itself, because the
 model's own conversions used the wrong daylight-saving offset; without it the times
 are marked UTC. `weekStartDate`/`weekEndDate` are calendar dates and are never
-converted. Skills loaded are research, whitepaper-writing and
+converted. A page of 50 deliverables fits in the map, and a workstream list that has only week dates still gets the calendar-date note. Skills loaded are research, whitepaper-writing and
 consulting-slides. Web search citations are live when a search key is configured.
 Full-source web reading, persistent chat history, document review and editors are not.
 

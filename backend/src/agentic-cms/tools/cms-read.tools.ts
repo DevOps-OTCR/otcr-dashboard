@@ -52,10 +52,15 @@ function resultHasTruncation(output: unknown): boolean {
 // (it is 5:00 pm CST), so the server converts the instants itself when it knows the timezone.
 const SKIPPED_TIME_FIELDS = new Set(['weekStartDate', 'weekEndDate', 'retrievedAt', 'updatedAt', 'sourceUpdatedAt', 'effectiveAsOf']);
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z$/;
-const MAX_LOCAL_TIMES = 40;
+const MAX_LOCAL_TIMES = 200;
 
-/** Each instant worth showing a user, as { "/json/pointer": "Sat, Nov 14, 2026, 5:00 PM CST" }. */
-export function localTimes(output: unknown, zone?: string): Record<string, string> {
+interface CollectedTimes {
+  times: Record<string, string>;
+  truncated: boolean;
+}
+
+/** Collects each instant worth showing a user, as { "/json/pointer": "formatted time" }. */
+function collectLocalTimes(output: unknown, zone?: string): CollectedTimes {
   let format: Intl.DateTimeFormat | undefined;
   try {
     if (zone) {
@@ -67,14 +72,16 @@ export function localTimes(output: unknown, zone?: string): Record<string, strin
   } catch {
     format = undefined; // unrecognised timezone: the instants stay labelled as UTC
   }
-  const found: Record<string, string> = {};
-  let count = 0;
+  const times: Record<string, string> = {};
+  let truncated = false;
   const walk = (value: unknown, pointer: string, key: string) => {
-    if (count >= MAX_LOCAL_TIMES) return;
     if (typeof value === 'string') {
       if (SKIPPED_TIME_FIELDS.has(key) || !ISO_INSTANT.test(value)) return;
-      found[pointer] = format ? format.format(new Date(value)) : `${value} (UTC)`;
-      count++;
+      if (Object.keys(times).length >= MAX_LOCAL_TIMES) {
+        truncated = true;
+        return;
+      }
+      times[pointer] = format ? format.format(new Date(value)) : `${value} (UTC)`;
     } else if (Array.isArray(value)) {
       value.forEach((item, i) => walk(item, `${pointer}/${i}`, key));
     } else if (value && typeof value === 'object') {
@@ -82,7 +89,25 @@ export function localTimes(output: unknown, zone?: string): Record<string, strin
     }
   };
   walk(output, '', '');
-  return found;
+  return { times, truncated };
+}
+
+/** Each instant worth showing a user, as { "/json/pointer": "Sat, Nov 14, 2026, 5:00 PM CST" }. */
+export function localTimes(output: unknown, zone?: string): Record<string, string> {
+  return collectLocalTimes(output, zone).times;
+}
+
+/** True if any object (nested through arrays and objects) has a weekStartDate or weekEndDate key. */
+export function hasCalendarWeekDates(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some((item) => hasCalendarWeekDates(item));
+  }
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    if ('weekStartDate' in record || 'weekEndDate' in record) return true;
+    return Object.values(record).some((v) => hasCalendarWeekDates(v));
+  }
+  return false;
 }
 
 /**
@@ -94,17 +119,32 @@ export function withLocalTimes<R>(result: R): R {
   if (!result || typeof result !== 'object' || Array.isArray(result)) return result;
   const record = result as Record<string, unknown>;
   const zone = typeof record.timezone === 'string' && record.timezone ? record.timezone : undefined;
-  const times = localTimes(record, zone);
-  if (!Object.keys(times).length) return result;
-  const converted = zone && !Object.values(times).some((t) => t.endsWith('(UTC)'));
-  const about = converted
-    ? `Server-converted local times (${zone}) for the UTC timestamps above. Show these; don't convert times yourself.`
-    : "The timestamps above are UTC. Label them UTC, or read the project's timezone from list_workstreams or get_workstream; don't guess a conversion.";
+  const { times, truncated } = collectLocalTimes(record, zone);
+  const hasWeekDates = hasCalendarWeekDates(record);
+  const timeCount = Object.keys(times).length;
+  if (timeCount === 0 && !hasWeekDates) return result;
+
+  const calendarNote = 'weekStartDate and weekEndDate are calendar dates: use their date part only and never convert them.';
+
+  let about: string;
+  let converted = false;
+  if (timeCount === 0) {
+    about = 'WeekStartDate and weekEndDate are calendar dates: use their date part only and never convert them.';
+  } else {
+    converted = !!zone && !Object.values(times).some((t) => t.endsWith('(UTC)'));
+    const base = converted
+      ? `Server-converted local times (${zone}) for the UTC timestamps above. Show these; don't convert times yourself.`
+      : "The timestamps above are UTC. Label them UTC, or read the project's timezone from list_workstreams or get_workstream; don't guess a conversion.";
+    about = `${base} ${calendarNote}`;
+  }
+  if (truncated) {
+    about += ' This map is incomplete: only the first 200 timestamps are shown. Timestamps missing from times are still UTC.';
+  }
   return {
     ...record,
     localTimes: {
-      about: `${about} weekStartDate and weekEndDate are calendar dates: use their date part only and never convert them.`,
-      ...(converted ? { timezone: zone } : {}),
+      about,
+      ...(converted && zone ? { timezone: zone } : {}),
       times,
     },
   } as R;
