@@ -317,11 +317,31 @@ export class SlackService {
     slackUserId: string,
   ): Promise<string | null> {
     const token = this.decryptToken(workspaceBotToken);
-    const response = await this.callSlackApi<{
-      user?: { profile?: { title?: string } };
-    }>('users.info', token, { user: slackUserId });
+    const url = `https://slack.com/api/users.info?user=${encodeURIComponent(slackUserId)}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
-    const title = response.user?.profile?.title?.trim();
+    if (!response.ok) {
+      throw new Error(
+        `Slack API users.info failed with status ${response.status}`,
+      );
+    }
+
+    const data = (await response.json()) as {
+      ok?: boolean;
+      error?: string;
+      user?: { profile?: { title?: string } };
+    };
+
+    if (!data.ok) {
+      throw new Error(
+        `Slack API users.info error: ${data.error || 'unknown_error'}`,
+      );
+    }
+
+    const title = data.user?.profile?.title?.trim();
     return title ? title : null;
   }
 

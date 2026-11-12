@@ -1,6 +1,6 @@
 import { ConflictException, INestApplication, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { Role, SlackRoleSuggestionStatus } from '@prisma/client';
+import { Prisma, Role, SlackRoleSuggestionStatus } from '@prisma/client';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthService } from '../auth/auth.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -104,20 +104,28 @@ function statefulFixture() {
     updatedAt: Date;
   };
 
+  type FixtureUser = {
+    id: string;
+    email: string;
+    role: Role;
+    active: boolean;
+    firstName: string;
+    lastName: string;
+  };
+
+  type Connection = {
+    slackUserId: string;
+    workspaceId: string;
+    user: FixtureUser;
+  };
+
   let workspace: { id: string; botAccessToken: string; updatedAt: Date } | null = {
     id: 'ws',
     botAccessToken: 'xoxb-test',
     updatedAt: new Date(),
   };
-  const users = new Map<
-    string,
-    { id: string; email: string; role: Role; active: boolean; firstName: string; lastName: string }
-  >();
-  const connections: Array<{
-    slackUserId: string;
-    user: { id: string; email: string; role: Role; active: boolean };
-    workspace: { botAccessToken: string };
-  }> = [];
+  const users = new Map<string, FixtureUser>();
+  const connections: Connection[] = [];
   const allowedEmails = new Map<string, { email: string; role: Role; active: boolean }>();
   const suggestions = new Map<string, Suggestion>();
   let nextId = 1;
@@ -126,7 +134,11 @@ function statefulFixture() {
     findFirst: jest.fn(async () => (workspace ? { ...workspace } : null)),
   };
   const slackUserConnection = {
-    findMany: jest.fn(async () => connections.map((c) => ({ ...c }))),
+    findMany: jest.fn(async ({ where }: { where?: { workspaceId?: string } } = {}) =>
+      connections
+        .filter((c) => where?.workspaceId === undefined || c.workspaceId === where.workspaceId)
+        .map((c) => ({ ...c, user: { ...c.user } })),
+    ),
   };
   const userModel = {
     count: jest.fn(async () => {
@@ -144,6 +156,22 @@ function statefulFixture() {
       users.set(where.id, updated);
       return { id: updated.id, email: updated.email, role: updated.role };
     }),
+    updateMany: jest.fn(
+      async ({
+        where,
+        data,
+      }: {
+        where: { id: string; role?: Role };
+        data: Partial<{ role: Role }>;
+      }) => {
+        const u = users.get(where.id);
+        if (!u) return { count: 0 };
+        if (where.role !== undefined && u.role !== where.role) return { count: 0 };
+        const updated = { ...u, ...data };
+        users.set(where.id, updated);
+        return { count: 1 };
+      },
+    ),
   };
   const allowedEmail = {
     updateMany: jest.fn(async ({ where, data }: { where: { email: { equals: string } }; data: Partial<{ role: Role; active: boolean }> }) => {
@@ -163,21 +191,41 @@ function statefulFixture() {
       return found;
     }),
   };
+  const matches = (
+    s: Suggestion,
+    where: Partial<Pick<Suggestion, 'id' | 'userId' | 'status' | 'suggestedRole' | 'slackTitle'>>,
+  ): boolean =>
+    (where.id === undefined || s.id === where.id) &&
+    (where.userId === undefined || s.userId === where.userId) &&
+    (where.status === undefined || s.status === where.status) &&
+    (where.suggestedRole === undefined || s.suggestedRole === where.suggestedRole) &&
+    (where.slackTitle === undefined || s.slackTitle === where.slackTitle);
+
   const slackRoleSuggestion = {
     findMany: jest.fn(async ({ where }: { where?: { status?: SlackRoleSuggestionStatus } } = {}) =>
       [...suggestions.values()].filter((s) => !where?.status || s.status === where.status),
     ),
-    findFirst: jest.fn(async ({ where }: { where: Partial<Pick<Suggestion, 'userId' | 'status' | 'suggestedRole' | 'slackTitle'>> }) =>
-      [...suggestions.values()].find(
-        (s) =>
-          (where.userId === undefined || s.userId === where.userId) &&
-          (where.status === undefined || s.status === where.status) &&
-          (where.suggestedRole === undefined || s.suggestedRole === where.suggestedRole) &&
-          (where.slackTitle === undefined || s.slackTitle === where.slackTitle),
-      ) ?? null,
+    findFirst: jest.fn(
+      async ({
+        where,
+      }: {
+        where: Partial<Pick<Suggestion, 'userId' | 'status' | 'suggestedRole' | 'slackTitle'>>;
+      }) => [...suggestions.values()].find((s) => matches(s, where)) ?? null,
     ),
     findUnique: jest.fn(async ({ where }: { where: { id: string } }) => suggestions.get(where.id) ?? null),
     create: jest.fn(async ({ data }: { data: Omit<Suggestion, 'id' | 'reviewedById' | 'reviewedAt' | 'createdAt' | 'updatedAt'> }) => {
+      // Emulate the partial unique index on (userId, status=PENDING).
+      if (data.status === SlackRoleSuggestionStatus.PENDING) {
+        const existingPending = [...suggestions.values()].some(
+          (s) => s.userId === data.userId && s.status === SlackRoleSuggestionStatus.PENDING,
+        );
+        if (existingPending) {
+          throw new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+            code: 'P2002',
+            clientVersion: 'test',
+          });
+        }
+      }
       const record: Suggestion = {
         ...data,
         id: `sug${nextId++}`,
@@ -202,6 +250,22 @@ function statefulFixture() {
       suggestions.set(where.id, { ...existing, ...data, updatedAt: new Date() });
       return { count: 1 };
     }),
+    deleteMany: jest.fn(
+      async ({
+        where,
+      }: {
+        where?: Partial<Pick<Suggestion, 'id' | 'userId' | 'status'>>;
+      } = {}) => {
+        let count = 0;
+        for (const [id, s] of [...suggestions.entries()]) {
+          if (matches(s, where ?? {})) {
+            suggestions.delete(id);
+            count++;
+          }
+        }
+        return { count };
+      },
+    ),
   };
 
   const tx = { user: userModel, allowedEmail, slackRoleSuggestion };
@@ -220,7 +284,6 @@ function statefulFixture() {
     prisma,
     tx,
     slack,
-    workspace,
     users,
     connections,
     allowedEmails,
@@ -265,8 +328,8 @@ describe('SlackRoleSuggestionsService', () => {
     });
     f.connections.push({
       slackUserId: 'S1',
+      workspaceId: 'ws',
       user: f.users.get('u1')!,
-      workspace: { botAccessToken: 'tok' },
     });
     f.slack.getSlackProfileTitle.mockResolvedValueOnce('Project Manager');
 
@@ -283,6 +346,7 @@ describe('SlackRoleSuggestionsService', () => {
       status: SlackRoleSuggestionStatus.PENDING,
     });
     expect(f.tx.user.update).not.toHaveBeenCalled();
+    expect(f.tx.user.updateMany).not.toHaveBeenCalled();
     expect(f.tx.allowedEmail.updateMany).not.toHaveBeenCalled();
     expect(f.tx.allowedEmail.create).not.toHaveBeenCalled();
   });
@@ -313,7 +377,11 @@ describe('SlackRoleSuggestionsService', () => {
       firstName: 'T',
       lastName: 'H',
     });
-    const mk = (id: string) => ({ slackUserId: id.toUpperCase(), user: f.users.get(id)!, workspace: { botAccessToken: 'tok' } });
+    const mk = (id: string) => ({
+      slackUserId: id.toUpperCase(),
+      workspaceId: 'ws',
+      user: f.users.get(id)!,
+    });
     f.connections.push(mk('unknown'), mk('same'), mk('throws'));
 
     f.slack.getSlackProfileTitle
@@ -324,8 +392,12 @@ describe('SlackRoleSuggestionsService', () => {
     const result = await f.service.sync();
 
     expect((result as { created: number }).created).toBe(0);
+    expect((result as { skipped: number }).skipped).toBe(0);
+    expect((result as { retired: number }).retired).toBe(0);
+    expect((result as { failed: number }).failed).toBe(1);
     expect(f.suggestions.size).toBe(0);
     expect(f.tx.user.update).not.toHaveBeenCalled();
+    expect(f.tx.user.updateMany).not.toHaveBeenCalled();
     expect(f.tx.allowedEmail.updateMany).not.toHaveBeenCalled();
   });
 
@@ -367,6 +439,7 @@ describe('SlackRoleSuggestionsService', () => {
     await expect(f.service.approve('nope', 'ADMIN@example.test')).rejects.toBeInstanceOf(NotFoundException);
     expect(f.users.get('u1')!.role).toBe(Role.CONSULTANT);
     expect(f.tx.user.update).not.toHaveBeenCalled();
+    expect(f.tx.user.updateMany).not.toHaveBeenCalled();
     expect(f.tx.allowedEmail.updateMany).not.toHaveBeenCalled();
   });
 
@@ -388,10 +461,13 @@ describe('SlackRoleSuggestionsService', () => {
       await expect(f.service.approve(suggestion.id, 'ADMIN@example.test')).rejects.toBeInstanceOf(ConflictException);
       expect(f.users.get('u1')!.role).toBe(Role.CONSULTANT);
       expect(f.tx.user.update).not.toHaveBeenCalled();
+      expect(f.tx.user.updateMany).not.toHaveBeenCalled();
     },
   );
 
   test('approve when user is gone throws NotFoundException and leaves suggestion PENDING', async () => {
+    // With onDelete: Cascade on the suggestion FK this state cannot occur in
+    // production; the branch is defensive.
     const f = statefulFixture();
     f.users.set('u1', { id: 'u1', email: 'u1@example.test', role: Role.CONSULTANT, active: true, firstName: '', lastName: '' });
     const suggestion = await f.tx.slackRoleSuggestion.create({
@@ -408,6 +484,303 @@ describe('SlackRoleSuggestionsService', () => {
     await expect(f.service.approve(suggestion.id, 'ADMIN@example.test')).rejects.toBeInstanceOf(NotFoundException);
     expect(f.suggestions.get(suggestion.id)!.status).toBe(SlackRoleSuggestionStatus.PENDING);
     expect(f.tx.user.update).not.toHaveBeenCalled();
+    expect(f.tx.user.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('approve rejects with ConflictException when the live role differs from currentRole', async () => {
+    const f = statefulFixture();
+    f.users.set('u1', { id: 'u1', email: 'u1@example.test', role: Role.PARTNER, active: true, firstName: '', lastName: '' });
+    f.allowedEmails.set('u1@example.test', { email: 'u1@example.test', role: Role.PARTNER, active: true });
+    const suggestion = await f.tx.slackRoleSuggestion.create({
+      data: {
+        userId: 'u1',
+        slackUserId: 'S1',
+        slackTitle: 'Project Manager',
+        currentRole: Role.CONSULTANT,
+        suggestedRole: Role.PM,
+        status: SlackRoleSuggestionStatus.PENDING,
+      },
+    });
+
+    await expect(f.service.approve(suggestion.id, 'ADMIN@example.test')).rejects.toBeInstanceOf(ConflictException);
+
+    expect(f.users.get('u1')!.role).toBe(Role.PARTNER);
+    expect(f.suggestions.get(suggestion.id)!.status).toBe(SlackRoleSuggestionStatus.PENDING);
+    expect(f.allowedEmails.get('u1@example.test')).toMatchObject({ role: Role.PARTNER });
+    expect(f.tx.user.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('approve rejects with ConflictException when the user is now ADMIN', async () => {
+    const f = statefulFixture();
+    f.users.set('u1', { id: 'u1', email: 'u1@example.test', role: Role.ADMIN, active: true, firstName: '', lastName: '' });
+    const suggestion = await f.tx.slackRoleSuggestion.create({
+      data: {
+        userId: 'u1',
+        slackUserId: 'S1',
+        slackTitle: 'Project Manager',
+        currentRole: Role.CONSULTANT,
+        suggestedRole: Role.PM,
+        status: SlackRoleSuggestionStatus.PENDING,
+      },
+    });
+
+    await expect(f.service.approve(suggestion.id, 'ADMIN@example.test')).rejects.toBeInstanceOf(ConflictException);
+
+    expect(f.users.get('u1')!.role).toBe(Role.ADMIN);
+    expect(f.suggestions.get(suggestion.id)!.status).toBe(SlackRoleSuggestionStatus.PENDING);
+    expect(f.tx.user.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('approve rejects with ConflictException when the suggestion targets an ADMIN', async () => {
+    const f = statefulFixture();
+    f.users.set('u1', { id: 'u1', email: 'u1@example.test', role: Role.ADMIN, active: true, firstName: '', lastName: '' });
+    const suggestion = await f.tx.slackRoleSuggestion.create({
+      data: {
+        userId: 'u1',
+        slackUserId: 'S1',
+        slackTitle: 'Executive',
+        currentRole: Role.ADMIN,
+        suggestedRole: Role.EXECUTIVE,
+        status: SlackRoleSuggestionStatus.PENDING,
+      },
+    });
+
+    await expect(f.service.approve(suggestion.id, 'ADMIN@example.test')).rejects.toBeInstanceOf(ConflictException);
+
+    expect(f.users.get('u1')!.role).toBe(Role.ADMIN);
+    expect(f.suggestions.get(suggestion.id)!.status).toBe(SlackRoleSuggestionStatus.PENDING);
+    expect(f.tx.user.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('approve rejects with ConflictException when the user is inactive', async () => {
+    const f = statefulFixture();
+    f.users.set('u1', { id: 'u1', email: 'u1@example.test', role: Role.CONSULTANT, active: false, firstName: '', lastName: '' });
+    const suggestion = await f.tx.slackRoleSuggestion.create({
+      data: {
+        userId: 'u1',
+        slackUserId: 'S1',
+        slackTitle: 'Project Manager',
+        currentRole: Role.CONSULTANT,
+        suggestedRole: Role.PM,
+        status: SlackRoleSuggestionStatus.PENDING,
+      },
+    });
+
+    await expect(f.service.approve(suggestion.id, 'ADMIN@example.test')).rejects.toBeInstanceOf(ConflictException);
+
+    expect(f.users.get('u1')!.role).toBe(Role.CONSULTANT);
+    expect(f.suggestions.get(suggestion.id)!.status).toBe(SlackRoleSuggestionStatus.PENDING);
+    expect(f.tx.user.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('sync never suggests for ADMIN users and retires an existing PENDING row', async () => {
+    const f = statefulFixture();
+    f.users.set('admin', { id: 'admin', email: 'admin@example.test', role: Role.ADMIN, active: true, firstName: '', lastName: '' });
+    f.connections.push({ slackUserId: 'SADMIN', workspaceId: 'ws', user: f.users.get('admin')! });
+    const existing = await f.tx.slackRoleSuggestion.create({
+      data: {
+        userId: 'admin',
+        slackUserId: 'SADMIN',
+        slackTitle: 'Consultant',
+        currentRole: Role.ADMIN,
+        suggestedRole: Role.CONSULTANT,
+        status: SlackRoleSuggestionStatus.PENDING,
+      },
+    });
+    f.slack.getSlackProfileTitle.mockResolvedValueOnce('Consultant');
+
+    const result = await f.service.sync();
+
+    expect((result as { created: number }).created).toBe(0);
+    expect((result as { retired: number }).retired).toBe(1);
+    expect(f.suggestions.get(existing.id)).toBeUndefined();
+    expect(f.suggestions.size).toBe(0);
+    expect(f.tx.user.updateMany).not.toHaveBeenCalled();
+  });
+
+  test.each(['Former Partner', null, 'Consultant'])(
+    'sync retires a stale PENDING suggestion when the effective role is %p',
+    async (title) => {
+      const f = statefulFixture();
+      f.users.set('u1', { id: 'u1', email: 'u1@example.test', role: Role.CONSULTANT, active: true, firstName: '', lastName: '' });
+      f.connections.push({ slackUserId: 'S1', workspaceId: 'ws', user: f.users.get('u1')! });
+      const pending = await f.tx.slackRoleSuggestion.create({
+        data: {
+          userId: 'u1',
+          slackUserId: 'S1',
+          slackTitle: 'Project Manager',
+          currentRole: Role.CONSULTANT,
+          suggestedRole: Role.PM,
+          status: SlackRoleSuggestionStatus.PENDING,
+        },
+      });
+      const approved = await f.tx.slackRoleSuggestion.create({
+        data: {
+          userId: 'u1',
+          slackUserId: 'S1',
+          slackTitle: 'Executive',
+          currentRole: Role.CONSULTANT,
+          suggestedRole: Role.EXECUTIVE,
+          status: SlackRoleSuggestionStatus.APPROVED,
+        },
+      });
+      const dismissed = await f.tx.slackRoleSuggestion.create({
+        data: {
+          userId: 'u1',
+          slackUserId: 'S1',
+          slackTitle: 'Partner',
+          currentRole: Role.CONSULTANT,
+          suggestedRole: Role.PARTNER,
+          status: SlackRoleSuggestionStatus.DISMISSED,
+        },
+      });
+      f.slack.getSlackProfileTitle.mockResolvedValueOnce(title);
+
+      const result = await f.service.sync();
+
+      expect((result as { retired: number }).retired).toBe(1);
+      expect((result as { created: number }).created).toBe(0);
+      expect(f.suggestions.get(pending.id)).toBeUndefined();
+      expect(f.suggestions.get(approved.id)).toBeDefined();
+      expect(f.suggestions.get(approved.id)!.status).toBe(SlackRoleSuggestionStatus.APPROVED);
+      expect(f.suggestions.get(dismissed.id)).toBeDefined();
+      expect(f.suggestions.get(dismissed.id)!.status).toBe(SlackRoleSuggestionStatus.DISMISSED);
+      expect(f.tx.user.updateMany).not.toHaveBeenCalled();
+    },
+  );
+
+  test('sync does NOT retire a PENDING suggestion when the Slack call throws', async () => {
+    const f = statefulFixture();
+    f.users.set('u1', { id: 'u1', email: 'u1@example.test', role: Role.CONSULTANT, active: true, firstName: '', lastName: '' });
+    f.connections.push({ slackUserId: 'S1', workspaceId: 'ws', user: f.users.get('u1')! });
+    const pending = await f.tx.slackRoleSuggestion.create({
+      data: {
+        userId: 'u1',
+        slackUserId: 'S1',
+        slackTitle: 'Project Manager',
+        currentRole: Role.CONSULTANT,
+        suggestedRole: Role.PM,
+        status: SlackRoleSuggestionStatus.PENDING,
+      },
+    });
+    f.slack.getSlackProfileTitle.mockRejectedValueOnce(new Error('boom'));
+
+    const result = await f.service.sync();
+
+    expect((result as { failed: number }).failed).toBe(1);
+    expect((result as { retired: number }).retired).toBe(0);
+    expect(f.suggestions.get(pending.id)).toBeDefined();
+    expect(f.suggestions.get(pending.id)!.status).toBe(SlackRoleSuggestionStatus.PENDING);
+    expect(f.tx.user.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('sync replaces (does not edit in place) a PENDING suggestion whose title changed', async () => {
+    const f = statefulFixture();
+    f.users.set('u1', { id: 'u1', email: 'u1@example.test', role: Role.CONSULTANT, active: true, firstName: '', lastName: '' });
+    f.connections.push({ slackUserId: 'S1', workspaceId: 'ws', user: f.users.get('u1')! });
+    const old = await f.tx.slackRoleSuggestion.create({
+      data: {
+        userId: 'u1',
+        slackUserId: 'S1',
+        slackTitle: 'Project Manager',
+        currentRole: Role.CONSULTANT,
+        suggestedRole: Role.PM,
+        status: SlackRoleSuggestionStatus.PENDING,
+      },
+    });
+    f.slack.getSlackProfileTitle.mockResolvedValueOnce('Executive');
+
+    const result = await f.service.sync();
+
+    expect((result as { updated: number }).updated).toBe(1);
+    expect((result as { created: number }).created).toBe(0);
+    expect(f.suggestions.get(old.id)).toBeUndefined();
+    const rows = [...f.suggestions.values()];
+    expect(rows).toHaveLength(1);
+    const fresh = rows[0];
+    expect(fresh.id).not.toBe(old.id);
+    expect(fresh).toMatchObject({
+      userId: 'u1',
+      slackTitle: 'Executive',
+      suggestedRole: Role.EXECUTIVE,
+      currentRole: Role.CONSULTANT,
+      status: SlackRoleSuggestionStatus.PENDING,
+    });
+
+    // P1: an admin who reviewed the OLD suggestion can no longer approve it.
+    await expect(f.service.approve(old.id, 'ADMIN@example.test')).rejects.toBeInstanceOf(NotFoundException);
+    expect(f.users.get('u1')!.role).toBe(Role.CONSULTANT);
+    expect(f.tx.user.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('sync replaces a PENDING suggestion whose currentRole is stale', async () => {
+    const f = statefulFixture();
+    f.users.set('u1', { id: 'u1', email: 'u1@example.test', role: Role.LC, active: true, firstName: '', lastName: '' });
+    f.connections.push({ slackUserId: 'S1', workspaceId: 'ws', user: f.users.get('u1')! });
+    const old = await f.tx.slackRoleSuggestion.create({
+      data: {
+        userId: 'u1',
+        slackUserId: 'S1',
+        slackTitle: 'Project Manager',
+        currentRole: Role.CONSULTANT,
+        suggestedRole: Role.PM,
+        status: SlackRoleSuggestionStatus.PENDING,
+      },
+    });
+    f.slack.getSlackProfileTitle.mockResolvedValueOnce('Project Manager');
+
+    const result = await f.service.sync();
+
+    expect((result as { updated: number }).updated).toBe(1);
+    expect(f.suggestions.get(old.id)).toBeUndefined();
+    const rows = [...f.suggestions.values()];
+    expect(rows).toHaveLength(1);
+    const fresh = rows[0];
+    expect(fresh.id).not.toBe(old.id);
+    expect(fresh).toMatchObject({
+      userId: 'u1',
+      slackTitle: 'Project Manager',
+      currentRole: Role.LC,
+      suggestedRole: Role.PM,
+      status: SlackRoleSuggestionStatus.PENDING,
+    });
+  });
+
+  test('sync only reads connections for the latest workspace', async () => {
+    const f = statefulFixture();
+    f.users.set('u1', { id: 'u1', email: 'u1@example.test', role: Role.CONSULTANT, active: true, firstName: '', lastName: '' });
+    f.users.set('u2', { id: 'u2', email: 'u2@example.test', role: Role.CONSULTANT, active: true, firstName: '', lastName: '' });
+    f.connections.push({ slackUserId: 'S1', workspaceId: 'ws', user: f.users.get('u1')! });
+    f.connections.push({ slackUserId: 'S2', workspaceId: 'other', user: f.users.get('u2')! });
+    f.slack.getSlackProfileTitle.mockResolvedValueOnce('Project Manager');
+
+    await f.service.sync();
+
+    expect(f.slack.getSlackProfileTitle).toHaveBeenCalledTimes(1);
+    expect(f.slack.getSlackProfileTitle).toHaveBeenCalledWith('xoxb-test', 'S1');
+    const args = (f.slack.getSlackProfileTitle as jest.Mock).mock.calls as Array<[string, string]>;
+    expect(args.some(([, slackUserId]) => slackUserId === 'S2')).toBe(false);
+  });
+
+  test('sync counts a P2002 on create as skipped and does not throw', async () => {
+    const f = statefulFixture();
+    f.users.set('u1', { id: 'u1', email: 'u1@example.test', role: Role.CONSULTANT, active: true, firstName: '', lastName: '' });
+    f.connections.push({ slackUserId: 'S1', workspaceId: 'ws', user: f.users.get('u1')! });
+    f.slack.getSlackProfileTitle.mockResolvedValueOnce('Project Manager');
+
+    (f.tx.slackRoleSuggestion.create as jest.Mock).mockImplementationOnce(async () => {
+      throw new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+      });
+    });
+
+    const result = await f.service.sync();
+
+    expect((result as { skipped: number }).skipped).toBe(1);
+    expect((result as { created: number }).created).toBe(0);
+    expect(f.suggestions.size).toBe(0);
+    expect(f.tx.user.updateMany).not.toHaveBeenCalled();
   });
 
   test('dismiss marks DISMISSED and never mutates roles', async () => {
@@ -433,24 +806,33 @@ describe('SlackRoleSuggestionsService', () => {
     expect(stored.reviewedAt).toBeInstanceOf(Date);
     expect(f.users.get('u1')!.role).toBe(Role.CONSULTANT);
     expect(f.tx.user.update).not.toHaveBeenCalled();
+    expect(f.tx.user.updateMany).not.toHaveBeenCalled();
     expect(f.tx.allowedEmail.updateMany).not.toHaveBeenCalled();
     expect(f.tx.allowedEmail.create).not.toHaveBeenCalled();
   });
 
-  test('dismiss of non-pending id throws NotFoundException', async () => {
+  test('dismiss: unknown id throws NotFoundException; reviewed ids throw ConflictException', async () => {
     const f = statefulFixture();
     f.users.set('u1', { id: 'u1', email: 'u1@example.test', role: Role.CONSULTANT, active: true, firstName: '', lastName: '' });
-    const suggestion = await f.tx.slackRoleSuggestion.create({
-      data: {
-        userId: 'u1',
-        slackUserId: 'S1',
-        slackTitle: 'Project Manager',
-        currentRole: Role.CONSULTANT,
-        suggestedRole: Role.PM,
-        status: SlackRoleSuggestionStatus.APPROVED,
-      },
-    });
-    await expect(f.service.dismiss(suggestion.id, 'ADMIN@example.test')).rejects.toBeInstanceOf(NotFoundException);
-    expect(f.suggestions.get(suggestion.id)!.status).toBe(SlackRoleSuggestionStatus.APPROVED);
+
+    await expect(f.service.dismiss('nope', 'ADMIN@example.test')).rejects.toBeInstanceOf(NotFoundException);
+
+    for (const status of [SlackRoleSuggestionStatus.APPROVED, SlackRoleSuggestionStatus.DISMISSED]) {
+      const suggestion = await f.tx.slackRoleSuggestion.create({
+        data: {
+          userId: 'u1',
+          slackUserId: 'S1',
+          slackTitle: 'Project Manager',
+          currentRole: Role.CONSULTANT,
+          suggestedRole: Role.PM,
+          status,
+        },
+      });
+      await expect(f.service.dismiss(suggestion.id, 'ADMIN@example.test')).rejects.toBeInstanceOf(ConflictException);
+      expect(f.suggestions.get(suggestion.id)!.status).toBe(status);
+      expect(f.suggestions.get(suggestion.id)!.reviewedById).toBeNull();
+      expect(f.users.get('u1')!.role).toBe(Role.CONSULTANT);
+      expect(f.tx.user.updateMany).not.toHaveBeenCalled();
+    }
   });
 });

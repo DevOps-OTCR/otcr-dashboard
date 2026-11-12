@@ -851,8 +851,12 @@ model SlackRoleSuggestion {
   user       User  @relation("SlackRoleSuggestionUser", fields: [userId], references: [id], onDelete: Cascade)
   reviewedBy User? @relation("SlackRoleSuggestionReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
 
+  // One PENDING suggestion per user is enforced by a partial unique index on userId WHERE status = 'PENDING'.
+  // That index lives only in the migration SQL: Prisma 7.4 can express partial indexes only with the
+  // unenabled 'partialIndexes' preview feature, so delete the DROP INDEX for it from each new migration.
   @@index([userId])
   @@index([status])
+  @@index([reviewedById])
 }
 
 // ============================================================================

@@ -915,6 +915,8 @@ for (const role of ['CONSULTANT', 'LC', 'PM', 'PARTNER', 'EXECUTIVE']) {
     assert.equal(await nav('People').count(), 0);
     assert.equal(await page.locator('nav').getByText('People', { exact: true }).count(), 0);
     assert.equal(state.calls.some(path => path === '/people' || path === '/onboarding/requests'), false);
+    assert.equal(state.calls.some(path => path.startsWith('/integrations/slack/role-suggestions')), false);
+    assert.equal(await page.getByText('Slack role suggestions', { exact: true }).count(), 0);
   });
 }
 
@@ -1062,4 +1064,84 @@ test('Slack Settings keeps connection controls without onboarding requests or po
   assert.equal(await page.getByText('Role Onboarding Requests', { exact: true }).count(), 0);
   assert.equal(state.calls.includes('/onboarding/requests'), false);
   assert.equal(await page.getByRole('button', { name: /Connect Slack/ }).count(), 1);
+});
+
+async function slackSuggestionsRoute(page, options = {}) {
+  const writes = [];
+  const pending = [{ id: 'sug1', slackTitle: 'Project Manager', currentRole: 'CONSULTANT', suggestedRole: 'PM',
+    createdAt: '2026-11-12T12:00:00Z',
+    user: { id: 'casey', email: 'casey@example.test', firstName: 'Casey', lastName: 'Test', role: options.liveRole ?? 'CONSULTANT' } }];
+  await page.route('**/api/integrations/slack/role-suggestions**', async route => {
+    const url = new URL(route.request().url());
+    const pathname = url.pathname.slice(4);
+    if (route.request().method() === 'PATCH') {
+      writes.push(pathname);
+      const parts = pathname.split('/').filter(Boolean);
+      const id = parts.find((part, i) => parts[i - 1] === 'role-suggestions' && ['approve', 'dismiss'].includes(parts[i + 1]));
+      const index = pending.findIndex(item => item.id === id);
+      if (index !== -1) pending.splice(index, 1);
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true }) });
+    }
+    if (options.fail) return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message: 'Suggestions unavailable' }) });
+    if (options.notConnected) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+      status: 'not_connected', message: 'Slack is not connected for this workspace. Install the Slack app first.', suggestions: [] }) });
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'connected', suggestions: pending }) });
+  });
+  return { writes };
+}
+
+test('Slack role suggestions: admin approves after confirm', async t => {
+  const { page, open } = await peopleSetup(t);
+  const slack = await slackSuggestionsRoute(page);
+  await open();
+  const card = page.getByRole('article', { name: 'Suggestion for casey@example.test' });
+  await card.waitFor();
+  assert.equal(await card.getByText('Consultant', { exact: true }).count(), 1);
+  // 'Project Manager' appears twice: the Suggested role <dd> (PM -> full label) and the Slack title <dd>.
+  assert.equal(await card.getByText('Project Manager', { exact: true }).count(), 2);
+  await page.getByRole('heading', { name: 'Slack role suggestions' }).waitFor();
+  page.once('dialog', dialog => dialog.dismiss());
+  await card.getByRole('button', { name: 'Approve', exact: true }).click();
+  assert.equal(slack.writes.length, 0);
+  page.once('dialog', dialog => dialog.accept());
+  await card.getByRole('button', { name: 'Approve', exact: true }).click();
+  await page.getByText('No pending Slack role suggestions.', { exact: true }).waitFor();
+  assert.equal(slack.writes.length, 1);
+  assert.equal(slack.writes[0].endsWith('/sug1/approve'), true);
+});
+
+test('Slack role suggestions: admin dismisses', async t => {
+  const { page, open } = await peopleSetup(t);
+  const slack = await slackSuggestionsRoute(page);
+  await open();
+  const card = page.getByRole('article', { name: 'Suggestion for casey@example.test' });
+  await card.waitFor();
+  page.once('dialog', dialog => dialog.accept());
+  await card.getByRole('button', { name: 'Dismiss', exact: true }).click();
+  await page.getByText('No pending Slack role suggestions.', { exact: true }).waitFor();
+  assert.equal(slack.writes.length, 1);
+  assert.equal(slack.writes[0].endsWith('/sug1/dismiss'), true);
+});
+
+test('Slack role suggestions: not connected and load error states', async t => {
+  const notConnected = await peopleSetup(t);
+  await slackSuggestionsRoute(notConnected.page, { notConnected: true });
+  await notConnected.open();
+  await notConnected.page.getByText('Slack is not connected for this workspace. Install the Slack app first.', { exact: true }).waitFor();
+  assert.equal(await notConnected.page.getByRole('article', { name: 'Suggestion for casey@example.test' }).count(), 0);
+  const failed = await peopleSetup(t);
+  await slackSuggestionsRoute(failed.page, { fail: true });
+  await failed.open();
+  await failed.page.getByRole('alert').getByText('Suggestions unavailable', { exact: true }).waitFor();
+  assert.equal(await failed.page.getByText('No pending Slack role suggestions.', { exact: true }).count(), 0);
+});
+
+test('Slack role suggestions: shows live role when it changed', async t => {
+  const { page, open } = await peopleSetup(t);
+  await slackSuggestionsRoute(page, { liveRole: 'PARTNER' });
+  await open();
+  const card = page.getByRole('article', { name: 'Suggestion for casey@example.test' });
+  await card.waitFor();
+  assert.equal(await card.getByText('Partner', { exact: true }).count(), 1);
+  await card.getByText(/Role changed since this suggestion/).waitFor();
 });

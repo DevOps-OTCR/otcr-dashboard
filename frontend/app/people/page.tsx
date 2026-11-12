@@ -21,6 +21,7 @@ export default function PeoplePage() {
   const [people, setPeople] = useState<Person[]>([]);
   const [requests, setRequests] = useState<OnboardingRequest[]>([]);
   const [slackSuggestions, setSlackSuggestions] = useState<SlackRoleSuggestionList | null>(null);
+  const [slackSuggestionsError, setSlackSuggestionsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +43,7 @@ export default function PeoplePage() {
       if (!isValidAppRole(currentRole)) throw new Error('Unable to verify your role');
       setRole(currentRole);
       setDenied(currentRole !== 'ADMIN');
+      setSlackSuggestionsError(null);
       if (currentRole !== 'ADMIN') { setPeople([]); setRequests([]); setSlackSuggestions(null); return; }
       const [directory, queue] = await Promise.all([peopleAPI.list(), onboardingAPI.listRequests()]);
       if (!isCurrent()) return;
@@ -52,15 +54,18 @@ export default function PeoplePage() {
         const suggestions = await slackRoleSuggestionsAPI.list();
         if (!isCurrent()) return;
         setSlackSuggestions(suggestions.data);
-      } catch {
+        setSlackSuggestionsError(null);
+      } catch (error) {
         if (!isCurrent()) return;
         setSlackSuggestions(null);
+        setSlackSuggestionsError(apiError(error, 'Could not load Slack role suggestions.'));
       }
     } catch (error) {
       if (!isCurrent()) return;
       setPeople([]);
       setRequests([]);
       setSlackSuggestions(null);
+      setSlackSuggestionsError(null);
       setError(apiError(error, 'Failed to load People'));
     } finally {
       if (isCurrent()) { setLoading(false); setBusy(false); }
@@ -117,7 +122,7 @@ export default function PeoplePage() {
 
   async function reviewSuggestion(suggestion: SlackRoleSuggestion, action: 'approve' | 'dismiss') {
     const confirmation = action === 'approve'
-      ? `Approve ${personName(suggestion.user)} (${suggestion.user.email}) as ${ROLE_FULL_LABELS[suggestion.suggestedRole]}? Current: ${ROLE_FULL_LABELS[suggestion.currentRole]}.`
+      ? `Approve ${personName(suggestion.user)} (${suggestion.user.email}) as ${ROLE_FULL_LABELS[suggestion.suggestedRole]}? Current: ${ROLE_FULL_LABELS[suggestion.user.role]}.`
       : `Dismiss the Slack role suggestion for ${personName(suggestion.user)} (${suggestion.user.email})?`;
     if (!window.confirm(confirmation)) return;
     setBusy(true); setError(null); setMessage(null);
@@ -145,9 +150,10 @@ export default function PeoplePage() {
       if (!token) throw new Error('Unable to refresh your session. Sign in again.');
       setAuthToken(token);
       const response = await slackRoleSuggestionsAPI.sync();
-      const data = response.data as { status?: string; message?: string; created?: number; updated?: number };
+      const data = response.data as { status?: string; message?: string; created?: number; updated?: number; retired?: number; failed?: number };
+      const failed = data?.failed ?? 0;
       if (data?.status === 'not_connected') setMessage(data.message ?? 'Slack is not connected for this workspace.');
-      else setMessage(`Slack sync complete: ${data?.created ?? 0} created, ${data?.updated ?? 0} updated.`);
+      else setMessage(`Slack sync complete: ${data?.created ?? 0} created, ${data?.updated ?? 0} updated, ${data?.retired ?? 0} retired.${failed > 0 ? ` ${failed} could not be read from Slack.` : ''}`);
       await load();
     } catch (error) { setError(apiError(error, 'Failed to sync Slack role suggestions')); }
     finally { setBusy(false); }
@@ -164,7 +170,7 @@ export default function PeoplePage() {
       {loading ? <PageLoading /> : denied ? <p role="alert">Only administrators can access People.</p> : role === 'ADMIN' && <>
         <PeopleDirectory people={people} busy={busy} onChangeRole={changeRole} />
         <OnboardingQueue requests={requests} busy={busy} onReview={review} />
-        {canReviewSlackRoleSuggestions(role) && <SlackRoleSuggestions data={slackSuggestions} busy={busy} onSync={syncSuggestions} onReview={reviewSuggestion} />}
+        {canReviewSlackRoleSuggestions(role) && <SlackRoleSuggestions data={slackSuggestions} busy={busy} loadError={slackSuggestionsError} onSync={syncSuggestions} onReview={reviewSuggestion} />}
       </>}
     </main>
   </>;

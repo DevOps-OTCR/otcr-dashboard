@@ -25,9 +25,15 @@ CREATE INDEX "SlackRoleSuggestion_userId_idx" ON "SlackRoleSuggestion"("userId")
 -- CreateIndex
 CREATE INDEX "SlackRoleSuggestion_status_idx" ON "SlackRoleSuggestion"("status");
 
+-- CreateIndex
+CREATE INDEX "SlackRoleSuggestion_reviewedById_idx" ON "SlackRoleSuggestion"("reviewedById");
+
+-- CreateIndex
+-- Enforce at most one PENDING suggestion per user (partial unique index).
+CREATE UNIQUE INDEX "SlackRoleSuggestion_userId_pending_key" ON "SlackRoleSuggestion"("userId") WHERE "status" = 'PENDING';
+
 -- AddForeignKey
 ALTER TABLE "SlackRoleSuggestion" ADD CONSTRAINT "SlackRoleSuggestion_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "SlackRoleSuggestion" ADD CONSTRAINT "SlackRoleSuggestion_reviewedById_fkey" FOREIGN KEY ("reviewedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
