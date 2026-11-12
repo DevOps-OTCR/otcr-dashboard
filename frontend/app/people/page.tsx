@@ -7,9 +7,11 @@ import { PageLoading } from '@/components/PageLoading';
 import { Button } from '@/components/ui/Button';
 import { PeopleDirectory } from '@/components/people/PeopleDirectory';
 import { OnboardingQueue } from '@/components/people/OnboardingQueue';
-import { apiError, safePersonName, type Person, type OnboardingRequest } from '@/components/people/types';
-import { authAPI, onboardingAPI, peopleAPI, setAuthToken } from '@/lib/api';
+import { SlackRoleSuggestions } from '@/components/people/SlackRoleSuggestions';
+import { apiError, personName, safePersonName, type Person, type OnboardingRequest } from '@/components/people/types';
+import { authAPI, onboardingAPI, peopleAPI, setAuthToken, slackRoleSuggestionsAPI } from '@/lib/api';
 import { clearRoleCache, isValidAppRole, ROLE_FULL_LABELS, type AppRole } from '@/lib/permissions';
+import { canReviewSlackRoleSuggestions, type SlackRoleSuggestion, type SlackRoleSuggestionList } from '@/lib/slack-role-suggestions';
 
 export default function PeoplePage() {
   const { loading: authLoading, isLoggedIn, getToken, user } = useAuth();
@@ -18,6 +20,7 @@ export default function PeoplePage() {
   const [role, setRole] = useState<AppRole>('CONSULTANT');
   const [people, setPeople] = useState<Person[]>([]);
   const [requests, setRequests] = useState<OnboardingRequest[]>([]);
+  const [slackSuggestions, setSlackSuggestions] = useState<SlackRoleSuggestionList | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,15 +42,25 @@ export default function PeoplePage() {
       if (!isValidAppRole(currentRole)) throw new Error('Unable to verify your role');
       setRole(currentRole);
       setDenied(currentRole !== 'ADMIN');
-      if (currentRole !== 'ADMIN') { setPeople([]); setRequests([]); return; }
+      if (currentRole !== 'ADMIN') { setPeople([]); setRequests([]); setSlackSuggestions(null); return; }
       const [directory, queue] = await Promise.all([peopleAPI.list(), onboardingAPI.listRequests()]);
       if (!isCurrent()) return;
       setPeople(directory.data.people);
       setRequests(queue.data.requests);
+      // Suggestions are fetched separately so a failure never breaks People.
+      try {
+        const suggestions = await slackRoleSuggestionsAPI.list();
+        if (!isCurrent()) return;
+        setSlackSuggestions(suggestions.data);
+      } catch {
+        if (!isCurrent()) return;
+        setSlackSuggestions(null);
+      }
     } catch (error) {
       if (!isCurrent()) return;
       setPeople([]);
       setRequests([]);
+      setSlackSuggestions(null);
       setError(apiError(error, 'Failed to load People'));
     } finally {
       if (isCurrent()) { setLoading(false); setBusy(false); }
@@ -102,6 +115,44 @@ export default function PeoplePage() {
     finally { setBusy(false); }
   }
 
+  async function reviewSuggestion(suggestion: SlackRoleSuggestion, action: 'approve' | 'dismiss') {
+    const confirmation = action === 'approve'
+      ? `Approve ${personName(suggestion.user)} (${suggestion.user.email}) as ${ROLE_FULL_LABELS[suggestion.suggestedRole]}? Current: ${ROLE_FULL_LABELS[suggestion.currentRole]}.`
+      : `Dismiss the Slack role suggestion for ${personName(suggestion.user)} (${suggestion.user.email})?`;
+    if (!window.confirm(confirmation)) return;
+    setBusy(true); setError(null); setMessage(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Unable to refresh your session. Sign in again.');
+      setAuthToken(token);
+      if (action === 'approve') {
+        await slackRoleSuggestionsAPI.approve(suggestion.id);
+        clearRoleCache(suggestion.user.email);
+        setMessage(`Role updated for ${personName(suggestion.user)}.`);
+      } else {
+        await slackRoleSuggestionsAPI.dismiss(suggestion.id);
+        setMessage('Slack role suggestion dismissed.');
+      }
+      await load();
+    } catch (error) { setError(apiError(error, 'Failed to review Slack role suggestion')); }
+    finally { setBusy(false); }
+  }
+
+  async function syncSuggestions() {
+    setBusy(true); setError(null); setMessage(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Unable to refresh your session. Sign in again.');
+      setAuthToken(token);
+      const response = await slackRoleSuggestionsAPI.sync();
+      const data = response.data as { status?: string; message?: string; created?: number; updated?: number };
+      if (data?.status === 'not_connected') setMessage(data.message ?? 'Slack is not connected for this workspace.');
+      else setMessage(`Slack sync complete: ${data?.created ?? 0} created, ${data?.updated ?? 0} updated.`);
+      await load();
+    } catch (error) { setError(apiError(error, 'Failed to sync Slack role suggestions')); }
+    finally { setBusy(false); }
+  }
+
   if (authLoading || !isLoggedIn) return <PageLoading />;
   return <>
     <AppNavbar role={role} currentPath="/people" />
@@ -113,6 +164,7 @@ export default function PeoplePage() {
       {loading ? <PageLoading /> : denied ? <p role="alert">Only administrators can access People.</p> : role === 'ADMIN' && <>
         <PeopleDirectory people={people} busy={busy} onChangeRole={changeRole} />
         <OnboardingQueue requests={requests} busy={busy} onReview={review} />
+        {canReviewSlackRoleSuggestions(role) && <SlackRoleSuggestions data={slackSuggestions} busy={busy} onSync={syncSuggestions} onReview={reviewSuggestion} />}
       </>}
     </main>
   </>;
