@@ -32,8 +32,12 @@ services:
           property: connectionString
       - key: REDIS_ENABLED
         value: "false"
+      # The backend defaults to off when unset. Manage the staging pilot
+      # flag and allowlist together in the Render dashboard.
       - key: AGENTIC_CMS_ENABLED
-        value: "false"
+        sync: false
+      - key: AGENTIC_CMS_ALLOWED_EMAILS
+        sync: false
       # Set to the staging site's assigned HTTPS URL for CORS and deep links.
       - key: FRONTEND_URL
         sync: false
