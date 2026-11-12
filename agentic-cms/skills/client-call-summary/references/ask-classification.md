@@ -33,6 +33,8 @@ Direction is set by **who must deliver**, never by who is speaking. Worked both 
 | Client | "Please add a one-page summary up front." | OTCR | Client asks of us | `[not stated]` |
 | OTCR | "We'll need your sign-off on the schema." | Client | Our asks of the client | `[not stated]` — "we'll" names no owner |
 
+The "Asked by" / "Requested by" column is always the speaker of the request line, even when Owner is `[not stated]`.
+
 A request and a volunteered commitment point the same way when the same side owes the action. A "we'll …" / "we" / "our team" line never fills an owner, whoever says it; only "I"/"I'll"/"me" or an explicit named assignment does (SKILL.md §5.4). Requests like "Could you…", "Can you send…" or "Please add…" name no owner unless someone later says "I'll" or is named, so `[not stated]` is right for them as standalone lines.
 
 ---
@@ -57,7 +59,8 @@ Firm phrases carry a definite actor and a definite deliverable. Anything modal, 
 |---|---|---|
 | Tentative at 00:04, confirmed at 00:31 | Later firm statement wins → goes in the table | Confirming line, quote or timestamp |
 | Tentative and never confirmed | Stays in Open questions, flagged as tentative | Tentative line |
-| Confirmed at 00:10, withdrawn at 00:22 ("actually, hold off") | Applying §5.3 of SKILL.md (the later firm statement wins): the later firm withdrawal ends the ask → not an ask; listed in Open questions only if it is unclear whether it was withdrawn | Withdrawal line |
+| Confirmed at 00:10, withdrawn at 00:22 ("actually, hold off") | SKILL.md §5.3 "Later state wins": a later explicit withdrawal ends the ask → no table; not in Open questions unless it is genuinely unclear whether it was withdrawn | Withdrawal line |
+| Due date changed later in the call | The latest stated date is used; not `[UNCLEAR: conflicting dates]` (SKILL.md §5.3) | Line stating the latest date |
 | Confirmed, then re-scoped to a different deliverable | Record the final scope only | Line where scope settled |
 
 The **latest state in the call** is the truth. Do not list both the original and the final form as two asks.
@@ -66,15 +69,19 @@ The **latest state in the call** is the truth. Do not list both the original and
 
 ## 5. Owner and due extraction
 
-SKILL.md §5.4's test is **literal**: Owner and Client owner are filled only by (a) the first-person singular — "I", "I'll", "me" — or (b) an explicit named assignment ("X will own", or "X, can you own that?" followed by a yes). "We", "we'll", "we are", "our team" fill no owner → `[not stated]`, whoever says it (including the PM or another senior person). "You'll" said to one person in a group, or "the team" without a named owner → `[not stated]`.
+SKILL.md §5.4's test is **literal**: Owner and Client owner are filled only by (a) the first-person singular — "I", "I'll", "me" — or (b) an explicit named assignment ("X will own", or "X, can you own that?" followed by a yes). A first-person singular offer ("I can …", "I could …") fills Owner only when the other side accepts it in the call; an unaccepted offer does not fill Owner. "We", "we'll", "we are", "our team" fill no owner → `[not stated]`, whoever says it (including the PM or another senior person). "You'll" said to one person in a group, or "the team" without a named owner → `[not stated]`.
+
+**Requester vs Owner.** "Requested by" / "Asked by" is the speaker who made the request (always filled from the line); Owner / Client owner is who will do it and follows the literal test — different columns, and they can differ.
 
 | Field | Fill when | Otherwise |
 |---|---|---|
-| `Owner` (our side) | "I"/"I'll"/"me" speech, or an explicit named assignment of the action | `[not stated]` — never infer from role; "we'll"/"we"/"our team" does not fill it |
-| `Client owner` | "I"/"I'll"/"me" speech, or an explicit named assignment | `[not stated]` — never infer from role |
+| `Owner` (our side) | "I"/"I'll"/"me" speech, or an explicit named assignment of the action; an "I can …" / "I could …" offer only when the other side accepts it in the call | `[not stated]` — never infer from role; "we'll"/"we"/"our team" does not fill it |
+| `Client owner` | "I"/"I'll"/"me" speech, or an explicit named assignment; an accepted first-person singular offer | `[not stated]` — never infer from role |
 | `Due` | A date or relative date is stated for that action | `[not stated]` |
 
-Relative dates stay **verbatim**. Convert only with a supplied call date, showing both — e.g. `"by Friday (call date Fri 7 Nov → 14 Nov)"`. No call date → verbatim, and note it in the reviewer note.
+Missing values are `[not stated]` in the cell and are not repeated in Open questions.
+
+A day-only date ("the 22nd") when the call date IS given is converted to the next such date after the call date and shown in both forms, e.g. `"the 22nd" (call date Mon 10 Nov → 22 Nov)`. Relative dates stay **verbatim**; convert only with a supplied call date, showing both — e.g. `"by Friday (call date Fri 7 Nov → 14 Nov)"`. A relative date without a call date stays verbatim, is **not** `[UNCLEAR: date incomplete]`, and the missing call date is noted in the reviewer note.
 
 ---
 

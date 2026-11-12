@@ -59,7 +59,7 @@ Rules the loader enforces (`backend/src/agentic-cms/skills/skill-library.ts`):
 - Instructions are capped at 40,000 characters. Folders with a missing or
   invalid `SKILL.md` are skipped.
 
-The loaded skills are `research`, `whitepaper-writing`, `consulting-slides`, and `client-call-summary`. `client-call-summary` lists shared contracts in its front matter (`shared: evidence-format, otcr-quality-standards`) so `load_skill` appends them.
+The loaded skills are `research`, `whitepaper-writing`, `consulting-slides`, and `client-call-summary`. No skill declares `shared:` contracts, matching the loader note above that the loader reads `SKILL.md` only.
 
 To test a skill locally, run the backend with the flag enabled (see
 [docs/agentic-cms.md](../../docs/agentic-cms.md)). Check that
@@ -113,7 +113,7 @@ otherwise                                → no skill
 Ambiguous case: "build a slide about X where we don't know X." Correct behaviour
 is two turns — research, then slides. Not both at once.
 
-Deck review is not a fourth skill. It is `consulting-slides` in review mode.
+Deck review is not a separate skill. It is `consulting-slides` in review mode.
 
 ## 6. Status
 
@@ -122,7 +122,7 @@ Deck review is not a fourth skill. It is `consulting-slides` in review mode.
 | research | 0.3.2 |
 | whitepaper-writing | 0.4.1 |
 | consulting-slides | 0.3.6 |
-| client-call-summary | 0.1.0 |
+| client-call-summary | 0.1.1 |
 
 Loader compatibility: discovery through #176 `SkillLibrary` (names, one-line descriptions, 40k cap) is checked; behaviour tests through the #176 agent loop are reported in the PR, tied to the tested commit.
 

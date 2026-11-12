@@ -56,8 +56,8 @@ Attendees: Priya Raman (OTCR, PM); Owen Mercer (OTCR, Analyst); Marcus Feld (Cli
 ## 1) What happened
 - Purpose: review where the FY26 planning cycle stands and what the client needs from OTCR before the November board (open, 10:00–10:01).
 - Decided: the board pack will show store-refit spend **by refit wave**, reconciled to the capital plan, with a one-page summary up front (10:03, 10:25–10:26).
-- Decided: the working deadline is the chair's review on the 22nd, not the board date of the 24th (10:32–10:33).
-- Agreed next steps: OTCR sends a draft to Marcus on Thursday night for a Friday read-through; Owen reviews the store-level P&L template and sends a review within the week (10:26–10:30).
+- Decided: the working deadline is the chair's review on "the 22nd", not the board date of the 24th (10:32–10:33). Marcus Feld and the chair sign off the final pack (10:32).
+- Agreed next steps: OTCR sends a draft to Marcus on Thursday night for a Friday read-through; Owen reviews the store-level P&L template and sends a review within the week (10:26–10:29).
 - We infer: the P&L template work is scoped as an assessment, not a rebuild — Lena accepts "a fix", Owen offers a review with a rebuild-cost view, and neither confirms a rebuild.
 
 ## 2) Who said what
@@ -70,10 +70,10 @@ Attendees: Priya Raman (OTCR, PM); Owen Mercer (OTCR, Analyst); Marcus Feld (Cli
 ## 3) Client asks of us
 | # | Ask | Requested by | Owner on our side | Due | Evidence |
 |---|---|---|---|---|---|
-| 1 | Produce a board-pack spend view of store-refit spend by refit wave, reconciled to the capital plan | Marcus Feld | [not stated] | Chair review on the 22nd; board 24 November | "By wave. And it has to reconcile to the numbers in the capital plan" / 10:03 |
+| 1 | Produce a board-pack spend view of store-refit spend by refit wave, reconciled to the capital plan | Marcus Feld | [not stated] | Chair review on "the 22nd" (call date Mon 10 Nov → 22 Nov); board 24 November | "By wave. And it has to reconcile to the numbers in the capital plan" / 10:03; "The chair sees it on the 22nd" / 10:32; "Then we work to the 22nd, not the 24th" / 10:33 |
 | 2 | Add a one-page summary up front of the board pack | Marcus Feld | [not stated] | [not stated] | "can you also give me a one-page summary up front?" / 10:20 |
-| 3 | Send a draft of the pack to Marcus on Thursday night for a Friday read-through | Marcus Feld | [not stated] | Thursday night (call date Mon 10 Nov → 13 Nov); read by Friday (→ 14 Nov) | "bring it to me for a read on Friday" / 10:26; "we'll send the draft to you Thursday night" / 10:27 |
-| 4 | Review the store-level P&L template and report the effort cost of a rebuild | Lena Okafor | Owen Mercer | Within the week | "I can review the template and come back with what a rebuild would cost you in effort" / 10:11 |
+| 3 | Send a draft of the pack to Marcus on Thursday night for a Friday read-through | Marcus Feld | [not stated] | Thursday night (call date Mon 10 Nov → 13 Nov) | "bring it to me for a read on Friday" / 10:26; "we'll send the draft to you Thursday night" / 10:27 |
+| 4 | Review the store-level P&L template and report the effort cost of a rebuild | Lena Okafor | Owen Mercer | Within the week | "could you take a look at the store-level P&L template?" / 10:08; "I can review the template and come back with what a rebuild would cost you in effort" / 10:11; "That would help" / 10:12; "I'll send over the review within the week" / 10:29 |
 
 ## 4) Our asks of the client
 | # | Ask | Asked by | Client owner | Due | Evidence |
@@ -83,16 +83,14 @@ Attendees: Priya Raman (OTCR, PM); Owen Mercer (OTCR, Analyst); Marcus Feld (Cli
 | 3 | Provide the store-count history, including when the nineteenth store opened | Owen Mercer | Marcus Feld | A few days, exact date [not stated] | "Do you have the store-count history…" / 10:16; "I'll dig it out. Might take a few days" / 10:17 |
 
 ## 5) Open questions / unclear items
-- [UNCLEAR: owner not stated] — asks 1–3 in §3 are client asks of us with no OTCR owner named on the call; the PM is the natural owner of the pack but the transcript does not say so.
 - Tentative: "we should probably think about whether the refit waves should be re-phased. Not now — after the board" by Lena Okafor (10:22), with Priya offering to "pick that up in December" (10:23) — not a confirmed ask.
 - [UNCLEAR: soft date — "Probably by Wednesday"] — Marcus Feld's commitment on the capital plan (10:06). Priya only confirmed that Wednesday works "if it's the signed version" (10:07).
 - [UNCLEAR: scope not stated] — whether the P&L template work is a fix or a rebuild. Owen's review (ask 4, §3) is to inform that decision; no rebuild is agreed.
-- Sign-off path: Marcus Feld and the chair; the chair sees the pack on the 22nd (10:32). Recorded as context, not as an ask.
 ```
 
 ---
 
-**Reviewer note:** Check asks 1–3 in §3 first — they are the board-pack commitments and none carries a named OTCR owner in the transcript, so the PM/LC should confirm who holds each before the Thursday-night draft. Second check: §4 ask 1 has Client owner `[not stated]`, because Marcus says "We'll get you that" (10:06) — first-person plural names no individual under §5.4, so the PM/LC should confirm who on the client side owns sending the signed capital plan. Third check: the capital plan due date rests on "Probably by Wednesday" (10:06), so treat Wednesday as a soft date until the file arrives. Assumptions made: relative dates converted against the stated call date of Mon 10 Nov 2025 and shown in both forms; "within the week" and "a few days" were left unconverted because neither has a single calendar date; the meeting ran 10:00–10:34 as the transcript timestamps show; combined timestamps (e.g. 10:26–10:30) span two adjacent lines.
+**Reviewer note:** Check asks 1–3 in §3 first — they are the board-pack commitments and none carries a named OTCR owner in the transcript, so the PM/LC should confirm who holds each before the Thursday-night draft. Second check: §4 ask 1 has Client owner `[not stated]`, because Marcus says "We'll get you that" (10:06) — first-person plural names no individual under §5.4, so the PM/LC should confirm who on the client side owns sending the signed capital plan. Third check: the capital plan due date rests on "Probably by Wednesday" (10:06), so treat Wednesday as a soft date until the file arrives. Assumptions made: relative dates converted against the stated call date of Mon 10 Nov 2025 and shown in both forms; "the 22nd" read as the next 22nd after the call date and shown in both forms (§5.5); "within the week" and "a few days" were left unconverted because neither has a single calendar date; the meeting ran 10:00–10:34 as the transcript timestamps show; combined timestamps (e.g. 10:26–10:29) span adjacent lines.
 
 ---
 
@@ -103,5 +101,7 @@ Attendees: Priya Raman (OTCR, PM); Owen Mercer (OTCR, Analyst); Marcus Feld (Cli
 **The refit re-phasing (10:22) stays in §5, not in a table.** Lena frames it as "we should probably think about whether" — a tentative or conditional item by §5.3. Priya's "happy to pick that up in December" is an offer, not a commitment accepted by the other side, and no date was fixed. It is therefore listed as tentative in §5 and nowhere else; promoting it to an ask would invent a commitment the call did not make.
 
 **The stock-loss figures (10:13–10:15) *are* an ask, despite not being requested.** Marcus volunteers them unprompted. Direction is decided by who owes the action (§5.2), and the client owes it, so it sits in *Our asks of the client*, tagged as volunteered — the only item carrying that marker, because it is the only one OTCR had not asked for. It gets `[not stated]` for due date because he gives none. The store-count history (10:16) and the signed capital plan (10:05) were both OTCR requests, so neither is marked volunteered.
+
+**The sign-off path and the missing owners are not in §5.** Who signs off — Marcus Feld and the chair, with the chair seeing the pack on the 22nd — is a clearly stated fact (10:32), so it sits in *What happened* and is not an open question. The absent OTCR owners on asks 1–3 are empty cells (`[not stated]` by §5.4), not unclear items; they stay `[not stated]` in the table and are flagged for the PM/LC in the reviewer note, not repeated as Open questions.
 
 **Small talk and closings are not summarised.** The opening and sign-off carry no content beyond the purpose line already in *What happened*; reproducing it would fail the two-minute-read test in §2.
