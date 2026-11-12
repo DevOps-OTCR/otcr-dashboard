@@ -98,6 +98,11 @@ OtcrBot sidebar (frontend/features/agentic-cms)
                                 numbers per user+project+workstream
 ```
 
+A reply gets at most 6 model rounds. The last round offers no tools and, for that
+call only, tells the model to answer from what it has gathered and say what it
+couldn't check. A long, skill-guided research task therefore ends in an answer,
+not a bare "stopped" notice.
+
 Tool results reach the model in two marked forms (`tools/tool-content.ts`).
 Skills loaded by `load_skill` arrive inside `<otcr_skill>` tags as OTCR's own
 instructions, which the model follows. Everything else (web results, CMS
@@ -298,7 +303,12 @@ they require an equivalent server-side gate and review before integration.
 
 OTCR Bot calls CmsReadService in-process for get_project_context, list_workstreams,
 get_workstream, list_deliverables and get_deliverable. The MCP HTTP endpoint remains
-for independent clients. Skills loaded are research, whitepaper-writing and
+for independent clients. When a result contains timestamps, the bot adds a
+`localTimes` field to its JSON: with the project's timezone (the workstream tools
+return it) the server converts each deadline and other instant itself, because the
+model's own conversions used the wrong daylight-saving offset; without it the times
+are marked UTC. `weekStartDate`/`weekEndDate` are calendar dates and are never
+converted. A page of 50 deliverables fits in the map, and a workstream list that has only week dates still gets the calendar-date note. Skills loaded are research, whitepaper-writing and
 consulting-slides. Web search citations are live when a search key is configured.
 Full-source web reading, persistent chat history, document review and editors are not.
 
