@@ -77,6 +77,46 @@ describe('local times for CMS timestamps', () => {
     const result = { overview: 'hello', truncatedFields: [] };
     expect(withLocalTimes(result)).toBe(result);
   });
+
+  it('formats all 50 deliverable deadlines in a page, including the last one', () => {
+    const items = Array.from({ length: 50 }, (_, i) => ({
+      id: `d${i}`, title: `Deliverable ${i}`, deadline: '2026-11-14T23:00:00.000Z',
+    }));
+    const page = { timezone: 'America/Chicago', deliverables: { items, nextCursor: null } };
+    const shown = withLocalTimes(page) as unknown as { localTimes: { about: string; times: Record<string, string> } };
+    expect(Object.keys(shown.localTimes.times)).toHaveLength(50);
+    expect(shown.localTimes.times['/deliverables/items/49/deadline']).toBe('Sat, Nov 14, 2026, 5:00 PM CST');
+    expect(shown.localTimes.about).not.toMatch(/incomplete/);
+  });
+
+  it('keeps only the first 200 timestamps when a page has more, and says so', () => {
+    const items = Array.from({ length: 201 }, (_, i) => ({ id: `d${i}`, deadline: '2026-11-14T23:00:00.000Z' }));
+    const page = { timezone: 'America/Chicago', deliverables: { items, nextCursor: null } };
+    const shown = withLocalTimes(page) as unknown as { localTimes: { about: string; times: Record<string, string> } };
+    expect(Object.keys(shown.localTimes.times)).toHaveLength(200);
+    expect(shown.localTimes.times['/deliverables/items/200/deadline']).toBeUndefined();
+    expect(shown.localTimes.times['/deliverables/items/0/deadline']).toBe('Sat, Nov 14, 2026, 5:00 PM CST');
+    expect(shown.localTimes.about).toMatch(/incomplete/);
+    expect(shown.localTimes.about).toMatch(/still UTC/);
+  });
+
+  it('gives the calendar-date note when a result has only week dates and no timestamps', () => {
+    const result = {
+      workstreams: {
+        items: [{
+          weekStartDate: '2026-11-09T00:00:00.000Z',
+          weekEndDate: '2026-11-15T00:00:00.000Z',
+        }],
+      },
+    };
+    const shown = withLocalTimes(result) as typeof result & { localTimes: { about: string; times: Record<string, string>; timezone?: string } };
+    expect(shown.workstreams.items[0].weekStartDate).toBe('2026-11-09T00:00:00.000Z');
+    expect(shown.localTimes.times).toEqual({});
+    expect(shown.localTimes.timezone).toBeUndefined();
+    expect(shown.localTimes.about).toMatch(/calendar dates/);
+    expect(shown.localTimes.about).not.toMatch(/Server-converted/);
+    expect(shown.localTimes.about).not.toMatch(/are UTC/);
+  });
 });
 
 describe('CmsReadTools', () => {
