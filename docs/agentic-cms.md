@@ -22,11 +22,14 @@ use comma-separated email addresses to restrict a pilot. Emails are matched
 without case sensitivity. Set the list to your own email for local testing.
 The flag does not replace project membership, roles or document permissions.
 
-Production and the checked-in staging Blueprint default to off. Isaiah decides
-when to enable a shared pilot and enters his key in the agent backend's hosting
-settings. Consultants use their own Lumen accounts/keys locally and must read
-and acknowledge the model notices in Lumen. Provider credentials remain on the
-backend. No live credentials or model requests are needed for CI.
+The backend defaults to off in production and staging. For the shared staging
+pilot, set a nonempty `AGENTIC_CMS_ALLOWED_EMAILS` list in Render before enabling
+`AGENTIC_CMS_ENABLED`. The staging Blueprint leaves both values under dashboard
+control so a Blueprint sync preserves the pilot settings. Isaiah decides when
+to enable the pilot and configures the hosted Lumen key. Consultants use their
+own Lumen accounts/keys locally and must read and acknowledge the model notices
+in Lumen. Provider credentials remain on the backend. No live credentials or
+model requests are needed for CI.
 
 Environment changes require restarting/redeploying the backend. To roll back,
 set `AGENTIC_CMS_ENABLED=false` and restart the service. New AI HTTP requests
