@@ -1,6 +1,6 @@
 # Agentic CMS skills
 
-Group 3 adds research, whitepaper-writing and consulting-slides skills here. Deck review is a mode of consulting-slides, not a separate skill.
+Group 3 adds research, whitepaper-writing, consulting-slides and client-call-summary skills here. Deck review is a mode of consulting-slides, not a separate skill.
 Each skill should describe its inputs, workflow, output expectations and quality
 criteria, with reusable templates or examples when useful. Use synthetic test
 materials. Follow [the feature-flag integration guide](../../docs/agentic-cms.md).
@@ -11,8 +11,8 @@ project permissions. A skill does not grant access or bypass the release flag.
 
 ## 1. Canonical skill IDs
 
-The skill ID is the folder name. The three skills are `research`,
-`whitepaper-writing`, `consulting-slides`. The path is
+The skill ID is the folder name. The four skills are `research`,
+`whitepaper-writing`, `consulting-slides`, `client-call-summary`. The path is
 `<repo>/agentic-cms/skills/<name>/SKILL.md`.
 
 The loader is `backend/src/agentic-cms/skills/skill-library.ts` in #176. It reads
@@ -59,7 +59,7 @@ Rules the loader enforces (`backend/src/agentic-cms/skills/skill-library.ts`):
 - Instructions are capped at 40,000 characters. Folders with a missing or
   invalid `SKILL.md` are skipped.
 
-The loaded skills are `research`, `whitepaper-writing`, and `consulting-slides`.
+The loaded skills are `research`, `whitepaper-writing`, `consulting-slides`, and `client-call-summary`. `client-call-summary` lists shared contracts in its front matter (`shared: evidence-format, otcr-quality-standards`) so `load_skill` appends them.
 
 To test a skill locally, run the backend with the flag enabled (see
 [docs/agentic-cms.md](../../docs/agentic-cms.md)). Check that
@@ -106,6 +106,7 @@ Route by task, not by keyword. At most one skill per turn.
 needs external evidence we do not have   → research
 produces a written deliverable           → whitepaper-writing
 produces a deck / storyline / deck review → consulting-slides
+summarise a client call transcript       → client-call-summary
 otherwise                                → no skill
 ```
 
@@ -121,6 +122,7 @@ Deck review is not a fourth skill. It is `consulting-slides` in review mode.
 | research | 0.3.2 |
 | whitepaper-writing | 0.4.1 |
 | consulting-slides | 0.3.6 |
+| client-call-summary | 0.1.0 |
 
 Loader compatibility: discovery through #176 `SkillLibrary` (names, one-line descriptions, 40k cap) is checked; behaviour tests through the #176 agent loop are reported in the PR, tied to the tested commit.
 
