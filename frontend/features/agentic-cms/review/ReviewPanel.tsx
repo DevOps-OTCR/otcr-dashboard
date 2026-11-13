@@ -121,7 +121,7 @@ export function ReviewPanel({ projectId, projectName }: { projectId: string; pro
             onSelect={setSelectedId}
             now={now}
           />
-          {selected && <ReviewDetail row={selected} now={now} />}
+          {selected && <ReviewDetail key={selected.submission.id} row={selected} now={now} />}
         </div>
       )}
     </section>

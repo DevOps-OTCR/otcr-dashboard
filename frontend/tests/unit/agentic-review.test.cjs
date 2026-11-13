@@ -250,3 +250,66 @@ test('queue: formats relative times and durations', () => {
   assert.equal(formatDuration(ago(0), ago(-125_000)), '2 min 5 s');
   assert.equal(formatDuration(ago(0), ago(-120_000)), '2 min');
 });
+
+// Feedback helpers used by the summary card and comment list.
+const { groupComments, topIssues, countBySeverity, locationLabel, FEEDBACK_MODE } = load('feedback');
+const comment = (id, severity, location) => ({ id, severity, location, level: 'BASIC', issue: id, significance: 's', fix: 'f', revisionId: 'rev-1' });
+
+test('feedback: slide comments are grouped in slide order with whole-deck comments last', () => {
+  const groups = groupComments([
+    comment('a', 'MINOR', { type: 'general' }),
+    comment('b', 'MINOR', { type: 'slide', slide: 9, title: 'Recommendation' }),
+    comment('c', 'MATERIAL', { type: 'slide', slide: 3 }),
+    comment('d', 'BLOCKING', { type: 'slide', slide: 9, title: 'Recommendation' }),
+  ], 'slides');
+  assert.deepEqual(plain(groups.map((g) => [g.label, g.comments.map((c) => c.id)])), [
+    ['Slide 3', ['c']],
+    ['Slide 9 · Recommendation', ['d', 'b']],
+    ['Whole deck', ['a']],
+  ]);
+});
+
+test('feedback: document sections keep the order the reviewer first mentions them', () => {
+  const groups = groupComments([
+    comment('a', 'MINOR', { type: 'section', section: '5. Recommendations' }),
+    comment('b', 'MINOR', { type: 'general' }),
+    comment('c', 'MINOR', { type: 'section', section: 'Executive summary' }),
+    comment('d', 'MINOR', { type: 'section', section: '5. Recommendations' }),
+  ], 'document');
+  assert.deepEqual(plain(groups.map((g) => [g.label, g.comments.length])), [['5. Recommendations', 2], ['Executive summary', 1], ['Whole document', 1]]);
+});
+
+test('feedback: a severity filter drops other comments and empty groups', () => {
+  const comments = [comment('a', 'MINOR', { type: 'slide', slide: 1 }), comment('b', 'BLOCKING', { type: 'slide', slide: 2 })];
+  assert.deepEqual(plain(groupComments(comments, 'slides', 'BLOCKING').map((g) => g.key)), ['slide:2']);
+  assert.deepEqual(plain(groupComments(comments, 'slides', 'MATERIAL')), []);
+  assert.deepEqual(plain(countBySeverity(comments)), { ALL: 2, BLOCKING: 1, MATERIAL: 0, MINOR: 1 });
+});
+
+test('feedback: top issues are the most severe, in reviewer order within a severity', () => {
+  const comments = ['MINOR', 'MATERIAL', 'BLOCKING', 'MATERIAL', 'BLOCKING'].map((s, i) => comment(`c${i}`, s, { type: 'general' }));
+  assert.deepEqual(plain(topIssues(comments).map((c) => c.id)), ['c2', 'c4', 'c1']);
+  assert.deepEqual(plain(topIssues(comments, 1).map((c) => c.id)), ['c2']);
+  assert.deepEqual(plain(topIssues([])), []);
+});
+
+test('feedback: location labels and the demo feedback mode', () => {
+  assert.equal(locationLabel({ type: 'section', section: '3. Market sizing' }, 'document'), '3. Market sizing');
+  assert.equal(locationLabel({ type: 'general' }, 'document'), 'Whole document');
+  assert.equal(FEEDBACK_MODE, 'cms');
+});
+
+test('feedback: every fixture comment has a location the UI can label', async () => {
+  const { client, advance } = setup();
+  for (const id of ['demo-sub-initial-slides', 'demo-sub-final-whitepaper']) {
+    await client.request({ projectId: 'p1', submissionId: id, level: 'ADVANCED' });
+  }
+  advance(duration('ADVANCED', 'slides'));
+  const done = (await client.list('p1')).reviews.filter((r) => r.status === 'COMPLETED');
+  for (const review of done) {
+    const format = review.comments.some((c) => c.location.type === 'slide') ? 'slides' : 'document';
+    const grouped = groupComments(review.comments, format);
+    assert.equal(grouped.reduce((n, g) => n + g.comments.length, 0), review.comments.length);
+    assert.ok(grouped.every((g) => g.label.length > 0));
+  }
+});

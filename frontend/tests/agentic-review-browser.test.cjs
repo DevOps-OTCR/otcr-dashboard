@@ -59,7 +59,7 @@ test('filters the queue and explains that only an earlier version was reviewed',
   await submissions(page).first().getByRole('button').click();
   await page.getByRole('heading', { name: 'Campus fleet partnerships — initial deck' }).waitFor();
   await page.getByText('Version 2 hasn’t had an AI review yet.').waitFor();
-  await page.getByText(/Version 1 had a Basic review .* That feedback may not apply to this version\./).waitFor();
+  await page.getByText(/Version 1 had a Basic review .* That feedback may not apply to this version; open it from the review history below\./).waitFor();
   assert.equal(params(page).get('submission'), 'demo-sub-initial-slides');
   await page.getByRole('button', { name: 'Awaiting review (0)' }).click();
   await page.getByText('No submissions match this filter.').waitFor();
@@ -77,6 +77,7 @@ test('opens a deep-linked submission and follows its running review to completio
   // The seeded Advanced review finishes about 11 seconds after the tab opens.
   await reviewStatus(page).getByText('Completed.').waitFor({ timeout: 20_000 });
   await page.getByText(/1 Blocking · 3 Material · 1 Minor · reviewed revision rev-[0-9a-f]{7}/).waitFor();
+  await page.getByText('Not read (hidden or confidential): Section “Internal pricing notes” (marked confidential)').waitFor();
   assert.equal(await page.getByRole('button', { name: 'In progress (0)' }).count(), 1);
   assert.equal(await page.getByRole('button', { name: 'Completed (2)' }).count(), 1);
 });
@@ -96,4 +97,65 @@ test('leaving the tab clears its URL parameters and keeps the context tabs worki
   assert.equal(params(page).get('submission'), null);
   assert.equal(params(page).get('role'), 'PM');
   assert.equal(await page.getByRole('heading', { name: 'AI review' }).count(), 0);
+});
+
+const feedback = (page) => page.getByRole('region', { name: /^Feedback \(/ });
+
+test('shows a completed review’s summary and its comments grouped by section', async t => {
+  const page = await open(t, '?tab=review&submission=demo-sub-final-whitepaper');
+  const summary = page.getByRole('region', { name: 'Summary' });
+  await summary.getByText(/The draft is well organised/).waitFor();
+  assert.deepEqual(await summary.getByRole('list', { name: 'Comments by severity' }).getByRole('listitem').allTextContents(), [
+    '0BlockingMust fix before submission',
+    '2MaterialShould fix before client delivery',
+    '3MinorFix if time allows',
+  ]);
+  await summary.getByText('Appendix B is a linked spreadsheet and was not read.').waitFor();
+  assert.equal(await summary.getByRole('heading', { name: 'Top issues' }).count(), 1);
+
+  await feedback(page).waitFor();
+  assert.equal(await feedback(page).getByRole('article').count(), 5);
+  assert.deepEqual(await feedback(page).getByRole('heading', { level: 5 }).allInnerTexts(),
+    ['3. Market sizing', 'Executive summary', 'References', 'Whole document']);
+  const card = feedback(page).getByRole('article', { name: /Figure 2 has no caption or source/ });
+  await card.getByText('An unsourced figure cannot be checked by the client or by the PM.').waitFor();
+  await card.getByText('Add a caption with the source and its S-ID.').waitFor();
+});
+
+test('filters feedback by severity, and a top issue clears the filter and focuses its comment', async t => {
+  const page = await open(t, '?tab=review&submission=demo-sub-final-whitepaper');
+  await feedback(page).waitFor();
+  await page.getByRole('button', { name: 'Minor (3)' }).click();
+  assert.equal(await feedback(page).getByRole('article').count(), 3);
+  assert.equal(await feedback(page).getByRole('article', { name: /^Material/ }).count(), 0);
+  await page.getByRole('region', { name: 'Summary' }).getByRole('button', { name: /The serviceable market is \$4\.2B/ }).click();
+  assert.equal(await page.getByRole('button', { name: 'All (5)' }).getAttribute('aria-pressed'), 'true');
+  await page.waitForFunction(() => document.activeElement?.id?.startsWith('feedback-'));
+  assert.match(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), /^Material: The serviceable market is \$4\.2B in this section/);
+});
+
+test('opens feedback from an earlier version and explains that it may be out of date', async t => {
+  const page = await open(t, '?tab=review&submission=demo-sub-initial-slides');
+  await page.getByText('Version 2 hasn’t had an AI review yet.').waitFor();
+  assert.equal(await feedback(page).count(), 0);
+  await page.getByRole('button', { name: /^View feedback from Basic review of version 1/ }).click();
+  await page.getByRole('note').getByText(/Viewing an earlier run: Basic review of version 1, .* The current version is 2, so this feedback may be out of date\./).waitFor();
+  assert.deepEqual(await feedback(page).getByRole('heading', { level: 5 }).allInnerTexts(), [
+    'Slide 3 · Market size', 'Slide 5 · Competitive landscape', 'Slide 6 · Fleet utilisation by campus',
+    'Slide 8 · Partnership models', 'Slide 10 · Adoption forecast', 'Whole deck',
+  ]);
+  await page.getByRole('button', { name: 'Close' }).click();
+  await page.getByText('Version 2 hasn’t had an AI review yet.').waitFor();
+  assert.equal(await feedback(page).count(), 0);
+});
+
+test('shows no feedback for a failed review, and resets the viewed run when the submission changes', async t => {
+  const page = await open(t, '?tab=review&submission=demo-sub-initial-slides');
+  await page.getByRole('button', { name: /^View feedback from Basic review of version 1/ }).click();
+  await feedback(page).waitFor();
+  await submissions(page).filter({ hasText: 'Pricing strategy — final deck' }).getByRole('button').click();
+  await page.getByText('We couldn’t open this file.').waitFor();
+  assert.equal(await feedback(page).count(), 0);
+  assert.equal(await page.getByRole('region', { name: 'Summary' }).count(), 0);
+  assert.equal(await page.getByText(/Viewing an earlier run/).count(), 0);
 });
