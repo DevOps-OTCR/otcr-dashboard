@@ -193,3 +193,60 @@ test('copy: every failure kind has a title and a next step', () => {
     assert.ok(copy.title && copy.nextStep, kind);
   }
 });
+
+// Queue helpers used by the AI Review tab.
+const { buildQueue, filterRows, countByFilter, formatRelative, formatDuration } = load('queue');
+
+test('queue: failed and running reviews sort first, completed last', async () => {
+  const { client } = setup();
+  const rows = buildQueue(await client.list('p1'));
+  assert.deepEqual(plain(rows.map((r) => [r.submission.id, r.state])), [
+    ['demo-sub-final-slides', 'FAILED'],
+    ['demo-sub-initial-whitepaper', 'IN_PROGRESS'],
+    ['demo-sub-initial-slides', 'NOT_REVIEWED'],
+    ['demo-sub-final-whitepaper', 'COMPLETED'],
+  ]);
+});
+
+test('queue: a review of an earlier version does not count as reviewing the current one', async () => {
+  const { client } = setup();
+  const row = buildQueue(await client.list('p1')).find((r) => r.submission.id === 'demo-sub-initial-slides');
+  assert.equal(row.current, undefined);
+  assert.equal(row.earlierVersionReviewed, true);
+  assert.equal(row.history.length, 1);
+  assert.equal(row.history[0].submissionVersion, 1);
+});
+
+test('queue: the current review is the newest run for the current version, history is newest first', async () => {
+  const { client, advance } = setup();
+  const failed = (await client.list('p1')).reviews.find((r) => r.status === 'FAILED');
+  advance(1_000);
+  const retried = await client.retry(failed.id);
+  const row = buildQueue(await client.list('p1')).find((r) => r.submission.id === failed.submissionId);
+  assert.equal(row.current.id, retried.id);
+  assert.equal(row.state, 'AWAITING');
+  assert.deepEqual(plain(row.history.map((r) => r.id)), [retried.id, failed.id]);
+});
+
+test('queue: filters and counts by state', async () => {
+  const { client } = setup();
+  const rows = buildQueue(await client.list('p1'));
+  assert.deepEqual(plain(countByFilter(rows)), { ALL: 4, NOT_REVIEWED: 1, AWAITING: 0, IN_PROGRESS: 1, COMPLETED: 1, FAILED: 1 });
+  assert.equal(filterRows(rows, 'ALL').length, 4);
+  assert.deepEqual(plain(filterRows(rows, 'NOT_REVIEWED').map((r) => r.submission.id)), ['demo-sub-initial-slides']);
+  assert.equal(filterRows(rows, 'AWAITING').length, 0);
+});
+
+test('queue: formats relative times and durations', () => {
+  const now = START;
+  const ago = (ms) => new Date(now - ms).toISOString();
+  assert.equal(formatRelative(ago(10_000), now), 'just now');
+  assert.equal(formatRelative(ago(5 * 60_000), now), '5 min ago');
+  assert.equal(formatRelative(ago(3 * 3_600_000), now), '3 h ago');
+  assert.equal(formatRelative(ago(26 * 3_600_000), now), 'yesterday');
+  assert.equal(formatRelative(ago(3 * 86_400_000), now), '3 days ago');
+  assert.equal(formatRelative(new Date(now + 5_000).toISOString(), now), 'just now');
+  assert.equal(formatDuration(ago(0), ago(-45_000)), '45 s');
+  assert.equal(formatDuration(ago(0), ago(-125_000)), '2 min 5 s');
+  assert.equal(formatDuration(ago(0), ago(-120_000)), '2 min');
+});
