@@ -17,16 +17,16 @@ open yet.
 
 | Order | PR | What | Merge commit | Notes |
 | --- | --- | --- | --- | --- |
-| 1 | #192 | client-call-summary skill | `3b31baa` | merged to main 2026-11-12. strict scorer 6/8, manual 8/8 on 4 fictional transcripts. not on staging yet |
+| 1 | #192 | client-call-summary skill | `3b31baa` | merged to main 2026-11-12. strict scorer 6/8, manual 8/8 on 4 fictional transcripts. on staging via #195 |
 | 2 | #194 | move AGENTIC_CMS_ENABLED and AGENTIC_CMS_ALLOWED_EMAILS to Render dashboard control (sync: false) | `cb1c098` | merged by Isaiah into the staging branch |
-| open | #195 | promotion of #192 main onto staging | none | PR open to staging. needs a manual API redeploy, see below |
+| 3 | #195 | promotion of #192 main onto staging | `5aae3db` | merged 2026-11-13. staging API redeployed by hand on Render |
 | draft | #193 | Slack-synced role suggestions, admin approves, never auto-grant | none | CI green. stays draft until Isaiah sign-off and one real-Slack staging check |
 
-Why #195 needs a manual API redeploy: `buildFilter` does not include
-`agentic-cms/**`. A skill-only change on main will not trigger a staging API
-redeploy. Someone has to redeploy the staging API by hand after the promotion
-merges (owned by Isaiah or Andrew, since Aritro has no Render access), then
-Aritro checks `/agentic-cms/status` lists `client-call-summary`.
+Why #195 needed a manual API redeploy: `buildFilter` does not include
+`agentic-cms/**`, so a skill-only change on main does not trigger a staging API
+redeploy. Aritro redeployed the staging API by hand on Render on 2026-11-13; the
+API `__meta` reports `5aae3db`. Checking that `/agentic-cms/status` lists
+`client-call-summary` is still to do through the signed-in bot.
 
 ## 2 Integration evidence
 
@@ -90,17 +90,17 @@ Env var names only. Values never go in docs.
 | `TAVILY_API_KEY` | Isaiah | optional. `read_web_source` is not in this build, so search excerpts stay unverified leads |
 | `OTCR_BOT_MAX_MESSAGES_PER_HOUR` | Isaiah | rate cap |
 
-Production stays off. Staging pilot account or allowlist entry is still needed.
-Isaiah is the contact for that note.
+Production stays off. The pilot allowlist is set and includes Aritro's staging
+account. Isaiah is the contact for that note.
 
 ## 4 Signed-in check and demo
 
-Status: pending.
+Status: partly done.
 
 | Step | State |
 | --- | --- |
-| signed-in flag-on check | not done. a signed-in allowlist-candidate consultant test account still gets `agenticCms: false` as of 2026-11-12 evening |
-| fictional Prairie Basket demo | not done. blocked on the step above |
+| signed-in flag-on check | done 2026-11-13: signed in on staging as a consultant account on the allowlist, the OTCR Bot (pilot) button shows and the panel opens |
+| fictional Prairie Basket demo | blocked. the bot says the account is not on any projects; the account's staging role is consultant and only ADMIN or PM can create projects. asked Isaiah for a staging-only PM role or a test project |
 
 What will be recorded here when unblocked:
 
@@ -129,11 +129,9 @@ Each point has an owner or a named next step.
 
 | Item | Owner | Due |
 | --- | --- | --- |
-| manual staging API redeploy after #195 merges (owned by Isaiah or Andrew, then Aritro checks status lists `client-call-summary`) | Isaiah or Andrew, Aritro checks | before Friday |
-| reply to Isaiah on allowlist, `AGENTIC_CMS_ENABLED` value, redeploy; Aritro followed up 2026-11-12, waiting on Isaiah's reply | Aritro | this week |
-| confirm `LUMEN_API_KEY` set on `otcr-dashboard-staging-api` | Isaiah | before Friday |
-| pilot account or allowlist entry for the signed-in check | Isaiah | before Friday |
-| signed-in flag-on check and Prairie Basket demo | Aritro | after the account is ready |
+| confirm `LUMEN_API_KEY` set on `otcr-dashboard-staging-api` | Isaiah | Sun 2026-11-15 |
+| staging PM role or test project for the Prairie Basket demo | Isaiah | Sun 2026-11-15 |
+| Prairie Basket demo and status check for client-call-summary | Aritro | Sun 2026-11-15, after the role |
 | #193 sign-off and one real-Slack staging check | Isaiah | this week |
 | decide native doc comments vs CMS refs for feedback | Aritro and Isaiah | after Group 3 proposal |
 | decide review under existing flag or a separate one | Isaiah | after Group 1 and 3 PRs |
