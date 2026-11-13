@@ -137,7 +137,6 @@ Each point has an owner or a named next step.
 | decide review under existing flag or a separate one | Isaiah | after Group 1 and 3 PRs |
 | confirm review-job API owner and shape | Sriram and Stefan, confirm with Akshay and Satya | after PRs open |
 | confirm review skills as new folders or variants | Teja | after PR opens |
-| close #180 | Aritro | Friday |
 | Friday PR | Aritro | Fri 2026-11-13 11:59 PM CT |
 
 Reviewer status: Lumen Gemma and DeepSeek ran, Nemotron returned empty output
