@@ -1,7 +1,9 @@
 # Connect to the Agentic CMS MCP server
 
-The existing Nest backend serves five read-only tools at
-`http://localhost:4000/agentic-cms/mcp` (use your backend's actual port).
+The existing Nest backend serves seven tools at
+`http://localhost:4000/agentic-cms/mcp` (use your backend's actual port): five read-only
+CMS tools and two Google Docs review tools (`read_google_doc`, and `comment_google_doc`, which
+posts comments into a Google Doc).
 There is no separate MCP process. Transport is stateless Streamable HTTP;
 POST is supported, standalone GET/SSE subscriptions and DELETE sessions are not.
 See [tool contracts](agentic-cms-mcp-contracts.md) for exact fields and permissions.
@@ -13,7 +15,9 @@ See [tool contracts](agentic-cms-mcp-contracts.md) for exact fields and permissi
    The integration-test database is separate from application setup.
 2. In the backend's local `.env`, set `AGENTIC_CMS_ENABLED=true` and
    `AGENTIC_CMS_ALLOWED_EMAILS=your-netid@illinois.edu`. The checked-in default
-   stays false. No model or Lumen key is needed for these tools.
+   stays false. No model or Lumen key is needed for these tools. The Google Docs tools also need
+   `GOOGLE_DOCS_CLIENT_EMAIL` and `GOOGLE_DOCS_PRIVATE_KEY` and a document shared with that
+   service account; without them they report that review is not set up.
 3. Start the backend with `npm --prefix backend run start:dev`.
 4. Supply a current Microsoft Graph access token obtained through the existing
    CMS sign-in flow. The backend verifies it through Graph `/me`, requires an
@@ -76,6 +80,8 @@ against the Nest endpoint and a migrated, isolated local PostgreSQL schema.
 Verification was mocked for synthetic users; no model, real sign-in or client data
 was used. Retrieval/update timestamps are run-specific. MCP also returns equivalent
 JSON text in `content`; that duplicate representation is omitted from the examples.
+The captured responses cover the five CMS tools only; the Google Docs tools are described in
+[the contracts](agentic-cms-mcp-contracts.md#google-docs-review-tools).
 
 | Tool | What the sample lets an agent answer | Next call when needed |
 | --- | --- | --- |
