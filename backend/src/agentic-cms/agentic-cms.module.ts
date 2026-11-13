@@ -7,6 +7,8 @@ import { AgenticCmsController } from './agentic-cms.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CmsReadAccessService } from './authorization/cms-read-access.service';
 import { CmsReadService } from './reads/cms-read.service';
+import { GoogleDocReviewService } from './documents/google-doc-review.service';
+import { GoogleDocsClient } from './documents/google-docs.client';
 import { ReadCursorService } from './reads/read-cursor.service';
 import { McpController } from './mcp/mcp.controller';
 import { McpServerService } from './mcp/mcp-server.service';
@@ -36,6 +38,8 @@ import { WebSearchTool } from './tools/web-search.tool';
     WebSearchTool,
     LoadSkillTool,
     CmsReadTools,
+    GoogleDocsClient,
+    GoogleDocReviewService,
   ],
 })
 export class AgenticCmsModule {}
