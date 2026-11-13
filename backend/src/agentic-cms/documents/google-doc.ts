@@ -108,7 +108,7 @@ export function flattenDocument(doc: GoogleDocument): DocParagraph[] {
 }
 
 // Same-length substitutions only, so a match offset is still a document offset.
-const normalize = (text: string) =>
+export const normalize = (text: string) =>
   text.replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/\u00A0/g, ' ');
 
 /** Finds a quote that occurs exactly once, inside a single paragraph. */

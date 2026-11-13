@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { findQuote, flattenDocument, GoogleDocument, parseGoogleDocLink, textHash } from './google-doc';
 
 const ID = '1AbCdEfGhIjKlMnOpQrStUvWxYz012345';
@@ -87,5 +89,58 @@ describe('flattenDocument and findQuote', () => {
     const edited = flattenDocument({ ...doc, tabs: [doc.tabs[0]] });
     expect(textHash(paragraphs)).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(textHash(edited)).not.toEqual(textHash(paragraphs));
+  });
+});
+
+// A real documents.get response (includeTabsContent=true) saved by the spike, so the index
+// arithmetic is checked against what Google actually returns, not only hand-built documents.
+describe('real Google response (fixture)', () => {
+  const doc = JSON.parse(readFileSync(join(__dirname, '__fixtures__/review-doc.json'), 'utf8')) as GoogleDocument;
+  type RawTab = { tabProperties?: { tabId?: string }; documentTab?: { body?: { content?: RawElement[] } }; childTabs?: RawTab[] };
+  type RawElement = { table?: { tableRows?: { tableCells?: { content?: RawElement[] }[] }[] }; paragraph?: { elements?: { startIndex?: number; textRun?: { content?: string } }[] } };
+  const tabsOf = (nodes: RawTab[] = []): RawTab[] => nodes.flatMap(tab => [tab, ...tabsOf(tab.childTabs)]);
+  const allTabs = tabsOf(doc.tabs as RawTab[]);
+  const runsIn = (elements: RawElement[] = []): { startIndex: number; content: string }[] =>
+    elements.flatMap(el => el.table
+      ? (el.table.tableRows ?? []).flatMap(row => (row.tableCells ?? []).flatMap(cell => runsIn(cell.content)))
+      : (el.paragraph?.elements ?? []).flatMap(part => (part.textRun?.content !== undefined ? [{ startIndex: part.startIndex ?? 0, content: part.textRun.content }] : [])));
+
+  it('anchors the quote the live spike confirmed, at the offsets Google accepted', () => {
+    expect(findQuote(flattenDocument(doc), 'hosting arrangements are supported'))
+      .toMatchObject({ ok: true, tabId: 't.0', startIndex: 380, endIndex: 414 });
+  });
+
+  it('puts every quoted substring at the index Google reports for its text run', () => {
+    const paragraphs = flattenDocument(doc);
+    let checked = 0;
+    for (const tab of allTabs) {
+      for (const run of runsIn(tab.documentTab?.body?.content)) {
+        if (run.content.length < 12) continue;
+        const quote = run.content.slice(3, 12);
+        const trimmed = quote.trim();
+        if (!trimmed) continue;
+        const match = findQuote(paragraphs, quote);
+        if ('reason' in match) continue; // ambiguous: the same words occur elsewhere
+        // findQuote trims the quote, so the anchor starts after any leading spaces.
+        const start = run.startIndex + 3 + (quote.length - quote.trimStart().length);
+        expect(match.startIndex).toBe(start);
+        expect(match.endIndex).toBe(start + trimmed.length);
+        expect(match.tabId).toBe(tab.tabProperties?.tabId ?? null);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThanOrEqual(10);
+  });
+
+  it('keeps every tab, each paragraph carrying its own tab id', () => {
+    const paragraphs = flattenDocument(doc);
+    expect(allTabs.length).toBeGreaterThan(0);
+    for (const tab of allTabs) {
+      expect(paragraphs.some(p => p.tabId === (tab.tabProperties?.tabId ?? null))).toBe(true);
+    }
+  });
+
+  it('hashes the reviewed text to the value the spike recorded', () => {
+    expect(textHash(flattenDocument(doc)).startsWith('sha256:49d31627')).toBe(true);
   });
 });

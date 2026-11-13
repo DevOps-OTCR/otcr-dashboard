@@ -10,7 +10,8 @@ const jwt = require('jsonwebtoken');
 export const DOCS_SCOPE = 'https://www.googleapis.com/auth/documents';
 const API = 'https://docs.googleapis.com/v1/documents';
 
-export type GoogleDocsErrorReason = 'not_configured' | 'auth' | 'no_access' | 'forbidden' | 'revision_mismatch' | 'bad_request' | 'unavailable';
+// uncertain: Google answered 200 (it applied the insert) but did not confirm the comment saved, so it may exist.
+export type GoogleDocsErrorReason = 'not_configured' | 'auth' | 'no_access' | 'forbidden' | 'revision_mismatch' | 'bad_request' | 'unavailable' | 'uncertain';
 
 /** `detail` is Google's message: fine for the local spike output, never returned to MCP clients. */
 export class GoogleDocsError extends Error {
@@ -71,7 +72,7 @@ export class GoogleDocsClient {
       { method: 'POST', body: JSON.stringify(body), signal },
     );
     if (raw.commentUpdateState && raw.commentUpdateState !== 'ALL_SAVED') {
-      throw new GoogleDocsError('unavailable', 200, `Comment not saved: ${raw.commentUpdateState}`);
+      throw new GoogleDocsError('uncertain', 200, `Comment not confirmed saved: ${raw.commentUpdateState}`);
     }
     const thread = raw.replies?.[0]?.insertComment?.commentThread;
     return {
@@ -95,7 +96,12 @@ export class GoogleDocsClient {
   private reasonFor(status: number, detail: string): GoogleDocsErrorReason {
     if (status === 401) return 'auth';
     if (status === 404) return 'no_access'; // Google answers 404 for docs the account cannot see.
-    if (status === 403) return /insufficient.*scope|ACCESS_TOKEN_SCOPE_INSUFFICIENT/i.test(detail) ? 'auth' : 'forbidden';
+    if (status === 403) {
+      if (/insufficient.*scope|ACCESS_TOKEN_SCOPE_INSUFFICIENT/i.test(detail)) return 'auth';
+      // Some Google APIs report quota as 403. That is "try later", not "share the document".
+      if (/rateLimitExceeded|RATE_LIMIT_EXCEEDED|quota/i.test(detail)) return 'unavailable';
+      return 'forbidden';
+    }
     if (status === 400 && /revision/i.test(detail)) return 'revision_mismatch';
     if (status === 400) return 'bad_request';
     return 'unavailable';

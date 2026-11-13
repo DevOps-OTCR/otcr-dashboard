@@ -1,9 +1,9 @@
-import { BadRequestException, ForbiddenException, HttpException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import * as z from 'zod';
 import { FeatureFlagsService } from '../../feature-flags/feature-flags.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CmsReadAccessService, CmsReader } from '../authorization/cms-read-access.service';
-import { DocParagraph, findQuote, flattenDocument, parseGoogleDocLink, textHash } from './google-doc';
+import { DocParagraph, findQuote, flattenDocument, normalize, parseGoogleDocLink, textHash } from './google-doc';
 import { GoogleDocsClient, GoogleDocsError } from './google-docs.client';
 
 const MAX_TEXT_CHARS = 100_000;
@@ -28,7 +28,9 @@ export const readGoogleDocOutput = z.object({
   truncated: z.boolean().describe('True when later paragraphs were omitted to fit the size limit.'),
 });
 
-const fallbackReason = z.enum(['not-found', 'ambiguous', 'no-comment-access', 'document-changed', 'comment-failed']);
+// comment-uncertain: the request may have reached Google but its answer was lost, so the comment
+// may already be in the document. comment-failed: it was not attempted, or Google refused it.
+const fallbackReason = z.enum(['not-found', 'ambiguous', 'no-comment-access', 'document-changed', 'comment-failed', 'comment-uncertain']);
 export const commentGoogleDocInput = z.strictObject({
   ...target,
   comments: z.array(z.strictObject({
@@ -45,6 +47,8 @@ export const commentGoogleDocOutput = z.object({
     placement: z.enum(['native', 'fallback']),
     nativeCommentId: z.string().nullable(),
     fallbackReason: fallbackReason.nullable(),
+    anchoredText: z.string().nullable().describe("The text Google says the comment is attached to, read back after posting; null for fallbacks."),
+    anchorVerified: z.boolean().nullable().describe('False when Google attached the comment to different text than the quote; null when not checked.'),
   })),
 });
 
@@ -60,6 +64,8 @@ const fail = (Exception: new (body: object) => HttpException, code: string, mess
  */
 @Injectable()
 export class GoogleDocReviewService {
+  private readonly log = new Logger('GoogleDocReview');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: CmsReadAccessService,
@@ -87,13 +93,18 @@ export class GoogleDocReviewService {
     await this.access.assertDeliverableAccess(user, input.projectId, input.deliverableId);
     let snap = await this.snapshot(user, input);
     const revisionGuarded = Boolean(snap.revisionId);
-    let canComment = true;
+    // Once set, every remaining comment falls back with this reason instead of trying Google.
+    let stopReason: z.infer<typeof fallbackReason> | null = null;
     const results: CommentResult[] = [];
 
+    // Once this loop starts, only the feature-flag check may throw. A comment that has already
+    // been posted must always be returned, or a retry would post it a second time.
     for (const { quote, comment } of input.comments) {
-      const result: CommentResult = { quote, comment, section: null, placement: 'fallback', nativeCommentId: null, fallbackReason: null };
+      const result: CommentResult = {
+        quote, comment, section: null, placement: 'fallback', nativeCommentId: null, fallbackReason: null, anchoredText: null, anchorVerified: null,
+      };
       results.push(result);
-      if (!canComment) { result.fallbackReason = 'no-comment-access'; continue; }
+      if (stopReason) { result.fallbackReason = stopReason; continue; }
 
       for (let attempt = 0; ; attempt++) {
         const match = findQuote(snap.paragraphs, quote);
@@ -102,15 +113,44 @@ export class GoogleDocReviewService {
         this.flags.assertAgenticCmsEnabledFor(user.email); // recheck immediately before the external write
         try {
           const posted = await this.docs.insertComment(snap.documentId, { content: comment, ...match }, snap.revisionId);
-          Object.assign(result, { placement: 'native', nativeCommentId: posted.commentId, fallbackReason: null });
+          // Google reads back the text it attached the comment to; a difference means an index or
+          // revision problem placed it somewhere other than the quote. Never log the text itself.
+          const anchoredText = posted.anchoredText ?? null;
+          const anchorVerified = anchoredText === null ? null : normalize(anchoredText).trim() === normalize(quote).trim();
+          if (anchorVerified === false) this.log.warn('Google anchored a comment to different text than requested');
+          Object.assign(result, { placement: 'native', nativeCommentId: posted.commentId, fallbackReason: null, anchoredText, anchorVerified });
           // Each comment bumps the revision; carry it forward so the next guarded write doesn't mismatch.
           if (snap.revisionId && posted.nextRevisionId) snap = { ...snap, revisionId: posted.nextRevisionId };
           break;
         } catch (error) {
-          if (!(error instanceof GoogleDocsError)) throw error;
-          if (error.reason === 'revision_mismatch' && attempt === 0) { snap = await this.snapshot(user, input); continue; }
-          if (error.reason === 'forbidden' || error.reason === 'no_access') canComment = false;
-          result.fallbackReason = error.reason === 'revision_mismatch' ? 'document-changed' : canComment ? 'comment-failed' : 'no-comment-access';
+          if (error instanceof GoogleDocsError && error.reason === 'revision_mismatch' && attempt === 0) {
+            try {
+              snap = await this.snapshot(user, input);
+              continue;
+            } catch {
+              // Never post against a snapshot we could not refresh. If the re-read failed because the
+              // flag went off, this recheck throws and stops everything, as it must.
+              this.flags.assertAgenticCmsEnabledFor(user.email);
+              result.fallbackReason = 'document-changed';
+              stopReason = 'document-changed';
+              break;
+            }
+          }
+          if (error instanceof GoogleDocsError && (error.reason === 'forbidden' || error.reason === 'no_access')) {
+            stopReason = 'no-comment-access';
+            result.fallbackReason = stopReason;
+          } else if (error instanceof GoogleDocsError) {
+            // Google answered, so keep going; but an unconfirmed save may exist and must not be retried blindly.
+            result.fallbackReason = error.reason === 'revision_mismatch' ? 'document-changed' : error.reason === 'uncertain' ? 'comment-uncertain' : 'comment-failed';
+          } else {
+            // Not a Google answer (network failure, timeout, a bug). The request may have reached Google
+            // and only its answer been lost, so this comment may already be in the document: say so
+            // instead of "failed". The rest were never attempted; stop rather than wait on Google once
+            // per remaining comment. Log the class only; messages may carry document text.
+            this.log.warn(`Unexpected error posting a Google Doc comment: ${error instanceof Error ? error.name : typeof error}`);
+            result.fallbackReason = 'comment-uncertain';
+            stopReason = 'comment-failed';
+          }
           break;
         }
       }
