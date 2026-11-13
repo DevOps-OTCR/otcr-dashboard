@@ -53,3 +53,6 @@ Thumbs.db
 *.tsbuildinfo
 next-env.d.ts
 *.backup
+
+# Local demo harness (never committed)
+.demo/
