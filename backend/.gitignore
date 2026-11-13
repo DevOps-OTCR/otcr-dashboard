@@ -17,6 +17,9 @@ build/
 .env.test.local
 .env.production.local
 
+# Google Docs spike output (real document text)
+.spike-out/
+
 # Logs
 logs/
 *.log
