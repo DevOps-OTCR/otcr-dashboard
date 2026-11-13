@@ -164,7 +164,7 @@ integration('MCP client -> Nest endpoint -> migrated PostgreSQL', () => {
 
   it('also accepts the legacy initialize handshake through stateless HTTP', async () => {
     const client = await connect('reader', false);
-    expect((await client.listTools()).tools).toHaveLength(5);
+    expect((await client.listTools()).tools).toHaveLength(7); // five CMS reads plus the two Google Doc tools
     const output = schemas.getDeliverableOutput.parse(await call(client, 'get_deliverable', { projectId: 'project', deliverableId: 'd1' }));
     expect(output.deliverableId).toBe('d1');
   });
