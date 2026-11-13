@@ -85,6 +85,9 @@ export type Review = {
 
 export type ReviewQueue = { submissions: ReviewSubmission[]; reviews: Review[] };
 
+/** Longest optional focus note a PM can give an Advanced review. */
+export const MAX_FOCUS_NOTE = 500;
+
 export type RequestReviewInput = {
   projectId: string;
   submissionId: string;

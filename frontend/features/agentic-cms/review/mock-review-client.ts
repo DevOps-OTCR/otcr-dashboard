@@ -8,6 +8,7 @@
 
 import { FAILURES } from './copy';
 import { DEMO_FEEDBACK, DEMO_SEED, demoSubmissions } from './mock-fixtures';
+import { MAX_FOCUS_NOTE } from './types';
 import type {
   RequestReviewInput,
   Review,
@@ -23,7 +24,6 @@ import type {
 
 export const QUEUE_MS = 2_000;
 export const STEP_MS: Record<ReviewLevel, number> = { BASIC: 1_200, ADVANCED: 1_800 };
-export const MAX_FOCUS_NOTE = 500;
 
 export function reviewSteps(level: ReviewLevel, format: SubmissionFormat): string[] {
   const read = format === 'slides' ? 'Reading the slides' : 'Reading the document';

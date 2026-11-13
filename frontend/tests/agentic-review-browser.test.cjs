@@ -28,7 +28,8 @@ const open = async (t, query = '') => {
 };
 const params = (page) => new URL(page.url()).searchParams;
 const submissions = (page) => page.getByRole('list', { name: 'Submissions' }).getByRole('listitem');
-const reviewStatus = (page) => page.getByRole('region', { name: 'Review status' }).getByRole('status');
+const statusRegion = (page) => page.getByRole('region', { name: 'Review status' });
+const reviewStatus = (page) => statusRegion(page).getByRole('status');
 
 test('shows demo submissions in every review state, failures first with a next step', async t => {
   const page = await open(t, '?role=PM');
@@ -42,8 +43,8 @@ test('shows demo submissions in every review state, failures first with a next s
   // The failed review sorts first and is selected, with its failure and next step.
   assert.equal(await submissions(page).first().getByRole('button').getAttribute('aria-current'), 'true');
   await page.getByRole('heading', { name: 'Pricing strategy — final deck' }).waitFor();
-  await page.getByText('We couldn’t open this file.').waitFor();
-  await page.getByText('Check that the SharePoint or OneDrive link is shared with OTCR, then retry.').waitFor();
+  await statusRegion(page).getByText('We couldn’t open this file.').waitFor();
+  await statusRegion(page).getByText('Check that the SharePoint or OneDrive link is shared with OTCR, then retry.').waitFor();
   assert.equal(await page.getByRole('progressbar').count(), 0);
   // The selection is linkable, and unrelated query parameters are kept.
   assert.equal(params(page).get('tab'), 'review');
@@ -158,4 +159,118 @@ test('shows no feedback for a failed review, and resets the viewed run when the 
   assert.equal(await feedback(page).count(), 0);
   assert.equal(await page.getByRole('region', { name: 'Summary' }).count(), 0);
   assert.equal(await page.getByText(/Viewing an earlier run/).count(), 0);
+});
+
+// Requesting reviews (PM role: the context stub grants edit access to Project One).
+const requestForm = (page) => page.getByRole('form', { name: 'Request AI review' });
+
+test('a PM requests a Basic review, follows it to its feedback and is offered Advanced next', async t => {
+  const page = await open(t, '?role=PM&tab=review&submission=demo-sub-initial-slides');
+  await page.getByRole('button', { name: 'Request AI review' }).click();
+  assert.equal(await requestForm(page).getByRole('radio', { name: /^Basic: Formatting and consistency/ }).isChecked(), true);
+  assert.equal(await requestForm(page).getByRole('textbox').count(), 0, 'a focus note is only offered for Advanced');
+  await requestForm(page).getByRole('button', { name: 'Start Basic review' }).click();
+  await reviewStatus(page).getByText('Awaiting review.').waitFor();
+  assert.equal(await requestForm(page).count(), 0);
+  assert.equal(await page.getByRole('button', { name: 'Request AI review' }).count(), 0, 'no second request while one is running');
+  await page.getByRole('button', { name: 'Awaiting review (1)' }).waitFor();
+  await page.getByText('Requested by You').waitFor();
+  await reviewStatus(page).getByText('In progress.').waitFor({ timeout: 5_000 });
+  await reviewStatus(page).getByText('Completed.').waitFor({ timeout: 15_000 });
+  await feedback(page).getByRole('heading', { name: 'Feedback (6)' }).waitFor();
+  assert.equal(await page.getByRole('region', { name: 'Review history' }).getByRole('listitem').count(), 2);
+
+  await page.getByRole('button', { name: 'Run Advanced review' }).click();
+  assert.equal(await requestForm(page).getByRole('radio', { name: /^Advanced: Content, evidence and alignment/ }).isChecked(), true);
+  await requestForm(page).getByRole('textbox', { name: /What should the reviewer focus on\?/ }).waitFor();
+  await requestForm(page).getByRole('button', { name: 'Cancel' }).click();
+  assert.equal(await requestForm(page).count(), 0);
+});
+
+const clearProjectContext = async (page) => {
+  await page.getByRole('textbox', { name: 'Overview' }).fill('');
+  await page.getByRole('textbox', { name: 'SOW / Scope' }).fill('');
+  await page.getByRole('button', { name: 'Save context' }).click();
+  await page.getByText('Context saved.').waitFor();
+};
+
+test('an Advanced request keeps its focus note and warns when the project has no overview or SOW', async t => {
+  const page = await open(t, '?role=PM');
+  await clearProjectContext(page);
+  await page.getByRole('tab', { name: 'AI Review' }).click();
+  await submissions(page).filter({ hasText: 'Campus fleet partnerships' }).getByRole('button').click();
+  await page.getByRole('button', { name: 'Request AI review' }).click();
+  assert.equal(await page.getByText('This project has no saved overview or SOW.').count(), 0, 'Basic does not need project context');
+  await requestForm(page).getByRole('radio', { name: /^Advanced/ }).check();
+  await requestForm(page).getByText(/This project has no saved overview or SOW\./).waitFor();
+  await requestForm(page).getByRole('textbox', { name: /What should the reviewer focus on\?/ }).fill('Check slide 9 against the SOW.');
+  await requestForm(page).getByText('30/500').waitFor();
+  await requestForm(page).getByRole('button', { name: 'Start Advanced review' }).click();
+  await reviewStatus(page).getByText('Awaiting review.').waitFor();
+  await page.getByText('Check slide 9 against the SOW.').waitFor();
+  await statusRegion(page).getByText('Advanced review', { exact: true }).waitFor();
+});
+
+test('the project-context link opens that tab, and demo reviews survive switching tabs', async t => {
+  const page = await open(t, '?role=PM');
+  await clearProjectContext(page);
+  await page.getByRole('tab', { name: 'AI Review' }).click();
+  await submissions(page).filter({ hasText: 'Campus fleet partnerships' }).getByRole('button').click();
+  await page.getByRole('button', { name: 'Request AI review' }).click();
+  await requestForm(page).getByRole('button', { name: 'Start Basic review' }).click();
+  await reviewStatus(page).getByText('Awaiting review.').waitFor();
+
+  await submissions(page).filter({ hasText: 'Pricing strategy — final whitepaper' }).getByRole('button').click();
+  await page.getByRole('button', { name: 'Request another review' }).click();
+  await requestForm(page).getByRole('radio', { name: /^Advanced/ }).check();
+  await requestForm(page).getByRole('button', { name: 'Add them in Project Context' }).click();
+  await page.getByRole('textbox', { name: 'Overview' }).waitFor();
+
+  await page.getByRole('tab', { name: 'AI Review' }).click();
+  await submissions(page).filter({ hasText: 'Campus fleet partnerships' }).getByText(/^Basic · (Awaiting review|In progress|Completed)$/).waitFor();
+});
+
+test('a planned demo failure shows its next step, and Retry starts a new run', async t => {
+  const page = await open(t, '?role=PM&tab=review&submission=demo-sub-initial-slides');
+  await page.getByText('Demo controls').click();
+  const control = page.getByRole('combobox', { name: /Result of the next review/ });
+  await control.selectOption('rate_limit');
+  await page.getByRole('button', { name: 'Request AI review' }).click();
+  await requestForm(page).getByRole('button', { name: 'Start Basic review' }).click();
+  await reviewStatus(page).getByText('Awaiting review.').waitFor();
+  assert.equal(await control.inputValue(), '', 'a planned failure is used once');
+  await statusRegion(page).getByText('The reviewer is busy right now.').waitFor({ timeout: 5_000 });
+  await statusRegion(page).getByText('Retry in a few minutes. Nothing was lost.').waitFor();
+  await page.getByRole('button', { name: 'Retry Basic review' }).click();
+  await reviewStatus(page).getByText('Awaiting review.').waitFor();
+  const history = page.getByRole('region', { name: 'Review history' });
+  await history.getByText(/^Basic · v2 · retry/).waitFor();
+  assert.equal(await history.getByRole('listitem').count(), 3);
+});
+
+test('a failure that retrying cannot fix offers no Retry', async t => {
+  const page = await open(t, '?role=PM&tab=review&submission=demo-sub-initial-slides');
+  await page.getByText('Demo controls').click();
+  await page.getByRole('combobox', { name: /Result of the next review/ }).selectOption('unsupported_file');
+  await page.getByRole('button', { name: 'Request AI review' }).click();
+  await requestForm(page).getByRole('button', { name: 'Start Basic review' }).click();
+  await statusRegion(page).getByText('Only PowerPoint and Word files can be reviewed.').waitFor({ timeout: 8_000 });
+  await statusRegion(page).getByText('Ask the consultant to resubmit a PowerPoint or Word link, then request a new review.').waitFor();
+  assert.equal(await page.getByRole('button', { name: /^Retry/ }).count(), 0);
+  // The seeded file-access failure on another deck can be retried.
+  await submissions(page).filter({ hasText: 'Pricing strategy — final deck' }).getByRole('button').click();
+  await page.getByRole('button', { name: 'Retry Advanced review' }).waitFor();
+});
+
+test('a consultant sees review status and feedback but cannot request reviews or use demo controls', async t => {
+  const page = await open(t, '?tab=review&submission=demo-sub-initial-slides');
+  await page.getByText('Only this project’s PM, LCs and admins can request AI reviews.').waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Request AI review' }).count(), 0);
+  assert.equal(await page.getByText('Demo controls').count(), 0);
+  await submissions(page).filter({ hasText: 'Pricing strategy — final deck' }).getByRole('button').click();
+  await page.getByText('We couldn’t open this file.').waitFor();
+  assert.equal(await page.getByRole('button', { name: /^Retry/ }).count(), 0);
+  await submissions(page).filter({ hasText: 'Pricing strategy — final whitepaper' }).getByRole('button').click();
+  await feedback(page).waitFor();
+  assert.equal(await page.getByRole('button', { name: /Run Advanced review|Request another review/ }).count(), 0);
 });

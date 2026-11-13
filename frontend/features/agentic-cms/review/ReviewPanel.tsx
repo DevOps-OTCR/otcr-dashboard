@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { FlaskConical } from 'lucide-react';
-import { useAuth } from '@/components/AuthContext';
-import { createMockReviewClient } from './mock-review-client';
+import { FAILURES } from './copy';
+import { createMockReviewClient, type MockReviewClient } from './mock-review-client';
 import { buildQueue, countByFilter, filterRows, isActive, type QueueFilter } from './queue';
-import { ReviewDetail } from './ReviewDetail';
+import { ReviewDetail, type ReviewActions } from './ReviewDetail';
 import { ReviewQueueList } from './ReviewQueueList';
-import type { ReviewClient, ReviewQueue } from './types';
+import type { ReviewFailureKind, ReviewLevel, ReviewQueue } from './types';
 
 const ACTIVE_POLL_MS = 1_000;
 const IDLE_POLL_MS = 30_000;
@@ -25,16 +25,34 @@ function setReviewParams(submissionId: string | null) {
   if (url.href !== window.location.href) window.history.replaceState(window.history.state, '', url);
 }
 
-export function ReviewPanel({ projectId, projectName }: { projectId: string; projectName?: string }) {
-  const { user } = useAuth();
-  // One mock per mount: its state resets on reload, sign-out or flag-off unmount.
-  const [client] = useState<ReviewClient>(() => createMockReviewClient({ viewerName: user?.name }));
+/**
+ * The page's review client. Create it in the page, not the tab, so reviews started in
+ * the demo survive switching tabs. It lives in memory: a reload or sign-out resets it.
+ * Next week this returns an HTTP ReviewClient and the demo controls go away.
+ */
+export function useReviewClient(viewerName?: string): MockReviewClient {
+  const [client] = useState(() => createMockReviewClient({ viewerName }));
+  return client;
+}
+
+type Props = {
+  client: MockReviewClient;
+  projectId: string;
+  projectName?: string;
+  /** The backend's edit permission for this project, from the project-context response. */
+  canRequest: boolean;
+  projectContextMissing: boolean;
+  onOpenProjectContext?: () => void;
+};
+
+export function ReviewPanel({ client, projectId, projectName, canRequest, projectContextMissing, onOpenProjectContext }: Props) {
+  const [nextFailure, setNextFailure] = useState<ReviewFailureKind | null>(() => client.nextFailure());
   const [data, setData] = useState<ReviewQueue | null>(null);
   const [error, setError] = useState('');
   const [now, setNow] = useState(() => Date.now());
   const [filter, setFilter] = useState<QueueFilter>('ALL');
   const [selectedId, setSelectedId] = useState(() => new URLSearchParams(window.location.search).get('submission') ?? '');
-  // Bumping this reloads immediately (Retry, and later after requesting a review).
+  // Bumping this reloads immediately (Retry, and after requesting a review).
   const [reloadKey, setReloadKey] = useState(0);
 
   // Poll quickly while a review is running, slowly otherwise so relative times stay fresh.
@@ -78,6 +96,25 @@ export function ReviewPanel({ projectId, projectName }: { projectId: string; pro
   const visible = filterRows(rows, filter);
   const counts = countByFilter(rows);
 
+  // After a request or retry, reload at once and show that a planned demo failure was used.
+  const afterChange = () => {
+    setNextFailure(client.nextFailure());
+    setReloadKey((key) => key + 1);
+  };
+  const actions: ReviewActions = {
+    canRequest,
+    projectContextMissing,
+    onOpenProjectContext,
+    request: async (submissionId: string, level: ReviewLevel, focusNote: string) => {
+      await client.request({ projectId, submissionId, level, focusNote });
+      afterChange();
+    },
+    retry: async (reviewId: string) => {
+      await client.retry(reviewId);
+      afterChange();
+    },
+  };
+
   return (
     <section aria-labelledby="ai-review-title" className="space-y-4">
       <div className="space-y-1">
@@ -97,6 +134,31 @@ export function ReviewPanel({ projectId, projectName }: { projectId: string; pro
             here once the review service is connected.
           </p>
         </div>
+      )}
+
+      {client.mocked && canRequest && (
+        <details className="rounded-[var(--radius-md)] border border-dashed border-[var(--border)] px-3 py-2 text-sm">
+          <summary className="cursor-pointer font-medium">Demo controls</summary>
+          <label className="mt-2 flex flex-wrap items-center gap-2">
+            <span>Result of the next review you start or retry:</span>
+            <select
+              value={nextFailure ?? ''}
+              onChange={(event) => {
+                const kind = (event.target.value || null) as ReviewFailureKind | null;
+                client.setNextFailure(kind);
+                setNextFailure(kind);
+              }}
+              className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--card)] px-2 py-1"
+            >
+              <option value="">Completes with feedback</option>
+              {(Object.keys(FAILURES) as ReviewFailureKind[]).map((kind) => (
+                <option key={kind} value={kind}>
+                  Fails: {FAILURES[kind].title}
+                </option>
+              ))}
+            </select>
+          </label>
+        </details>
       )}
 
       {error && (
@@ -121,7 +183,7 @@ export function ReviewPanel({ projectId, projectName }: { projectId: string; pro
             onSelect={setSelectedId}
             now={now}
           />
-          {selected && <ReviewDetail key={selected.submission.id} row={selected} now={now} />}
+          {selected && <ReviewDetail key={selected.submission.id} row={selected} now={now} actions={actions} />}
         </div>
       )}
     </section>

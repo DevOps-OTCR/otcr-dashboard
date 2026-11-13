@@ -6,13 +6,30 @@ import { formatRelative, type QueueRow } from './queue';
 import { StateBadge } from './ReviewBadges';
 import { FeedbackList, FeedbackSummary, focusComment } from './ReviewFeedback';
 import { ReviewStatusCard } from './ReviewStatusCard';
-import type { Review } from './types';
+import { RequestReviewForm } from './RequestReviewForm';
+import type { Review, ReviewLevel } from './types';
 
 const runLabel = (review: Review) => `${LEVELS[review.level].label} review of version ${review.submissionVersion}`;
 
+export type ReviewActions = {
+  /** From the backend's edit permission for the project (Admins, LCs with access, the assigned PM). */
+  canRequest: boolean;
+  projectContextMissing: boolean;
+  onOpenProjectContext?: () => void;
+  request: (submissionId: string, level: ReviewLevel, focusNote: string) => Promise<void>;
+  retry: (reviewId: string) => Promise<void>;
+};
+
+const secondaryButton = 'rounded-[var(--radius-sm)] border border-[var(--border)] px-3 py-2 text-sm font-medium hover:bg-[var(--surface-muted)] disabled:opacity-60';
+const primaryButton = 'rounded-[var(--radius-sm)] bg-[var(--primary)] px-3 py-2 text-sm font-semibold text-[var(--primary-foreground)] disabled:opacity-60';
+
 /** Remount per submission (key it by submission id) so the viewed run and filters reset. */
-export function ReviewDetail({ row, now }: { row: QueueRow; now: number }) {
+export function ReviewDetail({ row, now, actions }: { row: QueueRow; now: number; actions: ReviewActions }) {
   const { submission, current, history, earlierVersionReviewed } = row;
+  // The open request form's preselected level, or null when it is closed.
+  const [formLevel, setFormLevel] = useState<ReviewLevel | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [actionError, setActionError] = useState('');
   const Icon = submission.format === 'slides' ? Presentation : FileText;
   // Which run's status and feedback are shown: the current one unless an earlier run is chosen.
   const [viewedId, setViewedId] = useState<string | null>(null);
@@ -35,6 +52,74 @@ export function ReviewDetail({ row, now }: { row: QueueRow; now: number }) {
   useEffect(() => {
     if (jumpTarget) focusComment(jumpTarget.id);
   }, [jumpTarget]);
+
+  const openForm = (level: ReviewLevel) => {
+    setActionError('');
+    setFormLevel(level);
+  };
+  // Errors propagate to the form, which keeps the PM's choices on screen.
+  const request = async (level: ReviewLevel, focusNote: string) => {
+    await actions.request(submission.id, level, focusNote);
+    setFormLevel(null);
+    view(null);
+  };
+  const retry = async (reviewId: string) => {
+    setRetrying(true);
+    setActionError('');
+    try {
+      await actions.retry(reviewId);
+      view(null);
+    } catch (err) {
+      setActionError(err instanceof Error && err.message ? err.message : 'Could not retry the review. Try again.');
+    } finally {
+      setRetrying(false);
+    }
+  };
+
+  // What the PM can do next with the current version. Hidden while viewing an earlier run.
+  const failure = current?.failure && FAILURES[current.failure.kind];
+  const nextActions = viewingEarlier ? null : !actions.canRequest ? (
+    !current && <p className="text-sm text-[var(--text-muted)]">Only this project’s PM, LCs and admins can request AI reviews.</p>
+  ) : formLevel ? (
+    <RequestReviewForm
+      submission={submission}
+      initialLevel={formLevel}
+      projectContextMissing={actions.projectContextMissing}
+      onOpenProjectContext={actions.onOpenProjectContext}
+      onSubmit={request}
+      onCancel={() => setFormLevel(null)}
+    />
+  ) : (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        {!current && (
+          <button type="button" className={primaryButton} onClick={() => openForm('BASIC')}>
+            Request AI review
+          </button>
+        )}
+        {current?.status === 'COMPLETED' && current.level === 'BASIC' && (
+          <button type="button" className={primaryButton} onClick={() => openForm('ADVANCED')}>
+            Run Advanced review
+          </button>
+        )}
+        {current?.status === 'COMPLETED' && (
+          <button type="button" className={secondaryButton} onClick={() => openForm(current.level)}>
+            Request another review
+          </button>
+        )}
+        {current?.status === 'FAILED' && failure?.retryable && (
+          <button type="button" className={primaryButton} disabled={retrying} onClick={() => void retry(current.id)}>
+            {retrying ? 'Retrying…' : `Retry ${LEVELS[current.level].label} review`}
+          </button>
+        )}
+      </div>
+      {actionError && (
+        <p role="alert" className="text-sm text-[var(--danger)]">
+          {actionError}
+        </p>
+      )}
+    </div>
+  );
 
   return (
     <article aria-labelledby="review-detail-title" className="space-y-4">
@@ -86,6 +171,7 @@ export function ReviewDetail({ row, now }: { row: QueueRow; now: number }) {
       {shown ? (
         <>
           <ReviewStatusCard review={shown} now={now} />
+          {nextActions}
           {shown.status === 'COMPLETED' && (
             <>
               <FeedbackSummary review={shown} submission={submission} mode={FEEDBACK_MODE} onJump={jump} />
@@ -104,6 +190,7 @@ export function ReviewDetail({ row, now }: { row: QueueRow; now: number }) {
           )}
         </section>
       )}
+      {!shown && nextActions}
 
       {history.length > (current ? 1 : 0) && (
         <section aria-labelledby="review-history-title" className="space-y-2">
