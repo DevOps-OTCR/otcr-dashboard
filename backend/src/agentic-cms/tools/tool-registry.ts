@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { SendEvent } from '../agent/agent.events';
 import type { ToolCall, ToolSchema } from '../model/model-client';
 import { CmsReadTools } from './cms-read.tools';
+import { GoogleDocTools } from './google-doc.tools';
 import { LoadSkillTool } from './load-skill.tool';
 import { asToolData } from './tool-content';
 import { AgentTool, ToolContext, ToolFailure } from './tool.types';
@@ -21,15 +22,16 @@ const CMS_TRUNCATION_SUFFIX = '\n\nSome fields are shortened; see truncatedField
 /**
  * The tools OTCR Bot can call. To add one: implement AgentTool in this folder,
  * add it to AgenticCmsModule providers and to the constructor below.
- * CMS reads are thin adapters over CmsReadService. The selected project comes from the request.
+ * CMS reads are thin adapters over CmsReadService; Google Docs review is a thin adapter over
+ * GoogleDocReviewService. The selected project comes from the request.
  */
 @Injectable()
 export class ToolRegistry {
   private readonly log = new Logger('OtcrBotTools');
   private readonly tools: AgentTool[];
 
-  constructor(webSearch: WebSearchTool, loadSkill: LoadSkillTool, cmsReads: CmsReadTools) {
-    this.tools = [webSearch, loadSkill, ...cmsReads.tools] as AgentTool[];
+  constructor(webSearch: WebSearchTool, loadSkill: LoadSkillTool, cmsReads: CmsReadTools, docTools: GoogleDocTools) {
+    this.tools = [webSearch, loadSkill, ...cmsReads.tools, ...docTools.tools] as AgentTool[];
   }
 
   /** Tools usable right now (configured, with content). Checked at the start of each turn. */

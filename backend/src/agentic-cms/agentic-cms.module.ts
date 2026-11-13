@@ -17,6 +17,7 @@ import { modelClientProvider } from './model/model.provider';
 import { TavilySearchClient } from './search/tavily-search.client';
 import { SkillLibrary } from './skills/skill-library';
 import { CmsReadTools } from './tools/cms-read.tools';
+import { GoogleDocTools } from './tools/google-doc.tools';
 import { LoadSkillTool } from './tools/load-skill.tool';
 import { ToolRegistry } from './tools/tool-registry';
 import { WebSearchTool } from './tools/web-search.tool';
@@ -38,6 +39,7 @@ import { WebSearchTool } from './tools/web-search.tool';
     WebSearchTool,
     LoadSkillTool,
     CmsReadTools,
+    GoogleDocTools,
     GoogleDocsClient,
     GoogleDocReviewService,
   ],

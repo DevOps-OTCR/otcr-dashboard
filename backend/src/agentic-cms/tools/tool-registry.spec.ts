@@ -14,7 +14,7 @@ const tool = (over: Partial<AgentTool<typeof echoInput>> = {}): AgentTool<typeof
 });
 // The constructor only collects tools; build one around arbitrary test tools.
 const registryWith = (...tools: AgentTool[]) => {
-  const registry = new ToolRegistry({} as never, {} as never, { tools: [] } as never);
+  const registry = new ToolRegistry({} as never, {} as never, { tools: [] } as never, { tools: [] } as never);
   (registry as unknown as { tools: AgentTool[] }).tools = tools;
   return registry;
 };

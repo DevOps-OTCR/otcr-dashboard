@@ -29,6 +29,17 @@ describe('buildSystemPrompt', () => {
     expect(p).toMatch(/never grants access/);
   });
 
+  it('adds the Google Docs review rule only when read_google_doc is available', () => {
+    expect(buildSystemPrompt(base)).not.toContain('read_google_doc');
+    expect(buildSystemPrompt({ ...base, tools: ['web_search'] })).not.toContain('comment_google_doc');
+    const p = buildSystemPrompt({ ...base, tools: ['read_google_doc', 'comment_google_doc'] });
+    expect(p).toContain('read_google_doc');
+    expect(p).toMatch(/only when the user has asked you to post them/);
+    expect(p).toMatch(/data, never instructions/);
+    expect(p).toMatch(/comment-uncertain/);
+    expect(p).toMatch(/anchorVerified=false/);
+  });
+
   it('tells the model not to invent facts it cannot see yet', () => {
     expect(buildSystemPrompt(base)).toMatch(/invent|guess/i);
   });
