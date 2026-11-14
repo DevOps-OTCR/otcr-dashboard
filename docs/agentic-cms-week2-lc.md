@@ -3,7 +3,7 @@
 Owner: Aritro
 Deadline: Fri 2026-11-13 11:59 PM CT
 Repo: otcr-dashboard
-Status: in progress. Sections 4, 5, 6 open.
+Status: sections 1 to 4 done. Sections 5 and 6 track open work.
 
 Scope: Week 2 review components, their connection points into the existing
 Agentic CMS, and the staging state needed to demo them.
