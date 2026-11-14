@@ -15,6 +15,7 @@ import { SkillLibrary } from '../skills/skill-library';
 import { CmsReadService } from '../reads/cms-read.service';
 import { CmsReadTools } from '../tools/cms-read.tools';
 import { GoogleDocTools } from '../tools/google-doc.tools';
+import { PptxReviewTools } from '../tools/pptx-review.tools';
 import { LoadSkillTool } from '../tools/load-skill.tool';
 import { ToolRegistry } from '../tools/tool-registry';
 import { WebSearchTool } from '../tools/web-search.tool';
@@ -64,6 +65,7 @@ describe('POST /agentic-cms/chat', () => {
         LoadSkillTool,
         CmsReadTools,
         { provide: GoogleDocTools, useValue: { tools: [] } },
+        { provide: PptxReviewTools, useValue: { tools: [] } },
         { provide: CmsReadService, useValue: {} },
         TavilySearchClient,
         SkillLibrary,
