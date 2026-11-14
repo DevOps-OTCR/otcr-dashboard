@@ -49,6 +49,7 @@ export class MicrosoftGraphService {
     // Stage 1: share-link resolution
     const encoded = this.encodeShareUrl(url);
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const item = await this.graphJson<any>(
         `${GRAPH_BASE}/shares/${encoded}/driveItem?$select=id,parentReference,eTag,lastModifiedDateTime`,
       );
@@ -108,6 +109,7 @@ export class MicrosoftGraphService {
       return { status: res.status };
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const item = await res.json().catch(() => ({})) as any;
     return { status: res.status, newEtag: (item.eTag ?? '').replace(/^"|"$/g, '') };
   }

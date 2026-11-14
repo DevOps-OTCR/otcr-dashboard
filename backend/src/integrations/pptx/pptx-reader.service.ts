@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Injectable, Logger } from '@nestjs/common';
 import * as JSZip from 'jszip';
 import { XMLParser } from 'fast-xml-parser';

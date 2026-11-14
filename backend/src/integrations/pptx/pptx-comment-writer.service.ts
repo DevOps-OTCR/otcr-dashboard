@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Injectable, Logger } from '@nestjs/common';
 import * as JSZip from 'jszip';
 import { XMLParser } from 'fast-xml-parser';
@@ -102,7 +103,7 @@ function parseRelationships(xml: string): any[] {
   return doc?.Relationships?.Relationship ?? [];
 }
 
-function getNextRelId(_existing: any[]): string {
+function getNextRelId(): string {
   const hex = crypto.randomUUID().replace(/-/g, '').slice(0, 8);
   return `rOtcr${hex}`;
 }
@@ -156,7 +157,7 @@ export class PptxCommentWriterService {
 
     const authorGuid = await this.ensureAuthor(zip);
     const presRelsPath = 'ppt/_rels/presentation.xml.rels';
-    await this.ensureAuthorsRelationship(zip, presRelsPath, authorGuid);
+    await this.ensureAuthorsRelationship(zip, presRelsPath);
 
     const findingsBySlide = new Map<number, Finding[]>();
     for (const f of findings) {
@@ -187,7 +188,7 @@ export class PptxCommentWriterService {
       });
 
       const commentPartPath = `ppt/comments/modernComment_${slide.sldId}.xml`;
-      await this.writeCommentPart(zip, commentPartPath, comments, authorGuid, slide.sldId);
+      await this.writeCommentPart(zip, commentPartPath, comments, authorGuid);
 
       const slideName = slide.slideFile.split('/').pop()!;
       const slideRelsPath = `ppt/slides/_rels/${slideName}.rels`;
@@ -255,11 +256,11 @@ export class PptxCommentWriterService {
     return guid;
   }
 
-  private async ensureAuthorsRelationship(zip: any, presRelsPath: string, _authorGuid: string): Promise<void> {
+  private async ensureAuthorsRelationship(zip: any, presRelsPath: string): Promise<void> {
     const existing = await zip.file(presRelsPath)?.async('string') ?? '';
     if (existing.includes(REL_TYPE_AUTHORS)) return;
 
-    const relId = getNextRelId(parseRelationships(existing));
+    const relId = getNextRelId();
     const updated = insertRelationship(existing, relId, REL_TYPE_AUTHORS, 'authors.xml');
     zip.file(presRelsPath, updated);
   }
@@ -269,7 +270,6 @@ export class PptxCommentWriterService {
     path: string,
     comments: Array<{ guid: string; sldId: string; sldCreationId?: string; shapeId?: string; shapeCreationId?: string; text: string; dt: string }>,
     authorGuid: string,
-    sldId: string,
   ): Promise<void> {
     const existing = await zip.file(path)?.async('string');
     if (existing) {
@@ -311,7 +311,7 @@ export class PptxCommentWriterService {
     }
 
     // Not found, or found with a stale/wrong relationship type — add/replace with correct type.
-    const relId = found?.['@_Id'] ?? getNextRelId(rels);
+    const relId = found?.['@_Id'] ?? getNextRelId();
     let relsXml = cleaned;
     if (found) {
       // Strip the wrong-type entry so we can re-add it with the correct type.
@@ -457,7 +457,7 @@ export class PptxCommentWriterService {
       this.log.debug(`Removed orphaned comment file: ${cf}`);
 
       // Remove the matching content-type override so [Content_Types].xml stays consistent.
-      let ctXml = await zip.file('[Content_Types].xml')?.async('string') ?? '';
+      const ctXml = await zip.file('[Content_Types].xml')?.async('string') ?? '';
       const escaped = cf.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const updated = ctXml.replace(
         new RegExp(`\\s*<Override PartName="\\/${escaped}"[^/]*\\/>`),

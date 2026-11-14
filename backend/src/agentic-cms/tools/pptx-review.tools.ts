@@ -72,7 +72,7 @@ export class PptxReviewTools {
       }),
       isAvailable: () => this.graph.isConfigured(),
       label: ({ url }) => `Fetching PPTX: ${new URL(url).hostname}…`,
-      run: async ({ url }, _ctx: ToolContext): Promise<ToolOutput> => {
+      run: async ({ url }): Promise<ToolOutput> => {
         let ref;
         try {
           ref = await this.graph.resolveLink(url);
@@ -123,7 +123,7 @@ export class PptxReviewTools {
       }),
       isAvailable: () => this.graph.isConfigured(),
       label: ({ url }) => `Rendering slides: ${new URL(url).hostname}…`,
-      run: async ({ url, slide_indices }, _ctx: ToolContext): Promise<ToolOutput> => {
+      run: async ({ url, slide_indices }): Promise<ToolOutput> => {
         if (!this.renderer.isVisionEnabled()) {
           return {
             content:

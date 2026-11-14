@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import * as JSZip from 'jszip';
 import type { Finding } from './pptx.types';
 import { PptxCommentWriterService } from './pptx-comment-writer.service';
