@@ -7,9 +7,17 @@ export class FakeModelClient implements ModelClient {
   async stream(req: ModelRequest, onText: (delta: string) => void): Promise<ModelTurn> {
     const userMessages = req.messages.filter((m) => m.role === 'user');
     const last = userMessages[userMessages.length - 1];
-    const prompt = last && last.role === 'user' ? last.content: '';
+    const prompt = last && last.role === 'user' ? (typeof last.content === 'string' ? last.content : '[multimodal]') : '';
 
     if (/fail model/i.test(prompt)) throw modelUnavailable(new Error('FakeModel: simulated provider failure'));
+
+    if (req.toolChoice) {
+      const tool = req.tools.find((t) => t.name === req.toolChoice);
+      if (tool) {
+        const id = `fake_${req.toolChoice}_${Date.now()}`;
+        return { text: '', toolCalls: [{ id, name: req.toolChoice, args: {} }], message: assistantMessage('', [{ id, name: req.toolChoice, args: {} }]) };
+      }
+    }
 
     const text = `_(Fake model)_ You said: "${prompt}". This is turn ${userMessages.length} of the conversation.`;
     for (const chunk of text.match(/.{1,16}/gs) ?? []) {

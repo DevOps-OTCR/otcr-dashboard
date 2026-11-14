@@ -50,9 +50,14 @@ export class OpenAICompatibleClient implements ModelClient {
         {
           model: this.model,
           stream: true,
-          messages: [{ role: 'system', content: req.system }, ...req.messages],
+          messages: [{ role: 'system', content: req.system }, ...req.messages] as Parameters<typeof this.client.chat.completions.create>[0]['messages'],
           ...(req.tools.length
-            ? { tools: req.tools.map((t) => ({ type: 'function' as const, function: t })), tool_choice: 'auto' as const }
+            ? {
+                tools: req.tools.map((t) => ({ type: 'function' as const, function: t })),
+                tool_choice: req.toolChoice
+                  ? ({ type: 'function' as const, function: { name: req.toolChoice } } as const)
+                  : ('auto' as const),
+              }
             : {}),
         },
         { signal },
@@ -73,7 +78,13 @@ export class OpenAICompatibleClient implements ModelClient {
         }
       }
     } catch (e) {
-      throw e instanceof APIError && e.status ? this.httpError(e) : this.networkError(e, timeout);
+      const withImages = req.messages.some(
+        (m) => m.role === 'user' && Array.isArray(m.content) &&
+          (m.content as { type: string }[]).some((p) => p.type === 'image_url'),
+      );
+      throw e instanceof APIError && e.status
+        ? this.httpError(e, withImages)
+        : this.networkError(e, timeout, withImages);
     }
 
     const toolCalls: ToolCall[] = [...calls.values()].map((c, i) => ({
@@ -84,17 +95,20 @@ export class OpenAICompatibleClient implements ModelClient {
     return { text, toolCalls, message: assistantMessage(text, toolCalls) };
   }
 
-  private networkError(e: unknown, timeout: AbortSignal): AgentError {
+  private networkError(e: unknown, timeout: AbortSignal, withImages = false): AgentError {
     const error = timeout.aborted ? modelTimedOut(e) : modelUnavailable(e);
-    this.log.warn(`Model request failed: ${timeout.aborted ? 'timeout' : 'network or stream error'}`);
+    const reason = timeout.aborted ? 'timeout' : 'network or stream error';
+    const hint = withImages ? ' — request contained image content; set MSGRAPH_VISION_ENABLED=false if the model does not support vision' : '';
+    this.log.warn(`Model request failed: ${reason}${hint}`);
     return error;
   }
 
   /** Maps Lumen's documented statuses/codes to clear errors. Logs only status + code, never bodies or keys. */
-  private httpError(e: APIError): AgentError {
+  private httpError(e: APIError, withImages = false): AgentError {
     const status = e.status as number;
     const code = typeof e.code === 'string' && /^[a-z0-9_.-]{1,64}$/i.test(e.code) ? e.code : undefined;
-    this.log.warn(`Model request failed: HTTP ${status}${code ? ` (${code})` : ''}`);
+    const hint = withImages ? ' — request contained image content; set MSGRAPH_VISION_ENABLED=false if the model does not support vision' : '';
+    this.log.warn(`Model request failed: HTTP ${status}${code ? ` (${code})` : ''}${hint}`);
     const cause = `HTTP ${status}${code ? ` ${code}` : ''}`;
     if (status === 401) return modelConfigProblem('auth', cause);
     if (status === 403) return modelConfigProblem(code === 'consent_required' ? 'consent' : 'access', cause);
