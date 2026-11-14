@@ -1225,6 +1225,7 @@ export class ProjectsService {
           options.includeDraftWorkingLinks === true || sprint?.status === 'RELEASED';
         existing.push({
           id: deliverable.id,
+          sprintId: deliverable.sprintId,
           title: deliverable.title,
           description: deliverable.description ?? null,
           deadline: this.normalizeSprintDeliverableDeadline(deliverable, sprint),
