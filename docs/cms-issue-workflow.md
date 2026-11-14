@@ -36,8 +36,22 @@ flowchart TD
   a change is simple or safe. Copilot receives fixed instructions to stay within
   presentation/documentation scope and stop if broader changes are necessary.
 - All PRs require maintainer review. Assignment is recorded separately from PR
-  creation. `COPILOT_ASSIGNED` confirms assignment, not a completed fix or passing
-  checks. Follow the issue's linked Copilot PR/session on GitHub for progress.
+  creation. `COPILOT_ASSIGNED` confirms assignment. It does not confirm that a PR
+  exists, is complete, or has passing checks. Follow the issue's linked Copilot
+  PR/session on GitHub for progress.
+
+## Delivery status
+
+Administrators can see these statuses in the dashboard feedback review list.
+Reload the page to refresh the status.
+
+| Status | Stored value | Meaning |
+| --- | --- | --- |
+| Queued | `PENDING` | Waiting for the worker, including a scheduled retry. A GitHub issue may already exist. |
+| Synchronizing | `PROCESSING` | The worker has claimed the delivery to reconcile or create the issue and assign Copilot if eligible and enabled. |
+| Maintainer review required | `NEEDS_REVIEW` | The GitHub issue exists. The report did not qualify for Copilot assignment, or Copilot is disabled. A maintainer must review it. |
+| Copilot assigned | `COPILOT_ASSIGNED` | Copilot assignment succeeded. Check GitHub for PR progress. |
+| Failed | `FAILED` | Automatic retries are exhausted for issue delivery or Copilot assignment. Maintainer action is required. A GitHub issue may already exist. |
 
 ## Configuration
 
