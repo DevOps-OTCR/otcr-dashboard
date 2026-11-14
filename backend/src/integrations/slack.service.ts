@@ -312,6 +312,39 @@ export class SlackService {
     });
   }
 
+  async getSlackProfileTitle(
+    workspaceBotToken: string,
+    slackUserId: string,
+  ): Promise<string | null> {
+    const token = this.decryptToken(workspaceBotToken);
+    const url = `https://slack.com/api/users.info?user=${encodeURIComponent(slackUserId)}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Slack API users.info failed with status ${response.status}`,
+      );
+    }
+
+    const data = (await response.json()) as {
+      ok?: boolean;
+      error?: string;
+      user?: { profile?: { title?: string } };
+    };
+
+    if (!data.ok) {
+      throw new Error(
+        `Slack API users.info error: ${data.error || 'unknown_error'}`,
+      );
+    }
+
+    const title = data.user?.profile?.title?.trim();
+    return title ? title : null;
+  }
+
   async sendDirectMessageToUser(userId: string, message: SlackMessage): Promise<boolean> {
     const connection = await this.prisma.slackUserConnection.findFirst({
       where: { userId },

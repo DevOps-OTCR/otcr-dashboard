@@ -122,6 +122,8 @@ model User {
   slackOAuthStates   SlackOAuthState[]
   slackConnections   SlackUserConnection[]
   installedWorkspaces SlackWorkspace[] @relation("SlackWorkspaceInstaller")
+  slackRoleSuggestions         SlackRoleSuggestion[] @relation("SlackRoleSuggestionUser")
+  reviewedSlackRoleSuggestions SlackRoleSuggestion[] @relation("SlackRoleSuggestionReviewer")
   reviewedOnboardingRequests OnboardingRequest[] @relation("OnboardingReviewer")
   feedbackSubmissions FeedbackSubmission[]
   attendanceEventsCreated AttendanceEvent[] @relation("AttendanceEventCreator")
@@ -825,6 +827,36 @@ model SlackUserConnection {
   @@unique([userId, workspaceId])
   @@index([workspaceId])
   @@index([slackUserId])
+}
+
+enum SlackRoleSuggestionStatus {
+  PENDING
+  APPROVED
+  DISMISSED
+}
+
+model SlackRoleSuggestion {
+  id            String                      @id @default(cuid())
+  userId        String
+  slackUserId   String
+  slackTitle    String
+  currentRole   Role
+  suggestedRole Role
+  status        SlackRoleSuggestionStatus   @default(PENDING)
+  reviewedById  String?
+  reviewedAt    DateTime?
+  createdAt     DateTime                    @default(now())
+  updatedAt     DateTime                    @updatedAt
+
+  user       User  @relation("SlackRoleSuggestionUser", fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy User? @relation("SlackRoleSuggestionReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  // One PENDING suggestion per user is enforced by a partial unique index on userId WHERE status = 'PENDING'.
+  // That index lives only in the migration SQL: Prisma 7.4 can express partial indexes only with the
+  // unenabled 'partialIndexes' preview feature, so delete the DROP INDEX for it from each new migration.
+  @@index([userId])
+  @@index([status])
+  @@index([reviewedById])
 }
 
 // ============================================================================

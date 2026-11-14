@@ -509,3 +509,10 @@ export const peopleAPI = {
   list: () => api.get('/people'),
   changeRole: (id: string, role: string) => api.patch(`/people/${id}/role`, { role }),
 };
+
+export const slackRoleSuggestionsAPI = {
+  list: () => api.get('/integrations/slack/role-suggestions'),
+  sync: () => api.post('/integrations/slack/role-suggestions/sync'),
+  approve: (id: string) => api.patch(`/integrations/slack/role-suggestions/${id}/approve`),
+  dismiss: (id: string) => api.patch(`/integrations/slack/role-suggestions/${id}/dismiss`),
+};
