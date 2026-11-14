@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
+import { FeatureFlagsService } from '../../feature-flags/feature-flags.service';
 import { GraphError, MicrosoftGraphService } from '../../integrations/pptx/microsoft-graph.service';
 import { PptxCommentWriterService } from '../../integrations/pptx/pptx-comment-writer.service';
 import { PptxReaderService } from '../../integrations/pptx/pptx-reader.service';
@@ -45,6 +46,7 @@ export class PptxReviewTools {
     private readonly reader: PptxReaderService,
     private readonly commentWriter: PptxCommentWriterService,
     private readonly renderer: PptxRendererService,
+    private readonly flags: FeatureFlagsService,
   ) {
     this.tools = [
       this.fetchContentTool(),
@@ -192,7 +194,7 @@ export class PptxReviewTools {
       }),
       isAvailable: () => this.graph.isConfigured(),
       label: ({ findings }) => `Writing ${findings.length} comment${findings.length === 1 ? '' : 's'} to deck…`,
-      run: async ({ url, etag, findings }, _ctx: ToolContext): Promise<ToolOutput> => {
+      run: async ({ url, etag, findings }, ctx: ToolContext): Promise<ToolOutput> => {
         let ref;
         try {
           ref = await this.graph.resolveLink(url);
@@ -252,6 +254,7 @@ export class PptxReviewTools {
         }
 
         let upload;
+        this.flags.assertAgenticCmsEnabledFor(ctx.user.email); // recheck immediately before the external write
         try {
           upload = await this.graph.uploadPptx(ref, modified, etag);
         } catch (err) {
