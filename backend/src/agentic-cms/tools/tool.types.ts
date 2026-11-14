@@ -21,6 +21,8 @@ export interface ToolOutput {
   content: string;
   /** Optional short status for the UI, e.g. "5 results". */
   note?: string;
+  /** PNG images to pass to a vision-capable model alongside the text content. */
+  images?: Array<{ base64: string; mimeType: string }>;
 }
 
 export interface AgentTool<Input extends z.ZodType = z.ZodType> {

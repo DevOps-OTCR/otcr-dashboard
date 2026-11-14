@@ -1,9 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
 import type { SendEvent } from '../agent/agent.events';
-import type { ToolCall, ToolSchema } from '../model/model-client';
+import type { ImagePart, ToolCall, ToolSchema } from '../model/model-client';
 import { CmsReadTools } from './cms-read.tools';
 import { LoadSkillTool } from './load-skill.tool';
+import { PptxReviewTools } from './pptx-review.tools';
 import { asToolData } from './tool-content';
 import { AgentTool, ToolContext, ToolFailure } from './tool.types';
 import { WebSearchTool } from './web-search.tool';
@@ -28,8 +29,8 @@ export class ToolRegistry {
   private readonly log = new Logger('OtcrBotTools');
   private readonly tools: AgentTool[];
 
-  constructor(webSearch: WebSearchTool, loadSkill: LoadSkillTool, cmsReads: CmsReadTools) {
-    this.tools = [webSearch, loadSkill, ...cmsReads.tools] as AgentTool[];
+  constructor(webSearch: WebSearchTool, loadSkill: LoadSkillTool, cmsReads: CmsReadTools, pptxReview: PptxReviewTools) {
+    this.tools = [webSearch, loadSkill, ...cmsReads.tools, ...pptxReview.tools] as AgentTool[];
   }
 
   /** Tools usable right now (configured, with content). Checked at the start of each turn. */
@@ -51,19 +52,19 @@ export class ToolRegistry {
    * Always returns content for the model (including on failure) so it can
    * explain the problem; only an abort is rethrown.
    */
-  async execute(call: ToolCall, tools: AgentTool[], ctx: ToolContext, send: SendEvent): Promise<string> {
+  async execute(call: ToolCall, tools: AgentTool[], ctx: ToolContext, send: SendEvent): Promise<{ content: string; images?: ImagePart[] }> {
     const tool = tools.find((t) => t.name === call.name);
     if (!tool) {
       send({ type: 'tool_start', id: call.id, name: call.name, label: `Running ${call.name}…` });
       send({ type: 'tool_end', id: call.id, ok: false, note: 'Tool not available' });
-      return `Unknown tool "${call.name}". Available tools: ${tools.map((t) => t.name).join(', ') || 'none'}.`;
+      return { content: `Unknown tool "${call.name}". Available tools: ${tools.map((t) => t.name).join(', ') || 'none'}.` };
     }
 
     const parsed = tool.input.safeParse(call.args);
     if (!parsed.success) {
       send({ type: 'tool_start', id: call.id, name: tool.name, label: `Running ${tool.name}…` });
       send({ type: 'tool_end', id: call.id, ok: false, note: 'Invalid request' });
-      return `Invalid arguments for ${tool.name}: ${z.prettifyError(parsed.error)}. Fix them and call the tool again.`;
+      return { content: `Invalid arguments for ${tool.name}: ${z.prettifyError(parsed.error)}. Fix them and call the tool again.` };
     }
 
     send({ type: 'tool_start', id: call.id, name: tool.name, label: tool.label(parsed.data) });
@@ -74,17 +75,25 @@ export class ToolRegistry {
       // data. A tool may set its own output limit; the marker tags count toward it.
       const reserved = tool.returnsInstructions ? 0 : asToolData(tool.name, '').length;
       const limit = (tool.maxOutputChars ?? MAX_TOOL_OUTPUT_CHARS) - reserved;
-      const content = out.content.length <= limit ? out.content : this.shorten(out.content, limit);
-      return tool.returnsInstructions ? content : asToolData(tool.name, content);
+      const text = out.content.length <= limit ? out.content : this.shorten(out.content, limit);
+      const wrapped = tool.returnsInstructions ? text : asToolData(tool.name, text);
+      if (out.images?.length) {
+        const images: ImagePart[] = out.images.map((img) => ({
+          type: 'image_url' as const,
+          image_url: { url: `data:${img.mimeType};base64,${img.base64}` },
+        }));
+        return { content: wrapped, images };
+      }
+      return { content: wrapped };
     } catch (err) {
       if (ctx.signal.aborted) throw err;
       if (err instanceof ToolFailure) {
         send({ type: 'tool_end', id: call.id, ok: false, note: err.note });
-        return err.modelMessage;
+        return { content: err.modelMessage };
       }
       this.log.warn(`Tool ${tool.name} failed unexpectedly: ${err instanceof Error ? err.name : typeof err}`);
       send({ type: 'tool_end', id: call.id, ok: false, note: `${tool.name} failed` });
-      return `The ${tool.name} tool failed unexpectedly. Tell the user this step could not be completed.`;
+      return { content: `The ${tool.name} tool failed unexpectedly. Tell the user this step could not be completed.` };
     }
   }
 

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { FeatureFlagsModule } from '../feature-flags/feature-flags.module';
 import { ProjectsModule } from '../projects/projects.module';
+import { PptxModule } from '../integrations/pptx/pptx.module';
 import { AgentService } from './agent/agent.service';
 import { ConversationStore } from './agent/conversation.store';
 import { AgenticCmsController } from './agentic-cms.controller';
@@ -16,11 +17,12 @@ import { TavilySearchClient } from './search/tavily-search.client';
 import { SkillLibrary } from './skills/skill-library';
 import { CmsReadTools } from './tools/cms-read.tools';
 import { LoadSkillTool } from './tools/load-skill.tool';
+import { PptxReviewTools } from './tools/pptx-review.tools';
 import { ToolRegistry } from './tools/tool-registry';
 import { WebSearchTool } from './tools/web-search.tool';
 
 @Module({
-  imports: [FeatureFlagsModule, PrismaModule, ProjectsModule],
+  imports: [FeatureFlagsModule, PrismaModule, ProjectsModule, PptxModule],
   controllers: [AgenticCmsController, McpController, ChatController],
   providers: [
     CmsReadAccessService,
@@ -36,6 +38,7 @@ import { WebSearchTool } from './tools/web-search.tool';
     WebSearchTool,
     LoadSkillTool,
     CmsReadTools,
+    PptxReviewTools,
   ],
 })
 export class AgenticCmsModule {}
