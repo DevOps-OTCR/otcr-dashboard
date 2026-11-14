@@ -14,7 +14,7 @@ import { buildSystemPrompt } from './prompt';
 import { claimIds, dataFlagCount, sourceIds } from './evidence-tags';
 import { countDraftWords, isTooShort, requestedWordLimit, wordLimitCorrection, wordLimitRejected, wordLimitRetry } from './word-limit';
 
-export const MAX_ROUNDS = 6;
+export const MAX_ROUNDS = 10;
 export const DEFAULT_MAX_MESSAGES_PER_HOUR = 60;
 const MAX_WORD_LIMIT_ATTEMPTS = 2; // the first cut plus one retry
 const MIN_CUT_SHARE = 0.25; // a "cut" under a quarter of the limit has thrown the draft away
@@ -86,13 +86,27 @@ export class AgentService {
     const turnMessages: ChatMessage[] = retrying ? [] : [userMsg];
     const tools = await this.tools.available();
     const skills = tools.some((t) => t.name === 'load_skill') ? await this.skills.list() : [];
+    // Skills already loaded in a prior turn are visible in the history; tell the model so it
+    // doesn't waste a round calling load_skill again.
+    const loadedSkills = new Set<string>();
+    for (const msg of history) {
+      if (msg.role === 'assistant' && msg.tool_calls) {
+        for (const tc of msg.tool_calls) {
+          if (tc.function.name === 'load_skill') {
+            try { const a = JSON.parse(tc.function.arguments); if (a.name) loadedSkills.add(a.name); } catch { /* ignore */ }
+          }
+        }
+      }
+    }
     const system = buildSystemPrompt({
       user: input.user,
       projectId: input.projectId,
       sprintId: input.sprintId,
+      deliverableId: input.deliverableId,
       today: new Date().toISOString().slice(0, 10),
       tools: tools.map((t) => t.name),
       skills,
+      loadedSkills,
       // Older turns' search results may have dropped out of the history window; this keeps their [n] meaning visible.
       sources: await this.store.sources(convo.id),
     });
@@ -116,13 +130,19 @@ export class AgentService {
     // 4. The loop: ask the model; if it wants tools, run them and ask again.
     let shown = ''; // everything sent to the browser so far
     let answer = '';
+    // Vision flow: after images are injected and the model writes its analysis (no tool call),
+    // inject a follow-up user message so the model generates a complete, properly-typed
+    // add_pptx_comments call rather than being force-called with toolChoice (which produces
+    // empty/invalid args because the model already expressed its analysis as text).
+    let pendingImageAnalysis = false;
     try {
       for (let round = 0; round < MAX_ROUNDS; round++) {
         this.assertStillEnabled(input.user);
         let roundText = false;
         const shownBefore = shown;
+        const messages = [...history, ...turnMessages];
         const turn = await this.model.stream(
-          { system, messages: [...history, ...turnMessages], tools: schemas, signal: input.signal },
+          { system, messages, tools: schemas, signal: input.signal },
           (delta) => {
             // Separate text written before a tool call from the text after it.
             if (!roundText && shown) {
@@ -137,6 +157,21 @@ export class AgentService {
         turnMessages.push(turn.message);
 
         if (!turn.toolCalls.length) {
+          if (pendingImageAnalysis) {
+            // Model wrote its visual analysis as text without calling the tool.
+            // Inject a user message so the model generates a complete, schema-valid
+            // add_pptx_comments call rather than producing empty args under toolChoice.
+            pendingImageAnalysis = false;
+            turnMessages.push({
+              role: 'user',
+              content:
+                'Your analysis is complete. Now call add_pptx_comments with the full findings list — ' +
+                'BLOCKING, MATERIAL, and MINOR — covering argument structure, evidence/source lines, ' +
+                'exhibit selection, and any layout issues visible in the images. ' +
+                'Use the exact slideIndex values from the fetch_pptx_content results.',
+            });
+            continue;
+          }
           const final = await this.enforceWordLimit(input, { system, messages: [...history, ...turnMessages] }, turn.text, send);
           if (final !== turn.text) {
             turnMessages[turnMessages.length - 1] = assistantMessage(final, []);
@@ -160,9 +195,32 @@ export class AgentService {
 
         for (const call of turn.toolCalls) {
           this.assertStillEnabled(input.user); // also covers external calls such as web search
+          if (call.name === 'add_pptx_comments') pendingImageAnalysis = false;
           const before = sources.length;
-          const content = await this.tools.execute(call, tools, ctx, send);
-          turnMessages.push({ role: 'tool', tool_call_id: call.id, content });
+          const result = await this.tools.execute(call, tools, ctx, send);
+          turnMessages.push({ role: 'tool', tool_call_id: call.id, content: result.content });
+          // Vision tools return images; inject them as a user message with per-slide analysis
+          // instructions so the model checks every dimension of the consulting-slides framework.
+          if (result.images?.length) {
+            turnMessages.push({
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text:
+                    'Slide images for visual review. Work through each slide systematically: ' +
+                    '(1) action title — is it a full-sentence claim, not a topic label? ' +
+                    '(2) exhibit — right chart type for the message? axes labelled, units stated? ' +
+                    '(3) evidence — source line present for every exhibit? ' +
+                    '(4) layout — density within limits, no overflow? ' +
+                    'Note every BLOCKING, MATERIAL, and MINOR issue. ' +
+                    'Even high-quality decks typically have multiple MATERIAL findings.',
+                },
+                ...result.images,
+              ],
+            });
+            pendingImageAnalysis = true;
+          }
           if (sources.length !== before) send({ type: 'sources', sources: [...sources] });
         }
       }
