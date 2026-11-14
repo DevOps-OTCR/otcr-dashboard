@@ -1,7 +1,7 @@
 ---
 name: consulting-slides
-description: Use when an argument must become a consulting presentation — storyline, section structure, action titles, exhibits, slide-by-slide storyboard — or when an existing deck must be reviewed, or when a finished deck needs a final pre-send audit checklist. Produces a storyboard, a severity-ranked review, or an audit checklist, never a PowerPoint file. Do not use for visual formatting of a file, for gathering evidence (use research), or for writing the document (use whitepaper-writing).
-version: 0.3.6
+description: Use when an argument must become a consulting presentation — storyline, section structure, action titles, exhibits, slide-by-slide storyboard — or when an existing deck must be restructured, or when a finished deck needs a final pre-send audit checklist. Produces a storyboard, a restructure plan, or an audit checklist, never a PowerPoint file. Do not use to review an existing deck's formatting or content (use presentation-review-basic or presentation-review-advanced), for gathering evidence (use research), or for writing the document (use whitepaper-writing).
+version: 0.3.7
 owner: Group 3 (Aritro, Teja)
 release: 1
 metadata:
@@ -53,10 +53,10 @@ Blending A and B produces a tour of topics. Blending B and C produces a polished
 |---|---|---|
 | "Build the storyline for the final deck" | Yes | — |
 | "Turn this whitepaper into slides" | Yes (restructure) | — |
-| "Review this deck before I send it" | Yes (review) | — |
-| "Final check before this goes out" | Yes (audit) | — |
-| "QA this deck before it goes out" | Yes (audit) | — |
-| "Proofread the deck" | Yes (audit) | — |
+| "Review this deck before I send it" | **No** | `presentation-review-basic` (formatting) or `presentation-review-advanced` (storyline, content) |
+| "Proofread / QA this deck" | **No** | `presentation-review-basic` |
+| "Final check before this goes out" / "give me the pre-send checklist" | Yes (audit) | — |
+| Review the deck built or restructured in this conversation | Yes (review) | — |
 | "What chart should show this?" | Yes | — |
 | "Fix the layout / fonts in this file" | **No** | Not a Release 1 capability |
 | "Analyse this data" | **No** | Analyse first; this skill specifies the exhibit |
@@ -215,7 +215,7 @@ Reviewer note: <one line + any assumption made>
 5. **Ten-second** — a reader gets the slide's point from the title and exhibit within ten seconds, without reading body text.
 
 ### Review mode
-When reviewing an existing deck, do **not** rebuild it. Report findings with severity:
+Review mode covers the deck built or restructured in this conversation. A standalone review of an existing deck belongs to `presentation-review-basic` or `presentation-review-advanced`. When reviewing, do **not** rebuild the deck. Report findings with severity:
 
 | Severity | Meaning | Examples |
 |---|---|---|

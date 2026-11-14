@@ -1,6 +1,6 @@
 # Agentic CMS skills
 
-Group 3 adds research, whitepaper-writing, consulting-slides and client-call-summary skills here. Deck review is a mode of consulting-slides, not a separate skill.
+Group 3 adds research, whitepaper-writing, consulting-slides and client-call-summary skills here. Week 2 Group 2 adds four review skills: basic and advanced review for whitepapers and presentations.
 Each skill should describe its inputs, workflow, output expectations and quality
 criteria, with reusable templates or examples when useful. Use synthetic test
 materials. Follow [the feature-flag integration guide](../../docs/agentic-cms.md).
@@ -11,13 +11,16 @@ project permissions. A skill does not grant access or bypass the release flag.
 
 ## 1. Canonical skill IDs
 
-The skill ID is the folder name. The four skills are `research`,
-`whitepaper-writing`, `consulting-slides`, `client-call-summary`. The path is
+The skill ID is the folder name. The skills are `research`,
+`whitepaper-writing`, `consulting-slides`, `client-call-summary`,
+`whitepaper-review-basic`, `whitepaper-review-advanced`,
+`presentation-review-basic` and `presentation-review-advanced`. The path is
 `<repo>/agentic-cms/skills/<name>/SKILL.md`.
 
 The loader is `backend/src/agentic-cms/skills/skill-library.ts` in #176. It reads
-`SKILL.md` only. It does not read `shared/`, `references/` or `examples/`. The
-model calls a `load_skill` tool by name.
+`SKILL.md`, plus any `shared/<name>.md` files the skill lists in a `shared:`
+front-matter field. It does not read `references/` or `examples/`. The model
+calls a `load_skill` tool by name.
 
 ## 2. Format OTCR Bot loads
 
@@ -56,10 +59,11 @@ Rules the loader enforces (`backend/src/agentic-cms/skills/skill-library.ts`):
 - `description` is required and must fit on one line. The bot sees every skill's
   name and description, and loads the full instructions only when a request
   matches the description. Make the description say **when** to use the skill.
-- Instructions are capped at 40,000 characters. Folders with a missing or
-  invalid `SKILL.md` are skipped.
+- Instructions are capped at 40,000 characters, and a skill plus its shared
+  files at 64,000. Folders with a missing or invalid `SKILL.md` are skipped.
+- `shared: a, b` loads `shared/a.md` and `shared/b.md` after the skill.
 
-The loaded skills are `research`, `whitepaper-writing`, `consulting-slides`, and `client-call-summary`. No skill declares `shared:` contracts, matching the loader note above that the loader reads `SKILL.md` only.
+The review skills declare shared standards: `presentation-review-*` load `shared/otcr-slide-standards.md` and `whitepaper-review-*` load `shared/otcr-whitepaper-standards.md`. The Group 3 skills declare none.
 
 To test a skill locally, run the backend with the flag enabled (see
 [docs/agentic-cms.md](../../docs/agentic-cms.md)). Check that
@@ -67,10 +71,11 @@ To test a skill locally, run the backend with the flag enabled (see
 
 ## 3. Every operative rule lives in `SKILL.md`
 
-Because the loader reads `SKILL.md` only, every operative rule lives inside each
-`SKILL.md`: security, review-only mode, the hidden/confidential skip, and the
-evidence and claim-type rules. `shared/`, `references/` and `examples/` are
-optional depth. They are never the only home of a required rule.
+Every operative rule lives inside each `SKILL.md`: security, review-only mode,
+the hidden/confidential skip, and the evidence and claim-type rules. A shared
+file a skill declares in `shared:` may hold the standards it checks against
+(the OTCR slide and whitepaper standards), but never the only copy of a
+security or review-only rule. `references/` and `examples/` are optional depth.
 
 If Group 1 later loads mandatory shared files, shared instructions supplement
 the system security instructions and never replace them.
@@ -92,7 +97,7 @@ the system security instructions and never replace them.
 - **Enforcement point is backend preprocessing**, not this file. The component that reads or accepts deck content removes hidden/confidential content *before* constructing any model prompt, tool result, history entry or output log. Loading `SKILL.md` cannot remove data already sent.
 - **Visible slide record:** `number` (stable), `title`, `body`, `notes` (optional), optional layout fields.
 - **Withheld slide record:** exactly `{number, hidden: true, skipped: true}` — no text, notes, metadata or layout.
-- **Canonical marker list (identical in README §4a, consulting-slides/SKILL.md Review mode, and shared/otcr-quality-standards.md §6.2):** PowerPoint hide-slide state; `hidden: true`; `confidentiality` = CONFIDENTIAL or PROPRIETARY; inline markers [HIDDEN], [CONFIDENTIAL], [PROPRIETARY].
+- **Canonical marker list (identical in README §4a, consulting-slides/SKILL.md Review mode, and shared/otcr-quality-standards.md §6.2; the four review skills repeat it, the whitepaper ones without the PowerPoint hide-slide state):** PowerPoint hide-slide state; `hidden: true`; `confidentiality` = CONFIDENTIAL or PROPRIETARY; inline markers [HIDDEN], [CONFIDENTIAL], [PROPRIETARY].
 - **Ownership:** Group 3 owns this spec and the synthetic canary fixture; Group 1 owns the runtime review-input adapter.
 - **Scope until verified:** review supports only already-visible/sanitized material. Protected hidden-slide ingestion is not advertised until filtering exists and is verified.
 - **Acceptance:** inspect the exact model input and assert the canary is absent; then check the output lists only skipped slide numbers. A model choosing not to repeat a canary it received is a failure, not a pass.
@@ -105,7 +110,12 @@ Route by task, not by keyword. At most one skill per turn.
 ```
 needs external evidence we do not have   → research
 produces a written deliverable           → whitepaper-writing
-produces a deck / storyline / deck review → consulting-slides
+produces a deck / storyline / restructure → consulting-slides
+final pre-send deck audit checklist      → consulting-slides (audit)
+review a finished deck: formatting       → presentation-review-basic
+review a finished deck: story, content   → presentation-review-advanced
+review a written deliverable: mechanics  → whitepaper-review-basic
+review a written deliverable: substance  → whitepaper-review-advanced
 summarise a client call transcript       → client-call-summary
 otherwise                                → no skill
 ```
@@ -113,7 +123,7 @@ otherwise                                → no skill
 Ambiguous case: "build a slide about X where we don't know X." Correct behaviour
 is two turns — research, then slides. Not both at once.
 
-Deck review is not a separate skill. It is `consulting-slides` in review mode.
+Basic review is the default when the request does not say which level. A user who wants both levels asks in two turns. `consulting-slides` review mode covers only a deck it built or restructured in the same conversation.
 
 ## 6. Status
 
@@ -121,8 +131,12 @@ Deck review is not a separate skill. It is `consulting-slides` in review mode.
 |---|---|
 | research | 0.3.2 |
 | whitepaper-writing | 0.4.1 |
-| consulting-slides | 0.3.6 |
+| consulting-slides | 0.3.7 |
 | client-call-summary | 0.1.1 |
+| whitepaper-review-basic | 0.1.0 |
+| whitepaper-review-advanced | 0.1.0 |
+| presentation-review-basic | 0.1.0 |
+| presentation-review-advanced | 0.1.0 |
 
 Loader compatibility: discovery through #176 `SkillLibrary` (names, one-line descriptions, 40k cap) is checked; behaviour tests through the #176 agent loop are reported in the PR, tied to the tested commit.
 
