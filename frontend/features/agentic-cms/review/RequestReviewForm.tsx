@@ -72,7 +72,9 @@ export function RequestReviewForm({ submission, initialLevel, projectContextMiss
                   {copy.label}: {copy.tagline}
                 </span>
                 <span id={`${id}-${option}-checks`} className="block text-[var(--text-muted)]">
-                  {copy.checks}
+                  {submission.format === 'document' && option === 'BASIC'
+                    ? 'Grammar, clarity, headings, citations, terminology and number consistency. Google Docs review is text-only; page layout, fonts and spacing are not inspected.'
+                    : copy.checks}
                 </span>
                 <span className="mt-1 block text-xs text-[var(--text-muted)]">{copy.estimate}</span>
               </span>

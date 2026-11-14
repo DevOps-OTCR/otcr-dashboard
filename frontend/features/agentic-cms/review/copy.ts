@@ -1,4 +1,15 @@
-import type { ReviewFailureKind, ReviewLevel, ReviewStatus, Severity, SubmissionKind } from './types';
+import type { PowerPointDemoResult, ReviewFailureKind, ReviewLevel, ReviewStatus, Severity, SubmissionKind } from './types';
+
+export const POWERPOINT_RESULTS: Record<PowerPointDemoResult, { label: string; title: string; nextStep: string }> = {
+  comments_live: { label: 'All comments added', title: 'Comments added to PowerPoint.', nextStep: 'Read the feedback in the presentation.' },
+  partial: { label: 'Some comments not added', title: 'Some comments couldn’t be added.', nextStep: 'Read the posted comments in PowerPoint and the remaining feedback below.' },
+  stale: { label: 'Deck changed during review', title: 'The deck changed during review.', nextStep: 'These findings refer to an earlier snapshot. Review the latest version before applying them.' },
+  locked: { label: 'Deck locked for editing', title: 'The deck is locked for editing.', nextStep: 'Close the deck in other editing sessions, wait 1–2 minutes, then retry posting. Your findings are kept below.' },
+  legacy_format: { label: 'Older comment format', title: 'This deck uses an older comment format.', nextStep: 'Native comments weren’t added. Use the slide feedback below or submit a compatible deck.' },
+  direct_download: { label: 'Direct download link (text only)', title: 'This link doesn’t support writing comments back.', nextStep: 'Use the feedback below. A OneDrive or SharePoint share link is needed to add native comments.' },
+  error: { label: 'Comment upload error', title: 'Comments couldn’t be uploaded.', nextStep: 'Your review findings are kept below. Try posting again.' },
+  no_comments_written: { label: 'No matching slide references', title: 'No comments were added.', nextStep: 'The slide references didn’t match the deck. Request another review or use the findings below.' },
+};
 
 export const LEVELS: Record<ReviewLevel, { label: string; tagline: string; checks: string; estimate: string }> = {
   BASIC: {

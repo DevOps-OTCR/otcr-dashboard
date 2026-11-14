@@ -19,10 +19,12 @@ before(async () => {
 });
 after(() => browser?.close());
 
-const open = async (t, query = '') => {
+const open = async (t, query = '', clock = false) => {
   const context = await browser.newContext(); t.after(() => context.close());
   await context.route('**/*', route => route.fulfill({ contentType: route.request().url().endsWith('/bundle.js') ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8', body: route.request().url().endsWith('/bundle.js') ? bundle : document }));
-  const page = await context.newPage(); await page.goto(`http://review.test/agentic-cms${query}`);
+  const page = await context.newPage();
+  if (clock) await page.clock.install({ time: new Date('2026-11-14T18:00:00Z') });
+  await page.goto(`http://review.test/agentic-cms${query}`);
   await page.getByRole('tab', { name: 'Project Context' }).waitFor();
   return page;
 };
@@ -36,8 +38,8 @@ test('shows demo submissions in every review state, failures first with a next s
   await page.getByRole('tab', { name: 'AI Review' }).click();
   await page.getByRole('heading', { name: 'AI review' }).waitFor();
   await page.getByRole('note').getByText('Demo data.').waitFor();
-  assert.equal(await submissions(page).count(), 7);
-  for (const chip of ['All (7)', 'Not reviewed (3)', 'Awaiting review (0)', 'In progress (1)', 'Completed (1)', 'Failed (2)']) {
+  assert.equal(await submissions(page).count(), 10);
+  for (const chip of ['All (10)', 'Not reviewed (6)', 'Awaiting review (0)', 'In progress (1)', 'Completed (1)', 'Failed (2)']) {
     assert.equal(await page.getByRole('button', { name: chip }).count(), 1, chip);
   }
   // The failed review sorts first and is selected, with its failure and next step.
@@ -54,9 +56,9 @@ test('shows demo submissions in every review state, failures first with a next s
 
 test('filters the queue and explains that only an earlier version was reviewed', async t => {
   const page = await open(t, '?tab=review');
-  await page.getByRole('button', { name: 'Not reviewed (3)' }).click();
-  assert.equal(await page.getByRole('button', { name: 'Not reviewed (3)' }).getAttribute('aria-pressed'), 'true');
-  assert.equal(await submissions(page).count(), 3);
+  await page.getByRole('button', { name: 'Not reviewed (6)' }).click();
+  assert.equal(await page.getByRole('button', { name: 'Not reviewed (6)' }).getAttribute('aria-pressed'), 'true');
+  assert.equal(await submissions(page).count(), 6);
   await submissions(page).filter({ hasText: 'Campus fleet partnerships' }).getByRole('button').click();
   await page.getByRole('heading', { name: 'Campus fleet partnerships — initial deck' }).waitFor();
   await page.getByText('Version 2 hasn’t had an AI review yet.').waitFor();
@@ -183,7 +185,8 @@ test('a PM requests a Basic review, follows it to its feedback and is offered Ad
   await page.getByText('Requested by You').waitFor();
   await reviewStatus(page).getByText('In progress.').waitFor({ timeout: 5_000 });
   await reviewStatus(page).getByText('Completed.').waitFor({ timeout: 15_000 });
-  await feedback(page).getByRole('heading', { name: 'Feedback (6)' }).waitFor();
+  await page.getByRole('region', { name: 'Summary' }).getByText('6 comments added to PowerPoint.').waitFor();
+  assert.equal(await feedback(page).count(), 0);
   assert.equal(await page.getByRole('region', { name: 'Review history' }).getByRole('listitem').count(), 2);
 
   await page.getByRole('button', { name: 'Run Advanced review' }).click();
@@ -325,4 +328,76 @@ test('Google Docs sharing failure explains access and retries the same submissio
   await page.getByText('Demo result: 5 comments added to Google Docs.').waitFor();
   assert.equal(params(page).get('submission'), 'demo-sub-doc-access');
   assert.equal(await page.getByRole('region', { name: 'Review history' }).getByRole('listitem').count(), 2);
+});
+
+
+const requestDeck = async (page) => {
+  await page.getByRole('button', { name: 'Request AI review' }).click();
+  await requestForm(page).getByRole('button', { name: 'Start Basic review' }).click();
+  await reviewStatus(page).getByText('Awaiting review.').waitFor();
+  await page.clock.fastForward(9_000);
+  await reviewStatus(page).getByText('Completed.').waitFor();
+};
+
+for (const [outcome, title, count] of [
+  ['comments_live', 'Comments added to PowerPoint.', 0],
+  ['partial', 'Some comments couldn’t be added.', 2],
+  ['stale', 'The deck changed during review.', 6],
+  ['locked', 'The deck is locked for editing.', 6],
+  ['legacy_format', 'This deck uses an older comment format.', 6],
+  ['direct_download', 'This link doesn’t support writing comments back.', 4],
+  ['error', 'Comments couldn’t be uploaded.', 6],
+  ['no_comments_written', 'No comments were added.', 6],
+]) {
+  test(`PowerPoint ${outcome} shows the correct action and keeps unposted findings`, async t => {
+    const page = await open(t, '?role=PM&tab=review&submission=demo-sub-pptx-native', true);
+    await page.getByText('Demo controls', { exact: true }).click();
+    const control = page.getByRole('combobox', { name: /Posting result of the next PowerPoint/ });
+    await control.selectOption(outcome);
+    await requestDeck(page);
+    assert.equal(await control.inputValue(), '');
+    const summary = page.getByRole('region', { name: 'Summary' });
+    await summary.getByText(`Demo result: ${title}`, { exact: true }).waitFor();
+    assert.equal(await summary.getByRole('button', { name: 'Open in PowerPoint' }).isDisabled(), true);
+    await summary.getByText('Demo only: no real deck is linked, changed or uploaded. Comments and posting retries are simulated.').waitFor();
+    await summary.getByText(outcome === 'direct_download' ? /Simulated coverage: text only/ : 'Simulated coverage: slide text and visual layout.').waitFor();
+    assert.equal(await summary.getByRole('button', { name: 'Retry posting comments', exact: true }).count(), ['locked', 'error'].includes(outcome) ? 1 : 0);
+    if (count) {
+      assert.equal(await feedback(page).isVisible(), false);
+      await summary.getByText(`Comments not added to PowerPoint (${count})`, { exact: true }).click();
+      assert.equal(await feedback(page).getByRole('article').count(), count);
+      assert.equal(await feedback(page).getByText(/quoted passage/).count(), 0, 'deck failures must not show Docs anchoring errors');
+      if (outcome === 'stale') {
+        await summary.getByText('Feedback from an earlier deck snapshot; it may not match the latest version.').waitFor();
+        await page.getByRole('button', { name: 'Review latest version' }).click();
+        await requestForm(page).getByRole('button', { name: 'Start Basic review' }).click();
+        await page.clock.fastForward(9_000);
+        await page.getByRole('region', { name: 'Summary' }).getByText('6 comments added to PowerPoint.').waitFor();
+        assert.equal(await page.getByRole('region', { name: 'Review history' }).getByRole('listitem').count(), 2);
+      } else if (['locked', 'error'].includes(outcome)) {
+        await summary.getByRole('button', { name: 'Retry posting comments', exact: true }).click();
+        await summary.getByRole('button', { name: 'Posting comments…' }).waitFor();
+        assert.equal(await page.getByRole('button', { name: 'Request another review' }).count(), 0);
+        await page.clock.fastForward(2_100);
+        await summary.getByText('6 comments added to PowerPoint.').waitFor();
+        assert.equal(await feedback(page).count(), 0);
+        assert.equal(await page.getByRole('region', { name: 'Review history' }).count(), 0, 'retrying posting keeps one review');
+      }
+    } else {
+      assert.equal(await feedback(page).count(), 0);
+      assert.equal(await summary.getByText(/Comments not added to PowerPoint/).count(), 0);
+    }
+  });
+}
+
+test('PowerPoint sample defaults are available and read-only projects cannot retry posting', async t => {
+  const page = await open(t, '?role=PM&tab=review&submission=demo-sub-pptx-locked', true);
+  await requestDeck(page);
+  await page.getByRole('button', { name: 'Retry posting comments', exact: true }).waitFor();
+  await page.getByRole('combobox', { name: 'Project', exact: true }).selectOption('p2');
+  await page.getByRole('region', { name: 'Summary' }).getByText('Demo result: The deck is locked for editing.').waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Retry posting comments', exact: true }).count(), 0);
+  assert.equal(await page.getByText('Demo controls', { exact: true }).count(), 0);
+  await page.getByText('Comments not added to PowerPoint (6)', { exact: true }).click();
+  assert.equal(await feedback(page).getByRole('article').count(), 6);
 });

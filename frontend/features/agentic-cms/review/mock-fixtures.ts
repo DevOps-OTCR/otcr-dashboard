@@ -5,7 +5,7 @@
 
 import type { ReviewFailureKind, ReviewLevel, ReviewLocation, ReviewSubmission, Severity, SubmissionFormat } from './types';
 
-export type FixtureComment = { severity: Severity; location: ReviewLocation; issue: string; significance: string; fix: string; quote?: string };
+export type FixtureComment = { severity: Severity; location: ReviewLocation; issue: string; significance: string; fix: string; quote?: string; requiresVisual?: boolean };
 
 export type FixtureFeedback = { overview: string; skipped: string[]; notCheckable: string[]; comments: FixtureComment[] };
 
@@ -18,6 +18,8 @@ export type SeedReview = {
   agoMs: number;
   failure?: ReviewFailureKind;
   focusNote?: string;
+  /** An earlier demo run saved feedback only in CMS. */
+  cmsFeedback?: boolean;
 };
 
 const MIN = 60_000;
@@ -27,6 +29,23 @@ const PLACEHOLDER_URL = 'https://example.com/otcr-demo/';
 export function demoSubmissions(now: number): ReviewSubmission[] {
   const at = (agoMs: number) => new Date(now - agoMs).toISOString();
   return [
+    ...[
+      ['native', 'Campus launch strategy — PowerPoint draft', 'Maya Chen', 45],
+      ['stale', 'Expansion roadmap — PowerPoint draft', 'Sam Okafor', 50],
+      ['locked', 'Partnership options — PowerPoint draft', 'Priya Raman', 55],
+    ].map(([scenario, title, author, minutes]): ReviewSubmission => ({
+      id: `demo-sub-pptx-${scenario}`,
+      deliverableId: `demo-del-pptx-${scenario}`,
+      deliverableTitle: String(title),
+      kind: 'INITIAL_SLIDES',
+      format: 'slides',
+      version: 1,
+      fileName: `Northwind ${scenario} demo.pptx`,
+      fileUrl: `${PLACEHOLDER_URL}northwind-${scenario}.pptx`,
+      submittedAt: at(Number(minutes) * MIN),
+      submitterName: String(author),
+      workstreamLabel: 'Week 6',
+    })),
     {
       id: 'demo-sub-initial-slides',
       deliverableId: 'demo-del-initial-slides',
@@ -125,7 +144,7 @@ export function demoSubmissions(now: number): ReviewSubmission[] {
 export const DEMO_SEED: SeedReview[] = [
   { submissionId: 'demo-sub-doc-access', submissionVersion: 1, level: 'BASIC', requestedBy: 'Alex Rivera', agoMs: 60 * MIN, failure: 'file_access' },
   // An earlier version was reviewed; v2 has not been yet.
-  { submissionId: 'demo-sub-initial-slides', submissionVersion: 1, level: 'BASIC', requestedBy: 'Alex Rivera', agoMs: 2 * 24 * HOUR },
+  { submissionId: 'demo-sub-initial-slides', submissionVersion: 1, level: 'BASIC', requestedBy: 'Alex Rivera', agoMs: 2 * 24 * HOUR, cmsFeedback: true },
   { submissionId: 'demo-sub-final-whitepaper', submissionVersion: 1, level: 'BASIC', requestedBy: 'Alex Rivera', agoMs: 20 * HOUR },
   { submissionId: 'demo-sub-final-slides', submissionVersion: 3, level: 'ADVANCED', requestedBy: 'Alex Rivera', agoMs: 90 * MIN, failure: 'file_access' },
   {
@@ -174,6 +193,7 @@ export const DEMO_FEEDBACK: Record<SubmissionFormat, Record<ReviewLevel, Fixture
           severity: 'MINOR',
           location: { type: 'slide', slide: 8, title: 'Partnership models' },
           issue: 'Body text in the right-hand column drops to 10 pt.',
+          requiresVisual: true,
           significance: 'Text below 12 pt is hard to read when the deck is presented.',
           fix: 'Cut the column to three bullets so it fits at 14 pt.',
         },
@@ -181,6 +201,7 @@ export const DEMO_FEEDBACK: Record<SubmissionFormat, Record<ReviewLevel, Fixture
           severity: 'MINOR',
           location: { type: 'slide', slide: 10, title: 'Adoption forecast' },
           issue: 'The y-axis on the adoption chart has no label or unit.',
+          requiresVisual: true,
           significance: 'Readers cannot tell whether the chart shows riders, trips or revenue.',
           fix: 'Label the axis “Monthly active riders (thousands)”.',
         },

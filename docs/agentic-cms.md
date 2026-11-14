@@ -241,7 +241,7 @@ Choose **Request AI review**, then select:
 
 | Level | Intended checks | Optional input |
 | --- | --- | --- |
-| Basic | Formatting, layout, fonts, consistency, citations, and typos | None |
+| Basic | Text quality and consistency; slide formatting when visuals are available | None |
 | Advanced | Storyline, evidence, recommendations, client/SOW/workstream alignment | Focus note, up to 500 characters |
 
 Advanced warns when both overview and scope are empty and links to Project
@@ -270,18 +270,18 @@ the mock simulates corrected sharing without checking or changing permissions.
 
 ### Feedback and mock limitations
 
-Completed Docs reviews show a brief summary and simulated posting counts, with
-a disabled **Open in Google Docs** demo button. Unposted comments are collapsed
-under **Comments not added to Google Docs**, with quote, section, explanation,
-and suggested fix. Slides retain detailed CMS feedback and severity filters.
-History warns about older versions; final approval remains with the human LC/PM.
+Completed reviews show a brief summary and a disabled **Open in Google Docs**
+or **Open in PowerPoint** demo button. Unposted feedback is collapsed in a gray
+section directly below it. Docs are text-only; PowerPoint labels simulated
+visual/text-only coverage. History warns about older versions and stale decks.
+Review completion does not approve a deliverable; final approval stays human.
 
-All projects share seven Northwind Bikes samples. Two unreviewed Google Docs
-drafts let you request Basic or Advanced: Market sizing simulates all comments
-added; Campus growth keeps two comments in CMS. Partnership proposal demonstrates
-a sharing failure and retry. Existing slide demos are unchanged. Feedback,
-posting outcomes, revision IDs, and file links are fabricated; no comments are
-posted. State survives tab switches but resets on reload or sign-out.
+Ten Northwind Bikes samples include unreviewed Docs drafts (all-posted/mixed),
+Docs sharing failure, and PowerPoint drafts for success, changed and locked decks.
+Demo controls also simulate partial posting, older comment formats, direct links,
+upload errors and unmatched slide references. Locked/error cases retry posting;
+changed decks need a new review. Older CMS-only history keeps its saved feedback.
+All results, coverage, snapshots and links are fake; reload/sign-out resets state.
 
 ### Local demo and checks
 
@@ -295,8 +295,8 @@ account; checked-in defaults stay off. An accessible project is required.
 data; the seed requires `CMS_LOCAL_EMAIL` and the dedicated local dev database.
 No Lumen/Google key is needed for this demo; OTCR Bot needs separate Lumen setup.
 
-Try both unreviewed Docs drafts, expand unposted feedback, and retry Partnership
-proposal. Use the initial deck for slide history. Run from the repo root:
+Try the unreviewed Docs and PowerPoint drafts, expand unposted feedback, retry
+locked-deck posting, and re-review a changed deck. Run from the repo root:
 ```sh
 node --test frontend/tests/unit/agentic-review.test.cjs frontend/tests/agentic-review-browser.test.cjs frontend/tests/agentic-feature-browser.test.cjs
 node scripts/check-agentic-boundaries.cjs

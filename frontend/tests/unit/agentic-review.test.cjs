@@ -41,7 +41,7 @@ test('starts with every review state visible', async () => {
   const { client } = setup();
   const { submissions, reviews } = await client.list('p1');
   assert.equal(client.mocked, true);
-  assert.equal(submissions.length, 7);
+  assert.equal(submissions.length, 10);
   const byId = Object.fromEntries(submissions.map((s) => [s.id, s]));
   const current = reviews.filter((r) => byId[r.submissionId].version === r.submissionVersion);
   assert.deepEqual(plain(current.map((r) => r.status).sort()), ['COMPLETED', 'FAILED', 'FAILED', 'IN_PROGRESS']);
@@ -206,6 +206,9 @@ test('queue: failed and running reviews sort first, completed last', async () =>
     ['demo-sub-initial-whitepaper', 'IN_PROGRESS'],
     ['demo-sub-doc-native', 'NOT_REVIEWED'],
     ['demo-sub-doc-mixed', 'NOT_REVIEWED'],
+    ['demo-sub-pptx-native', 'NOT_REVIEWED'],
+    ['demo-sub-pptx-stale', 'NOT_REVIEWED'],
+    ['demo-sub-pptx-locked', 'NOT_REVIEWED'],
     ['demo-sub-initial-slides', 'NOT_REVIEWED'],
     ['demo-sub-final-whitepaper', 'COMPLETED'],
   ]);
@@ -234,9 +237,9 @@ test('queue: the current review is the newest run for the current version, histo
 test('queue: filters and counts by state', async () => {
   const { client } = setup();
   const rows = buildQueue(await client.list('p1'));
-  assert.deepEqual(plain(countByFilter(rows)), { ALL: 7, NOT_REVIEWED: 3, AWAITING: 0, IN_PROGRESS: 1, COMPLETED: 1, FAILED: 2 });
-  assert.equal(filterRows(rows, 'ALL').length, 7);
-  assert.deepEqual(plain(filterRows(rows, 'NOT_REVIEWED').map((r) => r.submission.id)), ['demo-sub-doc-native', 'demo-sub-doc-mixed', 'demo-sub-initial-slides']);
+  assert.deepEqual(plain(countByFilter(rows)), { ALL: 10, NOT_REVIEWED: 6, AWAITING: 0, IN_PROGRESS: 1, COMPLETED: 1, FAILED: 2 });
+  assert.equal(filterRows(rows, 'ALL').length, 10);
+  assert.deepEqual(plain(filterRows(rows, 'NOT_REVIEWED').map((r) => r.submission.id)), ['demo-sub-doc-native', 'demo-sub-doc-mixed', 'demo-sub-pptx-native', 'demo-sub-pptx-stale', 'demo-sub-pptx-locked', 'demo-sub-initial-slides']);
   assert.equal(filterRows(rows, 'AWAITING').length, 0);
 });
 
@@ -317,7 +320,7 @@ test('feedback: every fixture comment has a location the UI can label', async ()
 });
 
 
-test('unreviewed Google Docs support all-native and mixed outcomes at both levels without changing slides', async () => {
+test('unreviewed Google Docs support all-native and mixed outcomes at both levels alongside native slide comments', async () => {
   for (const level of ['BASIC', 'ADVANCED']) {
     const { client, advance } = setup();
     const queue = await client.list('p1');
@@ -337,7 +340,7 @@ test('unreviewed Google Docs support all-native and mixed outcomes at both level
     assert.deepEqual(plain(unposted.map(c => c.fallbackReason)), ['ambiguous', 'not-found']);
     assert.ok(unposted.every(c => c.quote && c.location.type === 'section'));
     const slides = await latestFor(client, 'demo-sub-initial-slides');
-    assert.ok(slides.comments.every(c => c.placement === undefined && c.quote === undefined));
+    assert.ok(slides.comments.every(c => c.placement === 'native' && c.quote === undefined));
   }
 });
 
@@ -357,4 +360,79 @@ test('Google Docs access retry keeps the submission link and preserves the faile
   assert.equal(after.submissions.find(s => s.id === failed.submissionId).fileUrl,
     before.submissions.find(s => s.id === failed.submissionId).fileUrl);
   assert.equal(after.reviews.find(r => r.id === failed.id).status, 'FAILED');
+});
+
+
+test('PowerPoint outcomes preserve completed findings and distinguish visual and text-only coverage', async () => {
+  for (const outcome of ['comments_live', 'partial', 'stale', 'locked', 'legacy_format', 'direct_download', 'error', 'no_comments_written']) {
+    const { client, advance } = setup();
+    client.setNextPowerPointResult(outcome);
+    await client.request({ projectId: 'p1', submissionId: 'demo-sub-pptx-native', level: 'BASIC' });
+    assert.equal(client.nextPowerPointResult(), null);
+    advance(duration('BASIC', 'slides'));
+    const review = await latestFor(client, 'demo-sub-pptx-native');
+    assert.equal(review.status, 'COMPLETED', outcome);
+    assert.equal(review.failure, undefined);
+    assert.equal(review.powerPoint.outcome, outcome === 'partial' ? 'comments_live' : outcome);
+    assert.equal(review.powerPoint.inspection, outcome === 'direct_download' ? 'text_only' : 'visual');
+    const native = review.comments.filter(c => c.placement === 'native');
+    assert.equal(native.length, outcome === 'comments_live' ? 6 : outcome === 'partial' ? 4 : 0);
+    assert.equal(review.comments.length, outcome === 'direct_download' ? 4 : 6);
+    if (outcome === 'direct_download') {
+      assert.ok(review.comments.every(c => !c.requiresVisual));
+      assert.match(review.summary.notCheckable[0], /visual layout.*not assessed/);
+    }
+    assert.ok(review.powerPoint.reviewedETag.startsWith('demo-etag-'));
+  }
+});
+
+test('PowerPoint posting retry retains the same review, snapshot and findings and prevents concurrent work', async () => {
+  for (const outcome of ['locked', 'error']) {
+    const { client, advance } = setup();
+    client.setNextPowerPointResult(outcome);
+    await client.request({ projectId: 'p1', submissionId: 'demo-sub-pptx-native', level: 'ADVANCED' });
+    advance(duration('ADVANCED', 'slides'));
+    const before = await latestFor(client, 'demo-sub-pptx-native');
+    const retry = await client.retryPowerPointPosting(before.id);
+    assert.equal(retry.status, 'COMPLETED');
+    assert.equal(retry.powerPoint.postingInProgress, true);
+    await assert.rejects(client.retryPowerPointPosting(before.id), /already running/);
+    await assert.rejects(client.request({ projectId: 'p1', submissionId: before.submissionId, level: 'BASIC' }), /already running/);
+    advance(2_000);
+    const after = await latestFor(client, before.submissionId);
+    assert.equal(after.id, before.id);
+    assert.equal(after.finishedAt, before.finishedAt);
+    assert.equal(after.powerPoint.reviewedETag, before.powerPoint.reviewedETag);
+    assert.equal(after.powerPoint.postingInProgress, false);
+    assert.equal(after.powerPoint.outcome, 'comments_live');
+    assert.deepEqual(plain(after.comments.map(c => c.id)), plain(before.comments.map(c => c.id)));
+    assert.ok(after.comments.every(c => c.placement === 'native'));
+    assert.equal((await client.list('p1')).reviews.filter(r => r.submissionId === before.submissionId).length, 1);
+  }
+});
+
+test('a stale deck needs a new review and a new snapshot rather than posting old findings', async () => {
+  const { client, advance } = setup();
+  await client.request({ projectId: 'p1', submissionId: 'demo-sub-pptx-stale', level: 'BASIC' });
+  advance(duration('BASIC', 'slides'));
+  const stale = await latestFor(client, 'demo-sub-pptx-stale');
+  assert.equal(stale.powerPoint.outcome, 'stale');
+  await assert.rejects(client.retryPowerPointPosting(stale.id), /Only a locked deck or posting error/);
+  await client.request({ projectId: 'p1', submissionId: stale.submissionId, level: 'BASIC' });
+  advance(duration('BASIC', 'slides'));
+  const next = await latestFor(client, stale.submissionId);
+  assert.equal(next.powerPoint.outcome, 'comments_live');
+  assert.notEqual(next.powerPoint.reviewedETag, stale.powerPoint.reviewedETag);
+  assert.equal((await client.list('p1')).reviews.find(r => r.id === stale.id).powerPoint.outcome, 'stale');
+});
+
+test('Docs do not consume the next PowerPoint result and cannot retry deck posting', async () => {
+  const { client, advance } = setup();
+  client.setNextPowerPointResult('legacy_format');
+  await client.request({ projectId: 'p1', submissionId: 'demo-sub-doc-native', level: 'BASIC' });
+  assert.equal(client.nextPowerPointResult(), 'legacy_format');
+  advance(duration('BASIC', 'document'));
+  const doc = await latestFor(client, 'demo-sub-doc-native');
+  assert.equal(doc.powerPoint, undefined);
+  await assert.rejects(client.retryPowerPointPosting(doc.id), /Only a locked deck or posting error/);
 });

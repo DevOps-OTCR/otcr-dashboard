@@ -8,6 +8,7 @@ import { FeedbackList, FeedbackSummary, focusComment } from './ReviewFeedback';
 import { ReviewStatusCard } from './ReviewStatusCard';
 import { RequestReviewForm } from './RequestReviewForm';
 import { GoogleDocFeedback } from './GoogleDocFeedback';
+import { PowerPointFeedback } from './PowerPointFeedback';
 import type { Review, ReviewLevel } from './types';
 
 const runLabel = (review: Review) => `${LEVELS[review.level].label} review of version ${review.submissionVersion}`;
@@ -19,6 +20,7 @@ export type ReviewActions = {
   onOpenProjectContext?: () => void;
   request: (submissionId: string, level: ReviewLevel, focusNote: string) => Promise<void>;
   retry: (reviewId: string) => Promise<void>;
+  retryPosting: (reviewId: string) => Promise<void>;
 };
 
 const secondaryButton = 'rounded-[var(--radius-sm)] border border-[var(--border)] px-3 py-2 text-sm font-medium hover:bg-[var(--surface-muted)] disabled:opacity-60';
@@ -79,7 +81,7 @@ export function ReviewDetail({ row, now, actions, mocked }: { row: QueueRow; now
 
   // What the PM can do next with the current version. Hidden while viewing an earlier run.
   const failure = current?.failure && FAILURES[current.failure.kind];
-  const nextActions = viewingEarlier ? null : !actions.canRequest ? (
+  const nextActions = viewingEarlier || current?.powerPoint?.postingInProgress ? null : !actions.canRequest ? (
     !current && <p className="text-sm text-[var(--text-muted)]">Only this project’s PM, LCs and admins can request AI reviews.</p>
   ) : formLevel ? (
     <RequestReviewForm
@@ -105,7 +107,7 @@ export function ReviewDetail({ row, now, actions, mocked }: { row: QueueRow; now
         )}
         {current?.status === 'COMPLETED' && (
           <button type="button" className={secondaryButton} onClick={() => openForm(current.level)}>
-            Request another review
+            {current.powerPoint?.outcome === 'stale' ? 'Review latest version' : 'Request another review'}
           </button>
         )}
         {current?.status === 'FAILED' && failure?.retryable && (
@@ -145,7 +147,7 @@ export function ReviewDetail({ row, now, actions, mocked }: { row: QueueRow; now
           </dd>
           <dt className="text-[var(--text-muted)]">File</dt>
           <dd className="min-w-0">
-            {submission.format === 'document' && mocked ? (
+            {mocked ? (
               <span className="break-words">{submission.fileName} · demo file</span>
             ) : (
               <a href={submission.fileUrl} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1 font-medium text-[var(--primary)] hover:underline">
@@ -182,6 +184,9 @@ export function ReviewDetail({ row, now, actions, mocked }: { row: QueueRow; now
           {nextActions}
           {shown.status === 'COMPLETED' && (submission.format === 'document' ? (
             <GoogleDocFeedback review={shown} submission={submission} mocked={mocked} filter={severity} onFilter={setSeverity} />
+          ) : shown.powerPoint ? (
+            <PowerPointFeedback key={shown.id} review={shown} submission={submission} mocked={mocked} canRetry={actions.canRequest && !viewingEarlier}
+              onRetryPosting={actions.retryPosting} filter={severity} onFilter={setSeverity} />
           ) : (
             <>
               <FeedbackSummary review={shown} submission={submission} onJump={jump} />

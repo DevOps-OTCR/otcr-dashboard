@@ -20,9 +20,11 @@ import type {
   ReviewSubmission,
   Severity,
   SubmissionFormat,
+  PowerPointDemoResult,
 } from './types';
 
 export const QUEUE_MS = 2_000;
+export const POSTING_RETRY_MS = 2_000;
 export const STEP_MS: Record<ReviewLevel, number> = { BASIC: 1_200, ADVANCED: 1_800 };
 
 export function reviewSteps(level: ReviewLevel, format: SubmissionFormat): string[] {
@@ -59,12 +61,18 @@ type Run = {
   focusNote?: string;
   failure?: ReviewFailureKind;
   retryOf?: string;
+  cmsFeedback?: boolean;
+  powerPointResult?: PowerPointDemoResult;
+  postingRetry?: { at: number; result: PowerPointDemoResult };
 };
 
 export type MockReviewClient = ReviewClient & {
   /** Demo control: make the next requested or retried review fail with this kind. */
   setNextFailure(kind: ReviewFailureKind | null): void;
   nextFailure(): ReviewFailureKind | null;
+  setNextPowerPointResult(result: PowerPointDemoResult | null): void;
+  nextPowerPointResult(): PowerPointDemoResult | null;
+  retryPowerPointPosting(reviewId: string): Promise<Review>;
 };
 
 /** Stands in for the opaque revision id Group 3's document tooling will attach. */
@@ -82,6 +90,7 @@ export function createMockReviewClient(options: { now?: () => number; viewerName
   const runs: Run[] = [];
   let counter = 0;
   let pendingFailure: ReviewFailureKind | null = null;
+  let pendingPowerPointResult: PowerPointDemoResult | null = null;
 
   const newId = () => `demo-review-${++counter}`;
   const submissionById = (id: string) => submissions.find((s) => s.id === id);
@@ -96,6 +105,7 @@ export function createMockReviewClient(options: { now?: () => number; viewerName
       requestedAt: createdAt - seed.agoMs,
       focusNote: seed.focusNote,
       failure: seed.failure,
+      cmsFeedback: seed.cmsFeedback,
     });
   }
 
@@ -139,10 +149,19 @@ export function createMockReviewClient(options: { now?: () => number; viewerName
     }
 
     const feedback = DEMO_FEEDBACK[submission.format][run.level];
+    const postingInProgress = Boolean(run.postingRetry && now() - run.postingRetry.at < POSTING_RETRY_MS);
+    const deckResult = !postingInProgress && run.postingRetry ? run.postingRetry.result : run.powerPointResult ?? 'comments_live';
+    const powerPoint: Review['powerPoint'] = submission.format === 'slides' && !run.cmsFeedback ? {
+      outcome: deckResult === 'partial' ? 'comments_live' : deckResult,
+      inspection: deckResult === 'direct_download' ? 'text_only' : 'visual',
+      reviewedETag: `demo-etag-${run.id}`,
+      postingInProgress,
+    } : undefined;
     const revisionId = mockRevisionId(run.submissionId, run.submissionVersion);
-    const comments: ReviewComment[] = feedback.comments.map((comment, index) => {
+    const sourceComments = feedback.comments.filter((comment) => powerPoint?.inspection !== 'text_only' || !comment.requiresVisual);
+    const comments: ReviewComment[] = sourceComments.map((comment, index) => {
       const document = submission.format === 'document';
-      const fallback = document && !DOC_ALL_NATIVE.includes(submission.id) && (index === 1 || index === feedback.comments.length - 1);
+      const fallback = document && !DOC_ALL_NATIVE.includes(submission.id) && (index === 1 || index === sourceComments.length - 1);
       return {
         ...comment,
         id: `${run.id}-c${index + 1}`,
@@ -151,6 +170,9 @@ export function createMockReviewClient(options: { now?: () => number; viewerName
         ...(document ? {
           placement: fallback ? 'fallback' as const : 'native' as const,
           fallbackReason: fallback ? (index === 1 ? 'ambiguous' as const : 'not-found' as const) : undefined,
+        } : {}),
+        ...(powerPoint ? {
+          placement: deckResult === 'comments_live' || (deckResult === 'partial' && index < sourceComments.length - 2) ? 'native' as const : 'fallback' as const,
         } : {}),
       };
     });
@@ -162,19 +184,35 @@ export function createMockReviewClient(options: { now?: () => number; viewerName
       startedAt: iso(QUEUE_MS),
       finishedAt: iso(doneAt),
       revisionId,
-      summary: { overview: feedback.overview, counts, skipped: [...feedback.skipped], notCheckable: [...feedback.notCheckable] },
+      summary: {
+        overview: feedback.overview,
+        counts,
+        skipped: [...feedback.skipped],
+        notCheckable: powerPoint?.inspection === 'text_only'
+          ? ['Text-only review: visual layout, fonts, spacing and overflow were not assessed.']
+          : [...feedback.notCheckable],
+      },
+      powerPoint,
       comments,
     };
   };
 
   const isActive = (run: Run) => {
     const status = toReview(run).status;
-    return status === 'AWAITING' || status === 'IN_PROGRESS';
+    return status === 'AWAITING' || status === 'IN_PROGRESS' || Boolean(toReview(run).powerPoint?.postingInProgress);
   };
 
-  const start = (run: Omit<Run, 'id' | 'requestedAt' | 'requestedBy' | 'failure'>): Review => {
-    const created: Run = { ...run, id: newId(), requestedBy: viewerName, requestedAt: now(), failure: pendingFailure ?? undefined };
+  const start = (run: Pick<Run, 'submissionId' | 'submissionVersion' | 'level' | 'focusNote' | 'retryOf'>): Review => {
+    const slides = submissionById(run.submissionId)?.format === 'slides';
+    const firstRun = !runs.some((existing) => existing.submissionId === run.submissionId);
+    const defaultResult = firstRun && run.submissionId === 'demo-sub-pptx-stale' ? 'stale'
+      : firstRun && run.submissionId === 'demo-sub-pptx-locked' ? 'locked' : 'comments_live';
+    const created: Run = {
+      ...run, id: newId(), requestedBy: viewerName, requestedAt: now(), failure: pendingFailure ?? undefined,
+      powerPointResult: slides ? pendingPowerPointResult ?? defaultResult : undefined,
+    };
     pendingFailure = null;
+    if (slides) pendingPowerPointResult = null;
     runs.push(created);
     return toReview(created);
   };
@@ -218,6 +256,25 @@ export function createMockReviewClient(options: { now?: () => number; viewerName
     },
     nextFailure() {
       return pendingFailure;
+    },
+    setNextPowerPointResult(result) {
+      pendingPowerPointResult = result;
+    },
+    nextPowerPointResult() {
+      return pendingPowerPointResult;
+    },
+    async retryPowerPointPosting(reviewId) {
+      const run = runs.find((item) => item.id === reviewId);
+      const review = run && toReview(run);
+      if (!run || !review?.powerPoint || review.status !== 'COMPLETED' || !['locked', 'error'].includes(review.powerPoint.outcome)) {
+        throw new Error('Only a locked deck or posting error can retry posting.');
+      }
+      if (runs.some((item) => item.submissionId === run.submissionId && isActive(item))) {
+        throw new Error('A review or comment posting is already running for this submission.');
+      }
+      run.postingRetry = { at: now(), result: pendingPowerPointResult ?? 'comments_live' };
+      pendingPowerPointResult = null;
+      return toReview(run);
     },
   };
 }

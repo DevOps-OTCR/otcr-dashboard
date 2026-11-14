@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { FlaskConical } from 'lucide-react';
-import { FAILURES } from './copy';
+import { FAILURES, POWERPOINT_RESULTS } from './copy';
 import { createMockReviewClient, type MockReviewClient } from './mock-review-client';
 import { buildQueue, countByFilter, filterRows, isActive, type QueueFilter } from './queue';
 import { ReviewDetail, type ReviewActions } from './ReviewDetail';
 import { ReviewQueueList } from './ReviewQueueList';
-import type { ReviewFailureKind, ReviewLevel, ReviewQueue } from './types';
+import type { PowerPointDemoResult, ReviewFailureKind, ReviewLevel, ReviewQueue } from './types';
 
 const ACTIVE_POLL_MS = 1_000;
 const IDLE_POLL_MS = 30_000;
@@ -47,6 +47,7 @@ type Props = {
 
 export function ReviewPanel({ client, projectId, projectName, canRequest, projectContextMissing, onOpenProjectContext }: Props) {
   const [nextFailure, setNextFailure] = useState<ReviewFailureKind | null>(() => client.nextFailure());
+  const [nextPowerPoint, setNextPowerPoint] = useState(() => client.nextPowerPointResult());
   const [data, setData] = useState<ReviewQueue | null>(null);
   const [error, setError] = useState('');
   const [now, setNow] = useState(() => Date.now());
@@ -67,7 +68,7 @@ export function ReviewPanel({ client, projectId, projectName, canRequest, projec
           setData(next);
           setError('');
           setNow(Date.now());
-          timer = window.setTimeout(poll, next.reviews.some((review) => isActive(review.status)) ? ACTIVE_POLL_MS : IDLE_POLL_MS);
+          timer = window.setTimeout(poll, next.reviews.some((review) => isActive(review.status) || review.powerPoint?.postingInProgress) ? ACTIVE_POLL_MS : IDLE_POLL_MS);
         },
         () => {
           if (!active) return;
@@ -99,6 +100,7 @@ export function ReviewPanel({ client, projectId, projectName, canRequest, projec
   // After a request or retry, reload at once and show that a planned demo failure was used.
   const afterChange = () => {
     setNextFailure(client.nextFailure());
+    setNextPowerPoint(client.nextPowerPointResult());
     setReloadKey((key) => key + 1);
   };
   const actions: ReviewActions = {
@@ -113,6 +115,10 @@ export function ReviewPanel({ client, projectId, projectName, canRequest, projec
       await client.retry(reviewId);
       afterChange();
     },
+    retryPosting: async (reviewId: string) => {
+      await client.retryPowerPointPosting(reviewId);
+      afterChange();
+    },
   };
 
   return (
@@ -120,7 +126,7 @@ export function ReviewPanel({ client, projectId, projectName, canRequest, projec
       <div className="space-y-1">
         <h2 id="ai-review-title" className="text-lg font-semibold">AI review</h2>
         <p className="text-sm text-[var(--text-muted)]">
-          Track AI reviews of consultant submissions and find their feedback. Basic checks formatting and consistency; Advanced checks content,
+          Track AI reviews of consultant submissions and find their feedback. Basic checks routine quality and consistency; Advanced checks content,
           evidence and alignment with the client.
         </p>
       </div>
@@ -158,10 +164,22 @@ export function ReviewPanel({ client, projectId, projectName, canRequest, projec
               ))}
             </select>
           </label>
+          <label className="mt-2 flex flex-wrap items-center gap-2">
+            <span>Posting result of the next PowerPoint review or posting retry:</span>
+            <select value={nextPowerPoint ?? ''} onChange={(event) => {
+              const result = (event.target.value || null) as PowerPointDemoResult | null;
+              client.setNextPowerPointResult(result);
+              setNextPowerPoint(result);
+            }} className="min-w-0 max-w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--card)] px-2 py-1">
+              <option value="">Use sample’s default</option>
+              {(Object.keys(POWERPOINT_RESULTS) as PowerPointDemoResult[]).map((result) => <option key={result} value={result}>{POWERPOINT_RESULTS[result].label}</option>)}
+            </select>
+          </label>
           <p className="mt-2 text-[var(--text-muted)]">
             Google Docs samples: Market sizing starts unreviewed and simulates all comments added; Campus growth starts unreviewed and keeps two comments in CMS;
             Partnership proposal starts with a sharing failure that you can retry.
           </p>
+          <p className="mt-2 text-[var(--text-muted)]">PowerPoint samples: Campus launch simulates successful comments; Expansion roadmap simulates a changed deck; Partnership options simulates a locked deck. All start unreviewed.</p>
         </details>
       )}
 

@@ -16,6 +16,10 @@ export type SubmissionKind = 'INITIAL_SLIDES' | 'FINAL_SLIDES' | 'INITIAL_WHITEP
 /** Slides are located by slide number; documents by section heading. */
 export type SubmissionFormat = 'slides' | 'document';
 
+export type PowerPointOutcome = 'comments_live' | 'stale' | 'locked' | 'legacy_format' | 'direct_download' | 'error' | 'no_comments_written';
+/** Additional demo scenario for a successful upload with some findings unposted. */
+export type PowerPointDemoResult = PowerPointOutcome | 'partial';
+
 export type ReviewSubmission = {
   id: string;
   deliverableId: string;
@@ -48,7 +52,7 @@ export type ReviewComment = {
   fix: string;
   /** The file revision this comment was written against. */
   revisionId: string;
-  /** Mock Google Docs posting outcome; absent for slide feedback. */
+  /** Simulated posting outcome; absent on older CMS-only review history. */
   placement?: 'native' | 'fallback';
   quote?: string;
   fallbackReason?: 'ambiguous' | 'not-found';
@@ -84,6 +88,13 @@ export type Review = {
   /** Set when COMPLETED. */
   revisionId?: string;
   summary?: ReviewSummary;
+  /** Demo-only deck posting metadata, separate from review completion. */
+  powerPoint?: {
+    outcome: PowerPointOutcome;
+    inspection: 'visual' | 'text_only';
+    reviewedETag: string;
+    postingInProgress: boolean;
+  };
   comments: ReviewComment[];
 };
 

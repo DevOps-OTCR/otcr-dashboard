@@ -127,7 +127,7 @@ export function FeedbackList({ review, submission, filter, onFilter }: {
                   <SeverityBadge severity={comment.severity} />
                   <span className="text-xs text-[var(--text-muted)]">{SEVERITIES[comment.severity].action}</span>
                 </div>
-                {comment.placement === 'fallback' && (
+                {comment.placement === 'fallback' && comment.fallbackReason && (
                   <>
                     {comment.quote && <blockquote className="break-words border-l-2 border-[var(--border)] pl-3 text-[var(--text-muted)]">“{comment.quote}”</blockquote>}
                     <p className="text-xs text-[var(--text-muted)]">
