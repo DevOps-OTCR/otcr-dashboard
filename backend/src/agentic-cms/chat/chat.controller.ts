@@ -40,7 +40,7 @@ export class ChatController {
 
     try {
       await this.agent.run(
-        { user, projectId: dto.projectId, sprintId: dto.sprintId, conversationId: dto.conversationId, message: dto.message, signal: abort.signal },
+        { user, projectId: dto.projectId, sprintId: dto.sprintId, conversationId: dto.conversationId, deliverableId: dto.deliverableId, message: dto.message, signal: abort.signal },
         send,
       );
     } catch (err) {

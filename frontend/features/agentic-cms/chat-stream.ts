@@ -14,7 +14,7 @@ export type AgentEvent =
   | { type: 'error'; kind: AgentErrorKind; retryable: boolean; message: string }
   | { type: 'done' };
 
-export type ChatRequest = { projectId: string; sprintId?: string; conversationId?: string; message: string };
+export type ChatRequest = { projectId: string; sprintId?: string; conversationId?: string; deliverableId?: string; message: string };
 
 /** A request that failed before the stream started (HTTP error or network). */
 export class ChatRequestError extends Error {

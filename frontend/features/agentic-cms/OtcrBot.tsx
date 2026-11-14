@@ -50,7 +50,7 @@ function savedWidth() {
 let nextId = 0;
 const newId = () => `m${++nextId}`;
 
-export function OtcrBot() {
+export function OtcrBot({ deliverableId }: { deliverableId?: string } = {}) {
   const { getToken } = useAuth();
   const [open, setOpen] = useState(false);
   const [projects, setProjects] = useState<ProjectOption[] | null>(null);
@@ -189,7 +189,7 @@ export function OtcrBot() {
     try {
       const token = await getToken();
       if (!token) throw new ChatRequestError('Your session expired. Sign in again.', false);
-      await streamChat({ projectId, sprintId: sprintId || undefined, conversationId, message }, token, onEvent, abort.signal);
+      await streamChat({ projectId, sprintId: sprintId || undefined, conversationId, deliverableId, message }, token, onEvent, abort.signal);
     } catch (err) {
       if (abort.signal.aborted) {
         updateBot(botId, (e) => ({ ...e, text: e.text ? `${e.text}\n\n(Stopped)` : '(Stopped)' }));

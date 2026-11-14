@@ -12,6 +12,10 @@ export class ChatDto {
   @IsString()
   conversationId?: string;
 
+  @IsOptional()
+  @IsString()
+  deliverableId?: string;
+
   @IsString()
   @MinLength(1)
   @MaxLength(8000)

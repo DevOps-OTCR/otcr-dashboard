@@ -7,6 +7,7 @@ export type RunInput = {
   projectId: string;
   sprintId?: string;
   conversationId?: string;
+  deliverableId?: string;
   message: string;
   signal: AbortSignal; // aborted when the browser disconnects
 };
