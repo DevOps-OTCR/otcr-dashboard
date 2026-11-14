@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { ExternalLink, FileText, History, Presentation } from 'lucide-react';
 import { FAILURES, LEVELS, SUBMISSION_KINDS } from './copy';
-import { FEEDBACK_MODE, type SeverityFilter } from './feedback';
+import type { SeverityFilter } from './feedback';
 import { formatRelative, type QueueRow } from './queue';
 import { StateBadge } from './ReviewBadges';
 import { FeedbackList, FeedbackSummary, focusComment } from './ReviewFeedback';
 import { ReviewStatusCard } from './ReviewStatusCard';
 import { RequestReviewForm } from './RequestReviewForm';
+import { GoogleDocFeedback } from './GoogleDocFeedback';
 import type { Review, ReviewLevel } from './types';
 
 const runLabel = (review: Review) => `${LEVELS[review.level].label} review of version ${review.submissionVersion}`;
@@ -24,7 +25,7 @@ const secondaryButton = 'rounded-[var(--radius-sm)] border border-[var(--border)
 const primaryButton = 'rounded-[var(--radius-sm)] bg-[var(--primary)] px-3 py-2 text-sm font-semibold text-[var(--primary-foreground)] disabled:opacity-60';
 
 /** Remount per submission (key it by submission id) so the viewed run and filters reset. */
-export function ReviewDetail({ row, now, actions }: { row: QueueRow; now: number; actions: ReviewActions }) {
+export function ReviewDetail({ row, now, actions, mocked }: { row: QueueRow; now: number; actions: ReviewActions; mocked: boolean }) {
   const { submission, current, history, earlierVersionReviewed } = row;
   // The open request form's preselected level, or null when it is closed.
   const [formLevel, setFormLevel] = useState<ReviewLevel | null>(null);
@@ -122,7 +123,7 @@ export function ReviewDetail({ row, now, actions }: { row: QueueRow; now: number
   );
 
   return (
-    <article aria-labelledby="review-detail-title" className="space-y-4">
+    <article aria-labelledby="review-detail-title" className="min-w-0 space-y-4">
       <header className="space-y-2">
         <div className="flex items-start gap-3">
           <Icon className="mt-1 h-5 w-5 shrink-0 text-[var(--primary)]" aria-hidden />
@@ -144,11 +145,15 @@ export function ReviewDetail({ row, now, actions }: { row: QueueRow; now: number
           </dd>
           <dt className="text-[var(--text-muted)]">File</dt>
           <dd className="min-w-0">
-            <a href={submission.fileUrl} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1 font-medium text-[var(--primary)] hover:underline">
-              <span className="truncate">{submission.fileName}</span>
-              <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              <span className="sr-only">(opens in a new tab)</span>
-            </a>
+            {submission.format === 'document' && mocked ? (
+              <span className="break-words">{submission.fileName} · demo file</span>
+            ) : (
+              <a href={submission.fileUrl} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1 font-medium text-[var(--primary)] hover:underline">
+                <span className="truncate">{submission.fileName}</span>
+                <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span className="sr-only">(opens in a new tab)</span>
+              </a>
+            )}
           </dd>
         </dl>
       </header>
@@ -170,14 +175,19 @@ export function ReviewDetail({ row, now, actions }: { row: QueueRow; now: number
 
       {shown ? (
         <>
-          <ReviewStatusCard review={shown} now={now} />
-          {nextActions}
-          {shown.status === 'COMPLETED' && (
-            <>
-              <FeedbackSummary review={shown} submission={submission} mode={FEEDBACK_MODE} onJump={jump} />
-              {FEEDBACK_MODE === 'cms' && <FeedbackList review={shown} submission={submission} filter={severity} onFilter={setSeverity} />}
-            </>
+          <ReviewStatusCard review={shown} now={now} format={submission.format} />
+          {mocked && submission.format === 'document' && shown.failure?.kind === 'file_access' && (
+            <p className="text-xs text-[var(--text-muted)]">Demo: Retry simulates corrected sharing. No permissions are checked or changed.</p>
           )}
+          {nextActions}
+          {shown.status === 'COMPLETED' && (submission.format === 'document' ? (
+            <GoogleDocFeedback review={shown} submission={submission} mocked={mocked} filter={severity} onFilter={setSeverity} />
+          ) : (
+            <>
+              <FeedbackSummary review={shown} submission={submission} onJump={jump} />
+              <FeedbackList review={shown} submission={submission} filter={severity} onFilter={setSeverity} />
+            </>
+          ))}
         </>
       ) : (
         <section aria-label="Review status" className="space-y-1 rounded-[var(--radius-md)] border border-dashed border-[var(--border)] p-4 text-sm">

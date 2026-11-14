@@ -265,23 +265,23 @@ Advanced 15 seconds in the demo; displayed minute estimates are provisional.
 
 Retry creates a new run with the same level/focus note and retains the failed
 run in history. Non-retryable failures currently lack a new-request action.
-File-support wording assumes Word/PowerPoint; reconcile it with the required
-Google Docs/PowerPoint mechanism before real integration.
+Google Docs access failures explain Commenter sharing and retry the same link;
+the mock simulates corrected sharing without checking or changing permissions.
 
 ### Feedback and mock limitations
 
-Completed reviews show a summary, Blocking/Material/Minor counts, top issues,
-and comments grouped by slide or section. Each comment gives the issue, why it
-matters, and a suggested fix. Severity filters narrow the list; top-issue links
-focus the matching comment. History warns when feedback is for an older version.
-Final approval stays with the human LC/PM; review completion is not approval.
+Completed Docs reviews show a brief summary and simulated posting counts, with
+a disabled **Open in Google Docs** demo button. Unposted comments are collapsed
+under **Comments not added to Google Docs**, with quote, section, explanation,
+and suggested fix. Slides retain detailed CMS feedback and severity filters.
+History warns about older versions; final approval remains with the human LC/PM.
 
-All projects share four Northwind Bikes samples covering unreviewed work,
-progress, failure, completed feedback, and older-version history. Feedback,
-skipped-content disclosures, revision IDs, and file links are fabricated.
-State survives tab switches but resets on reload or sign-out.
-`FEEDBACK_MODE` is currently `cms`; the prepared native display does not post
-comments. Later integration must handle native and fallback results per comment.
+All projects share seven Northwind Bikes samples. Two unreviewed Google Docs
+drafts let you request Basic or Advanced: Market sizing simulates all comments
+added; Campus growth keeps two comments in CMS. Partnership proposal demonstrates
+a sharing failure and retry. Existing slide demos are unchanged. Feedback,
+posting outcomes, revision IDs, and file links are fabricated; no comments are
+posted. State survives tab switches but resets on reload or sign-out.
 
 ### Local demo and checks
 
@@ -295,8 +295,8 @@ account; checked-in defaults stay off. An accessible project is required.
 data; the seed requires `CMS_LOCAL_EMAIL` and the dedicated local dev database.
 No Lumen/Google key is needed for this demo; OTCR Bot needs separate Lumen setup.
 
-Try Basic then Advanced on the initial deck, inspect whitepaper feedback and
-older-version history, and retry the failed final deck. Run from the repo root:
+Try both unreviewed Docs drafts, expand unposted feedback, and retry Partnership
+proposal. Use the initial deck for slide history. Run from the repo root:
 ```sh
 node --test frontend/tests/unit/agentic-review.test.cjs frontend/tests/agentic-review-browser.test.cjs frontend/tests/agentic-feature-browser.test.cjs
 node scripts/check-agentic-boundaries.cjs

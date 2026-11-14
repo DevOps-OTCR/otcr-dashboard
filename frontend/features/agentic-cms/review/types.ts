@@ -48,6 +48,10 @@ export type ReviewComment = {
   fix: string;
   /** The file revision this comment was written against. */
   revisionId: string;
+  /** Mock Google Docs posting outcome; absent for slide feedback. */
+  placement?: 'native' | 'fallback';
+  quote?: string;
+  fallbackReason?: 'ambiguous' | 'not-found';
 };
 
 export type ReviewSummary = {

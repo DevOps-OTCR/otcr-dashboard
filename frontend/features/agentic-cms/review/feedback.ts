@@ -1,14 +1,5 @@
 import type { ReviewComment, ReviewLocation, Severity, SubmissionFormat } from './types';
 
-/**
- * Where detailed feedback is shown. 'cms' lists every comment on this page.
- * 'native' is for when comments are posted into the PowerPoint/Word file itself:
- * the CMS then shows only status and the summary, and links to the file.
- * The decision is pending (Week 2 LC report §5 item 3), so the demo uses 'cms'.
- */
-export type FeedbackMode = 'cms' | 'native';
-export const FEEDBACK_MODE: FeedbackMode = 'cms';
-
 export const SEVERITY_ORDER: Severity[] = ['BLOCKING', 'MATERIAL', 'MINOR'];
 const rank = (severity: Severity) => SEVERITY_ORDER.indexOf(severity);
 

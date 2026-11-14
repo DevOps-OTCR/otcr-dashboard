@@ -41,10 +41,10 @@ test('starts with every review state visible', async () => {
   const { client } = setup();
   const { submissions, reviews } = await client.list('p1');
   assert.equal(client.mocked, true);
-  assert.equal(submissions.length, 4);
+  assert.equal(submissions.length, 7);
   const byId = Object.fromEntries(submissions.map((s) => [s.id, s]));
   const current = reviews.filter((r) => byId[r.submissionId].version === r.submissionVersion);
-  assert.deepEqual(plain(current.map((r) => r.status).sort()), ['COMPLETED', 'FAILED', 'IN_PROGRESS']);
+  assert.deepEqual(plain(current.map((r) => r.status).sort()), ['COMPLETED', 'FAILED', 'FAILED', 'IN_PROGRESS']);
   // The initial deck's only review is of an earlier version, so v2 is unreviewed.
   const initial = reviews.filter((r) => r.submissionId === 'demo-sub-initial-slides');
   assert.deepEqual(plain(initial.map((r) => [r.submissionVersion, r.status])), [[1, 'COMPLETED']]);
@@ -202,7 +202,10 @@ test('queue: failed and running reviews sort first, completed last', async () =>
   const rows = buildQueue(await client.list('p1'));
   assert.deepEqual(plain(rows.map((r) => [r.submission.id, r.state])), [
     ['demo-sub-final-slides', 'FAILED'],
+    ['demo-sub-doc-access', 'FAILED'],
     ['demo-sub-initial-whitepaper', 'IN_PROGRESS'],
+    ['demo-sub-doc-native', 'NOT_REVIEWED'],
+    ['demo-sub-doc-mixed', 'NOT_REVIEWED'],
     ['demo-sub-initial-slides', 'NOT_REVIEWED'],
     ['demo-sub-final-whitepaper', 'COMPLETED'],
   ]);
@@ -231,9 +234,9 @@ test('queue: the current review is the newest run for the current version, histo
 test('queue: filters and counts by state', async () => {
   const { client } = setup();
   const rows = buildQueue(await client.list('p1'));
-  assert.deepEqual(plain(countByFilter(rows)), { ALL: 4, NOT_REVIEWED: 1, AWAITING: 0, IN_PROGRESS: 1, COMPLETED: 1, FAILED: 1 });
-  assert.equal(filterRows(rows, 'ALL').length, 4);
-  assert.deepEqual(plain(filterRows(rows, 'NOT_REVIEWED').map((r) => r.submission.id)), ['demo-sub-initial-slides']);
+  assert.deepEqual(plain(countByFilter(rows)), { ALL: 7, NOT_REVIEWED: 3, AWAITING: 0, IN_PROGRESS: 1, COMPLETED: 1, FAILED: 2 });
+  assert.equal(filterRows(rows, 'ALL').length, 7);
+  assert.deepEqual(plain(filterRows(rows, 'NOT_REVIEWED').map((r) => r.submission.id)), ['demo-sub-doc-native', 'demo-sub-doc-mixed', 'demo-sub-initial-slides']);
   assert.equal(filterRows(rows, 'AWAITING').length, 0);
 });
 
@@ -252,7 +255,7 @@ test('queue: formats relative times and durations', () => {
 });
 
 // Feedback helpers used by the summary card and comment list.
-const { groupComments, topIssues, countBySeverity, locationLabel, FEEDBACK_MODE } = load('feedback');
+const { groupComments, topIssues, countBySeverity, locationLabel } = load('feedback');
 const comment = (id, severity, location) => ({ id, severity, location, level: 'BASIC', issue: id, significance: 's', fix: 'f', revisionId: 'rev-1' });
 
 test('feedback: slide comments are grouped in slide order with whole-deck comments last', () => {
@@ -293,10 +296,9 @@ test('feedback: top issues are the most severe, in reviewer order within a sever
   assert.deepEqual(plain(topIssues([])), []);
 });
 
-test('feedback: location labels and the demo feedback mode', () => {
+test('feedback: location labels', () => {
   assert.equal(locationLabel({ type: 'section', section: '3. Market sizing' }, 'document'), '3. Market sizing');
   assert.equal(locationLabel({ type: 'general' }, 'document'), 'Whole document');
-  assert.equal(FEEDBACK_MODE, 'cms');
 });
 
 test('feedback: every fixture comment has a location the UI can label', async () => {
@@ -312,4 +314,47 @@ test('feedback: every fixture comment has a location the UI can label', async ()
     assert.equal(grouped.reduce((n, g) => n + g.comments.length, 0), review.comments.length);
     assert.ok(grouped.every((g) => g.label.length > 0));
   }
+});
+
+
+test('unreviewed Google Docs support all-native and mixed outcomes at both levels without changing slides', async () => {
+  for (const level of ['BASIC', 'ADVANCED']) {
+    const { client, advance } = setup();
+    const queue = await client.list('p1');
+    for (const id of ['demo-sub-doc-native', 'demo-sub-doc-mixed']) {
+      assert.equal(queue.reviews.some(r => r.submissionId === id), false);
+      await client.request({ projectId: 'p1', submissionId: id, level });
+    }
+    await client.request({ projectId: 'p1', submissionId: 'demo-sub-initial-slides', level });
+    advance(duration(level, 'document'));
+    const native = await latestFor(client, 'demo-sub-doc-native');
+    assert.equal(native.status, 'COMPLETED');
+    assert.ok(native.comments.every(c => c.placement === 'native' && c.quote && !c.fallbackReason));
+    const mixed = await latestFor(client, 'demo-sub-doc-mixed');
+    assert.equal(mixed.status, 'COMPLETED', 'unposted comments do not fail the review');
+    const unposted = mixed.comments.filter(c => c.placement === 'fallback');
+    assert.equal(unposted.length, 2);
+    assert.deepEqual(plain(unposted.map(c => c.fallbackReason)), ['ambiguous', 'not-found']);
+    assert.ok(unposted.every(c => c.quote && c.location.type === 'section'));
+    const slides = await latestFor(client, 'demo-sub-initial-slides');
+    assert.ok(slides.comments.every(c => c.placement === undefined && c.quote === undefined));
+  }
+});
+
+test('Google Docs access retry keeps the submission link and preserves the failed run', async () => {
+  const { client, advance } = setup();
+  const before = await client.list('p1');
+  const failed = before.reviews.find(r => r.submissionId === 'demo-sub-doc-access');
+  assert.equal(failed.status, 'FAILED');
+  const retried = await client.retry(failed.id);
+  advance(duration('BASIC', 'document'));
+  const done = await latestFor(client, 'demo-sub-doc-access');
+  assert.equal(done.status, 'COMPLETED');
+  assert.equal(done.retryOf, failed.id);
+  assert.equal(done.id, retried.id);
+  assert.ok(done.comments.every(c => c.placement === 'native'));
+  const after = await client.list('p1');
+  assert.equal(after.submissions.find(s => s.id === failed.submissionId).fileUrl,
+    before.submissions.find(s => s.id === failed.submissionId).fileUrl);
+  assert.equal(after.reviews.find(r => r.id === failed.id).status, 'FAILED');
 });

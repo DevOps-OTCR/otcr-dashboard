@@ -15,7 +15,7 @@ type Props = {
 
 export function ReviewQueueList({ rows, counts, filter, onFilter, selectedId, onSelect, now }: Props) {
   return (
-    <div className="space-y-3">
+    <div className="min-w-0 space-y-3">
       <div role="group" aria-label="Filter by review status" className="flex flex-wrap gap-1.5">
         {FILTERS.map(({ id, label }) => (
           <button

@@ -2,7 +2,7 @@ import { AlertTriangle, Check, Loader2, X } from 'lucide-react';
 import { FAILURES, LEVELS, SEVERITIES, STATUSES } from './copy';
 import { formatDuration, formatRelative } from './queue';
 import { LevelBadge } from './ReviewBadges';
-import type { Review, Severity } from './types';
+import type { Review, Severity, SubmissionFormat } from './types';
 
 const STEPS = ['AWAITING', 'IN_PROGRESS', 'DONE'] as const;
 
@@ -41,8 +41,12 @@ function Stepper({ review }: { review: Review }) {
   );
 }
 
-export function ReviewStatusCard({ review, now }: { review: Review; now: number }) {
-  const failure = review.failure && FAILURES[review.failure.kind];
+export function ReviewStatusCard({ review, now, format }: { review: Review; now: number; format: SubmissionFormat }) {
+  const failure = review.failure && (format === 'document' && review.failure.kind === 'file_access'
+    ? { title: 'We couldn’t open this Google Doc.', nextStep: 'Ask the owner to share this Google Doc with the review bot as Commenter, then retry using the same submission link.' }
+    : format === 'document' && review.failure.kind === 'unsupported_file'
+      ? { title: 'This isn’t a supported Google Docs link.', nextStep: 'Ask the consultant to submit a Google Docs link, then request a new review.' }
+      : FAILURES[review.failure.kind]);
   const counts = review.summary?.counts;
   return (
     <section aria-label="Review status" className="space-y-3 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] p-4">

@@ -36,8 +36,8 @@ test('shows demo submissions in every review state, failures first with a next s
   await page.getByRole('tab', { name: 'AI Review' }).click();
   await page.getByRole('heading', { name: 'AI review' }).waitFor();
   await page.getByRole('note').getByText('Demo data.').waitFor();
-  assert.equal(await submissions(page).count(), 4);
-  for (const chip of ['All (4)', 'Not reviewed (1)', 'Awaiting review (0)', 'In progress (1)', 'Completed (1)', 'Failed (1)']) {
+  assert.equal(await submissions(page).count(), 7);
+  for (const chip of ['All (7)', 'Not reviewed (3)', 'Awaiting review (0)', 'In progress (1)', 'Completed (1)', 'Failed (2)']) {
     assert.equal(await page.getByRole('button', { name: chip }).count(), 1, chip);
   }
   // The failed review sorts first and is selected, with its failure and next step.
@@ -54,10 +54,10 @@ test('shows demo submissions in every review state, failures first with a next s
 
 test('filters the queue and explains that only an earlier version was reviewed', async t => {
   const page = await open(t, '?tab=review');
-  await page.getByRole('button', { name: 'Not reviewed (1)' }).click();
-  assert.equal(await page.getByRole('button', { name: 'Not reviewed (1)' }).getAttribute('aria-pressed'), 'true');
-  assert.equal(await submissions(page).count(), 1);
-  await submissions(page).first().getByRole('button').click();
+  await page.getByRole('button', { name: 'Not reviewed (3)' }).click();
+  assert.equal(await page.getByRole('button', { name: 'Not reviewed (3)' }).getAttribute('aria-pressed'), 'true');
+  assert.equal(await submissions(page).count(), 3);
+  await submissions(page).filter({ hasText: 'Campus fleet partnerships' }).getByRole('button').click();
   await page.getByRole('heading', { name: 'Campus fleet partnerships — initial deck' }).waitFor();
   await page.getByText('Version 2 hasn’t had an AI review yet.').waitFor();
   await page.getByText(/Version 1 had a Basic review .* That feedback may not apply to this version; open it from the review history below\./).waitFor();
@@ -102,37 +102,43 @@ test('leaving the tab clears its URL parameters and keeps the context tabs worki
 
 const feedback = (page) => page.getByRole('region', { name: /^Feedback \(/ });
 
-test('shows a completed review’s summary and its comments grouped by section', async t => {
+test('completed Docs show a brief summary and only unposted comments in a collapsed section', async t => {
   const page = await open(t, '?tab=review&submission=demo-sub-final-whitepaper');
   const summary = page.getByRole('region', { name: 'Summary' });
   await summary.getByText(/The draft is well organised/).waitFor();
-  assert.deepEqual(await summary.getByRole('list', { name: 'Comments by severity' }).getByRole('listitem').allTextContents(), [
-    '0BlockingMust fix before submission',
-    '2MaterialShould fix before client delivery',
-    '3MinorFix if time allows',
-  ]);
-  await summary.getByText('Appendix B is a linked spreadsheet and was not read.').waitFor();
-  assert.equal(await summary.getByRole('heading', { name: 'Top issues' }).count(), 1);
-
+  await summary.getByText('Demo result: 3 comments added to Google Docs. 2 couldn’t be added; view them below.').waitFor();
+  assert.equal(await summary.getByRole('button', { name: 'Open in Google Docs' }).isDisabled(), true);
+  await summary.getByText('Demo only: no real document is linked and no comments were posted.').waitFor();
+  assert.equal(await summary.getByRole('heading', { name: 'Top issues' }).count(), 0);
+  assert.equal(await summary.getByRole('list', { name: 'Comments by severity' }).count(), 0);
+  assert.equal(await feedback(page).isVisible(), false);
+  await page.getByText('Comments not added to Google Docs (2)', { exact: true }).click();
   await feedback(page).waitFor();
-  assert.equal(await feedback(page).getByRole('article').count(), 5);
-  assert.deepEqual(await feedback(page).getByRole('heading', { level: 5 }).allInnerTexts(),
-    ['3. Market sizing', 'Executive summary', 'References', 'Whole document']);
-  const card = feedback(page).getByRole('article', { name: /Figure 2 has no caption or source/ });
-  await card.getByText('An unsourced figure cannot be checked by the client or by the PM.').waitFor();
-  await card.getByText('Add a caption with the source and its S-ID.').waitFor();
+  assert.equal(await feedback(page).getByRole('article').count(), 2);
+  assert.deepEqual(await feedback(page).getByRole('heading', { level: 5 }).allInnerTexts(), ['3. Market sizing', 'References']);
+  await feedback(page).getByText('“Campus demand increased during the pilot.”').waitFor();
+  await feedback(page).getByText(/this passage appears more than once/).waitFor();
+  await feedback(page).getByText(/the quoted passage could not be found/).waitFor();
+  await feedback(page).getByText('An unsourced figure cannot be checked by the client or by the PM.').waitFor();
+  await feedback(page).getByText('Add a caption with the source and its S-ID.').waitFor();
+  assert.equal(await feedback(page).getByText('Use one figure in both places and cite its source once.').count(), 0, 'posted comments stay in Docs');
+  await page.getByRole('button', { name: 'Minor (1)' }).click();
+  assert.equal(await feedback(page).getByRole('article').count(), 1);
+  await page.getByText('Comments not added to Google Docs (2)', { exact: true }).click();
+  assert.equal(await feedback(page).isVisible(), false);
 });
 
-test('filters feedback by severity, and a top issue clears the filter and focuses its comment', async t => {
-  const page = await open(t, '?tab=review&submission=demo-sub-final-whitepaper');
+test('slide feedback keeps its severity filters and top-issue keyboard focus', async t => {
+  const page = await open(t, '?tab=review&submission=demo-sub-initial-slides');
+  await page.getByRole('button', { name: /^View feedback from Basic review of version 1/ }).click();
   await feedback(page).waitFor();
-  await page.getByRole('button', { name: 'Minor (3)' }).click();
-  assert.equal(await feedback(page).getByRole('article').count(), 3);
+  await page.getByRole('button', { name: 'Minor (4)' }).click();
+  assert.equal(await feedback(page).getByRole('article').count(), 4);
   assert.equal(await feedback(page).getByRole('article', { name: /^Material/ }).count(), 0);
   await page.getByRole('region', { name: 'Summary' }).getByRole('button', { name: /The serviceable market is \$4\.2B/ }).click();
-  assert.equal(await page.getByRole('button', { name: 'All (5)' }).getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.getByRole('button', { name: 'All (6)' }).getAttribute('aria-pressed'), 'true');
   await page.waitForFunction(() => document.activeElement?.id?.startsWith('feedback-'));
-  assert.match(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), /^Material: The serviceable market is \$4\.2B in this section/);
+  assert.match(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), /^Material: The serviceable market/);
 });
 
 test('opens feedback from an earlier version and explains that it may be out of date', async t => {
@@ -271,6 +277,52 @@ test('a consultant sees review status and feedback but cannot request reviews or
   await page.getByText('We couldn’t open this file.').waitFor();
   assert.equal(await page.getByRole('button', { name: /^Retry/ }).count(), 0);
   await submissions(page).filter({ hasText: 'Pricing strategy — final whitepaper' }).getByRole('button').click();
+  await page.getByText('Comments not added to Google Docs (2)', { exact: true }).click();
   await feedback(page).waitFor();
   assert.equal(await page.getByRole('button', { name: /Run Advanced review|Request another review/ }).count(), 0);
+});
+
+
+for (const [id, level, mixed] of [
+  ['demo-sub-doc-native', 'BASIC', false],
+  ['demo-sub-doc-mixed', 'ADVANCED', true],
+]) {
+  test(`a PM requests ${level} on an unreviewed Google Doc and sees its ${mixed ? 'mixed' : 'all-posted'} outcome`, async t => {
+    const page = await open(t, `?role=PM&tab=review&submission=${id}`);
+    await page.getByText('Version 1 hasn’t had an AI review yet.').waitFor();
+    await page.getByRole('button', { name: 'Request AI review' }).click();
+    if (level === 'ADVANCED') {
+      await requestForm(page).getByRole('radio', { name: /^Advanced/ }).check();
+      await requestForm(page).getByRole('textbox').fill('Check alignment with the client scope.');
+    }
+    await requestForm(page).getByRole('button', { name: `Start ${level === 'BASIC' ? 'Basic' : 'Advanced'} review` }).click();
+    await reviewStatus(page).getByText('Awaiting review.').waitFor();
+    await reviewStatus(page).getByText('In progress.').waitFor({ timeout: 5_000 });
+    await reviewStatus(page).getByText('Completed.').waitFor({ timeout: 20_000 });
+    const summary = page.getByRole('region', { name: 'Summary' });
+    await summary.getByText(mixed ? 'Demo result: 3 comments added to Google Docs. 2 couldn’t be added; view them below.' : 'Demo result: 5 comments added to Google Docs.').waitFor();
+    assert.equal(await summary.getByRole('button', { name: 'Open in Google Docs' }).isDisabled(), true);
+    assert.equal(await page.getByText('Comments not added to Google Docs (2)', { exact: true }).count(), mixed ? 1 : 0);
+    if (mixed) {
+      await page.getByText('Comments not added to Google Docs (2)', { exact: true }).click();
+      assert.equal(await feedback(page).getByRole('article').count(), 2);
+      await page.getByRole('button', { name: 'Request another review' }).click();
+      await requestForm(page).getByRole('button', { name: 'Start Advanced review' }).click();
+      assert.equal(await feedback(page).count(), 0, 'old fallback comments disappear while the next review runs');
+    }
+  });
+}
+
+test('Google Docs sharing failure explains access and retries the same submission without resubmission', async t => {
+  const page = await open(t, '?role=PM&tab=review&submission=demo-sub-doc-access');
+  await statusRegion(page).getByText('We couldn’t open this Google Doc.').waitFor();
+  await statusRegion(page).getByText('Ask the owner to share this Google Doc with the review bot as Commenter, then retry using the same submission link.').waitFor();
+  await page.getByText('Demo: Retry simulates corrected sharing. No permissions are checked or changed.').waitFor();
+  assert.equal(await page.getByRole('region', { name: 'Summary' }).count(), 0);
+  await page.getByRole('button', { name: 'Retry Basic review' }).click();
+  await reviewStatus(page).getByText('Awaiting review.').waitFor();
+  await reviewStatus(page).getByText('Completed.').waitFor({ timeout: 15_000 });
+  await page.getByText('Demo result: 5 comments added to Google Docs.').waitFor();
+  assert.equal(params(page).get('submission'), 'demo-sub-doc-access');
+  assert.equal(await page.getByRole('region', { name: 'Review history' }).getByRole('listitem').count(), 2);
 });

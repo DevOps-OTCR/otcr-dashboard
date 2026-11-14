@@ -158,6 +158,10 @@ export function ReviewPanel({ client, projectId, projectName, canRequest, projec
               ))}
             </select>
           </label>
+          <p className="mt-2 text-[var(--text-muted)]">
+            Google Docs samples: Market sizing starts unreviewed and simulates all comments added; Campus growth starts unreviewed and keeps two comments in CMS;
+            Partnership proposal starts with a sharing failure that you can retry.
+          </p>
         </details>
       )}
 
@@ -183,7 +187,7 @@ export function ReviewPanel({ client, projectId, projectName, canRequest, projec
             onSelect={setSelectedId}
             now={now}
           />
-          {selected && <ReviewDetail key={selected.submission.id} row={selected} now={now} actions={actions} />}
+          {selected && <ReviewDetail key={selected.submission.id} row={selected} now={now} actions={actions} mocked={client.mocked} />}
         </div>
       )}
     </section>

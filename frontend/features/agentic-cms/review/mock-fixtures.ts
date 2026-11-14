@@ -5,7 +5,7 @@
 
 import type { ReviewFailureKind, ReviewLevel, ReviewLocation, ReviewSubmission, Severity, SubmissionFormat } from './types';
 
-export type FixtureComment = { severity: Severity; location: ReviewLocation; issue: string; significance: string; fix: string };
+export type FixtureComment = { severity: Severity; location: ReviewLocation; issue: string; significance: string; fix: string; quote?: string };
 
 export type FixtureFeedback = { overview: string; skipped: string[]; notCheckable: string[]; comments: FixtureComment[] };
 
@@ -47,8 +47,8 @@ export function demoSubmissions(now: number): ReviewSubmission[] {
       kind: 'INITIAL_WHITEPAPER',
       format: 'document',
       version: 1,
-      fileName: 'Northwind Market Entry Draft.docx',
-      fileUrl: `${PLACEHOLDER_URL}northwind-market-entry-draft.docx`,
+      fileName: 'Northwind Market Entry Draft (Google Docs)',
+      fileUrl: `${PLACEHOLDER_URL}northwind-market-entry-draft`,
       submittedAt: at(40 * MIN),
       submitterName: 'Sam Okafor',
       workstreamLabel: 'Week 6',
@@ -73,17 +73,57 @@ export function demoSubmissions(now: number): ReviewSubmission[] {
       kind: 'FINAL_WHITEPAPER',
       format: 'document',
       version: 1,
-      fileName: 'Northwind Pricing Whitepaper.docx',
-      fileUrl: `${PLACEHOLDER_URL}northwind-pricing-whitepaper.docx`,
+      fileName: 'Northwind Pricing Whitepaper (Google Docs)',
+      fileUrl: `${PLACEHOLDER_URL}northwind-pricing-whitepaper`,
       submittedAt: at(26 * HOUR),
       submitterName: 'Jordan Patel',
       workstreamLabel: 'Week 5',
+    },
+    {
+      id: 'demo-sub-doc-native',
+      deliverableId: 'demo-del-doc-native',
+      deliverableTitle: 'Market sizing whitepaper — Google Doc draft',
+      kind: 'INITIAL_WHITEPAPER',
+      format: 'document',
+      version: 1,
+      fileName: 'Northwind Market Sizing (Google Docs)',
+      fileUrl: `${PLACEHOLDER_URL}northwind-market-sizing`,
+      submittedAt: at(20 * MIN),
+      submitterName: 'Maya Chen',
+      workstreamLabel: 'Week 6',
+    },
+    {
+      id: 'demo-sub-doc-mixed',
+      deliverableId: 'demo-del-doc-mixed',
+      deliverableTitle: 'Campus growth whitepaper — Google Doc draft',
+      kind: 'INITIAL_WHITEPAPER',
+      format: 'document',
+      version: 1,
+      fileName: 'Northwind Campus Growth (Google Docs)',
+      fileUrl: `${PLACEHOLDER_URL}northwind-campus-growth`,
+      submittedAt: at(30 * MIN),
+      submitterName: 'Sam Okafor',
+      workstreamLabel: 'Week 6',
+    },
+    {
+      id: 'demo-sub-doc-access',
+      deliverableId: 'demo-del-doc-access',
+      deliverableTitle: 'Partnership proposal — Google Doc',
+      kind: 'INITIAL_WHITEPAPER',
+      format: 'document',
+      version: 1,
+      fileName: 'Northwind Partnership Proposal (Google Docs)',
+      fileUrl: `${PLACEHOLDER_URL}northwind-partnership-proposal`,
+      submittedAt: at(4 * HOUR),
+      submitterName: 'Priya Raman',
+      workstreamLabel: 'Week 6',
     },
   ];
 }
 
 /** Every review state is visible as soon as the tab opens. */
 export const DEMO_SEED: SeedReview[] = [
+  { submissionId: 'demo-sub-doc-access', submissionVersion: 1, level: 'BASIC', requestedBy: 'Alex Rivera', agoMs: 60 * MIN, failure: 'file_access' },
   // An earlier version was reviewed; v2 has not been yet.
   { submissionId: 'demo-sub-initial-slides', submissionVersion: 1, level: 'BASIC', requestedBy: 'Alex Rivera', agoMs: 2 * 24 * HOUR },
   { submissionId: 'demo-sub-final-whitepaper', submissionVersion: 1, level: 'BASIC', requestedBy: 'Alex Rivera', agoMs: 20 * HOUR },
@@ -97,6 +137,9 @@ export const DEMO_SEED: SeedReview[] = [
     focusNote: 'Check the recommendations against what the client asked for on the 11/05 call.',
   },
 ];
+
+/** Fixed demo scenarios, independent of project and review level. No posting occurs. */
+export const DOC_ALL_NATIVE = ['demo-sub-doc-native', 'demo-sub-doc-access'];
 
 export const DEMO_FEEDBACK: Record<SubmissionFormat, Record<ReviewLevel, FixtureFeedback>> = {
   slides: {
@@ -214,6 +257,7 @@ export const DEMO_FEEDBACK: Record<SubmissionFormat, Record<ReviewLevel, Fixture
         {
           severity: 'MATERIAL',
           location: { type: 'section', section: '3. Market sizing' },
+          quote: 'The serviceable market is $4.2 billion.',
           issue: 'The serviceable market is $4.2B in this section but $4.0B in the executive summary.',
           significance: 'Readers will notice the mismatch and doubt the rest of the analysis.',
           fix: 'Use one figure in both places and cite its source once.',
@@ -221,6 +265,7 @@ export const DEMO_FEEDBACK: Record<SubmissionFormat, Record<ReviewLevel, Fixture
         {
           severity: 'MATERIAL',
           location: { type: 'section', section: '3. Market sizing' },
+          quote: 'Campus demand increased during the pilot.',
           issue: 'Figure 2 has no caption or source.',
           significance: 'An unsourced figure cannot be checked by the client or by the PM.',
           fix: 'Add a caption with the source and its S-ID.',
@@ -228,6 +273,7 @@ export const DEMO_FEEDBACK: Record<SubmissionFormat, Record<ReviewLevel, Fixture
         {
           severity: 'MINOR',
           location: { type: 'section', section: 'Executive summary' },
+          quote: 'This report evaluates the campus fleet market and recommends a partnership strategy.',
           issue: 'The executive summary is about 410 words; the whitepaper template allows 250.',
           significance: 'Executives often read only this section, and a long one buries the recommendation.',
           fix: 'Cut the market background paragraph, which section 3 already covers.',
@@ -235,6 +281,7 @@ export const DEMO_FEEDBACK: Record<SubmissionFormat, Record<ReviewLevel, Fixture
         {
           severity: 'MINOR',
           location: { type: 'general' },
+          quote: 'Market Sizing / Competitive landscape',
           issue: 'Headings mix title case and sentence case.',
           significance: 'Inconsistent headings make the document look unfinished.',
           fix: 'Use sentence case for all headings.',
@@ -242,6 +289,7 @@ export const DEMO_FEEDBACK: Record<SubmissionFormat, Record<ReviewLevel, Fixture
         {
           severity: 'MINOR',
           location: { type: 'section', section: 'References' },
+          quote: 'Campus mobility report, available online.',
           issue: 'Three web references have no access date.',
           significance: 'Web sources change; without a date the client cannot verify what was cited.',
           fix: 'Add the date each page was accessed.',
@@ -257,6 +305,7 @@ export const DEMO_FEEDBACK: Record<SubmissionFormat, Record<ReviewLevel, Fixture
         {
           severity: 'BLOCKING',
           location: { type: 'section', section: '5. Recommendations' },
+          quote: 'We recommend launching at 12 campuses next year.',
           issue: 'Recommendation 2 (launch at 12 campuses next year) does not explain how Northwind would win those partnerships.',
           significance: 'A recommendation without a mechanism cannot be evaluated or acted on by the client.',
           fix: 'Name the partnership channel, such as campus transportation offices, and the first two target campuses.',
@@ -264,6 +313,7 @@ export const DEMO_FEEDBACK: Record<SubmissionFormat, Record<ReviewLevel, Fixture
         {
           severity: 'MATERIAL',
           location: { type: 'section', section: '6. Risks' },
+          quote: 'Local regulations should be considered.',
           issue: 'Campus speed-limit rules for e-bikes, which the client raised on the 11/05 call, are not addressed.',
           significance: 'The client raised this risk directly; leaving it out suggests the team did not act on their input.',
           fix: 'Add a short risk paragraph naming the campuses that already restrict e-bikes.',
@@ -271,6 +321,7 @@ export const DEMO_FEEDBACK: Record<SubmissionFormat, Record<ReviewLevel, Fixture
         {
           severity: 'MATERIAL',
           location: { type: 'section', section: '3. Market sizing' },
+          quote: 'Industry research indicates 18% annual growth.',
           issue: 'The 18% annual growth figure is cited as “industry research”, but the original source is a vendor press release.',
           significance: 'Describing a vendor claim as research overstates the evidence behind the market estimate.',
           fix: 'Name the vendor as the source, or replace the figure with an independent estimate.',
@@ -278,6 +329,7 @@ export const DEMO_FEEDBACK: Record<SubmissionFormat, Record<ReviewLevel, Fixture
         {
           severity: 'MATERIAL',
           location: { type: 'section', section: 'Executive summary' },
+          quote: 'Fleet partnerships offer a stronger path than direct sales.',
           issue: 'The thesis, that fleet partnerships beat direct sales, is not stated until section 5.',
           significance: 'Readers of the summary alone will miss the main argument.',
           fix: 'Open the executive summary with the thesis in one sentence.',
@@ -285,6 +337,7 @@ export const DEMO_FEEDBACK: Record<SubmissionFormat, Record<ReviewLevel, Fixture
         {
           severity: 'MINOR',
           location: { type: 'section', section: '4. Competitive landscape' },
+          quote: 'The campus fleet market continues to expand.',
           issue: 'The first half of this section repeats the market overview from section 3.',
           significance: 'Repetition makes the document longer without adding evidence.',
           fix: 'Keep the competitor comparison and refer back to section 3 for market context.',

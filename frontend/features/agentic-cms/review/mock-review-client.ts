@@ -7,7 +7,7 @@
 // State lives in memory and resets when the page reloads.
 
 import { FAILURES } from './copy';
-import { DEMO_FEEDBACK, DEMO_SEED, demoSubmissions } from './mock-fixtures';
+import { DEMO_FEEDBACK, DEMO_SEED, DOC_ALL_NATIVE, demoSubmissions } from './mock-fixtures';
 import { MAX_FOCUS_NOTE } from './types';
 import type {
   RequestReviewInput,
@@ -140,12 +140,20 @@ export function createMockReviewClient(options: { now?: () => number; viewerName
 
     const feedback = DEMO_FEEDBACK[submission.format][run.level];
     const revisionId = mockRevisionId(run.submissionId, run.submissionVersion);
-    const comments: ReviewComment[] = feedback.comments.map((comment, index) => ({
-      ...comment,
-      id: `${run.id}-c${index + 1}`,
-      level: run.level,
-      revisionId,
-    }));
+    const comments: ReviewComment[] = feedback.comments.map((comment, index) => {
+      const document = submission.format === 'document';
+      const fallback = document && !DOC_ALL_NATIVE.includes(submission.id) && (index === 1 || index === feedback.comments.length - 1);
+      return {
+        ...comment,
+        id: `${run.id}-c${index + 1}`,
+        level: run.level,
+        revisionId,
+        ...(document ? {
+          placement: fallback ? 'fallback' as const : 'native' as const,
+          fallbackReason: fallback ? (index === 1 ? 'ambiguous' as const : 'not-found' as const) : undefined,
+        } : {}),
+      };
+    });
     const counts: Record<Severity, number> = { BLOCKING: 0, MATERIAL: 0, MINOR: 0 };
     for (const comment of comments) counts[comment.severity] += 1;
     return {

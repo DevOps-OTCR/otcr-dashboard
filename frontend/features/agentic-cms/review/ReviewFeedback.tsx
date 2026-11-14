@@ -1,7 +1,6 @@
-import { ExternalLink } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { SEVERITIES } from './copy';
-import { countBySeverity, groupComments, locationLabel, SEVERITY_ORDER, topIssues, type FeedbackMode, type SeverityFilter } from './feedback';
+import { countBySeverity, groupComments, locationLabel, SEVERITY_ORDER, topIssues, type SeverityFilter } from './feedback';
 import type { Review, ReviewSubmission, Severity } from './types';
 
 const SEVERITY_VARIANT = { BLOCKING: 'danger', MATERIAL: 'warning', MINOR: 'default' } as const;
@@ -23,8 +22,8 @@ export function focusComment(id: string) {
   target?.focus({ preventScroll: true });
 }
 
-/** Always shown for a completed review, whether or not comments are listed on this page. */
-export function FeedbackSummary({ review, submission, mode, onJump }: { review: Review; submission: ReviewSubmission; mode: FeedbackMode; onJump: (commentId: string) => void }) {
+/** Summary and top issues for slide reviews; Docs use GoogleDocFeedback. */
+export function FeedbackSummary({ review, submission, onJump }: { review: Review; submission: ReviewSubmission; onJump: (commentId: string) => void }) {
   const summary = review.summary;
   if (!summary) return null;
   const top = topIssues(review.comments);
@@ -43,30 +42,20 @@ export function FeedbackSummary({ review, submission, mode, onJump }: { review: 
         ))}
       </ul>
 
-      {mode === 'native' ? (
-        <p className="text-sm">
-          {review.comments.length} comments were added to the file.{' '}
-          <a href={submission.fileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-[var(--primary)] hover:underline">
-            Open {submission.format === 'slides' ? 'in PowerPoint' : 'in Word'} <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-            <span className="sr-only">(opens in a new tab)</span>
-          </a>
-        </p>
-      ) : (
-        top.length > 0 && (
-          <div className="space-y-1">
-            <h5 className="text-sm font-semibold">Top issues</h5>
-            <ol className="space-y-1 text-sm">
-              {top.map((comment) => (
-                <li key={comment.id} className="flex items-start gap-2">
-                  <SeverityBadge severity={comment.severity} />
-                  <button type="button" onClick={() => onJump(comment.id)} className="min-w-0 text-left hover:underline">
-                    <span className="text-[var(--text-muted)]">{locationLabel(comment.location, submission.format)}:</span> {comment.issue}
-                  </button>
-                </li>
-              ))}
-            </ol>
-          </div>
-        )
+      {top.length > 0 && (
+        <div className="space-y-1">
+          <h5 className="text-sm font-semibold">Top issues</h5>
+          <ol className="space-y-1 text-sm">
+            {top.map((comment) => (
+              <li key={comment.id} className="flex items-start gap-2">
+                <SeverityBadge severity={comment.severity} />
+                <button type="button" onClick={() => onJump(comment.id)} className="min-w-0 text-left hover:underline">
+                  <span className="text-[var(--text-muted)]">{locationLabel(comment.location, submission.format)}:</span> {comment.issue}
+                </button>
+              </li>
+            ))}
+          </ol>
+        </div>
       )}
 
       {summary.skipped.length > 0 && (
@@ -138,6 +127,14 @@ export function FeedbackList({ review, submission, filter, onFilter }: {
                   <SeverityBadge severity={comment.severity} />
                   <span className="text-xs text-[var(--text-muted)]">{SEVERITIES[comment.severity].action}</span>
                 </div>
+                {comment.placement === 'fallback' && (
+                  <>
+                    {comment.quote && <blockquote className="break-words border-l-2 border-[var(--border)] pl-3 text-[var(--text-muted)]">“{comment.quote}”</blockquote>}
+                    <p className="text-xs text-[var(--text-muted)]">
+                      Not added: {comment.fallbackReason === 'ambiguous' ? 'this passage appears more than once, so the comment could not be attached reliably.' : 'the quoted passage could not be found in the document.'}
+                    </p>
+                  </>
+                )}
                 <p className="font-medium">{comment.issue}</p>
                 <dl className="space-y-1">
                   <div>
