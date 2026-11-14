@@ -16,6 +16,12 @@ import { countDraftWords, isTooShort, requestedWordLimit, wordLimitCorrection, w
 
 export const MAX_ROUNDS = 10;
 export const DEFAULT_MAX_MESSAGES_PER_HOUR = 60;
+/**
+ * Injected into the system prompt on the last round so a model that still has things to look up
+ * writes an answer from what it found, instead of a bare "stopped" notice.
+ */
+export const ANSWER_NOW =
+  'Step limit: this is your last step for this reply, and no more tools are available. Write your answer now from what you have already found. Say plainly what you could not check or look up, and what the user could ask next.';
 const MAX_WORD_LIMIT_ATTEMPTS = 2; // the first cut plus one retry
 const MIN_CUT_SHARE = 0.25; // a "cut" under a quarter of the limit has thrown the draft away
 
@@ -140,9 +146,10 @@ export class AgentService {
         this.assertStillEnabled(input.user);
         let roundText = false;
         const shownBefore = shown;
+        const lastRound = round === MAX_ROUNDS - 1;
         const messages = [...history, ...turnMessages];
         const turn = await this.model.stream(
-          { system, messages, tools: schemas, signal: input.signal },
+          { system: lastRound ? `${system}\n\n${ANSWER_NOW}` : system, messages, tools: lastRound ? [] : schemas, signal: input.signal },
           (delta) => {
             // Separate text written before a tool call from the text after it.
             if (!roundText && shown) {
