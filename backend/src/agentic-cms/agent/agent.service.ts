@@ -182,8 +182,9 @@ export class AgentService {
         }
         answer += turn.text;
 
-        if (round === MAX_ROUNDS - 1) {
-          // Every tool call in saved history needs a result, or the next turn is invalid.
+        if (lastRound) {
+          // A model that asks for tools anyway, even with none offered. Every tool call in saved
+          // history needs a result, or the next turn is invalid.
           for (const call of turn.toolCalls) {
             turnMessages.push({ role: 'tool', tool_call_id: call.id, content: 'Not run: this reply reached its step limit.' });
           }
