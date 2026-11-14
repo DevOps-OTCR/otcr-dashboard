@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { NotFoundException } from '@nestjs/common';
+import { z } from 'zod';
 import { FeatureFlagsService } from '../../feature-flags/feature-flags.service';
 import { AgentError } from './agent-errors';
 import type { AgentEvent } from './agent.events';
@@ -73,7 +74,7 @@ describe('AgentService.run', () => {
       listDeliverables: async () => ({ deliverables: { items: [], nextCursor: null } }),
       getDeliverable: async () => ({ deliverable: { id: 'd1' } }),
     } as never;
-    const tools = new ToolRegistry(new WebSearchTool(new TavilySearchClient(config)), new LoadSkillTool(skills), new CmsReadTools(reads));
+    const tools = new ToolRegistry(new WebSearchTool(new TavilySearchClient(config)), new LoadSkillTool(skills), new CmsReadTools(reads), { tools: [] } as never);
     return { store, svc: new AgentService(model, store, flags, tools, skills, config) };
   };
 
@@ -853,6 +854,132 @@ describe('AgentService.run', () => {
       const data = tools[1].replace(/^<tool_data[^>]*>\n/, '').replace(/\n<\/tool_data>$/, '');
       expect(JSON.parse(data).project.overview).toBe('Northwind brief');
       expect(tools[1]).not.toContain('other-project');
+    });
+  });
+
+  describe('image injection', () => {
+    const imageSetup = (model: ModelClient) => {
+      const store = new ConversationStore();
+      const config = { get: (key: string) => settings[key] } as never;
+      const flags = new FeatureFlagsService(config);
+      const skills = new SkillLibrary(config);
+      const reads = {
+        getProjectContext: async () => ({ project: { id: 'p1', overview: 'Northwind brief' }, notes: [], truncatedFields: [] }),
+        listWorkstreams: async () => ({ workstreams: { items: [], nextCursor: null } }),
+        getWorkstream: async () => ({ workstream: { id: 's1' } }),
+        listDeliverables: async () => ({ deliverables: { items: [], nextCursor: null } }),
+        getDeliverable: async () => ({ deliverable: { id: 'd1' } }),
+      } as never;
+      const renderTool = {
+        name: 'render_slides',
+        description: 'Render slides',
+        input: z.object({}),
+        label: () => 'Rendering...',
+        isAvailable: () => true,
+        run: async () => ({
+          content: 'Rendered 2 slides.',
+          images: [
+            { base64: 'aaa', mimeType: 'image/png' },
+            { base64: 'bbb', mimeType: 'image/png' },
+          ],
+        }),
+      };
+      const tools = new ToolRegistry(
+        new WebSearchTool(new TavilySearchClient(config)),
+        new LoadSkillTool(skills),
+        new CmsReadTools(reads),
+        { tools: [renderTool] } as never,
+      );
+      return { store, svc: new AgentService(model, store, flags, tools, skills, config) };
+    };
+
+    it('lets the model analyse images first, then forces add_pptx_comments on the following round', async () => {
+      const seen: ModelRequest[] = [];
+      let round = 0;
+      const model: ModelClient = {
+        name: 'image-analyse-then-comments',
+        async stream(req) {
+          seen.push(req);
+          if (++round === 1) {
+            const call = { id: 'c1', name: 'render_slides', args: {} };
+            return { text: '', toolCalls: [call], message: assistantMessage('', [call]) };
+          }
+          if (round === 2) {
+            // Analysis round: model writes findings as text (no tool call yet).
+            return { text: 'Slide 1 looks good, slide 2 needs a citation.', toolCalls: [], message: assistantMessage('Slide 1 looks good.', []) };
+          }
+          if (round === 3) {
+            // Forced tool call round.
+            const call = { id: 'c2', name: 'any_tool', args: {} };
+            return { text: '', toolCalls: [call], message: assistantMessage('', [call]) };
+          }
+          return { text: 'done', toolCalls: [], message: assistantMessage('done', []) };
+        },
+      };
+      const { svc } = imageSetup(model);
+      await runTurn(svc, 'review');
+      expect(seen[0].toolChoice).toBeUndefined(); // render_slides round
+      expect(seen[1].toolChoice).toBeUndefined(); // analysis round — images present, no force
+      expect(seen[2].toolChoice).toBe('add_pptx_comments'); // forced after analysis
+      expect(seen[3].toolChoice).toBeUndefined(); // cleared after use
+    });
+
+    it('strips image parts from the forced add_pptx_comments round to keep the payload small', async () => {
+      const seen: ModelRequest[] = [];
+      let round = 0;
+      const model: ModelClient = {
+        name: 'image-analyse-strip',
+        async stream(req) {
+          seen.push(req);
+          if (++round === 1) {
+            const call = { id: 'c1', name: 'render_slides', args: {} };
+            return { text: '', toolCalls: [call], message: assistantMessage('', [call]) };
+          }
+          if (round === 2) {
+            return { text: 'Analysis text.', toolCalls: [], message: assistantMessage('Analysis text.', []) };
+          }
+          return { text: 'done', toolCalls: [], message: assistantMessage('done', []) };
+        },
+      };
+      const { svc } = imageSetup(model);
+      await runTurn(svc, 'review');
+
+      // Round 2 (analysis): images ARE in messages
+      const analysisMessages = seen[1].messages;
+      expect(analysisMessages.some((m) => m.role === 'user' && Array.isArray(m.content) &&
+        (m.content as { type: string }[]).some((p) => p.type === 'image_url'))).toBe(true);
+
+      // Round 3 (forced): images stripped, only text remains
+      const forcedMessages = seen[2].messages;
+      expect(forcedMessages.some((m) => m.role === 'user' && Array.isArray(m.content) &&
+        (m.content as { type: string }[]).some((p) => p.type === 'image_url'))).toBe(false);
+      // The image user message is replaced with its text label
+      expect(forcedMessages.some((m) => m.role === 'user' &&
+        typeof m.content === 'string' && m.content.includes('Slide images'))).toBe(true);
+    });
+
+    it('injects image parts into the user message following the tool result', async () => {
+      const seen: ModelRequest[] = [];
+      let round = 0;
+      const model: ModelClient = {
+        name: 'image-then-answer',
+        async stream(req) {
+          seen.push(req);
+          if (++round === 1) {
+            const call = { id: 'c1', name: 'render_slides', args: {} };
+            return { text: '', toolCalls: [call], message: assistantMessage('', [call]) };
+          }
+          return { text: 'done', toolCalls: [], message: assistantMessage('done', []) };
+        },
+      };
+      const { svc } = imageSetup(model);
+      await runTurn(svc, 'review');
+      // Round 2 (analysis) should contain the injected image parts
+      const injected = seen[1].messages.find((m) => m.role === 'user' && Array.isArray(m.content));
+      expect(injected).toBeDefined();
+      const content = injected?.role === 'user' && Array.isArray(injected.content) ? injected.content : [];
+      expect(content).toContainEqual({ type: 'image_url', image_url: { url: 'data:image/png;base64,aaa' } });
+      expect(content).toContainEqual({ type: 'image_url', image_url: { url: 'data:image/png;base64,bbb' } });
     });
   });
 });

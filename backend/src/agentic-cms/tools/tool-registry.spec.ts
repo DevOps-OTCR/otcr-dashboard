@@ -14,7 +14,7 @@ const tool = (over: Partial<AgentTool<typeof echoInput>> = {}): AgentTool<typeof
 });
 // The constructor only collects tools; build one around arbitrary test tools.
 const registryWith = (...tools: AgentTool[]) => {
-  const registry = new ToolRegistry({} as never, {} as never, { tools: [] } as never);
+  const registry = new ToolRegistry({} as never, {} as never, { tools: [] } as never, { tools: [] } as never);
   (registry as unknown as { tools: AgentTool[] }).tools = tools;
   return registry;
 };
@@ -27,8 +27,8 @@ const unwrap = (content: string) => content.replace(/^<tool_data[^>]*>\n/, '').r
 
 async function exec(registry: ToolRegistry, name: string, args: unknown, c = ctx()) {
   const events: AgentEvent[] = [];
-  const content = await registry.execute({ id: 'c1', name, args }, await registry.available(), c, (e) => events.push(e));
-  return { content, events };
+  const result = await registry.execute({ id: 'c1', name, args }, await registry.available(), c, (e) => events.push(e));
+  return { content: result.content, events };
 }
 
 const CMS_SUFFIX = '\n\nSome fields are shortened; see truncatedFields.';
