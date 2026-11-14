@@ -27,6 +27,15 @@ const MIN_CUT_SHARE = 0.25; // a "cut" under a quarter of the limit has thrown t
 
 const URL_PATTERN = /\bhttps?:\/\/[^\s)\]>]+/gi;
 
+/** Replace multimodal user messages (image arrays) with just their text part for the forced round. */
+function stripImageParts(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map((m) => {
+    if (m.role !== 'user' || !Array.isArray(m.content)) return m;
+    const textPart = (m.content as { type: string; text?: string }[]).find((p) => p.type === 'text');
+    return { ...m, content: textPart?.text ?? 'Slide images' };
+  });
+}
+
 /** Why a cut can't replace the draft, or undefined if it only shortened it. */
 function cutProblem(draft: string, revised: string, revisedWords: number, limit: number): string | undefined {
   const draftSources = new Set(sourceIds(draft));
@@ -136,20 +145,28 @@ export class AgentService {
     // 4. The loop: ask the model; if it wants tools, run them and ask again.
     let shown = ''; // everything sent to the browser so far
     let answer = '';
-    // Vision flow: after images are injected and the model writes its analysis (no tool call),
-    // inject a follow-up user message so the model generates a complete, properly-typed
-    // add_pptx_comments call rather than being force-called with toolChoice (which produces
-    // empty/invalid args because the model already expressed its analysis as text).
+    // Vision flow: after images are injected and the model writes its analysis as text,
+    // force add_pptx_comments via toolChoice and strip image parts to keep the payload small.
     let pendingImageAnalysis = false;
+    let forcedToolChoice: string | undefined;
     try {
       for (let round = 0; round < MAX_ROUNDS; round++) {
         this.assertStillEnabled(input.user);
         let roundText = false;
         const shownBefore = shown;
         const lastRound = round === MAX_ROUNDS - 1;
-        const messages = [...history, ...turnMessages];
+        const messages = forcedToolChoice
+          ? [...history, ...stripImageParts(turnMessages)]
+          : [...history, ...turnMessages];
+        const currentToolChoice = forcedToolChoice;
         const turn = await this.model.stream(
-          { system: lastRound ? `${system}\n\n${ANSWER_NOW}` : system, messages, tools: lastRound ? [] : schemas, signal: input.signal },
+          {
+            system: lastRound ? `${system}\n\n${ANSWER_NOW}` : system,
+            messages,
+            tools: lastRound ? [] : schemas,
+            toolChoice: currentToolChoice,
+            signal: input.signal,
+          },
           (delta) => {
             // Separate text written before a tool call from the text after it.
             if (!roundText && shown) {
@@ -161,22 +178,15 @@ export class AgentService {
             send({ type: 'text_delta', text: delta });
           },
         );
+        if (currentToolChoice) forcedToolChoice = undefined;
         turnMessages.push(turn.message);
 
         if (!turn.toolCalls.length) {
           if (pendingImageAnalysis) {
-            // Model wrote its visual analysis as text without calling the tool.
-            // Inject a user message so the model generates a complete, schema-valid
-            // add_pptx_comments call rather than producing empty args under toolChoice.
+            // Model wrote its visual analysis as text. Force add_pptx_comments on the next round
+            // and strip images from that round's messages to keep the payload small.
             pendingImageAnalysis = false;
-            turnMessages.push({
-              role: 'user',
-              content:
-                'Your analysis is complete. Now call add_pptx_comments with the full findings list — ' +
-                'BLOCKING, MATERIAL, and MINOR — covering argument structure, evidence/source lines, ' +
-                'exhibit selection, and any layout issues visible in the images. ' +
-                'Use the exact slideIndex values from the fetch_pptx_content results.',
-            });
+            forcedToolChoice = 'add_pptx_comments';
             continue;
           }
           const final = await this.enforceWordLimit(input, { system, messages: [...history, ...turnMessages] }, turn.text, send);
@@ -203,7 +213,6 @@ export class AgentService {
 
         for (const call of turn.toolCalls) {
           this.assertStillEnabled(input.user); // also covers external calls such as web search
-          if (call.name === 'add_pptx_comments') pendingImageAnalysis = false;
           const before = sources.length;
           const result = await this.tools.execute(call, tools, ctx, send);
           turnMessages.push({ role: 'tool', tool_call_id: call.id, content: result.content });
