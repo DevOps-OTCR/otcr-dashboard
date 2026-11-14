@@ -11,6 +11,7 @@ import { assistantMessage, type ModelClient, type ModelRequest } from '../model/
 import { TavilySearchClient } from '../search/tavily-search.client';
 import { SkillLibrary } from '../skills/skill-library';
 import { CmsReadTools } from '../tools/cms-read.tools';
+import { GoogleDocTools } from '../tools/google-doc.tools';
 import { LoadSkillTool } from '../tools/load-skill.tool';
 import { ToolRegistry } from '../tools/tool-registry';
 import { WebSearchTool } from '../tools/web-search.tool';
@@ -74,7 +75,9 @@ describe('AgentService.run', () => {
       listDeliverables: async () => ({ deliverables: { items: [], nextCursor: null } }),
       getDeliverable: async () => ({ deliverable: { id: 'd1' } }),
     } as never;
-    const tools = new ToolRegistry(new WebSearchTool(new TavilySearchClient(config)), new LoadSkillTool(skills), new CmsReadTools(reads), { tools: [] } as never);
+    // Both PPTX and Google Doc tools stay unconfigured in tests — no Graph or Docs credentials.
+    const docTools = new GoogleDocTools({} as never, { isConfigured: () => false } as never);
+    const tools = new ToolRegistry(new WebSearchTool(new TavilySearchClient(config)), new LoadSkillTool(skills), new CmsReadTools(reads), { tools: [] } as never, docTools);
     return { store, svc: new AgentService(model, store, flags, tools, skills, config) };
   };
 
@@ -889,6 +892,7 @@ describe('AgentService.run', () => {
         new LoadSkillTool(skills),
         new CmsReadTools(reads),
         { tools: [renderTool] } as never,
+        { tools: [] } as never,
       );
       return { store, svc: new AgentService(model, store, flags, tools, skills, config) };
     };

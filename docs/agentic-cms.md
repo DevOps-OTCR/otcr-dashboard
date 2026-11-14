@@ -80,6 +80,11 @@ in-flight request or undo a completed write.
    `/agentic-cms/*` returns 404, and Lumen usage (`GET /v1/usage`) does not
    increase. Normal CMS pages keep working.
 
+To try Google Doc review locally, fill `GOOGLE_DOCS_CLIENT_EMAIL` and `GOOGLE_DOCS_PRIVATE_KEY` as
+described in [`backend/.env.example`](../backend/.env.example), share a test document with that
+email as Commenter, and submit its link on a deliverable you manage. The bot then posts real
+comments into that document, so use a test copy.
+
 ## How OTCR Bot works
 
 ```
@@ -158,7 +163,22 @@ the model as JSON Schema), a progress `label`, and `run(input, ctx)`. Register
 it in `AgenticCmsModule` and `ToolRegistry`. Tools must read the project from
 `ctx.projectId`/`ctx.sprintId` — already access-checked — and never accept a
 project id from the model. Throw `ToolFailure(note, modelMessage)` for an
-expected failure. The five CMS read tools are registered this way over CmsReadService.
+expected failure. The five CMS read tools are registered this way over CmsReadService,
+and the Google Docs tools (`read_google_doc`, `comment_google_doc`) over GoogleDocReviewService.
+
+A tool that writes outside the CMS also needs three things:
+
+- The service it calls rechecks the feature flag immediately before each external write
+  (`GoogleDocReviewService.comment` is the example).
+- It is safe to retry. A failed turn saves only the user's message and the model may call a
+  tool twice, so `tools/google-doc.tools.ts` remembers what it posted for an hour and runs calls
+  on one submission one at a time.
+- It checks a role as well as project access (`CmsReadAccessService.assertContextWrite`).
+
+The specs that build the tool registry by hand also need the new tool group:
+`tools/tool-registry.spec.ts`, `agent/agent.service.spec.ts`, and `chat/chat.controller.spec.ts`
+(which lists providers by hand). PowerPoint review can follow the same shape: a service under
+`backend/src/agentic-cms/`, a thin adapter in `tools/`, and an MCP registration.
 
 ### Adding a skill
 
@@ -186,9 +206,15 @@ separate service. Set these on that backend's Render Environment settings
 | `LUMEN_BASE_URL` | `https://lumen.ncsa.illinois.edu/v1` (the default if unset) |
 | `LUMEN_MODEL` | `deepseek-v4.1-flash` (the default if unset) |
 | `TAVILY_API_KEY` | Shared Tavily key for web search (secret; optional) |
+| `GOOGLE_DOCS_CLIENT_EMAIL` | The review bot's Google service account email (optional). Document owners share their Docs with it as Commenter |
+| `GOOGLE_DOCS_PRIVATE_KEY` | That account's private key (secret; enter it only in Render; optional). Without both, the Google Docs tools report that review is not set up |
 | `OTCR_BOT_MAX_MESSAGES_PER_HOUR` | Per-user limit, default `60` |
 | `AGENTIC_CMS_ALLOWED_EMAILS` | Pilot emails, comma-separated |
 | `AGENTIC_CMS_ENABLED` | `true` only when the pilot starts; otherwise `false` |
+
+The Google Docs tools use the same service-account pattern as the calendar integration, with
+separate credentials so access can be granted and revoked on its own. Isaiah sets the live
+values; nothing in this repository does.
 
 The Lumen account behind `LUMEN_API_KEY` must have acknowledged the model's
 notice. Verify the deployment with `GET /agentic-cms/status` as a pilot user:
@@ -207,7 +233,23 @@ the skills folder copied in (or `AGENTIC_CMS_SKILLS_DIR` pointed at it).
 - Conversation history is in memory: lost on restart and not shared between
   server instances. The per-user hourly limit resets with it.
 - Search excerpts are unverified leads. There is no full-page `read_web_source` yet.
-- Week 2 review UI, review skills, and native document comments are not connected.
+- Week 2 review UI and review skills are not connected. OTCR Bot and MCP clients can read Google
+  Docs submissions and post anchored comments; PowerPoint review is not connected yet.
+- Google Docs comments need the document shared with the bot's service account as Commenter or
+  Editor. A document shared only as Viewer can be read but not commented on, and a public link
+  allows reading only.
+- Posting comments does not stop when the browser disconnects: a batch that has started (up to
+  20 comments) finishes.
+- OTCR Bot remembers the comments it posted for one hour per backend process, so a retry does
+  not post them twice. A restart or a second backend instance forgets them.
+- If the feature flag is turned off partway through a batch, the call stops with an error and the
+  comments already posted are not returned. They can be posted again if the flag is turned back
+  on within the hour.
+- Document text is the consultant's work and may contain instructions aimed at the model. Tool
+  output is marked as data, and only admins, the project's PM and project-member LCs can post,
+  but "post only when the user asked" is a prompt instruction, not enforced in code.
+- A comment is anchored to its exact quote. A quote that spans paragraphs, repeats, or was
+  paraphrased comes back as a fallback for the user to add by hand.
 
 ## Where each group builds
 
@@ -300,11 +342,14 @@ OTCR Bot calls CmsReadService in-process for get_project_context, list_workstrea
 get_workstream, list_deliverables and get_deliverable. The MCP HTTP endpoint remains
 for independent clients. Skills loaded are research, whitepaper-writing and
 consulting-slides. Web search citations are live when a search key is configured.
-Full-source web reading, persistent chat history, document review and editors are not.
+Full-source web reading, persistent chat history and editors are not.
+The bot can read Google Doc submissions and post anchored comments (PM, LC or admin only;
+the doc must be shared with the bot's service account as Commenter).
 
 ## Required checks and PR review
 
 Group 2's five tools are documented in [MCP read-tool contracts](agentic-cms-mcp-contracts.md).
+The Google Docs tools are in the same file under "Google Docs review tools".
 See [MCP connection and usage](agentic-cms-mcp.md) for authentication, an SDK client,
 captured synthetic responses and current limitations.
 
@@ -376,7 +421,10 @@ saved values survive reload.
 `listDeliverables` and `getDeliverable` with strict input/output schemas, authorized query scopes,
 signed pagination, source metadata and explicit text truncation. Deliverable detail
 sections expose assignments, subtasks and submission history/feedback. All five
-operations are registered as read-only tools at `/agentic-cms/mcp`.
+operations are registered as read-only tools at `/agentic-cms/mcp`. The two Google Docs review
+tools are registered beside them
+([contracts](agentic-cms-mcp-contracts.md#google-docs-review-tools)); `comment_google_doc` is
+not read-only.
 
 For local PostgreSQL integration tests, start Docker Desktop and run
 `npm --prefix backend run test:integration` from the repository root. This manages
