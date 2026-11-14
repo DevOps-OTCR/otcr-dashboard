@@ -135,16 +135,15 @@ Each point has an owner or a named next step.
 | Item | Owner | Due |
 | --- | --- | --- |
 | confirm `LUMEN_API_KEY` set on `otcr-dashboard-staging-api` | Isaiah | Sun 2026-11-15 |
-| fix /agentic-cms/ trailing-slash check so the context editor shows on staging | Group 1 (Sriram, Stefan) | next week |
+| fix /agentic-cms/ trailing-slash check: the page renders blank on staging, so the context and notes editors never mount | Group 1 (Sriram, Stefan) | next week |
 | client-call-summary: keep what happened consistent with open questions on unconfirmed acceptances | Aritro | next week |
-| #193 sign-off and one real-Slack staging check | Isaiah | this week |
+| #193 sign-off and one real-Slack staging check | Isaiah | Sun 2026-11-15 |
 | decide native doc comments vs CMS refs for feedback | Aritro and Isaiah | after Group 3 proposal |
 | decide review under existing flag or a separate one | Isaiah | after Group 1 and 3 PRs |
 | confirm review-job API owner and shape | Sriram and Stefan, confirm with Akshay and Satya | after PRs open |
 | confirm review skills as new folders or variants | Teja | after PR opens |
-| Friday PR | Aritro | Fri 2026-11-13 11:59 PM CT |
 
 Reviewer status: Lumen Gemma and DeepSeek ran, Nemotron returned empty output
-twice. Codex ran on both. AGY is at HTTP 429, quota resets Fri 13 Nov about
-9:07 PM CT, retry before the deadline. OpenCode model is not available on the
+twice. Codex ran on both. AGY ran 2026-11-13 night after the quota reset; real findings fixed.
+OpenCode model is not available on the
 Bedrock account.
