@@ -25,8 +25,8 @@ open yet.
 Why #195 needed a manual API redeploy: `buildFilter` does not include
 `agentic-cms/**`, so a skill-only change on main does not trigger a staging API
 redeploy. Aritro redeployed the staging API by hand on Render on 2026-11-13; the
-API `__meta` reports `5aae3db`. Checking that `/agentic-cms/status` lists
-`client-call-summary` is still to do through the signed-in bot.
+API `__meta` reports `5aae3db`. The bot loaded client-call-summary on staging
+during the demo.
 
 ## 2 Integration evidence
 
@@ -95,20 +95,25 @@ account. Isaiah is the contact for that note.
 
 ## 4 Signed-in check and demo
 
-Status: partly done.
+Status: done 2026-11-13.
 
 | Step | State |
 | --- | --- |
 | signed-in flag-on check | done 2026-11-13: signed in on staging as a consultant account on the allowlist, the OTCR Bot (pilot) button shows and the panel opens |
-| fictional Prairie Basket demo | blocked. the bot says the account is not on any projects; the account's staging role is consultant and only ADMIN or PM can create projects. asked Isaiah for a staging-only PM role or a test project |
+| fictional Prairie Basket demo | done. Isaiah moved Aritro to PM on staging; created the fictional project, saved overview/scope and one client note, ran research, slide outline and a fictional client-call summary in the bot |
 
-What will be recorded here when unblocked:
+Results:
 
-- the flag value read by a signed-in consultant test account
-- the `/agentic-cms/status` response for that account
-- the skill list showing `client-call-summary`
-- the chat run against the Prairie Basket seed: prompt, response, and the read tools called
-- a short video or screenshots, no secrets in frame
+- research prompt: read tools called, research skill loaded, refused to invent sources, offered skeleton with [DATA NEEDED] slots, used the client-note constraints
+- slide outline: consulting-slides skill, placeholder numbers labelled illustrative
+- client-call summary: client-call-summary skill loaded, confirms #192 is live on staging; one inconsistency: 'what happened' says the Friday offer was accepted while open questions mark it unclear
+
+GIF and frames are in the PR description.
+
+Found during the demo:
+
+- the `/agentic-cms/` trailing-slash bug (`frontend/features/agentic-cms/index.tsx:150`, `frontend/components/AgenticCmsFeature.tsx:47`), owner Group 1
+- after a role change, silent sign-in renewal failed until local site data was cleared and the user signed in again
 
 No email addresses, keys, tokens, or URLs with credentials go in this section.
 
@@ -130,8 +135,8 @@ Each point has an owner or a named next step.
 | Item | Owner | Due |
 | --- | --- | --- |
 | confirm `LUMEN_API_KEY` set on `otcr-dashboard-staging-api` | Isaiah | Sun 2026-11-15 |
-| staging PM role or test project for the Prairie Basket demo | Isaiah | Sun 2026-11-15 |
-| Prairie Basket demo and status check for client-call-summary | Aritro | Sun 2026-11-15, after the role |
+| fix /agentic-cms/ trailing-slash check so the context editor shows on staging | Group 1 (Sriram, Stefan) | next week |
+| client-call-summary: keep what happened consistent with open questions on unconfirmed acceptances | Aritro | next week |
 | #193 sign-off and one real-Slack staging check | Isaiah | this week |
 | decide native doc comments vs CMS refs for feedback | Aritro and Isaiah | after Group 3 proposal |
 | decide review under existing flag or a separate one | Isaiah | after Group 1 and 3 PRs |
