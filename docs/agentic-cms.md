@@ -214,6 +214,97 @@ the skills folder copied in (or `AGENTIC_CMS_SKILLS_DIR` pointed at it).
 - Search excerpts are unverified leads. There is no full-page `read_web_source` yet.
 - Week 2 review UI, review skills, and native document comments are not connected.
 
+## AI Review UI (Week 2 mock prototype)
+
+The reviewer workflow lives in `frontend/features/agentic-cms/review/`.
+It uses fictional submissions and browser-simulated reviews, with no real file
+reads, model calls, review skills, native comments, or review-job backend.
+
+### Access and navigation
+
+Sign in and open `/agentic-cms?tab=review`; there is no dashboard navigation
+link yet. The OTCR Bot button opens chat, not this page. Select an accessible
+project, then use the Project Context, Client Call Notes, or AI Review tab.
+The existing backend-controlled feature gate must permit the account.
+
+Request/retry controls use the context API's `canEdit`: admins, LCs with project
+access, and the assigned PM can request reviews. Other readers see feedback.
+Future review endpoints must enforce the existing flag and CMS permissions
+server-side; the demo's frontend controls are not server authorization.
+
+### Requesting and tracking reviews
+
+The queue filters by Not reviewed, Awaiting review, In progress, Completed, and
+Failed. Details identify the submission, file, version, workstream, and author.
+Selection is linkable through `?tab=review&submission=<id>`.
+Choose **Request AI review**, then select:
+
+| Level | Intended checks | Optional input |
+| --- | --- | --- |
+| Basic | Formatting, layout, fonts, consistency, citations, and typos | None |
+| Advanced | Storyline, evidence, recommendations, client/SOW/workstream alignment | Focus note, up to 500 characters |
+
+Advanced warns when both overview and scope are empty and links to Project
+Context. It does not block requests; the mock stores but does not analyze the
+focus note or context. The warning uses editor values, including unsaved edits.
+
+Runs move Awaiting → In progress → Completed or Failed. Duplicate active runs
+are blocked. Completed Basic runs offer **Run Advanced review**; completed
+runs also offer **Request another review**. Basic takes about 8 seconds and
+Advanced 15 seconds in the demo; displayed minute estimates are provisional.
+
+**Demo controls** can force the next request or retry to fail once:
+
+| Failure | Next step | Retry offered |
+| --- | --- | --- |
+| File access | Check sharing | Yes |
+| Rate limit | Retry later | Yes |
+| Model timeout | Retry; contact the team if repeated | Yes |
+| Unsupported file | Resubmit a supported file | No |
+| Configuration | Contact an admin | No |
+
+Retry creates a new run with the same level/focus note and retains the failed
+run in history. Non-retryable failures currently lack a new-request action.
+File-support wording assumes Word/PowerPoint; reconcile it with the required
+Google Docs/PowerPoint mechanism before real integration.
+
+### Feedback and mock limitations
+
+Completed reviews show a summary, Blocking/Material/Minor counts, top issues,
+and comments grouped by slide or section. Each comment gives the issue, why it
+matters, and a suggested fix. Severity filters narrow the list; top-issue links
+focus the matching comment. History warns when feedback is for an older version.
+Final approval stays with the human LC/PM; review completion is not approval.
+
+All projects share four Northwind Bikes samples covering unreviewed work,
+progress, failure, completed feedback, and older-version history. Feedback,
+skipped-content disclosures, revision IDs, and file links are fabricated.
+State survives tab switches but resets on reload or sign-out.
+`FEEDBACK_MODE` is currently `cms`; the prepared native display does not post
+comments. Later integration must handle native and fallback results per comment.
+
+### Local demo and checks
+
+Follow the README for dependencies, local database, migrations, and app servers.
+Use your own Entra client ID with a **Single-page application** redirect of
+`http://localhost:3000/auth/callback`; set it in ignored `frontend/.env.local`.
+Restart the frontend after changes. `AADSTS50011` indicates a redirect mismatch.
+Locally enable the existing flag and restrict its allowlist to your enrolled
+account; checked-in defaults stay off. An accessible project is required.
+`docker-compose.dev.yml` and `scripts/cms-dev-seed.cjs` support synthetic local
+data; the seed requires `CMS_LOCAL_EMAIL` and the dedicated local dev database.
+No Lumen/Google key is needed for this demo; OTCR Bot needs separate Lumen setup.
+
+Try Basic then Advanced on the initial deck, inspect whitepaper feedback and
+older-version history, and retry the failed final deck. Run from the repo root:
+```sh
+node --test frontend/tests/unit/agentic-review.test.cjs frontend/tests/agentic-review-browser.test.cjs frontend/tests/agentic-feature-browser.test.cjs
+node scripts/check-agentic-boundaries.cjs
+node --test scripts/check-agentic-boundaries.test.cjs
+```
+Browser tests use synthetic auth/context. Record flag-off/on evidence in the PR;
+they do not replace live sign-in, server permissions, or normal-CMS regression checks.
+
 ## Where each group builds
 
 | Group                        | Required integration boundary                                                                                                                                                                                          |
