@@ -129,9 +129,16 @@ function insertRelationship(relsXml: string, id: string, type: string, target: s
 }
 
 function insertContentTypeOverride(ctXml: string, partName: string, contentType: string): string {
-  if (ctXml.includes(`PartName="${partName}"`)) return ctXml;
+  const overrides: any[] = makeParser().parse(ctXml)?.Types?.Override ?? [];
+  if (overrides.some((part) => part['@_PartName'] === partName)) return ctXml;
   const entry = `  <Override PartName="${partName}" ContentType="${contentType}"/>`;
   return ctXml.replace('</Types>', `${entry}\n</Types>`);
+}
+
+function supportsPackageRoot(xml: string, name: string, namespace: string): boolean {
+  const doc = new XMLParser({ ignoreAttributes: false, ignoreDeclaration: true, processEntities: false }).parse(xml);
+  return Object.keys(doc).length === 1 && doc[name]?.['@_xmlns'] === namespace &&
+    (xml.includes(`</${name}>`) || (name === 'Relationships' && /<Relationships\b[^>]*\/>/.test(xml)));
 }
 
 function hasLegacyComments(zip: any): boolean {
@@ -175,18 +182,26 @@ export class PptxCommentWriterService {
       }
     }
     const preserve = () => ({ buffer, legacy: true, commentCount: 0, sanitized: false });
-    const presentationRels = parseRelationships(await zip.file('ppt/_rels/presentation.xml.rels')?.async('string') ?? '');
+    const presentationRelsXml = await zip.file('ppt/_rels/presentation.xml.rels')?.async('string') ?? '';
+    const contentTypesXml = await zip.file('[Content_Types].xml')?.async('string') ?? '';
+    // String insertion only supports these familiar package roots; preserve other valid layouts.
+    if (!supportsPackageRoot(presentationRelsXml, 'Relationships', 'http://schemas.openxmlformats.org/package/2006/relationships') ||
+        !supportsPackageRoot(contentTypesXml, 'Types', 'http://schemas.openxmlformats.org/package/2006/content-types')) return preserve();
+    const presentationRels = parseRelationships(presentationRelsXml);
     const authorRels = presentationRels.filter((rel: any) => /author/i.test(rel['@_Type'] ?? ''));
     if (authorRels.length && (authorRels.length !== 1 || authorRels[0]['@_Type'] !== REL_TYPE_AUTHORS ||
         authorRels[0]['@_Target'] !== 'authors.xml' || authorRels[0]['@_TargetMode'] === 'External' || !existingBotId)) return preserve();
-    const contentTypes = makeParser().parse(await zip.file('[Content_Types].xml')?.async('string') ?? '')?.Types?.Override ?? [];
+    const contentTypes = makeParser().parse(contentTypesXml)?.Types?.Override ?? [];
     if (contentTypes.some((part: any) => /comments|authors/i.test(part['@_ContentType'] ?? '') &&
         part['@_PartName'] !== '/ppt/authors.xml' && !/^\/ppt\/comments\/modernComment_\d+\.xml$/.test(part['@_PartName'] ?? ''))) return preserve();
     for (const slide of deck.slides) {
+      if (!/^slides\/[^/]+\.xml$/.test(slide.slideFile)) return preserve();
       const xml = await zip.file(`ppt/${slide.slideFile}`)?.async('string') ?? '';
       if (!xml.includes('</p:sld>')) return preserve();
       const slideName = slide.slideFile.split('/').pop()!;
-      const rels = parseRelationships(await zip.file(`ppt/slides/_rels/${slideName}.rels`)?.async('string') ?? '');
+      const relsXml = await zip.file(`ppt/slides/_rels/${slideName}.rels`)?.async('string');
+      if (relsXml && !supportsPackageRoot(relsXml, 'Relationships', 'http://schemas.openxmlformats.org/package/2006/relationships')) return preserve();
+      const rels = relsXml ? parseRelationships(relsXml) : [];
       const commentRels = rels.filter((rel: any) => /comment/i.test(rel['@_Type'] ?? ''));
       const commentRefs = [...xml.matchAll(/<(?:[\w.-]+:)?commentRel\b[^>]*\br:id=["']([^"']+)["'][^>]*\/?>/g)];
       if (commentRels.length || xml.includes('commentRel')) {
@@ -397,7 +412,7 @@ export class PptxCommentWriterService {
     if (/<\/p:extLst>\s*<\/p:sld>/.test(stripped)) {
       updated = stripped.replace(/<\/p:extLst>(\s*<\/p:sld>)/, `${extEntry}\n  </p:extLst>$1`);
     } else if (/<p:extLst\s*\/>\s*<\/p:sld>/.test(stripped)) {
-      updated = stripped.replace(/<p:extLst\s*\/>/, `<p:extLst>\n${extEntry}\n</p:extLst>`);
+      updated = stripped.replace(/<p:extLst\s*\/>(\s*<\/p:sld>)/, `<p:extLst>\n${extEntry}\n</p:extLst>$1`);
     } else {
       const extLst = `  <p:extLst>\n${extEntry}\n  </p:extLst>\n`;
       updated = stripped.replace('</p:sld>', `${extLst}</p:sld>`);

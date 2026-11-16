@@ -214,8 +214,8 @@ export class PptxReaderService {
 
   private async extractNotes(zip: any, parser: any, slideTarget: string): Promise<string> {
     try {
-      const slideName = slideTarget.split('/').pop()?.replace('.xml', '') ?? '';
-      const relsPath = `ppt/slides/_rels/${slideName}.xml.rels`;
+      const slideDir = posix.join('ppt', posix.dirname(slideTarget));
+      const relsPath = posix.join(slideDir, '_rels', `${posix.basename(slideTarget)}.rels`);
       const relsXml = await zip.file(relsPath)?.async('string');
       if (!relsXml) return '';
 
@@ -224,8 +224,10 @@ export class PptxReaderService {
       const notesRel = relationships.find((r: any) => r['@_Type'] === NOTES_REL_TYPE);
       if (!notesRel) return '';
 
-      const notesTarget = notesRel['@_Target'].replace(/^\.\.\//, '');
-      const notesXml = await zip.file(`ppt/${notesTarget}`)?.async('string');
+      if (notesRel['@_TargetMode'] === 'External') return '';
+      const target = notesRel['@_Target'];
+      const notesTarget = posix.normalize(target.startsWith('/') ? target.slice(1) : posix.join(slideDir, target));
+      const notesXml = await zip.file(notesTarget)?.async('string');
       if (!notesXml) return '';
 
       const notesDoc = parser.parse(notesXml);

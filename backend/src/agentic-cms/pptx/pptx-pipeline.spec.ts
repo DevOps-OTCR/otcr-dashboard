@@ -456,6 +456,78 @@ describe('PowerPoint adversarial regressions', () => {
     expect(await unchanged.file('ppt/slides/_rels/slide1.xml.rels').async('string')).toContain('../../custom/human-feedback.xml');
   });
 
+  it.each([
+    ['ppt/_rels/presentation.xml.rels', 'Relationships', 'Relationship'],
+    ['ppt/slides/_rels/slide1.xml.rels', 'Relationships', 'Relationship'],
+    ['[Content_Types].xml', 'Types', 'Override'],
+  ])('preserves unfamiliar prefixed package roots in %s without modifying the ZIP', async (path, root, child) => {
+    const zip = await (JSZip as any).loadAsync(await buildPptx([{ title: 'A', body: [] }]));
+    let xml = await zip.file(path).async('string');
+    if (path.includes('slides/_rels/')) {
+      xml = '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="image1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/></Relationships>';
+    }
+    xml = xml.replace(new RegExp('<' + root + '\\b'), '<pkg:' + root)
+      .replace(new RegExp('</' + root + '>'), '</pkg:' + root + '>')
+      .replace('xmlns=', 'xmlns:pkg=')
+      .replace(new RegExp('<' + child + '\\b', 'g'), '<pkg:' + child)
+      .replace(/<Default\b/g, '<pkg:Default');
+    zip.file(path, xml);
+    const original = await zip.generateAsync({ type: 'nodebuffer' });
+    const result = await writer.writeComments(original, [{ slideIndex: 1, severity: 'MINOR', comment: 'New feedback' }], await reader.extractDeck(original));
+    expect(result.legacy).toBe(true);
+    expect(result.buffer).toBe(original);
+    const unchanged = await (JSZip as any).loadAsync(result.buffer);
+    expect(await unchanged.file(path).async('string')).toBe(xml);
+  });
+
+  it('inserts comment links into the final slide extension list rather than an earlier empty shape list', async () => {
+    const zip = await (JSZip as any).loadAsync(await buildPptx([{ title: 'A', body: [] }]));
+    const xml = await zip.file('ppt/slides/slide1.xml').async('string');
+    zip.file('ppt/slides/slide1.xml', xml.replace('</p:sp>', '<p:extLst/></p:sp>').replace('</p:sld>', '<p:extLst/></p:sld>'));
+    const original = await zip.generateAsync({ type: 'nodebuffer' });
+    const result = await writer.writeComments(original, [{ slideIndex: 1, severity: 'MINOR', comment: 'New feedback' }], await reader.extractDeck(original));
+    const modified = await (JSZip as any).loadAsync(result.buffer);
+    const output = await modified.file('ppt/slides/slide1.xml').async('string');
+    expect(output.slice(0, output.indexOf('</p:cSld>'))).not.toContain('commentRel');
+    expect(output.slice(output.indexOf('</p:cSld>'))).toContain('commentRel');
+  });
+
+  it('does not duplicate content type overrides whose attributes use single quotes', async () => {
+    const original = await buildPptx([{ title: 'A', body: [] }]);
+    const first = await writer.writeComments(original, [{ slideIndex: 1, severity: 'MINOR', comment: 'First' }], await reader.extractDeck(original));
+    const zip = await (JSZip as any).loadAsync(first.buffer);
+    const types = await zip.file('[Content_Types].xml').async('string');
+    zip.file('[Content_Types].xml', types.replace(/"/g, "'"));
+    const quoted = await zip.generateAsync({ type: 'nodebuffer' });
+    const second = await writer.writeComments(quoted, [{ slideIndex: 1, severity: 'MINOR', comment: 'Second' }], await reader.extractDeck(quoted));
+    expect(second.legacy).toBe(false);
+    expect(second.commentCount).toBe(1);
+    const output = await (JSZip as any).loadAsync(second.buffer);
+    const result = await output.file('[Content_Types].xml').async('string');
+    expect([...result.matchAll(/PartName=["']\/ppt\/authors\.xml["']/g)]).toHaveLength(1);
+    expect([...result.matchAll(/PartName=["']\/ppt\/comments\/modernComment_256\.xml["']/g)]).toHaveLength(1);
+  });
+
+  it('reads nested slide notes relative to the actual slide directory and preserves the deck on write', async () => {
+    const zip = await (JSZip as any).loadAsync(await buildPptx([{ title: 'Nested slide', body: [] }]));
+    zip.file('ppt/slides/nested/slide1.xml', await zip.file('ppt/slides/slide1.xml').async('string'));
+    zip.remove('ppt/slides/slide1.xml');
+    zip.remove('ppt/slides/_rels/slide1.xml.rels');
+    zip.file('ppt/slides/nested/_rels/slide1.xml.rels', '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="notes" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" Target="../../notesSlides/notesSlide1.xml"/></Relationships>');
+    zip.file('ppt/notesSlides/notesSlide1.xml', slideXml({ title: 'Notes', body: ['Speaker-only evidence'] }).replace(/p:sld/g, 'p:notes'));
+    zip.file('ppt/_rels/presentation.xml.rels', (await zip.file('ppt/_rels/presentation.xml.rels').async('string')).replace('slides/slide1.xml', 'slides/nested/slide1.xml'));
+    zip.file('[Content_Types].xml', (await zip.file('[Content_Types].xml').async('string'))
+      .replace('/ppt/slides/slide1.xml', '/ppt/slides/nested/slide1.xml')
+      .replace('</Types>', '<Override PartName="/ppt/notesSlides/notesSlide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/></Types>'));
+    const original = await zip.generateAsync({ type: 'nodebuffer' });
+    const deck = await reader.extractDeck(original);
+    expect(deck.slides[0].speakerNotes).toBe('Speaker-only evidence');
+    expect(deck.slides[0].slideFile).toBe('slides/nested/slide1.xml');
+    const result = await writer.writeComments(original, [{ slideIndex: 1, severity: 'MINOR', comment: 'New feedback' }], deck);
+    expect(result.legacy).toBe(true);
+    expect(result.buffer).toBe(original);
+  });
+
   it('counts only new findings, including when other slides already have bot comments', async () => {
     const original = await buildPptx([{ title: 'A', body: [] }, { title: 'B', body: [] }]);
     const first = await writer.writeComments(original, [{ slideIndex: 1, severity: 'MINOR', comment: 'First' }], await reader.extractDeck(original));
