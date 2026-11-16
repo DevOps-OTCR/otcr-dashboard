@@ -135,7 +135,7 @@ export class PptxReviewTools {
         this.check(ctx);
         if (!result.available) return { content: (result as { available: false; reason: string }).reason, note: 'Render unavailable' };
         return {
-          content: `Rendered slides in image order: ${result.slides.map((s) => s.slideIndex).join(', ')}.`,
+          content: `Rendered slides in image order: ${result.slides.map((s) => s.slideIndex).join(', ')}. ${result.warning}`,
           note: `${result.slides.length} slides rendered`,
           images: result.slides.map((s) => ({ base64: s.pngBase64, mimeType: s.mimeType })),
         };

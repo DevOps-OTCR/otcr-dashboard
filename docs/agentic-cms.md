@@ -277,6 +277,8 @@ Microsoft Graph requires `MSGRAPH_CLIENT_ID`, `MSGRAPH_TENANT_ID`, and either
 `MSGRAPH_REFRESH_TOKEN` (delegated account) or `MSGRAPH_CLIENT_SECRET` (application credentials).
 `MSGRAPH_VISION_ENABLED=true` additionally enables PDF conversion and PNG slide images, up to
 20 slides per call, for a vision-capable model. Without it, review uses extracted text.
+Canvas allocation is limited to a 4096-pixel edge and 8 megapixels. Oversized pages fall back
+to text; the image result warns that oversized embedded images can be omitted or downsampled.
 No live credentials or deployment configuration are changed by this PR.
 
 ## Where each group builds

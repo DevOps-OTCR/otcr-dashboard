@@ -1,8 +1,40 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
 
 const DEFAULT_MAX_SLIDES = 20;
+const MAX_PIXELS = 8_000_000;
+const CANVAS_LIMIT = 'Slide rendering exceeds the 4096 pixel edge or 8 megapixel canvas limit.';
+type CanvasHandle = { canvas: { width: number; height: number } | null; context: unknown };
+
+// PDF.js calls this factory for both page canvases and intermediate drawing surfaces.
+class BoundedCanvasFactory {
+  private check(width: number, height: number): void {
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0 ||
+        width > 4096 || height > 4096 || Math.ceil(width) * Math.ceil(height) > MAX_PIXELS) throw new RangeError(CANVAS_LIMIT);
+  }
+
+  create(width: number, height: number): CanvasHandle {
+    this.check(width, height);
+    const { createCanvas } = createRequire(require.resolve('pdfjs-dist/package.json'))('@napi-rs/canvas') as typeof import('@napi-rs/canvas');
+    const canvas = createCanvas(width, height);
+    return { canvas, context: canvas.getContext('2d') };
+  }
+
+  reset(handle: CanvasHandle, width: number, height: number): void {
+    this.check(width, height);
+    if (!handle.canvas) throw new Error('Canvas is unavailable.');
+    handle.canvas.width = width;
+    handle.canvas.height = height;
+  }
+
+  destroy(handle: CanvasHandle): void {
+    if (handle.canvas) handle.canvas.width = handle.canvas.height = 0;
+    handle.canvas = null;
+    handle.context = null;
+  }
+}
 
 export interface SlideImage {
   slideIndex: number;
@@ -14,7 +46,7 @@ export interface SlideImage {
 
 export type RenderResult =
   | { available: false; reason: string }
-  | { available: true; slides: SlideImage[] };
+  | { available: true; slides: SlideImage[]; warning: string };
 
 function pngDimensions(buf: Buffer): { widthPx: number; heightPx: number } {
   // PNG: 8-byte magic + 4-byte IHDR length + 4-byte "IHDR" + 4-byte width + 4-byte height
@@ -37,7 +69,7 @@ export class PptxRendererService {
       return { available: false, reason: 'Set MSGRAPH_VISION_ENABLED=true and configure a vision-capable model to enable slide image rendering.' };
     }
 
-    let pdfFn: (input: Buffer, opts: { scale: number }) => Promise<{ length: number; getPage: (n: number) => Promise<Buffer>; destroy: () => Promise<void> }>;
+    let pdfFn: (input: Buffer, opts: { scale: number; docInitParams: { CanvasFactory: typeof BoundedCanvasFactory; maxImageSize: number; canvasMaxAreaInBytes: number } }) => Promise<{ length: number; getPage: (n: number) => Promise<Buffer>; destroy: () => Promise<void> }>;
     try {
       // Preserve native import in the CommonJS backend; pdf-to-img and PDF.js are ESM.
       const nativeImport = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<typeof import('pdf-to-img')>;
@@ -50,7 +82,7 @@ export class PptxRendererService {
 
     let doc: Awaited<ReturnType<typeof pdfFn>> | null = null;
     try {
-      doc = await pdfFn(pdfBuffer, { scale: 1.0 });
+      doc = await pdfFn(pdfBuffer, { scale: 1.0, docInitParams: { CanvasFactory: BoundedCanvasFactory, maxImageSize: MAX_PIXELS, canvasMaxAreaInBytes: MAX_PIXELS * 4 } });
       const pageCount = doc.length;
       if (pageCount > 200) return { available: false, reason: 'This deck exceeds the 200 slide rendering limit.' };
       const indices = slideIndices?.length
@@ -63,10 +95,10 @@ export class PptxRendererService {
         const { widthPx, heightPx } = pngDimensions(png);
         slides.push({ slideIndex: idx, pngBase64: png.toString('base64'), mimeType: 'image/png', widthPx, heightPx });
       }
-      return { available: true, slides };
+      return { available: true, slides, warning: 'Images above 8 megapixels may be omitted or downsampled by the renderer; visual review may be incomplete.' };
     } catch (err) {
       this.log.error(`PDF rendering failed: ${err instanceof Error ? err.name : 'unknown'}`);
-      return { available: false, reason: 'PDF rendering failed — check server logs.' };
+      return { available: false, reason: err instanceof RangeError && err.message === CANVAS_LIMIT ? CANVAS_LIMIT : 'PDF rendering failed — check server logs.' };
     } finally {
       await doc?.destroy().catch(() => undefined);
     }
