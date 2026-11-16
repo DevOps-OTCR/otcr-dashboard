@@ -279,6 +279,9 @@ Microsoft Graph requires `MSGRAPH_CLIENT_ID`, `MSGRAPH_TENANT_ID`, and either
 20 slides per call, for a vision-capable model. Without it, review uses extracted text.
 Canvas allocation is limited to a 4096-pixel edge and 8 megapixels. Oversized pages fall back
 to text; the image result warns that oversized embedded images can be omitted or downsampled.
+Uploads send the exact reviewed eTag in `If-Match`; mocked precondition tests do not prove the
+remote service enforces it. Before enabling shared write access, validate a concurrent edit
+against a controlled Office file so an outdated review cannot overwrite newer content.
 No live credentials or deployment configuration are changed by this PR.
 
 ## Where each group builds
