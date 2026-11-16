@@ -104,6 +104,43 @@ describe('AgentService.run', () => {
     await expect(runTurn(svc, 'peek', mine.conversationId, { ...user, id: 'u2' })).rejects.toBeInstanceOf(NotFoundException);
   });
 
+  it('allows retrying a skill whose earlier load failed', async () => {
+    const seen: ModelRequest[] = [];
+    const model: ModelClient = {
+      name: 'retry-failed-skill',
+      async stream(req) {
+        seen.push(req);
+        return { text: 'Ready.', toolCalls: [], message: assistantMessage('Ready.', []) };
+      },
+    };
+    const { svc, store } = setup(model);
+    const first = await runTurn(svc, 'Start.');
+    const call = { id: 'failed-skill', name: 'load_skill', args: { name: 'research' } };
+    await store.append(first.conversationId!, [
+      assistantMessage('', [call]),
+      { role: 'tool', tool_call_id: call.id, content: 'Skill unavailable. Please retry.' },
+    ]);
+    await runTurn(svc, 'Retry research.', first.conversationId);
+    expect(seen[1].system).toContain('research:');
+    expect(seen[1].system).not.toContain('already loaded');
+  });
+
+  it('does not start a tool returned by a model after the request was aborted', async () => {
+    const abort = new AbortController();
+    const model: ModelClient = {
+      name: 'late-tool-call',
+      async stream() {
+        abort.abort();
+        const call = { id: 'late', name: 'get_project_context', args: {} };
+        return { text: '', toolCalls: [call], message: assistantMessage('', [call]) };
+      },
+    };
+    const { svc } = setup(model);
+    const events: AgentEvent[] = [];
+    await expect(svc.run({ user, projectId: 'p1', message: 'Review.', signal: abort.signal }, (event) => events.push(event))).rejects.toThrow();
+    expect(events.filter((event) => event.type === 'tool_start')).toEqual([]);
+  });
+
   it('sends the system prompt and full history to the model', async () => {
     const seen: ModelRequest[] = [];
     const spy: ModelClient = {
@@ -926,69 +963,56 @@ describe('AgentService.run', () => {
       return { store, svc: new AgentService(model, store, flags, tools, skills, config) };
     };
 
-    it('lets the model analyse images first, then forces add_pptx_comments on the following round', async () => {
+    it('answers a review-only request without forcing a write or retaining synthetic user messages', async () => {
       const seen: ModelRequest[] = [];
-      let round = 0;
       const model: ModelClient = {
-        name: 'image-analyse-then-comments',
-        async stream(req) {
+        name: 'review-only',
+        async stream(req, onText) {
           seen.push(req);
-          if (++round === 1) {
+          if (seen.length === 1) {
             const call = { id: 'c1', name: 'render_slides', args: {} };
             return { text: '', toolCalls: [call], message: assistantMessage('', [call]) };
           }
-          if (round === 2) {
-            // Analysis round: model writes findings as text (no tool call yet).
-            return { text: 'Slide 1 looks good, slide 2 needs a citation.', toolCalls: [], message: assistantMessage('Slide 1 looks good.', []) };
-          }
-          if (round === 3) {
-            // Forced tool call round.
-            const call = { id: 'c2', name: 'any_tool', args: {} };
-            return { text: '', toolCalls: [call], message: assistantMessage('', [call]) };
-          }
-          return { text: 'done', toolCalls: [], message: assistantMessage('done', []) };
+          const text = 'Slide 2 needs a citation [1].';
+          onText(text);
+          return { text, toolCalls: [], message: assistantMessage(text, []) };
         },
       };
-      const { svc } = imageSetup(model);
-      await runTurn(svc, 'review');
-      expect(seen[0].toolChoice).toBeUndefined(); // render_slides round
-      expect(seen[1].toolChoice).toBeUndefined(); // analysis round — images present, no force
-      expect(seen[2].toolChoice).toBe('add_pptx_comments'); // forced after analysis
-      expect(seen[3].toolChoice).toBeUndefined(); // cleared after use
+      const { svc, store } = imageSetup(model);
+      const first = await runTurn(svc, 'Review only. Do not post comments.');
+      expect(seen).toHaveLength(2);
+      expect(seen.every((request) => request.toolChoice === undefined)).toBe(true);
+      expect(first.text).toContain('Slide 2 needs a citation');
+      const saved = await store.history(first.conversationId!);
+      expect(saved.filter((message) => message.role === 'user')).toEqual([
+        { role: 'user', content: 'Review only. Do not post comments.' },
+      ]);
+      expect(JSON.stringify(saved)).not.toContain('data:image');
+      expect(await store.userMessagesLastHour(user.id)).toBe(1);
+      await runTurn(svc, 'Continue in text.', first.conversationId);
+      expect(seen[2].messages.some((message) => message.role === 'user' && Array.isArray(message.content))).toBe(false);
     });
 
-    it('strips image parts from the forced add_pptx_comments round to keep the payload small', async () => {
-      const seen: ModelRequest[] = [];
+    it('finishes every tool result in a batch before injecting images', async () => {
       let round = 0;
       const model: ModelClient = {
-        name: 'image-analyse-strip',
+        name: 'batched-images',
         async stream(req) {
-          seen.push(req);
+          assertValidToolHistory(req.messages);
           if (++round === 1) {
-            const call = { id: 'c1', name: 'render_slides', args: {} };
-            return { text: '', toolCalls: [call], message: assistantMessage('', [call]) };
+            const calls = [
+              { id: 'image', name: 'render_slides', args: {} },
+              { id: 'context', name: 'get_project_context', args: {} },
+            ];
+            return { text: '', toolCalls: calls, message: assistantMessage('', calls) };
           }
-          if (round === 2) {
-            return { text: 'Analysis text.', toolCalls: [], message: assistantMessage('Analysis text.', []) };
-          }
-          return { text: 'done', toolCalls: [], message: assistantMessage('done', []) };
+          return { text: 'Reviewed.', toolCalls: [], message: assistantMessage('Reviewed.', []) };
         },
       };
-      const { svc } = imageSetup(model);
-      await runTurn(svc, 'review');
-
-      // Round 2 (analysis): images ARE in messages
-      const analysisMessages = seen[1].messages;
-      expect(analysisMessages.some((m) => m.role === 'user' && Array.isArray(m.content) &&
-        (m.content as { type: string }[]).some((p) => p.type === 'image_url'))).toBe(true);
-
-      // Round 3 (forced): images stripped, only text remains
-      const forcedMessages = seen[2].messages;
-      expect(forcedMessages.some((m) => m.role === 'user' && Array.isArray(m.content) &&
-        (m.content as { type: string }[]).some((p) => p.type === 'image_url'))).toBe(false);
-      // The image user message is replaced with its text label
-      expect(forcedMessages.some((m) => m.role === 'user' &&
-        typeof m.content === 'string' && m.content.includes('Slide images'))).toBe(true);
+      const { svc, store } = imageSetup(model);
+      const first = await runTurn(svc, 'Review the slides with project context.');
+      expect(round).toBe(2);
+      assertValidToolHistory(await store.history(first.conversationId!));
     });
 
     it('injects image parts into the user message following the tool result', async () => {

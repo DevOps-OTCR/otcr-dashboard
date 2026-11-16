@@ -1,4 +1,4 @@
-import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
 export class ChatDto {
   @IsString()
@@ -14,6 +14,9 @@ export class ChatDto {
 
   @IsOptional()
   @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  @Matches(/^[^\p{Cc}\p{Zl}\p{Zp}]+$/u)
   deliverableId?: string;
 
   @IsString()
