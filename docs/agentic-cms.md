@@ -239,22 +239,45 @@ the skills folder copied in (or `AGENTIC_CMS_SKILLS_DIR` pointed at it).
   server instances. The per-user hourly limit resets with it.
 - Search excerpts are unverified leads. There is no full-page `read_web_source` yet.
 - Week 2 review UI and review skills are not connected. OTCR Bot and MCP clients can read Google
-  Docs submissions and post anchored comments; PowerPoint review is not connected yet.
+  Docs submissions and post anchored comments. PowerPoint review is available in OTCR Bot only;
+  its tools are not registered on MCP.
 - Google Docs comments need the document shared with the bot's service account as Commenter or
   Editor. A document shared only as Viewer can be read but not commented on, and a public link
   allows reading only.
-- Posting comments does not stop when the browser disconnects: a batch that has started (up to
-  20 comments) finishes.
+- Google Docs batches stop before the next write when the browser disconnects. A request already
+  sent to Google may have succeeded; `comment-uncertain` means to check before retrying manually.
 - OTCR Bot remembers the comments it posted for one hour per backend process, so a retry does
   not post them twice. A restart or a second backend instance forgets them.
-- If the feature flag is turned off partway through a batch, the call stops with an error and the
-  comments already posted are not returned. They can be posted again if the flag is turned back
-  on within the hour.
+- If the feature flag is turned off partway through a Google Docs batch, no further writes start.
+  Completed comment receipts are retained and unattempted comments return as fallbacks.
 - Document text is the consultant's work and may contain instructions aimed at the model. Tool
   output is marked as data, and only admins, the project's PM and project-member LCs can post,
   but "post only when the user asked" is a prompt instruction, not enforced in code.
 - A comment is anchored to its exact quote. A quote that spans paragraphs, repeats, or was
   paraphrased comes back as a fallback for the user to add by hand.
+- Google Docs comment requests require `textHash` from the reviewed read. Changed text returns
+  `document-changed`; re-read and review it before posting. Comment-only revision changes are safe
+  to retry against the same text hash.
+
+### PowerPoint review
+
+`fetch_pptx_content`, `get_pptx_slide_images`, and `add_pptx_comments` accept a
+`deliverableId` and `submissionId` from the selected project's CMS submissions. The backend
+checks deliverable access and resolves the stored link; tools do not accept arbitrary URLs.
+Posting additionally requires an admin, the project's PM, or an LC with project access.
+Only HTTPS OneDrive/SharePoint share links are supported.
+
+The read returns the snapshot values needed for posting. A changed source or expired/missing
+process-local snapshot requires a fresh read and review. Existing comments that cannot be safely
+preserved cause a text fallback rather than rewriting their parts. Findings are drafts unless
+the user asks to post them; receiving slide images never forces a write. Image payloads are
+used for the current turn and are not retained in conversation history.
+
+Microsoft Graph requires `MSGRAPH_CLIENT_ID`, `MSGRAPH_TENANT_ID`, and either
+`MSGRAPH_REFRESH_TOKEN` (delegated account) or `MSGRAPH_CLIENT_SECRET` (application credentials).
+`MSGRAPH_VISION_ENABLED=true` additionally enables PDF conversion and PNG slide images, up to
+20 slides per call, for a vision-capable model. Without it, review uses extracted text.
+No live credentials or deployment configuration are changed by this PR.
 
 ## Where each group builds
 

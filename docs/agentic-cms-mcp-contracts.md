@@ -163,8 +163,9 @@ quoted text. Code: `backend/src/agentic-cms/documents/` (`GoogleDocReviewService
   Without the credentials the tools return `DOC_NOT_CONFIGURED`.
 - Inputs, both tools: **`projectId`**, **`deliverableId`**, **`submissionId`** (a
   `submissions.items[].id` from `get_deliverable section=submissions`).
-  `comment_google_doc` also takes `comments`: 1 to 20 items of
-  `{ quote (3-500 characters), comment (up to 2000 characters) }`.
+  `comment_google_doc` also requires **`textHash`** from `read_google_doc.document.textHash`
+  and `comments`: 1 to 20 distinct items of
+  `{ quote (3-500 characters), comment (up to 2000 characters and 2048 UTF-8 bytes) }`.
 
 ### `read_google_doc`
 
@@ -199,14 +200,16 @@ anchoredText, anchorVerified }]`.
 | `not-found` | The quote is not in the document, or spans paragraphs | Copy the quote exactly from one paragraph |
 | `ambiguous` | The quote occurs more than once | Add surrounding words |
 | `no-comment-access` | Google refused the bot; the rest of the batch fell back too | Usually Viewer-only sharing: ask the owner for Commenter |
-| `document-changed` | The document changed while posting and a retry on a fresh read did not help; the rest of the batch fell back | Read again and retry |
+| `document-changed` | The document text differs from the reviewed textHash, or a revision retry failed; the rest of the batch fell back | Read and review the new text before posting |
 | `comment-failed` | Google refused the comment, or it was not attempted because an earlier error stopped the batch | Retry |
 | `comment-uncertain` | The request may have reached Google but its answer was lost or unconfirmed: the comment may already exist | Check the document before adding it by hand |
 
 Each posted comment creates a new document revision. The service carries the new revision into
-the next write, and retries once on a fresh read after a revision mismatch. Once posting has
-started, a failure returns what was posted instead of an error. The one exception is turning the
-feature flag off, which stops the call with an error.
+the next write, and retries once on a fresh read after a revision mismatch only while the textHash
+still matches. Once posting has started, failures retain completed receipts. Revocation of the
+feature flag stops subsequent writes and returns unattempted comments as `comment-failed` fallbacks.
+OTCR Bot additionally remembers native or uncertain receipts for an hour per process; MCP writes
+remain non-idempotent across separate calls, so do not blindly retry a completed request.
 
 Errors use `isError` with the service's own messages: `DOC_LINK_UNSUPPORTED`,
 `DOC_NOT_CONFIGURED`, `DOC_NO_ACCESS` (names the bot's email and the sharing step) and
