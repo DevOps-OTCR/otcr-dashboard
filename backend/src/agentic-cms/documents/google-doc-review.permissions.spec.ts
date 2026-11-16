@@ -4,6 +4,8 @@ import { FeatureFlagsService } from '../../feature-flags/feature-flags.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CmsReadAccessService, CmsReader } from '../authorization/cms-read-access.service';
 import { GoogleDocReviewService } from './google-doc-review.service';
+import { flattenDocument, textHash } from './google-doc';
+import { GoogleDocTools } from '../tools/google-doc.tools';
 
 // Real access rules and the real review service; only Prisma and Google are faked.
 // Who may read or comment is decided by CmsReadAccessService, not by this service, so this
@@ -12,7 +14,7 @@ import { GoogleDocReviewService } from './google-doc-review.service';
 const FILE_URL = 'https://docs.google.com/document/d/1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/edit';
 const doc = { title: 'Paper', revisionId: 'r1', body: { content: [{ startIndex: 1, endIndex: 16, paragraph: { elements: [{ startIndex: 1, endIndex: 16, textRun: { content: 'alpha one here\n' } }] } }] } };
 const target = { projectId: 'p1', deliverableId: 'd1', submissionId: 'sub1' };
-const input = { ...target, comments: [{ quote: 'alpha one', comment: 'Tighten this.' }] };
+const input = { ...target, textHash: textHash(flattenDocument(doc)), comments: [{ quote: 'alpha one', comment: 'Tighten this.' }] };
 
 type Project = { id: string; pmId: string; members: { userId: string }[] };
 const asMember = (pmId = 'pm'): Project => ({ id: 'p1', pmId, members: [{ userId: 'self' }] });
@@ -34,13 +36,53 @@ function setup(project: Project, enabled = 'true') {
     insertComment: jest.fn(async () => ({ commentId: 'k1', anchoredText: 'alpha one', nextRevisionId: 'r2', raw: {} })),
   };
   const service = new GoogleDocReviewService(prisma as unknown as PrismaService, access, flags, client as never);
-  return { service, prisma, client };
+  return { service, prisma, client, settings };
 }
 const reader = (role: Role): CmsReader => ({ id: 'self', email: 'pilot@illinois.edu', role });
 const refused = (promise: Promise<unknown>) =>
   promise.then(() => { throw new Error('expected a refusal'); }, (error) => error.getResponse());
 
 describe('Google Doc review permissions', () => {
+  it('refuses cached write receipts after project membership or feature access is revoked', async () => {
+    const project = asMember();
+    const { service, client, settings } = setup(project);
+    const tool = new GoogleDocTools(service, client as never).tools[1];
+    const ctx = { user: reader('LC'), projectId: 'p1', signal: new AbortController().signal, addSources: async () => [] };
+    await tool.run(input, ctx);
+    project.members = [];
+    await expect(tool.run(input, ctx)).rejects.toMatchObject({ note: 'CMS record unavailable' });
+    project.members = [{ userId: 'self' }];
+    settings.AGENTIC_CMS_ENABLED = 'false';
+    await expect(tool.run(input, ctx)).rejects.toMatchObject({ note: 'Agentic CMS unavailable' });
+    expect(client.insertComment).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops after a reviewer loses project membership during the first write and retains its receipt', async () => {
+    const project = asMember();
+    const { service, client } = setup(project);
+    client.insertComment.mockImplementation(async () => {
+      project.members = [];
+      return { commentId: 'k1', anchoredText: 'alpha one', nextRevisionId: 'r2', raw: {} };
+    });
+    const out = await service.comment(reader('LC'), { ...input, comments: [input.comments[0], { quote: 'alpha one', comment: 'A second finding.' }] });
+    expect(out.comments[0]).toMatchObject({ placement: 'native', nativeCommentId: 'k1' });
+    expect(out.comments[1]).toMatchObject({ placement: 'fallback', fallbackReason: 'comment-failed' });
+    expect(client.insertComment).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses cached receipts for a deleted submission and rebinds a replacement document', async () => {
+    const { service, client, prisma } = setup(asMember());
+    const tool = new GoogleDocTools(service, client as never).tools[1];
+    const ctx = { user: reader('LC'), projectId: 'p1', signal: new AbortController().signal, addSources: async () => [] };
+    await tool.run(input, ctx);
+    prisma.submission.findFirst.mockResolvedValueOnce(null);
+    await expect(tool.run(input, ctx)).rejects.toMatchObject({ note: 'CMS record unavailable' });
+    prisma.submission.findFirst.mockImplementation(async () => ({ id: 'sub1', fileUrl: FILE_URL.replace('1AAAA', '1BBBB') }));
+    await tool.run(input, ctx);
+    expect(client.insertComment).toHaveBeenCalledTimes(2);
+    expect(client.insertComment).toHaveBeenLastCalledWith(expect.stringContaining('1BBBB'), expect.any(Object), 'r1', ctx.signal);
+  });
+
   const matrix: [string, Role, Project, boolean, boolean][] = [
     // name, role, project record, may comment, may read
     ['a consultant who is a project member', 'CONSULTANT', asMember(), false, true],

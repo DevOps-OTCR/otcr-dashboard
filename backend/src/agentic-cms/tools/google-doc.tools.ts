@@ -120,7 +120,7 @@ export class GoogleDocTools {
       run: (input, ctx) =>
         runSafe(async () => {
           const parsed = readGoogleDocInput.parse({ ...input, projectId: ctx.projectId });
-          const result = fitToBudget(await this.review.read(ctx.user as CmsReader, parsed));
+          const result = fitToBudget(await this.review.read(ctx.user as CmsReader, parsed, ctx.signal));
           const count = result.paragraphs.length;
           return {
             content: JSON.stringify(result),
@@ -134,7 +134,7 @@ export class GoogleDocTools {
     return {
       name: 'comment_google_doc',
       description:
-        'Post review comments anchored to exact quotes in a submitted Google Doc. Only call this when the user has asked in this conversation for comments to be posted on the document; otherwise draft the comments in your reply. First call read_google_doc and copy each quote exactly from one paragraph; if a phrase appears more than once, include more surrounding words. Each result is placement=native (a real Google comment) or placement=fallback with a fallbackReason. Give the user every fallback comment with its quote and section so they can add it by hand, except comment-uncertain: Google may have saved it, so ask the user to check the document before adding it by hand. anchorVerified=false means Google attached the comment to different text than the quote; tell the user which comment to check. no-comment-access usually means the document is shared with the bot as Viewer; ask the owner to make it Commenter. Comments already posted in the last hour are skipped and returned with alreadyPosted=true; do not report them as new. Only admins, the project\'s PM, and LCs who are members of the project can post; others get an unavailable error.',
+        'Post review comments anchored to exact quotes in a submitted Google Doc. Only call this when the user has asked in this conversation for comments to be posted on the document; otherwise draft the comments in your reply. First call read_google_doc, pass document.textHash, and copy each quote exactly from one paragraph; if a phrase appears more than once, include more surrounding words. document-changed means re-read and review the current text before posting. Each result is placement=native (a real Google comment) or placement=fallback with a fallbackReason. Give the user every fallback comment with its quote and section so they can add it by hand, except comment-uncertain: Google may have saved it, so ask the user to check the document before adding it by hand. anchorVerified=false means Google attached the comment to different text than the quote; tell the user which comment to check. no-comment-access usually means the document is shared with the bot as Viewer; ask the owner to make it Commenter. Comments already posted in the last hour are skipped and returned with alreadyPosted=true; do not report them as new. Only admins, the project\'s PM, and LCs who are members of the project can post; others get an unavailable error.',
       input: commentGoogleDocInput,
       label: ({ comments }) => `Posting ${comments.length} comment${comments.length === 1 ? '' : 's'} to Google Doc`,
       isAvailable: () => this.docs.isConfigured(),
@@ -164,20 +164,40 @@ export class GoogleDocTools {
     // rethrows errors raised under an aborted signal.
     ctx.signal.throwIfAborted();
     const parsed = commentGoogleDocInput.parse({ ...input, projectId: ctx.projectId });
+    const documentId = await this.review.assertCommentAccess(ctx.user as CmsReader, parsed);
     const now = Date.now();
     for (const [key, memory] of this.posted) if (memory.expiresAt <= now) this.posted.delete(key);
 
     const slots = parsed.comments.map((entry) => {
       const key = createHash('sha256')
-        .update([ctx.user.id, ctx.projectId, parsed.submissionId, entry.quote.trim(), entry.comment.trim()].join('\u0000'))
+        .update([ctx.user.id, ctx.projectId, parsed.deliverableId, parsed.submissionId, documentId, parsed.textHash, entry.quote.trim(), entry.comment.trim()].join('\u0000'))
         .digest('hex');
       return { entry, key, earlier: this.posted.get(key) };
     });
     const fresh = slots.filter((slot) => !slot.earlier);
 
+    const remember = (key: string, result: PostedComment) => {
+      const uncertain = result.fallbackReason === 'comment-uncertain';
+      if (result.placement === 'native' || uncertain) {
+        this.posted.set(key, {
+          nativeCommentId: result.nativeCommentId,
+          section: result.section,
+          anchoredText: result.anchoredText,
+          anchorVerified: result.anchorVerified,
+          uncertain,
+          expiresAt: Date.now() + DUPLICATE_TTL_MS,
+        });
+      }
+    };
+
     let reply: CommentResult | null = null;
     if (fresh.length) {
-      reply = await this.review.comment(ctx.user as CmsReader, { ...parsed, comments: fresh.map((slot) => slot.entry) });
+      let completed = 0;
+      reply = await this.review.comment(ctx.user as CmsReader, { ...parsed, comments: fresh.map((slot) => slot.entry) }, {
+        signal: ctx.signal,
+        documentId,
+        onResult: result => remember(fresh[completed++].key, result),
+      });
     }
 
     let next = 0;
@@ -202,20 +222,10 @@ export class GoogleDocTools {
         };
       }
       const result = reply!.comments[next++];
-      const uncertain = result.fallbackReason === 'comment-uncertain';
       if (result.placement === 'native') placed++;
       else fallback++;
       // Remember what is in the document, or may be. Other fallbacks were not posted, so they stay retryable.
-      if (result.placement === 'native' || uncertain) {
-        this.posted.set(slot.key, {
-          nativeCommentId: result.nativeCommentId,
-          section: result.section,
-          anchoredText: result.anchoredText,
-          anchorVerified: result.anchorVerified,
-          uncertain,
-          expiresAt: now + DUPLICATE_TTL_MS,
-        });
-      }
+      remember(slot.key, result);
       return { ...result, alreadyPosted: false };
     });
 

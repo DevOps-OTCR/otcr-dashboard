@@ -33,10 +33,11 @@ export const readGoogleDocOutput = z.object({
 const fallbackReason = z.enum(['not-found', 'ambiguous', 'no-comment-access', 'document-changed', 'comment-failed', 'comment-uncertain']);
 export const commentGoogleDocInput = z.strictObject({
   ...target,
+  textHash: z.string().min(1).max(100).describe('document.textHash from read_google_doc. Re-read and review again if the document text changes.'),
   comments: z.array(z.strictObject({
     quote: z.string().trim().min(3).max(500).describe('Exact text copied from one paragraph of read_google_doc output. Must occur once in the document; add surrounding words if it repeats.'),
-    comment: z.string().trim().min(1).max(2000).describe('Plain-text review comment.'),
-  })).min(1).max(20),
+    comment: z.string().trim().min(1).max(2000).refine(text => Buffer.byteLength(text, 'utf8') <= 2048, 'Comments must fit in 2048 UTF-8 bytes.').describe('Plain-text review comment.'),
+  })).min(1).max(20).refine(comments => new Set(comments.map(entry => JSON.stringify([entry.quote, entry.comment]))).size === comments.length, 'Duplicate comments in one batch are not allowed.'),
 });
 export const commentGoogleDocOutput = z.object({
   schemaVersion: z.literal('1'),
@@ -73,9 +74,10 @@ export class GoogleDocReviewService {
     private readonly docs: GoogleDocsClient,
   ) {}
 
-  async read(user: CmsReader, input: z.infer<typeof readGoogleDocInput>): Promise<z.infer<typeof readGoogleDocOutput>> {
+  async read(user: CmsReader, input: z.infer<typeof readGoogleDocInput>, signal?: AbortSignal): Promise<z.infer<typeof readGoogleDocOutput>> {
+    signal?.throwIfAborted();
     await this.access.assertDeliverableAccess(user, input.projectId, input.deliverableId);
-    const snap = await this.snapshot(user, input);
+    const snap = await this.snapshot(user, input, signal);
     let used = 0;
     const paragraphs = [];
     for (const p of snap.paragraphs) {
@@ -87,18 +89,25 @@ export class GoogleDocReviewService {
     return { schemaVersion: '1', document: documentRef.parse(snap), paragraphs, truncated: used > MAX_TEXT_CHARS };
   }
 
-  async comment(user: CmsReader, input: z.infer<typeof commentGoogleDocInput>): Promise<z.infer<typeof commentGoogleDocOutput>> {
+  async assertCommentAccess(user: CmsReader, input: z.infer<typeof readGoogleDocInput>): Promise<string> {
     // Posting is a reviewer action: same roles that may write project context (admin, LC, the project's PM).
     await this.access.assertContextWrite(user, input.projectId);
     await this.access.assertDeliverableAccess(user, input.projectId, input.deliverableId);
-    let snap = await this.snapshot(user, input);
-    const revisionGuarded = Boolean(snap.revisionId);
+    return (await this.submissionLink(input)).documentId;
+  }
+
+  async comment(user: CmsReader, input: z.infer<typeof commentGoogleDocInput>, options: { signal?: AbortSignal; documentId?: string; onResult?: (result: CommentResult) => void } = {}): Promise<z.infer<typeof commentGoogleDocOutput>> {
+    options.signal?.throwIfAborted();
+    await this.assertCommentAccess(user, input);
+    let snap = await this.snapshot(user, input, options.signal);
+    let revisionGuarded = Boolean(snap.revisionId);
     // Once set, every remaining comment falls back with this reason instead of trying Google.
-    let stopReason: z.infer<typeof fallbackReason> | null = null;
+    let stopReason: z.infer<typeof fallbackReason> | null = snap.textHash === input.textHash &&
+      (!options.documentId || options.documentId === snap.documentId) ? null : 'document-changed';
+    let attempted = false;
     const results: CommentResult[] = [];
 
-    // Once this loop starts, only the feature-flag check may throw. A comment that has already
-    // been posted must always be returned, or a retry would post it a second time.
+    // Record each result before the next flag/abort check can throw, so a retry cannot repost it.
     for (const { quote, comment } of input.comments) {
       const result: CommentResult = {
         quote, comment, section: null, placement: 'fallback', nativeCommentId: null, fallbackReason: null, anchoredText: null, anchorVerified: null,
@@ -110,9 +119,23 @@ export class GoogleDocReviewService {
         const match = findQuote(snap.paragraphs, quote);
         if ('reason' in match) { result.fallbackReason = match.reason; break; }
         result.section = match.section;
-        this.flags.assertAgenticCmsEnabledFor(user.email); // recheck immediately before the external write
         try {
-          const posted = await this.docs.insertComment(snap.documentId, { content: comment, ...match }, snap.revisionId);
+          if (await this.assertCommentAccess(user, input) !== snap.documentId) {
+            result.fallbackReason = stopReason = 'document-changed';
+            break;
+          }
+          options.signal?.throwIfAborted();
+          this.flags.assertAgenticCmsEnabledFor(user.email); // recheck immediately before the external write
+        } catch (error) {
+          if (!attempted) throw error;
+          // Keep receipts for writes already attempted; every remaining comment was not attempted.
+          result.fallbackReason = stopReason = 'comment-failed';
+          break;
+        }
+        try {
+          attempted = true;
+          revisionGuarded = revisionGuarded && Boolean(snap.revisionId);
+          const posted = await this.docs.insertComment(snap.documentId, { content: comment, ...match }, snap.revisionId, options.signal);
           // Google reads back the text it attached the comment to; a difference means an index or
           // revision problem placed it somewhere other than the quote. Never log the text itself.
           const anchoredText = posted.anchoredText ?? null;
@@ -125,12 +148,14 @@ export class GoogleDocReviewService {
         } catch (error) {
           if (error instanceof GoogleDocsError && error.reason === 'revision_mismatch' && attempt === 0) {
             try {
-              snap = await this.snapshot(user, input);
+              snap = await this.snapshot(user, input, options.signal);
+              if (snap.textHash !== input.textHash) {
+                result.fallbackReason = stopReason = 'document-changed';
+                break;
+              }
               continue;
             } catch {
-              // Never post against a snapshot we could not refresh. If the re-read failed because the
-              // flag went off, this recheck throws and stops everything, as it must.
-              this.flags.assertAgenticCmsEnabledFor(user.email);
+              // Never post against a snapshot we could not refresh; retain earlier write receipts.
               result.fallbackReason = 'document-changed';
               stopReason = 'document-changed';
               break;
@@ -154,12 +179,12 @@ export class GoogleDocReviewService {
           break;
         }
       }
+      options.onResult?.(result);
     }
     return { schemaVersion: '1', document: documentRef.parse(snap), revisionGuarded, comments: results };
   }
 
-  private async snapshot(user: CmsReader, input: z.infer<typeof readGoogleDocInput>): Promise<Snapshot> {
-    this.flags.assertAgenticCmsEnabledFor(user.email);
+  private async submissionLink(input: z.infer<typeof readGoogleDocInput>): Promise<{ submissionId: string; url: string; documentId: string }> {
     const submission = await this.prisma.submission.findFirst({
       where: { id: input.submissionId, deliverableId: input.deliverableId },
       select: { id: true, fileUrl: true },
@@ -170,18 +195,28 @@ export class GoogleDocReviewService {
       throw fail(BadRequestException, 'DOC_LINK_UNSUPPORTED',
         'This submission is not a Google Docs link (https://docs.google.com/document/d/...). Only Google Docs can be read and commented on.');
     }
+    return { submissionId: submission.id, url: submission.fileUrl, documentId: link.documentId };
+  }
+
+  private async snapshot(user: CmsReader, input: z.infer<typeof readGoogleDocInput>, signal?: AbortSignal): Promise<Snapshot> {
+    signal?.throwIfAborted();
+    this.flags.assertAgenticCmsEnabledFor(user.email);
+    const link = await this.submissionLink(input);
     if (!this.docs.isConfigured()) throw fail(ServiceUnavailableException, 'DOC_NOT_CONFIGURED', 'Google Docs review is not set up on this server.');
 
     let doc;
     try {
-      doc = await this.docs.getDocument(link.documentId);
+      signal?.throwIfAborted();
+      doc = await this.docs.getDocument(link.documentId, signal);
     } catch (error) {
+      signal?.throwIfAborted();
       throw this.toHttp(error);
     }
+    signal?.throwIfAborted();
     this.flags.assertAgenticCmsEnabledFor(user.email);
     const paragraphs = flattenDocument(doc);
     return {
-      submissionId: submission.id, url: submission.fileUrl, documentId: link.documentId, title: doc.title ?? null,
+      ...link, title: doc.title ?? null,
       revisionId: doc.revisionId ?? null, textHash: textHash(paragraphs), capturedAt: new Date().toISOString(), paragraphs,
     };
   }

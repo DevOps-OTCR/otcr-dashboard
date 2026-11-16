@@ -55,4 +55,12 @@ describe('GoogleDocsClient error reasons', () => {
     await expect(new GoogleDocsClient(empty).getDocument('doc')).rejects.toMatchObject({ reason: 'not_configured' });
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it.each([{}, { replies: [{ insertComment: { commentThread: {} } }] }])('does not claim a native comment without a confirmed ID', async (reply) => {
+    jest.spyOn(globalThis, 'fetch').mockImplementation((async (url: string) => String(url).includes('oauth2.googleapis.com')
+      ? { ok: true, status: 200, json: async () => ({ access_token: 'token', expires_in: 3600 }) }
+      : { ok: true, status: 200, json: async () => reply }) as never);
+    await expect(new GoogleDocsClient(config).insertComment('doc', { content: 'c', startIndex: 1, endIndex: 2, tabId: null }, null))
+      .rejects.toMatchObject({ reason: 'uncertain', status: 200 });
+  });
 });

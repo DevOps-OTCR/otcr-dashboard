@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Logger, NotFoundException } fr
 import type { AgentEvent } from '../agent/agent.events';
 import type { AgentUser } from '../agent/agent.types';
 import { GoogleDocReviewService } from '../documents/google-doc-review.service';
+import { textHash } from '../documents/google-doc';
 import { GoogleDocsError, type GoogleDocsClient } from '../documents/google-docs.client';
 import { GoogleDocTools } from './google-doc.tools';
 import { ToolRegistry } from './tool-registry';
@@ -21,7 +22,7 @@ const fallback = (quote: string) => ({ quote, comment: `about ${quote}`, section
 const commentResult = (comments: unknown[]) => ({ schemaVersion: '1', document: documentRef, revisionGuarded: true, comments });
 
 function setup(configured = true) {
-  const review = { read: jest.fn(), comment: jest.fn() };
+  const review = { read: jest.fn(), comment: jest.fn(), assertCommentAccess: jest.fn(async () => undefined) };
   const client = { isConfigured: jest.fn(() => configured) };
   const tools = new GoogleDocTools(review as unknown as GoogleDocReviewService, client as unknown as GoogleDocsClient);
   const named = (name: string): AgentTool => {
@@ -32,8 +33,11 @@ function setup(configured = true) {
   return { review, client, tools, read: named('read_google_doc'), comment: named('comment_google_doc') };
 }
 
-const target = { projectId: 'other', deliverableId: 'd1', submissionId: 'sub1' };
-const runRead = (tool: AgentTool, ctx = ctxFor()) => tool.run(tool.input.parse(target), ctx);
+const target = { projectId: 'other', deliverableId: 'd1', submissionId: 'sub1', textHash: textHash(['alpha one here', 'beta two here', 'gamma three here'].map((text, n) => ({ n: n + 1, startIndex: 0, section: null, tabId: null, text }))) };
+const runRead = (tool: AgentTool, ctx = ctxFor()) => {
+  const { projectId, deliverableId, submissionId } = target;
+  return tool.run(tool.input.parse({ projectId, deliverableId, submissionId }), ctx);
+};
 const runComment = (tool: AgentTool, comments: { quote: string; comment: string }[], over: Partial<typeof target> = {}, ctx = ctxFor()) =>
   tool.run(tool.input.parse({ ...target, ...over, comments }), ctx);
 const c = (quote: string) => ({ quote, comment: `about ${quote}` });
@@ -140,6 +144,27 @@ describe('GoogleDocTools', () => {
   });
 
   describe('comment_google_doc', () => {
+    it('rejects duplicate entries before any comment is posted', async () => {
+      const { review, comment } = setup();
+      expect(() => runComment(comment, [c('alpha one'), c('alpha one')])).toThrow(/Duplicate comments/);
+      expect(review.comment).not.toHaveBeenCalled();
+    });
+
+    it('checks current permissions before returning cached document text', async () => {
+      const { review, comment } = setup();
+      review.comment.mockResolvedValue(commentResult([native('alpha one', 'k1')]));
+      await runComment(comment, [c('alpha one')]);
+      review.assertCommentAccess.mockRejectedValueOnce(new NotFoundException({ code: 'NOT_FOUND_OR_FORBIDDEN' }));
+      await expect(runComment(comment, [c('alpha one')])).rejects.toBeInstanceOf(ToolFailure);
+      expect(review.assertCommentAccess).toHaveBeenCalledWith(user, expect.objectContaining({ projectId: 'selected', deliverableId: 'd1' }));
+      expect(review.comment).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects comments exceeding Google\'s UTF-8 byte limit', () => {
+      const { comment } = setup();
+      expect(() => runComment(comment, [{ quote: 'alpha one', comment: '界'.repeat(700) }])).toThrow(/2048 UTF-8/);
+    });
+
     it('counts placed and fallback comments in the note', async () => {
       const { review, comment } = setup();
       review.comment.mockResolvedValue(commentResult([native('alpha one', 'k1'), fallback('beta two'), native('gamma three', 'k3')]));
@@ -333,16 +358,48 @@ describe('GoogleDocTools', () => {
       expect(insert).toHaveBeenCalledTimes(2);
     });
 
-    it('still stops everything when the feature flag goes off mid-batch', async () => {
+    it('stops writes but returns completed receipts when the feature flag goes off mid-batch', async () => {
       let checks = 0;
       // Calls 1-2 are the snapshot, 3 is before comment 1's write, 4 is before comment 2's write.
       const flags = { assertAgenticCmsEnabledFor: () => { if (++checks === 4) throw new NotFoundException(); } };
       const insert = jest.fn(async () => ({ commentId: 'k1', anchoredText: null, nextRevisionId: 'r2', raw: {} }));
-      const failure = await runComment(realTool(insert, { flags }), [c('alpha one'), c('beta two')])
-        .then(() => { throw new Error('expected a failure'); }, (e) => e);
-      expect(failure).toBeInstanceOf(ToolFailure);
-      expect(failure.modelMessage).toBe('Agentic CMS is unavailable.');
+      const tool = realTool(insert, { flags });
+      const partial = JSON.parse((await runComment(tool, [c('alpha one'), c('beta two')])).content);
+      expect(partial.comments[0]).toMatchObject({ placement: 'native', nativeCommentId: 'k1' });
+      expect(partial.comments[1]).toMatchObject({ placement: 'fallback', fallbackReason: 'comment-failed' });
       expect(insert).toHaveBeenCalledTimes(1);
+      const retry = JSON.parse((await runComment(tool, [c('alpha one'), c('beta two')])).content);
+      expect(retry.comments.map((entry: { alreadyPosted: boolean }) => entry.alreadyPosted)).toEqual([true, false]);
+      expect(posted(insert, 'about alpha one')).toHaveLength(1);
+    });
+
+    it('stops remaining writes on abort and remembers the completed comment for retry', async () => {
+      const controller = new AbortController();
+      const insert: jest.Mock = jest.fn(async () => {
+        controller.abort();
+        return { commentId: 'k1', anchoredText: null, nextRevisionId: 'r2', raw: {} };
+      });
+      const tool = realTool(insert);
+      const partial = JSON.parse((await runComment(tool, [c('alpha one'), c('beta two')], {}, ctxFor({ signal: controller.signal }))).content);
+      expect(partial.comments[0]).toMatchObject({ placement: 'native', nativeCommentId: 'k1' });
+      expect(partial.comments[1]).toMatchObject({ placement: 'fallback', fallbackReason: 'comment-failed' });
+      expect(insert).toHaveBeenCalledTimes(1);
+      expect(insert.mock.calls[0][3]).toBe(controller.signal);
+      const retry = JSON.parse((await runComment(tool, [c('alpha one')])).content);
+      expect(retry.comments[0]).toMatchObject({ alreadyPosted: true, nativeCommentId: 'k1' });
+      expect(insert).toHaveBeenCalledTimes(1);
+    });
+
+    it('propagates cancellation while reading the snapshot and never posts', async () => {
+      const controller = new AbortController();
+      const getDocument = jest.fn(async (_id: string, signal: AbortSignal) => {
+        expect(signal).toBe(controller.signal);
+        controller.abort();
+        signal.throwIfAborted();
+      });
+      const insert = jest.fn();
+      await expect(runComment(realTool(insert, { getDocument }), [c('alpha one')], {}, ctxFor({ signal: controller.signal }))).rejects.toMatchObject({ name: 'AbortError' });
+      expect(insert).not.toHaveBeenCalled();
     });
   });
 
@@ -412,7 +469,7 @@ describe('GoogleDocTools', () => {
     const registry = new ToolRegistry({} as never, {} as never, { tools: [] } as never, { tools: [] } as never, tools);
     const events: AgentEvent[] = [];
     const result = await registry.execute(
-      { id: 'c1', name: 'read_google_doc', args: target }, await registry.available(), ctxFor(), (e) => events.push(e),
+      { id: 'c1', name: 'read_google_doc', args: { projectId: target.projectId, deliverableId: target.deliverableId, submissionId: target.submissionId } }, await registry.available(), ctxFor(), (e) => events.push(e),
     );
     expect(result.content.startsWith('<tool_data tool="read_google_doc">\n')).toBe(true);
     expect(result.content.endsWith('\n</tool_data>')).toBe(true);

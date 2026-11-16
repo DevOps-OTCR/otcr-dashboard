@@ -75,6 +75,9 @@ export class GoogleDocsClient {
       throw new GoogleDocsError('uncertain', 200, `Comment not confirmed saved: ${raw.commentUpdateState}`);
     }
     const thread = raw.replies?.[0]?.insertComment?.commentThread;
+    if (typeof thread?.commentId !== 'string' || !thread.commentId.trim()) {
+      throw new GoogleDocsError('uncertain', 200, 'Comment save returned no comment ID.');
+    }
     return {
       commentId: thread?.commentId ?? null,
       anchoredText: thread?.plainTextQuote ?? null,

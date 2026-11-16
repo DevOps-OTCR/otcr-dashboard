@@ -1,6 +1,7 @@
 import { Logger, NotFoundException } from '@nestjs/common';
 import type { CmsReader } from '../authorization/cms-read-access.service';
 import { GoogleDocReviewService } from './google-doc-review.service';
+import { flattenDocument, textHash } from './google-doc';
 import { GoogleDocsError } from './google-docs.client';
 
 // The comment loop lives only in GoogleDocReviewService; MCP and OTCR Bot both call it.
@@ -45,7 +46,7 @@ function setup(over: { getDocument?: jest.Mock; insertComment?: jest.Mock; flags
   const service = new GoogleDocReviewService(prisma as never, access as never, flags as never, client as never);
   return { service, prisma, access, flags, client };
 }
-const comments = (...quotes: string[]) => ({ ...target, comments: quotes.map((quote) => ({ quote, comment: `about ${quote}` })) });
+const comments = (...quotes: string[]) => ({ ...target, textHash: textHash(flattenDocument(standard)), comments: quotes.map((quote) => ({ quote, comment: `about ${quote}` })) });
 const reasons = (out: { comments: readonly unknown[] }) => out.comments.map((x) => (x as { fallbackReason: string | null }).fallbackReason);
 const placements = (out: { comments: readonly unknown[] }) => out.comments.map((x) => (x as { placement: string }).placement);
 const failure = (promise: Promise<unknown>) => promise.then(() => { throw new Error('expected a failure'); }, (error) => error);
@@ -63,8 +64,9 @@ describe('GoogleDocReviewService.comment', () => {
 
   it('writes unguarded and says so when Google gave no revisionId', async () => {
     const insertComment = insertMock(async () => posted('k'));
-    const { service } = setup({ insertComment, getDocument: jest.fn(async () => docOf(['alpha one here', 'beta two here'], null)) });
-    const out = await service.comment(user, comments('alpha one', 'beta two'));
+    const doc = docOf(['alpha one here', 'beta two here'], null);
+    const { service } = setup({ insertComment, getDocument: jest.fn(async () => doc) });
+    const out = await service.comment(user, { ...comments('alpha one', 'beta two'), textHash: textHash(flattenDocument(doc)) });
     expect(insertComment.mock.calls.map((args) => args[2])).toEqual([null, null]);
     expect(out.revisionGuarded).toBe(false);
   });
@@ -77,8 +79,9 @@ describe('GoogleDocReviewService.comment', () => {
   });
 
   it('falls back with ambiguous when the quote occurs in two paragraphs', async () => {
-    const { service, client } = setup({ getDocument: jest.fn(async () => docOf(['repeat me one', 'repeat me two'])) });
-    const out = await service.comment(user, comments('repeat me'));
+    const doc = docOf(['repeat me one', 'repeat me two']);
+    const { service, client } = setup({ getDocument: jest.fn(async () => doc) });
+    const out = await service.comment(user, { ...comments('repeat me'), textHash: textHash(flattenDocument(doc)) });
     expect(reasons(out)).toEqual(['ambiguous']);
     expect(client.insertComment).not.toHaveBeenCalled();
   });
@@ -108,7 +111,7 @@ describe('GoogleDocReviewService.comment', () => {
     expect(insertComment).toHaveBeenCalledTimes(3);
   });
 
-  it('retries once on the refreshed document after a revision mismatch', async () => {
+  it('does not reuse findings after document text changes during a revision mismatch', async () => {
     let call = 0;
     const insertComment = insertMock(async () => {
       if (++call === 1) throw new GoogleDocsError('revision_mismatch', 400, 'revision');
@@ -119,11 +122,33 @@ describe('GoogleDocReviewService.comment', () => {
     const getDocument = jest.fn().mockResolvedValueOnce(standard).mockResolvedValueOnce(moved);
     const { service } = setup({ insertComment, getDocument });
     const out = await service.comment(user, comments('alpha one'));
-    expect(placements(out)).toEqual(['native']);
-    expect(insertComment).toHaveBeenCalledTimes(2);
-    const [, retry, revision] = insertComment.mock.calls[1];
-    expect(retry).toMatchObject({ content: 'about alpha one', startIndex: 18, endIndex: 27 });
-    expect(revision).toBe('r9');
+    expect(placements(out)).toEqual(['fallback']);
+    expect(reasons(out)).toEqual(['document-changed']);
+    expect(insertComment).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses stale findings before any write even when the quoted passage remains', async () => {
+    const { service, client } = setup({ getDocument: jest.fn(async () => docOf(['alpha one here', 'a changed conclusion'])) });
+    const out = await service.comment(user, comments('alpha one', 'beta two'));
+    expect(reasons(out)).toEqual(['document-changed', 'document-changed']);
+    expect(client.insertComment).not.toHaveBeenCalled();
+  });
+
+  it('retries a revision-only change when the reviewed text is unchanged', async () => {
+    const insertComment = insertMock().mockRejectedValueOnce(new GoogleDocsError('revision_mismatch', 400, 'revision'));
+    const getDocument = jest.fn().mockResolvedValueOnce(standard).mockResolvedValueOnce({ ...standard, revisionId: 'r9' });
+    const { service } = setup({ insertComment, getDocument });
+    expect(placements(await service.comment(user, comments('alpha one')))).toEqual(['native']);
+    expect(insertComment.mock.calls.map(args => args[2])).toEqual(['r1', 'r9']);
+  });
+
+  it('reports an unguarded retry when Google no longer returns a revision', async () => {
+    const insertComment = insertMock().mockRejectedValueOnce(new GoogleDocsError('revision_mismatch', 400, 'revision'));
+    const getDocument = jest.fn().mockResolvedValueOnce(standard).mockResolvedValueOnce({ ...standard, revisionId: undefined });
+    const { service } = setup({ insertComment, getDocument });
+    const out = await service.comment(user, comments('alpha one'));
+    expect(out.revisionGuarded).toBe(false);
+    expect(insertComment.mock.calls[1][2]).toBeNull();
   });
 
   it('gives up with document-changed after a second mismatch, and still tries the next comment', async () => {
@@ -225,11 +250,12 @@ describe('GoogleDocReviewService.comment anchor read-back', () => {
   });
 
   it('verifies across curly and straight quotes', async () => {
+    const doc = docOf(['the it\u2019s clause here']);
     const { service } = setup({
-      getDocument: jest.fn(async () => docOf(['the it\u2019s clause here'])),
+      getDocument: jest.fn(async () => doc),
       insertComment: withReadBack('it\u2019s clause'),
     });
-    expect(asComment(await service.comment(user, comments("it's clause")))).toMatchObject({ anchorVerified: true });
+    expect(asComment(await service.comment(user, { ...comments("it's clause"), textHash: textHash(flattenDocument(doc)) }))).toMatchObject({ anchorVerified: true });
   });
 
   it('leaves anchorVerified null when Google gave no read-back', async () => {
