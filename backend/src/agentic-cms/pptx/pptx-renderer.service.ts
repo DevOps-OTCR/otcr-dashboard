@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { pathToFileURL } from 'node:url';
 
 const DEFAULT_MAX_SLIDES = 20;
 
@@ -38,30 +39,33 @@ export class PptxRendererService {
 
     let pdfFn: (input: Buffer, opts: { scale: number }) => Promise<{ length: number; getPage: (n: number) => Promise<Buffer>; destroy: () => Promise<void> }>;
     try {
-      const mod = await import('pdf-to-img');
+      // Preserve native import in the CommonJS backend; pdf-to-img and PDF.js are ESM.
+      const nativeImport = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<typeof import('pdf-to-img')>;
+      const mod = await nativeImport(pathToFileURL(require.resolve('pdf-to-img')).href);
       pdfFn = mod.pdf as typeof pdfFn;
     } catch (err) {
-      this.log.error('Failed to load pdf-to-img', err);
+      this.log.error(`Failed to load pdf-to-img: ${err instanceof Error ? err.name : 'unknown'}`);
       return { available: false, reason: 'PDF rendering library could not be loaded.' };
     }
 
     let doc: Awaited<ReturnType<typeof pdfFn>> | null = null;
     try {
-      doc = await pdfFn(pdfBuffer, { scale: 1.0, format: 'jpeg' } as Parameters<typeof pdfFn>[1]);
+      doc = await pdfFn(pdfBuffer, { scale: 1.0 });
       const pageCount = doc.length;
+      if (pageCount > 200) return { available: false, reason: 'This deck exceeds the 200 slide rendering limit.' };
       const indices = slideIndices?.length
-        ? slideIndices.filter((i) => i >= 1 && i <= pageCount)
+        ? [...new Set(slideIndices)].filter((i) => Number.isInteger(i) && i >= 1 && i <= pageCount).slice(0, DEFAULT_MAX_SLIDES)
         : Array.from({ length: Math.min(pageCount, DEFAULT_MAX_SLIDES) }, (_, i) => i + 1);
 
       const slides: SlideImage[] = [];
       for (const idx of indices) {
         const png = await doc.getPage(idx);
         const { widthPx, heightPx } = pngDimensions(png);
-        slides.push({ slideIndex: idx, pngBase64: png.toString('base64'), mimeType: 'image/jpeg', widthPx, heightPx });
+        slides.push({ slideIndex: idx, pngBase64: png.toString('base64'), mimeType: 'image/png', widthPx, heightPx });
       }
       return { available: true, slides };
     } catch (err) {
-      this.log.error('PDF rendering failed', err);
+      this.log.error(`PDF rendering failed: ${err instanceof Error ? err.name : 'unknown'}`);
       return { available: false, reason: 'PDF rendering failed — check server logs.' };
     } finally {
       await doc?.destroy().catch(() => undefined);

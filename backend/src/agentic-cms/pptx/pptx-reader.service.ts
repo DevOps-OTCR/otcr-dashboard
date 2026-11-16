@@ -1,8 +1,54 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Injectable, Logger } from '@nestjs/common';
+import { posix } from 'node:path';
 import * as JSZip from 'jszip';
-import { XMLParser } from 'fast-xml-parser';
+import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import type { DeckContent, ShapeInfo, SlideContent } from './pptx.types';
+
+export async function loadPptx(buffer: Buffer): Promise<any> {
+  if (buffer.length > 25 * 1024 * 1024) throw new Error('PPTX exceeds the 25 MB review limit.');
+  const zip = await (JSZip as any).loadAsync(buffer);
+  const files: any[] = Object.values(zip.files).filter((file: any) => !file.dir);
+  if (files.length > 2000) throw new Error('PPTX contains too many parts.');
+  let total = 0;
+  for (const file of files) {
+    // ponytail: JSZip exposes central-directory sizes through _data; fail closed if its shape changes.
+    const size = file._data?.uncompressedSize;
+    if (!Number.isSafeInteger(size) || size < 0 || size > 50 * 1024 * 1024 ||
+        (/\.(xml|rels)$/.test(file.name) && size > 2 * 1024 * 1024)) throw new Error('PPTX part exceeds review limits.');
+    total += size;
+  }
+  if (total > 100 * 1024 * 1024) throw new Error('PPTX expanded content exceeds review limits.');
+  let expanded = 0;
+  for (const file of files) {
+    const isXml = /\.(xml|rels)$/.test(file.name);
+    const limit = (isXml ? 2 : 50) * 1024 * 1024;
+    const content = await new Promise<Buffer>((resolve, reject) => {
+      const stream = file.nodeStream('nodebuffer');
+      const chunks: Buffer[] = [];
+      let size = 0;
+      stream.on('data', (chunk: Buffer) => {
+        size += chunk.length;
+        expanded += chunk.length;
+        if (size > limit || expanded > 100 * 1024 * 1024) {
+          stream.destroy(new Error('PPTX expanded content exceeds review limits.'));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      stream.on('error', reject);
+      stream.on('end', () => resolve(Buffer.concat(chunks, size)));
+    });
+    if (isXml) {
+      const xml = content.toString('utf8');
+      if (/<!DOCTYPE|<!ENTITY/i.test(xml) || XMLValidator.validate(xml) !== true) {
+        throw new Error('PPTX contains unsupported or invalid XML.');
+      }
+    }
+    zip.file(file.name, content);
+  }
+  return zip;
+}
 
 const SLIDE_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide';
 const NOTES_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide';
@@ -15,6 +61,8 @@ function makeParser() {
     isArray: (name) =>
       ['Relationship', 'sldId', 'sp', 'pic', 'graphicFrame', 'grpSp', 'cxnSp', 'p', 'r', 'ext', 'br'].includes(name),
     parseAttributeValue: false,
+    parseTagValue: false,
+    processEntities: false,
   });
 }
 
@@ -87,6 +135,8 @@ function parseShapes(spTree: any): ShapeInfo[] {
     shapes.push({ spId, name, type, hasCreationId: false, text: '' });
   }
 
+  const groups = Array.isArray(spTree.grpSp) ? spTree.grpSp : spTree.grpSp ? [spTree.grpSp] : [];
+  for (const group of groups) shapes.push(...parseShapes(group));
   return shapes;
 }
 
@@ -95,12 +145,12 @@ export class PptxReaderService {
   private readonly log = new Logger(PptxReaderService.name);
 
   async extractDeck(buffer: Buffer): Promise<DeckContent> {
-    const zip = await (JSZip as any).loadAsync(buffer);
+    const zip = await loadPptx(buffer);
     const parser = makeParser();
 
     const presXml = await zip.file('ppt/presentation.xml')?.async('string');
     if (!presXml) throw new Error('Not a valid PPTX: missing ppt/presentation.xml');
-    const pres = parser.parse(presXml);
+    if (/<!DOCTYPE|<!ENTITY/i.test(presXml)) throw new Error('PPTX XML entities are unsupported.');
 
     const presRelsXml = await zip.file('ppt/_rels/presentation.xml.rels')?.async('string');
     if (!presRelsXml) throw new Error('Not a valid PPTX: missing ppt/_rels/presentation.xml.rels');
@@ -114,38 +164,27 @@ export class PptxReaderService {
       }
     }
 
-    // With removeNSPrefix:true, both id="256" and r:id="rId1" collapse to @_id,
-    // so r:id overwrites id and we lose the numeric sldId. Use a regex pass to
-    // build a map from relationship-id → numeric sldId before the parsed loop.
-    const sldIdByRel = new Map<string, string>();
-    for (const m of presXml.matchAll(/<[a-z]*:?sldId\s[^>]*\bid="(\d+)"[^>]*\br:id="([^"]+)"/g)) sldIdByRel.set(m[2], m[1]);
-    for (const m of presXml.matchAll(/<[a-z]*:?sldId\s[^>]*\br:id="([^"]+)"[^>]*\bid="(\d+)"/g)) sldIdByRel.set(m[1], m[2]);
-
-    const sldIdList = pres?.presentation?.sldIdLst?.sldId ?? [];
-    const sldIds: any[] = Array.isArray(sldIdList) ? sldIdList : [sldIdList];
+    // Preserve the distinct numeric id and namespaced relationship id, regardless of attribute order.
+    const idParser = new XMLParser({ ignoreAttributes: false, parseAttributeValue: false, processEntities: false });
+    const sldIds = [...presXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?sldId\b[^>]*\/?>/g)].map(([tag]) => {
+      const parsed = Object.values(idParser.parse(tag.replace(/\/?>$/, '/>')))[0] as Record<string, string>;
+      return { id: parsed['@_id'], rel: Object.entries(parsed).find(([key]) => key.startsWith('@_') && key.endsWith(':id'))?.[1] };
+    });
+    if (sldIds.length > 200) throw new Error('PPTX exceeds the 200 slide review limit.');
 
     const slides: SlideContent[] = [];
     for (let i = 0; i < sldIds.length; i++) {
       const sldIdEntry = sldIds[i];
-      // After ns stripping, @_id holds the r:id value ("rId1") — use it to look
-      // up the numeric sldId ("256") that we extracted via the regex map above.
-      const rId = sldIdEntry['@_id'] ?? '';
-      const sldId = sldIdByRel.get(rId) ?? String(i + 256);
+      const rId = sldIdEntry.rel;
+      const sldId = sldIdEntry.id;
       const target = slideRelMap.get(rId);
-      if (!target) {
-        this.log.warn(`Slide rId ${rId} not found in relationships`);
-        continue;
-      }
-
-      const slideFile = target.startsWith('/') ? target.slice(1) : `ppt/${target.replace(/^\.\.\//, '')}`;
-      const normalizedTarget = target.replace(/^\.\.\//, '');
-      const slideXml = await zip.file(`ppt/${normalizedTarget}`)?.async('string')
-        ?? await zip.file(slideFile)?.async('string');
-
-      if (!slideXml) {
-        this.log.warn(`Slide file not found: ${slideFile}`);
-        continue;
-      }
+      if (!target || !/^\d+$/.test(sldId ?? '')) throw new Error('PPTX has an unresolved slide reference.');
+      const fullPath = posix.normalize(target.startsWith('/') ? target.slice(1) : posix.join('ppt', target));
+      if (!fullPath.startsWith('ppt/slides/') || fullPath.includes('..')) throw new Error('PPTX slide target is unsupported.');
+      const normalizedTarget = fullPath.slice(4);
+      const slideXml = await zip.file(fullPath)?.async('string');
+      if (!slideXml) throw new Error('PPTX slide part is missing.');
+      if (/<!DOCTYPE|<!ENTITY/i.test(slideXml)) throw new Error('PPTX XML entities are unsupported.');
 
       const slideDoc = parser.parse(slideXml);
       const sld = slideDoc?.sld ?? slideDoc?.wksp ?? slideDoc;

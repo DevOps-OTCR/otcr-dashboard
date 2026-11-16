@@ -237,7 +237,7 @@ describe('PptxCommentWriterService', () => {
     const deckAfterFirst = await reader.extractDeck(once);
     const { buffer: twice, commentCount } = await writer.writeComments(once, findings, deckAfterFirst);
 
-    expect(commentCount).toBe(1);
+    expect(commentCount).toBe(0);
     const zip = await (JSZip as any).loadAsync(twice);
     const commentPaths: string[] = Object.keys((zip as any).files).filter((f: string) => f.startsWith('ppt/comments/') && f.endsWith('.xml'));
     const xml: string = await zip.file(commentPaths[0]).async('string');
@@ -406,5 +406,72 @@ describe('PptxReaderService + PptxCommentWriterService round-trip', () => {
     const zip = await (JSZip as any).loadAsync(modified);
     const commentPaths: string[] = Object.keys((zip as any).files).filter((f: string) => f.startsWith('ppt/comments/') && f.endsWith('.xml'));
     expect(commentPaths).toHaveLength(0);
+  });
+});
+
+
+describe('PowerPoint adversarial regressions', () => {
+  const reader = new PptxReaderService();
+  const writer = new PptxCommentWriterService();
+
+  it('preserves numeric slide text and slide identity when attributes are reversed', async () => {
+    const zip = await (JSZip as any).loadAsync(await buildPptx([{ title: '2026', body: ['123.45'] }]));
+    const presentation = await zip.file('ppt/presentation.xml').async('string');
+    zip.file('ppt/presentation.xml', presentation.replace('id="256" r:id="rId1"', "r:id='rId1' id='912'"));
+    const deck = await reader.extractDeck(await zip.generateAsync({ type: 'nodebuffer' }));
+    expect(deck.slides[0]).toMatchObject({ sldId: '912', title: '2026', bodyText: ['123.45'] });
+  });
+
+  it('follows presentation order rather than slide filenames', async () => {
+    const zip = await (JSZip as any).loadAsync(await buildPptx([{ title: 'A', body: [] }, { title: 'B', body: [] }]));
+    const presentation = await zip.file('ppt/presentation.xml').async('string');
+    zip.file('ppt/presentation.xml', presentation.replace('<p:sldId id="256" r:id="rId1"/>', '<p:sldId id="256" r:id="rId2"/>')
+      .replace('<p:sldId id="257" r:id="rId2"/>', '<p:sldId id="257" r:id="rId1"/>'));
+    const deck = await reader.extractDeck(await zip.generateAsync({ type: 'nodebuffer' }));
+    expect(deck.slides.map((slide) => slide.title)).toEqual(['B', 'A']);
+    expect(deck.slides[0].slideFile).toBe('slides/slide2.xml');
+  });
+
+  it('preserves unfamiliar human comment parts byte-for-byte rather than repairing or unlinking them', async () => {
+    const zip = await (JSZip as any).loadAsync(await buildPptx([{ title: 'A', body: [] }]));
+    zip.file('ppt/comments/human.xml', '<cmLst xmlns="urn:other-comments"><cm>Human feedback</cm></cmLst>');
+    const original = await zip.generateAsync({ type: 'nodebuffer' });
+    const result = await writer.writeComments(original, [{ slideIndex: 1, severity: 'MINOR', comment: 'New feedback' }], await reader.extractDeck(original));
+    expect(result.legacy).toBe(true);
+    expect(result.buffer).toBe(original);
+    const unchanged = await (JSZip as any).loadAsync(result.buffer);
+    expect(await unchanged.file('ppt/comments/human.xml').async('string')).toContain('Human feedback');
+  });
+
+  it('preserves human comment parts referenced outside the conventional comments directory', async () => {
+    const zip = await (JSZip as any).loadAsync(await buildPptx([{ title: 'A', body: [] }]));
+    zip.file('custom/human-feedback.xml', '<cmLst xmlns="http://schemas.microsoft.com/office/powerpoint/2018/8/main"><cm>Human feedback</cm></cmLst>');
+    zip.file('ppt/slides/_rels/slide1.xml.rels', '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="human" Type="http://schemas.microsoft.com/office/2018/10/relationships/comments" Target="../../custom/human-feedback.xml"/></Relationships>');
+    const original = await zip.generateAsync({ type: 'nodebuffer' });
+    const result = await writer.writeComments(original, [{ slideIndex: 1, severity: 'MINOR', comment: 'New feedback' }], await reader.extractDeck(original));
+    expect(result.legacy).toBe(true);
+    expect(result.buffer).toBe(original);
+    const unchanged = await (JSZip as any).loadAsync(result.buffer);
+    expect(await unchanged.file('custom/human-feedback.xml').async('string')).toContain('Human feedback');
+    expect(await unchanged.file('ppt/slides/_rels/slide1.xml.rels').async('string')).toContain('../../custom/human-feedback.xml');
+  });
+
+  it('counts only new findings, including when other slides already have bot comments', async () => {
+    const original = await buildPptx([{ title: 'A', body: [] }, { title: 'B', body: [] }]);
+    const first = await writer.writeComments(original, [{ slideIndex: 1, severity: 'MINOR', comment: 'First' }], await reader.extractDeck(original));
+    const second = await writer.writeComments(first.buffer, [{ slideIndex: 2, severity: 'MINOR', comment: 'Second' }], await reader.extractDeck(first.buffer));
+    expect(second.commentCount).toBe(1);
+    const zip = await (JSZip as any).loadAsync(second.buffer);
+    expect(await zip.file('ppt/comments/modernComment_256.xml').async('string')).toContain('First');
+    expect(await zip.file('ppt/comments/modernComment_257.xml').async('string')).toContain('Second');
+    expect(await zip.file('ppt/slides/slide2.xml').async('string')).toContain('xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"');
+  });
+
+  it('rejects oversized expanded XML and DTDs before parsing', async () => {
+    const zip = await (JSZip as any).loadAsync(await buildPptx([{ title: 'A', body: [] }]));
+    zip.file('ppt/slides/slide1.xml', 'x'.repeat(2 * 1024 * 1024 + 1));
+    await expect(reader.extractDeck(await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }))).rejects.toThrow('limit');
+    zip.file('ppt/slides/slide1.xml', '<!DOCTYPE x [<!ENTITY leak "secret">]><x>&leak;</x>');
+    await expect(reader.extractDeck(await zip.generateAsync({ type: 'nodebuffer' }))).rejects.toThrow('XML');
   });
 });

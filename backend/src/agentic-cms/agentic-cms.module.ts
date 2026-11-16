@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { FeatureFlagsModule } from '../feature-flags/feature-flags.module';
 import { ProjectsModule } from '../projects/projects.module';
-import { PptxModule } from '../integrations/pptx/pptx.module';
+import { PptxModule } from './pptx/pptx.module';
 import { AgentService } from './agent/agent.service';
 import { ConversationStore } from './agent/conversation.store';
 import { AgenticCmsController } from './agentic-cms.controller';

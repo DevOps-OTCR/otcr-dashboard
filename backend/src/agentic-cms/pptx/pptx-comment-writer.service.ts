@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Injectable, Logger } from '@nestjs/common';
-import * as JSZip from 'jszip';
+import { loadPptx } from './pptx-reader.service';
 import { XMLParser } from 'fast-xml-parser';
 import type { DeckContent, Finding } from './pptx.types';
 
@@ -30,6 +30,8 @@ const BOT_INITIALS = 'OB';
 const BOT_PROVIDER_ID = '';
 
 function escapeXml(s: string): string {
+  // eslint-disable-next-line no-control-regex -- XML 1.0 forbids these characters.
+  if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(s)) throw new Error('Comment contains unsupported XML control characters.');
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
@@ -38,6 +40,7 @@ function makeParser() {
     ignoreAttributes: false,
     attributeNamePrefix: '@_',
     removeNSPrefix: true,
+    processEntities: false,
     isArray: (name) => ['Relationship', 'Override', 'Default', 'author', 'cm'].includes(name),
   });
 }
@@ -143,17 +146,58 @@ export class PptxCommentWriterService {
   private readonly log = new Logger(PptxCommentWriterService.name);
 
   async writeComments(buffer: Buffer, findings: Finding[], deck: DeckContent): Promise<{ buffer: Buffer; legacy: boolean; commentCount: number; sanitized: boolean }> {
-    const zip = await (JSZip as any).loadAsync(buffer);
+    const zip = await loadPptx(buffer);
 
     if (hasLegacyComments(zip)) {
       this.log.warn('Deck uses legacy comment format — skipping native comment write');
       return { buffer, legacy: true, commentCount: 0, sanitized: false };
     }
 
-    // Clear any comment files written by an older version of this code (wrong namespaces).
-    // Replace them with an empty valid container so PowerPoint stops flagging the file as
-    // damaged. The main loop below will append correct XML to slides that have new findings.
-    const sanitized = await this.sanitizeStaleCommentFiles(zip);
+    // ponytail: append only to our known bot-only layout; preserve unfamiliar/human comments byte-for-byte.
+    const existingAuthors = await zip.file('ppt/authors.xml')?.async('string');
+    let existingBotId: string | undefined;
+    if (existingAuthors) {
+      const authors = makeParser().parse(existingAuthors)?.authorLst?.author;
+      if (!existingAuthors.includes('</p188:authorLst>') || !Array.isArray(authors) || authors.length !== 1 ||
+          authors[0]['@_userId'] !== BOT_USER_ID || !existingAuthors.includes(NS_CMT)) {
+        return { buffer, legacy: true, commentCount: 0, sanitized: false };
+      }
+      existingBotId = authors[0]['@_id'];
+    }
+    for (const path of Object.keys(zip.files)) {
+      if (!path.startsWith('ppt/comments/') || !path.endsWith('.xml')) continue;
+      const xml = await zip.file(path)?.async('string') ?? '';
+      const entries = makeParser().parse(xml)?.cmLst?.cm;
+      if (!/^ppt\/comments\/modernComment_\d+\.xml$/.test(path) || !xml.includes(NS_CMT) ||
+          !xml.includes('</p188:cmLst>') || !existingBotId ||
+          !Array.isArray(entries) || entries.some((entry: any) => entry['@_authorId'] !== existingBotId)) {
+        return { buffer, legacy: true, commentCount: 0, sanitized: false };
+      }
+    }
+    const preserve = () => ({ buffer, legacy: true, commentCount: 0, sanitized: false });
+    const presentationRels = parseRelationships(await zip.file('ppt/_rels/presentation.xml.rels')?.async('string') ?? '');
+    const authorRels = presentationRels.filter((rel: any) => /author/i.test(rel['@_Type'] ?? ''));
+    if (authorRels.length && (authorRels.length !== 1 || authorRels[0]['@_Type'] !== REL_TYPE_AUTHORS ||
+        authorRels[0]['@_Target'] !== 'authors.xml' || authorRels[0]['@_TargetMode'] === 'External' || !existingBotId)) return preserve();
+    const contentTypes = makeParser().parse(await zip.file('[Content_Types].xml')?.async('string') ?? '')?.Types?.Override ?? [];
+    if (contentTypes.some((part: any) => /comments|authors/i.test(part['@_ContentType'] ?? '') &&
+        part['@_PartName'] !== '/ppt/authors.xml' && !/^\/ppt\/comments\/modernComment_\d+\.xml$/.test(part['@_PartName'] ?? ''))) return preserve();
+    for (const slide of deck.slides) {
+      const xml = await zip.file(`ppt/${slide.slideFile}`)?.async('string') ?? '';
+      if (!xml.includes('</p:sld>')) return preserve();
+      const slideName = slide.slideFile.split('/').pop()!;
+      const rels = parseRelationships(await zip.file(`ppt/slides/_rels/${slideName}.rels`)?.async('string') ?? '');
+      const commentRels = rels.filter((rel: any) => /comment/i.test(rel['@_Type'] ?? ''));
+      const commentRefs = [...xml.matchAll(/<(?:[\w.-]+:)?commentRel\b[^>]*\br:id=["']([^"']+)["'][^>]*\/?>/g)];
+      if (commentRels.length || xml.includes('commentRel')) {
+        const rel = commentRels[0];
+        if (!existingBotId || commentRels.length !== 1 || commentRefs.length !== 1 ||
+            rel['@_Type'] !== REL_TYPE_COMMENTS || rel['@_TargetMode'] === 'External' ||
+            rel['@_Target'] !== `../comments/modernComment_${slide.sldId}.xml` ||
+            commentRefs[0][1] !== rel['@_Id'] || !zip.file(`ppt/comments/modernComment_${slide.sldId}.xml`)) return preserve();
+      }
+    }
+    let commentCount = 0;
 
     const authorGuid = await this.ensureAuthor(zip);
     const presRelsPath = 'ppt/_rels/presentation.xml.rels';
@@ -188,7 +232,7 @@ export class PptxCommentWriterService {
       });
 
       const commentPartPath = `ppt/comments/modernComment_${slide.sldId}.xml`;
-      await this.writeCommentPart(zip, commentPartPath, comments, authorGuid);
+      commentCount += await this.writeCommentPart(zip, commentPartPath, comments, authorGuid);
 
       const slideName = slide.slideFile.split('/').pop()!;
       const slideRelsPath = `ppt/slides/_rels/${slideName}.rels`;
@@ -200,17 +244,8 @@ export class PptxCommentWriterService {
       zip.file('[Content_Types].xml', ctXml);
     }
 
-    // Delete comment files that are no longer referenced by any slide rels. These are left over
-    // from previous bot runs that wrote wrong sldId values (e.g. "rId2" instead of a uint) or
-    // used a deprecated relationship type. OPC-compliant parsers should ignore unreferenced parts,
-    // but PowerPoint may scan all ppt/comments/*.xml and trigger a repair dialog on invalid content.
-    await this.deleteOrphanedCommentFiles(zip);
-
-    const commentCount = await this.countComments(zip);
-    if (commentCount < findings.length) this.log.warn(`Post-write validation: expected ${findings.length} comments, found ${commentCount}`);
-
     const result = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
-    return { buffer: result, legacy: false, commentCount, sanitized };
+    return { buffer: result, legacy: false, commentCount, sanitized: false };
   }
 
   private async ensureAuthor(zip: any): Promise<string> {
@@ -270,24 +305,41 @@ export class PptxCommentWriterService {
     path: string,
     comments: Array<{ guid: string; sldId: string; sldCreationId?: string; shapeId?: string; shapeCreationId?: string; text: string; dt: string }>,
     authorGuid: string,
-  ): Promise<void> {
+  ): Promise<number> {
     const existing = await zip.file(path)?.async('string');
     if (existing) {
       // Overwrite any file that lacks the current correct namespace (catches both the old p188:
       // prefixed format and the old 2016/09 namespace this code previously used).
       if (!existing.includes(NS_CMT)) {
         zip.file(path, buildCommentXml(comments, authorGuid));
-        return;
+        return comments.length;
       }
-      // Preserve ALL existing entries (human and bot alike) — only append comments whose
-      // text isn't already present, to stay idempotent across repeated bot runs.
-      const fresh = comments.filter((c) => !existing.includes(`<a:t>${escapeXml(c.text)}</a:t>`));
-      if (!fresh.length) return;
+      // Match both text and shape anchor; identical wording can legitimately target two shapes.
+      const entries = makeParser().parse(existing)?.cmLst?.cm ?? [];
+      const seen = new Set(entries.map((entry: any) => JSON.stringify([
+        entry.txBody?.p?.r?.t ?? '', String(entry.sldMkLst?.spMk?.['@_spId'] ?? ''),
+      ])));
+      const fresh = comments.filter((comment) => {
+        const key = JSON.stringify([escapeXml(comment.text), comment.shapeId ?? '']);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      if (!fresh.length) return 0;
       const newEntries = fresh.map((c) => buildCommentEntry(c, authorGuid)).join('\n');
       const updated = existing.replace('</p188:cmLst>', `${newEntries}\n</p188:cmLst>`);
       zip.file(path, updated);
+      return fresh.length;
     } else {
-      zip.file(path, buildCommentXml(comments, authorGuid));
+      const seen = new Set<string>();
+      const fresh = comments.filter((comment) => {
+        const key = JSON.stringify([comment.text, comment.shapeId ?? '']);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      zip.file(path, buildCommentXml(fresh, authorGuid));
+      return fresh.length;
     }
   }
 
@@ -336,7 +388,7 @@ export class PptxCommentWriterService {
 
     const extEntry = [
       `    <p:ext uri="${COMMENT_REL_EXT_URI}">`,
-      `      <p188:commentRel xmlns:p188="${NS_P188}" r:id="${relId}"/>`,
+      `      <p188:commentRel xmlns:p188="${NS_P188}" xmlns:r="${NS_RELS}" r:id="${relId}"/>`,
       `    </p:ext>`,
     ].join('\n');
 
@@ -344,6 +396,8 @@ export class PptxCommentWriterService {
     let updated: string;
     if (/<\/p:extLst>\s*<\/p:sld>/.test(stripped)) {
       updated = stripped.replace(/<\/p:extLst>(\s*<\/p:sld>)/, `${extEntry}\n  </p:extLst>$1`);
+    } else if (/<p:extLst\s*\/>\s*<\/p:sld>/.test(stripped)) {
+      updated = stripped.replace(/<p:extLst\s*\/>/, `<p:extLst>\n${extEntry}\n</p:extLst>`);
     } else {
       const extLst = `  <p:extLst>\n${extEntry}\n  </p:extLst>\n`;
       updated = stripped.replace('</p:sld>', `${extLst}</p:sld>`);
@@ -351,131 +405,4 @@ export class PptxCommentWriterService {
     zip.file(slideFilePath, updated);
   }
 
-  private async sanitizeStaleCommentFiles(zip: any): Promise<boolean> {
-    let found = false;
-    const files: string[] = Object.keys((zip as any).files);
-
-    // Fix bad comment parts (ppt/comments/*.xml).
-    for (const path of files) {
-      if (!path.startsWith('ppt/comments/') || !path.endsWith('.xml')) continue;
-      const xml = await zip.file(path)?.async('string') ?? '';
-      // Sanitize any file that has cmLst but not the correct 2018/8/main namespace.
-      // This catches: old 2016/09 files, old p188: files using the wrong URI, and anything
-      // else that doesn't match what PowerPoint expects.
-      if (!xml.includes('cmLst') || xml.includes(NS_CMT)) continue;
-      // Replace bad-namespace content with an empty, valid container.
-      // writeCommentPart will append new findings to this file if needed.
-      zip.file(path, [
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
-        `<p188:cmLst xmlns:a="${NS_DRAWING}" xmlns:r="${NS_RELS}" xmlns:p188="${NS_CMT}">`,
-        `</p188:cmLst>`,
-      ].join('\n'));
-      this.log.debug(`Sanitized stale bad-namespace comment file: ${path}`);
-      found = true;
-    }
-
-    // Fix authors.xml that lacks the correct 2018/8/main namespace.
-    // Old code wrote <authors xmlns="…2018/10/powerpoint/author"> — convert all variants
-    // to the correct <p188:authorLst xmlns:p188="…2018/8/main"> format verified from PowerPoint.
-    const authXml = await zip.file('ppt/authors.xml')?.async('string') ?? '';
-    if (authXml && !authXml.includes(NS_CMT)) {
-      const fixed = authXml
-        .replace(/<[a-z]*:?authorLst[^>]*>/, `<p188:authorLst xmlns:a="${NS_DRAWING}" xmlns:r="${NS_RELS}" xmlns:p188="${NS_CMT}">`)
-        .replace(/<\/[a-z]*:?authorLst>/, '</p188:authorLst>')
-        .replace(/<[a-z]*:?author(\s)/g, '<p188:author$1')
-        .replace(/<\/[a-z]*:?author>/g, '</p188:author>');
-      zip.file('ppt/authors.xml', fixed);
-      this.log.debug('Sanitized wrong-namespace authors.xml');
-      found = true;
-    }
-
-    // Strip ALL commentRel ext blocks from ALL slide XML files.
-    // Previous bot runs left ext blocks on every slide (old code wrote them for all slides
-    // regardless of findings). Slides not updated this run would keep those stale blocks,
-    // causing PowerPoint to trigger the repair dialog. Clearing them all here is safe because
-    // writeComments always writes the COMPLETE set of findings for the current review run;
-    // the main loop (addSlideExtLst) will re-add correct blocks only for slides with findings.
-    // Strip commentRel ext blocks with WRONG URI only — correct {6950BFC3} blocks may reference
-    // human comments and must be preserved. addSlideExtLst handles the strip+rewrite for slides
-    // that receive new bot findings.
-    const slideFiles = files.filter(f => /^ppt\/slides\/slide\d+\.xml$/.test(f));
-    for (const path of slideFiles) {
-      const xml = await zip.file(path)?.async('string') ?? '';
-      if (!xml.includes('commentRel')) continue;
-      const stripped = xml.replace(/<p:ext\b[^>]*>[\s\S]*?<\/p:ext>/g, (match) => {
-        if (!match.includes('commentRel')) return match;
-        if (match.includes(COMMENT_REL_EXT_URI)) return match;
-        return '';
-      });
-      if (stripped !== xml) {
-        zip.file(path, stripped);
-        this.log.debug(`Stripped wrong-URI commentRel ext block(s) from: ${path}`);
-        found = true;
-      }
-    }
-
-    // Strip stale 2016-era comment relationship entries from all slide rels files.
-    // The 2016 rel type was used by old code; the correct type is 2018/10/relationships/comments.
-    // addSlideCommentRelationship already strips these when it processes a slide with findings,
-    // but slides without findings keep the stale entries — clean them here for all slides.
-    const slideRelsFiles = files.filter(f => /^ppt\/slides\/_rels\/slide\d+\.xml\.rels$/.test(f));
-    for (const path of slideRelsFiles) {
-      const xml = await zip.file(path)?.async('string') ?? '';
-      if (!xml.includes('2016/relationships/modernComment')) continue;
-      const stripped = xml.replace(
-        /<Relationship\b[^>]*2016\/relationships\/modernComment[^>]*\/>/g,
-        '',
-      );
-      if (stripped !== xml) {
-        zip.file(path, stripped);
-        this.log.debug(`Stripped stale 2016 comment rel from: ${path}`);
-        found = true;
-      }
-    }
-
-    return found;
-  }
-
-  private async deleteOrphanedCommentFiles(zip: any): Promise<void> {
-    const files: string[] = Object.keys((zip as any).files);
-
-    // Collect every comment file target still referenced by a slide rels file.
-    const referenced = new Set<string>();
-    const relsFiles = files.filter(f => /^ppt\/slides\/_rels\/slide\d+\.xml\.rels$/.test(f));
-    for (const path of relsFiles) {
-      const xml = await zip.file(path)?.async('string') ?? '';
-      for (const m of xml.matchAll(/Target="\.\.\/comments\/([^"]+)"/g)) {
-        referenced.add(`ppt/comments/${m[1]}`);
-      }
-    }
-
-    // Remove any ppt/comments/*.xml not reachable from any slide.
-    const commentFiles = files.filter(f => f.startsWith('ppt/comments/') && f.endsWith('.xml'));
-    for (const cf of commentFiles) {
-      if (referenced.has(cf)) continue;
-      zip.remove(cf);
-      this.log.debug(`Removed orphaned comment file: ${cf}`);
-
-      // Remove the matching content-type override so [Content_Types].xml stays consistent.
-      const ctXml = await zip.file('[Content_Types].xml')?.async('string') ?? '';
-      const escaped = cf.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const updated = ctXml.replace(
-        new RegExp(`\\s*<Override PartName="\\/${escaped}"[^/]*\\/>`),
-        '',
-      );
-      if (updated !== ctXml) zip.file('[Content_Types].xml', updated);
-    }
-  }
-
-  private async countComments(zip: any): Promise<number> {
-    let total = 0;
-    const files: string[] = Object.keys((zip as any).files);
-    for (const path of files) {
-      if (path.startsWith('ppt/comments/') && path.endsWith('.xml')) {
-        const xml = await zip.file(path)?.async('string') ?? '';
-        total += xml.match(/<(?:[a-z0-9]+:)?cm[\s>]/g)?.length ?? 0;
-      }
-    }
-    return total;
-  }
 }
