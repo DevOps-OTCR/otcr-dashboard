@@ -134,6 +134,19 @@ describe('GoogleDocReviewService.comment', () => {
     expect(client.insertComment).not.toHaveBeenCalled();
   });
 
+  it('keeps the original document reference when a revision retry finds a relinked document with identical text', async () => {
+    const { service, prisma, client } = setup();
+    client.insertComment.mockImplementationOnce(async () => {
+      prisma.submission.findFirst.mockResolvedValue({ id: 'sub1', fileUrl: FILE_URL.replace('1AAAA', '1BBBB') });
+      throw new GoogleDocsError('revision_mismatch', 400, 'revision');
+    });
+    const out = await service.comment(user, comments('alpha one', 'beta two'));
+    expect(reasons(out)).toEqual(['document-changed', 'document-changed']);
+    expect(client.insertComment).toHaveBeenCalledTimes(1);
+    expect(out.document.url).toBe(FILE_URL);
+    expect(out.document.documentId).toBe('1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
+  });
+
   it('retries a revision-only change when the reviewed text is unchanged', async () => {
     const insertComment = insertMock().mockRejectedValueOnce(new GoogleDocsError('revision_mismatch', 400, 'revision'));
     const getDocument = jest.fn().mockResolvedValueOnce(standard).mockResolvedValueOnce({ ...standard, revisionId: 'r9' });

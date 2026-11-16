@@ -148,11 +148,12 @@ export class GoogleDocReviewService {
         } catch (error) {
           if (error instanceof GoogleDocsError && error.reason === 'revision_mismatch' && attempt === 0) {
             try {
-              snap = await this.snapshot(user, input, options.signal);
-              if (snap.textHash !== input.textHash) {
+              const refreshed = await this.snapshot(user, input, options.signal);
+              if (refreshed.documentId !== snap.documentId || refreshed.textHash !== input.textHash) {
                 result.fallbackReason = stopReason = 'document-changed';
                 break;
               }
+              snap = refreshed;
               continue;
             } catch {
               // Never post against a snapshot we could not refresh; retain earlier write receipts.
