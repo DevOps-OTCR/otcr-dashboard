@@ -10,11 +10,12 @@ export type AgentEvent =
   | { type: 'text_replace'; text: string }
   | { type: 'tool_start'; id: string; name: string; label: string }
   | { type: 'tool_end'; id: string; ok: boolean; note?: string }
+  | { type: 'approval_required'; id: string; tool: string; summary: string; items: { where: string; text: string }[] }
   | { type: 'sources'; sources: AgentSource[] }
   | { type: 'error'; kind: AgentErrorKind; retryable: boolean; message: string }
   | { type: 'done' };
 
-export type ChatRequest = { projectId: string; sprintId?: string; conversationId?: string; deliverableId?: string; message: string };
+export type ChatRequest = { projectId: string; sprintId?: string; conversationId?: string; deliverableId?: string; approvalId?: string; message: string };
 
 /** A request that failed before the stream started (HTTP error or network). */
 export class ChatRequestError extends Error {

@@ -9,8 +9,11 @@ const jwt = require('jsonwebtoken');
 
 export const DOCS_SCOPE = 'https://www.googleapis.com/auth/documents';
 const API = 'https://docs.googleapis.com/v1/documents';
+/** Statuses after which a write may still have been applied (timeout or gateway/server error). */
+const AMBIGUOUS_WRITE_STATUSES = new Set([408, 500, 502, 503, 504]);
 
-// uncertain: Google answered 200 (it applied the insert) but did not confirm the comment saved, so it may exist.
+// uncertain: the write may have been applied. Either Google answered 200 without confirming the comment
+// saved, or a write got a 5xx/408 (a gateway error can follow an applied write), so the comment may exist.
 export type GoogleDocsErrorReason = 'not_configured' | 'auth' | 'no_access' | 'forbidden' | 'revision_mismatch' | 'bad_request' | 'unavailable' | 'uncertain';
 
 /** `detail` is Google's message: fine for the local spike output, never returned to MCP clients. */
@@ -70,6 +73,7 @@ export class GoogleDocsClient {
     const raw = await this.request<Response>(
       `${API}/${encodeURIComponent(documentId)}:batchUpdate`,
       { method: 'POST', body: JSON.stringify(body), signal },
+      true,
     );
     if (raw.commentUpdateState && raw.commentUpdateState !== 'ALL_SAVED') {
       throw new GoogleDocsError('uncertain', 200, `Comment not confirmed saved: ${raw.commentUpdateState}`);
@@ -86,13 +90,17 @@ export class GoogleDocsClient {
     };
   }
 
-  private async request<T>(url: string, init: RequestInit): Promise<T> {
+  /** `isWrite`: a 5xx/408 does not prove the write was refused, so it is reported as `uncertain`, not `unavailable`. */
+  private async request<T>(url: string, init: RequestInit, isWrite = false): Promise<T> {
     const response = await fetch(url, {
       ...init,
       headers: { Authorization: `Bearer ${await this.accessToken()}`, 'Content-Type': 'application/json' },
     });
     if (response.ok) return response.json() as Promise<T>;
     const detail = await response.text().catch(() => '');
+    if (isWrite && AMBIGUOUS_WRITE_STATUSES.has(response.status)) {
+      throw new GoogleDocsError('uncertain', response.status, detail.slice(0, 2000));
+    }
     throw new GoogleDocsError(this.reasonFor(response.status, detail), response.status, detail.slice(0, 2000));
   }
 

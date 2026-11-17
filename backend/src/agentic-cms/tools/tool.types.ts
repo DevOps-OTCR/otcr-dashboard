@@ -11,7 +11,14 @@ export interface ToolContext {
   user: AgentUser;
   projectId: string;
   sprintId?: string;
+  /** The conversation this call belongs to; write approvals are bound to it. */
+  conversationId: string;
   signal: AbortSignal;
+  /**
+   * Set only by AgentService when the user pressed the approval button for exactly this call.
+   * Never derived from model output, so a tool call the model makes on its own cannot carry it.
+   */
+  approvedCall?: { callId: string; approvalId: string };
   /** Registers citable sources and returns their [n] numbers, which stay the same for the whole conversation. */
   addSources(sources: Omit<AgentSource, 'id'>[]): Promise<number[]>;
 }
@@ -23,6 +30,12 @@ export interface ToolOutput {
   note?: string;
   /** PNG images to pass to a vision-capable model alongside the text content. */
   images?: Array<{ base64: string; mimeType: string }>;
+}
+
+/** What the user is asked to approve: what will be written, and where. */
+export interface ApprovalPreview {
+  summary: string;
+  items: { where: string; text: string }[];
 }
 
 export interface AgentTool<Input extends z.ZodType = z.ZodType> {
@@ -43,6 +56,15 @@ export interface AgentTool<Input extends z.ZodType = z.ZodType> {
   readonly maxOutputChars?: number;
   /** False hides the tool from the model (e.g. missing API key). Default true. */
   isAvailable?(): boolean | Promise<boolean>;
+  /**
+   * True for tools that write to an external system. The registry never runs them for a call the
+   * model made on its own: it stores the call, asks the user to approve it, and runs the stored
+   * call only for the user's approval (see WriteApprovals). Needs describeForApproval.
+   */
+  readonly requiresApproval?: boolean;
+  /** Permission checks that should fail before the user is shown an approval button. Must not write. */
+  checkBeforeApproval?(input: z.infer<Input>, ctx: ToolContext): Promise<void>;
+  describeForApproval?(input: z.infer<Input>): ApprovalPreview;
   /** Short progress label for the sidebar, e.g. `Searching the web for "x"`. */
   label(input: z.infer<Input>): string;
   run(input: z.infer<Input>, ctx: ToolContext): Promise<ToolOutput>;

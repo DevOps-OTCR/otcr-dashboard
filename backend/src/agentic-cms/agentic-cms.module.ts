@@ -23,6 +23,7 @@ import { LoadSkillTool } from './tools/load-skill.tool';
 import { PptxReviewTools } from './tools/pptx-review.tools';
 import { ToolRegistry } from './tools/tool-registry';
 import { WebSearchTool } from './tools/web-search.tool';
+import { WriteApprovals } from './tools/write-approvals';
 
 @Module({
   imports: [FeatureFlagsModule, PrismaModule, ProjectsModule, PptxModule],
@@ -38,6 +39,7 @@ import { WebSearchTool } from './tools/web-search.tool';
     TavilySearchClient,
     SkillLibrary,
     ToolRegistry,
+    WriteApprovals,
     WebSearchTool,
     LoadSkillTool,
     CmsReadTools,

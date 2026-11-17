@@ -134,10 +134,25 @@ export class GoogleDocTools {
     return {
       name: 'comment_google_doc',
       description:
-        'Post review comments anchored to exact quotes in a submitted Google Doc. Only call this when the user has asked in this conversation for comments to be posted on the document; otherwise draft the comments in your reply. First call read_google_doc, pass document.textHash, and copy each quote exactly from one paragraph; if a phrase appears more than once, include more surrounding words. document-changed means re-read and review the current text before posting. Each result is placement=native (a real Google comment) or placement=fallback with a fallbackReason. Give the user every fallback comment with its quote and section so they can add it by hand, except comment-uncertain: Google may have saved it, so ask the user to check the document before adding it by hand. anchorVerified=false means Google attached the comment to different text than the quote; tell the user which comment to check. no-comment-access usually means the document is shared with the bot as Viewer; ask the owner to make it Commenter. Comments already posted in the last hour are skipped and returned with alreadyPosted=true; do not report them as new. Only admins, the project\'s PM, and LCs who are members of the project can post; others get an unavailable error.',
+        'Prepare review comments anchored to exact quotes in a submitted Google Doc. Call this when the user asks you to post comments on the document; otherwise draft the comments in your reply. Calling it posts nothing: the user sees the comments and presses Post to send them, and the results follow in the next turn. First call read_google_doc, pass document.textHash, and copy each quote exactly from one paragraph; if a phrase appears more than once, include more surrounding words. document-changed means re-read and review the current text before posting. Each result is placement=native (a real Google comment) or placement=fallback with a fallbackReason. Give the user every fallback comment with its quote and section so they can add it by hand, except comment-uncertain: Google may have saved it, so ask the user to check the document before adding it by hand. anchorVerified=false means Google attached the comment to different text than the quote; tell the user which comment to check. no-comment-access usually means the document is shared with the bot as Viewer; ask the owner to make it Commenter. Comments already posted in the last hour are skipped and returned with alreadyPosted=true; do not report them as new. Only admins, the project\'s PM, and LCs who are members of the project can post; others get an unavailable error.',
       input: commentGoogleDocInput,
       label: ({ comments }) => `Posting ${comments.length} comment${comments.length === 1 ? '' : 's'} to Google Doc`,
       isAvailable: () => this.docs.isConfigured(),
+      // The model can only propose these comments. The registry stores them and the user approves
+      // with a button; run() is reached only for that approved call.
+      requiresApproval: true,
+      checkBeforeApproval: async (input, ctx) => {
+        await runSafe(async () => {
+          await this.review.assertCommentAccess(ctx.user as CmsReader, {
+            projectId: ctx.projectId, deliverableId: input.deliverableId, submissionId: input.submissionId,
+          });
+          return { content: '' };
+        });
+      },
+      describeForApproval: ({ comments }) => ({
+        summary: `Post ${comments.length} comment${comments.length === 1 ? '' : 's'} to the Google Doc`,
+        items: comments.map(({ quote, comment }) => ({ where: quote.length > 120 ? `${quote.slice(0, 120)}…` : quote, text: comment })),
+      }),
       run: (input, ctx) => runSafe(() => this.oneAtATime(input, ctx)),
     };
   }

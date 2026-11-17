@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { FeatureFlagsService } from '../../feature-flags/feature-flags.service';
-import { assistantMessage, ChatMessage, ImagePart, MODEL_CLIENT, ModelClient, ModelRequest } from '../model/model-client';
+import { assistantMessage, ChatMessage, ImagePart, MODEL_CLIENT, ModelClient, ModelRequest, ToolCall } from '../model/model-client';
 import { SkillLibrary } from '../skills/skill-library';
 import { ToolRegistry } from '../tools/tool-registry';
 import type { ToolContext } from '../tools/tool.types';
@@ -121,6 +121,7 @@ export class AgentService {
       user: input.user,
       projectId: input.projectId,
       sprintId: input.sprintId,
+      conversationId: convo.id,
       signal: input.signal,
       addSources: async (found) => {
         const registered = await this.store.addSources(convo.id, found);
@@ -129,10 +130,32 @@ export class AgentService {
       },
     };
 
+    // 3b. The user pressed Post on an approval card. Take the stored write call (single use, bound to
+    // this user, project and conversation). Nothing the model said can supply or change it.
+    let approved: { call: ToolCall; approvalId: string } | undefined;
+    if (input.approvalId) {
+      const stored = this.tools.takeApproval(input.approvalId, { userId: input.user.id, projectId: input.projectId, conversationId: convo.id });
+      if (!stored) {
+        const notice = 'That approval expired or was already used. Ask me to prepare the comments again.';
+        send({ type: 'text_delta', text: notice });
+        await this.store.append(convo.id, [...turnMessages, assistantMessage(notice, [])]);
+        return;
+      }
+      approved = { call: { id: `approved-${input.approvalId}`, name: stored.toolName, args: stored.input }, approvalId: input.approvalId };
+    }
+
     // 4. The loop: ask the model; if it wants tools, run them and ask again.
     let shown = ''; // everything sent to the browser so far
     let answer = '';
     try {
+      if (approved) {
+        // Run exactly the stored call, once, as if the model had made it. The model then reports the result.
+        input.signal.throwIfAborted();
+        this.assertStillEnabled(input.user);
+        turnMessages.push(assistantMessage('', [approved.call]));
+        const result = await this.tools.execute(approved.call, tools, { ...ctx, approvedCall: { callId: approved.call.id, approvalId: approved.approvalId } }, send);
+        turnMessages.push({ role: 'tool', tool_call_id: approved.call.id, content: result.content });
+      }
       for (let round = 0; round < MAX_ROUNDS; round++) {
         input.signal.throwIfAborted();
         this.assertStillEnabled(input.user);

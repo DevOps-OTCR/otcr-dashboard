@@ -202,14 +202,20 @@ anchoredText, anchorVerified }]`.
 | `no-comment-access` | Google refused the bot; the rest of the batch fell back too | Usually Viewer-only sharing: ask the owner for Commenter |
 | `document-changed` | The document text differs from the reviewed textHash, or a revision retry failed; the rest of the batch fell back | Read and review the new text before posting |
 | `comment-failed` | Google refused the comment, or it was not attempted because an earlier error stopped the batch | Retry |
-| `comment-uncertain` | The request may have reached Google but its answer was lost or unconfirmed: the comment may already exist | Check the document before adding it by hand |
+| `comment-uncertain` | The request may have reached Google but its answer was lost or unconfirmed (a network error, or a 408/500/502/503/504 after the write): the comment may already exist; the rest of the batch fell back | Check the document before adding it by hand |
 
 Each posted comment creates a new document revision. The service carries the new revision into
 the next write, and retries once on a fresh read after a revision mismatch only while the textHash
 still matches. Once posting has started, failures retain completed receipts. Revocation of the
 feature flag stops subsequent writes and returns unattempted comments as `comment-failed` fallbacks.
 OTCR Bot additionally remembers native or uncertain receipts for an hour per process; MCP writes
-remain non-idempotent across separate calls, so do not blindly retry a completed request.
+remain non-idempotent across separate calls, so do not blindly retry a completed request. A 5xx or
+timeout on the comment write is reported as `comment-uncertain`, not as a refusal, because Google
+may have applied the write before the error. A 429 or quota error was refused and stays `comment-failed`.
+
+In OTCR Bot the model cannot post by itself: calling `comment_google_doc` stores the comments and
+shows an approval card, and the comments are posted only when the user presses Post. The MCP tool
+posts directly; MCP clients should confirm with their user, as its annotations indicate.
 
 Errors use `isError` with the service's own messages: `DOC_LINK_UNSUPPORTED`,
 `DOC_NOT_CONFIGURED`, `DOC_NO_ACCESS` (names the bot's email and the sharing step) and

@@ -98,10 +98,19 @@ describe('GoogleDocReviewService.comment', () => {
     expect(insertComment).toHaveBeenCalledTimes(1);
   });
 
+  it('reports a 5xx after the write as comment-uncertain and stops the rest', async () => {
+    const insertComment = insertMock(async () => { throw new GoogleDocsError('uncertain', 503, 'upstream'); });
+    const { service } = setup({ insertComment });
+    const out = await service.comment(user, comments('alpha one', 'beta two', 'gamma three'));
+    expect(reasons(out)).toEqual(['comment-uncertain', 'comment-failed', 'comment-failed']);
+    expect(placements(out)).toEqual(['fallback', 'fallback', 'fallback']);
+    expect(insertComment).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps going after another Google error', async () => {
     let call = 0;
     const insertComment = insertMock(async () => {
-      if (++call === 1) throw new GoogleDocsError('unavailable', 503, '');
+      if (++call === 1) throw new GoogleDocsError('bad_request', 400, '');
       return posted(`k${call}`);
     });
     const { service } = setup({ insertComment });

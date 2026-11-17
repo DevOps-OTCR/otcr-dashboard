@@ -40,6 +40,29 @@ describe('GoogleDocsClient error reasons', () => {
     await expect(new GoogleDocsClient(config).getDocument('doc')).rejects.toMatchObject({ reason, status });
   });
 
+  // A gateway or server error after Google applied the write does not prove it refused the comment.
+  it.each([408, 500, 502, 503, 504])('calls a %i on the comment write uncertain, since the write may have been applied', async (status) => {
+    stubGoogle(status, 'upstream error');
+    await expect(new GoogleDocsClient(config).insertComment('doc', { content: 'c', startIndex: 1, endIndex: 2, tabId: null }, null))
+      .rejects.toMatchObject({ reason: 'uncertain', status });
+  });
+
+  it.each([
+    [429, 'Too many requests', 'unavailable'],
+    [403, 'Quota exceeded for quota metric', 'unavailable'],
+    [400, 'Invalid value at range', 'bad_request'],
+    [403, 'The caller does not have permission', 'forbidden'],
+  ])('still treats %i "%s" on the comment write as a refusal (%s)', async (status, detail, reason) => {
+    stubGoogle(status, detail);
+    await expect(new GoogleDocsClient(config).insertComment('doc', { content: 'c', startIndex: 1, endIndex: 2, tabId: null }, null))
+      .rejects.toMatchObject({ reason, status });
+  });
+
+  it('keeps a 503 on a read as unavailable, because re-reading is safe', async () => {
+    stubGoogle(503, 'down');
+    await expect(new GoogleDocsClient(config).getDocument('doc')).rejects.toMatchObject({ reason: 'unavailable', status: 503 });
+  });
+
   it('calls a 200 whose comment is not confirmed saved uncertain, since Google applied the insert', async () => {
     const reply = { replies: [{ insertComment: { commentThread: { commentId: 'c1', plainTextQuote: 'x' } } }], commentUpdateState: 'PENDING' };
     jest.spyOn(globalThis, 'fetch').mockImplementation((async (url: string) => String(url).includes('oauth2.googleapis.com')

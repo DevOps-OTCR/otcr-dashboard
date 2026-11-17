@@ -47,7 +47,7 @@ describe('Google Doc review permissions', () => {
     const project = asMember();
     const { service, client, settings } = setup(project);
     const tool = new GoogleDocTools(service, client as never).tools[1];
-    const ctx = { user: reader('LC'), projectId: 'p1', signal: new AbortController().signal, addSources: async () => [] };
+    const ctx = { user: reader('LC'), projectId: 'p1', conversationId: 'conv1', signal: new AbortController().signal, addSources: async () => [] };
     await tool.run(input, ctx);
     project.members = [];
     await expect(tool.run(input, ctx)).rejects.toMatchObject({ note: 'CMS record unavailable' });
@@ -73,7 +73,7 @@ describe('Google Doc review permissions', () => {
   it('refuses cached receipts for a deleted submission and rebinds a replacement document', async () => {
     const { service, client, prisma } = setup(asMember());
     const tool = new GoogleDocTools(service, client as never).tools[1];
-    const ctx = { user: reader('LC'), projectId: 'p1', signal: new AbortController().signal, addSources: async () => [] };
+    const ctx = { user: reader('LC'), projectId: 'p1', conversationId: 'conv1', signal: new AbortController().signal, addSources: async () => [] };
     await tool.run(input, ctx);
     prisma.submission.findFirst.mockResolvedValueOnce(null);
     await expect(tool.run(input, ctx)).rejects.toMatchObject({ note: 'CMS record unavailable' });

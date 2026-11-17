@@ -135,8 +135,10 @@ or a skill's own default isn't enforced.
 `POST /agentic-cms/chat` with the user's CMS token:
 
 ```json
-{ "projectId": "…", "sprintId": "… (optional)", "conversationId": "… (optional)", "message": "…" }
+{ "projectId": "…", "sprintId": "… (optional)", "conversationId": "… (optional)", "approvalId": "… (optional)", "message": "…" }
 ```
+
+`approvalId` is sent only by the Post button on an approval card (see "Write approvals").
 
 The user must have access to `projectId` (same rules as the projects pages);
 otherwise the response is a plain 403 before any model call. The reply is a
@@ -148,6 +150,7 @@ otherwise the response is a plain 403 before any model call. The reply is a
 | `{"type":"text_delta","text"}` | Next piece of the answer |
 | `{"type":"text_replace","text"}` | Replaces this reply's text so far (sent after a word-limit cut) |
 | `{"type":"tool_start","id","name","label"}` / `{"type":"tool_end","id","ok","note?"}` | Tool progress for the UI |
+| `{"type":"approval_required","id","tool","summary","items":[{"where","text"}]}` | The bot prepared a write (such as review comments). **Nothing has been written.** Show the items with a Post button that sends `id` back as `approvalId` |
 | `{"type":"sources","sources":[{"id","title","url"}]}` | Sources found so far this turn, so `[id]` links work while streaming; the last event of a turn lists only the cited ones, including any from earlier turns. An `id` means the same URL for the whole conversation |
 | `{"type":"error","kind","retryable","message"}` | A user-safe error (see below) |
 | `{"type":"done"}` | End of the reply |
@@ -171,8 +174,12 @@ project id from the model. Throw `ToolFailure(note, modelMessage)` for an
 expected failure. The five CMS read tools are registered this way over CmsReadService,
 and the Google Docs tools (`read_google_doc`, `comment_google_doc`) over GoogleDocReviewService.
 
-A tool that writes outside the CMS also needs three things:
+A tool that writes outside the CMS also needs four things:
 
+- It sets `requiresApproval: true` and provides `describeForApproval` (what the user is asked to
+  approve) and, usually, `checkBeforeApproval` (the permission checks, so the user is never shown
+  a button they could not use). The registry then never runs the tool for a call the model made:
+  see "Write approvals" below.
 - The service it calls rechecks the feature flag immediately before each external write
   (`GoogleDocReviewService.comment` is the example).
 - It is safe to retry. A failed turn saves only the user's message and the model may call a
@@ -180,7 +187,7 @@ A tool that writes outside the CMS also needs three things:
   on one submission one at a time.
 - It checks a role as well as project access (`CmsReadAccessService.assertContextWrite`).
 
-The specs that build the tool registry by hand also need the new tool group:
+The specs that build the tool registry by hand also need the new tool group (and a `WriteApprovals`):
 `tools/tool-registry.spec.ts`, `agent/agent.service.spec.ts`, and `chat/chat.controller.spec.ts`
 (which lists providers by hand). PowerPoint review can follow the same shape: a service under
 `backend/src/agentic-cms/`, a thin adapter in `tools/`, and an MCP registration.
@@ -233,6 +240,20 @@ the folder in during the build. Two further caveats need review before a pilot: 
 `backend/Dockerfile.prod` copies only `backend/`, so a Docker deployment needs
 the skills folder copied in (or `AGENTIC_CMS_SKILLS_DIR` pointed at it).
 
+### Write approvals
+
+A tool that writes to an outside system (`comment_google_doc`, `add_pptx_comments`) cannot be run
+by the model alone. When the model calls it, `ToolRegistry` runs `checkBeforeApproval`, stores the
+validated call in `WriteApprovals`, and streams `approval_required`; the tool is not run and the
+model is told "Not posted". The user presses **Post** on the card, which sends the stored call's
+`approvalId` in the next chat request. `AgentService` then runs exactly the stored call (never one
+the model rewrote) with the feature flag rechecked first, and the model reports the results. An
+approval is single use, expires after 15 minutes, and works only for the same user, project and
+conversation. Any other write call the model makes in the same turn is gated again. This is
+enforced in code, so text in a submitted document cannot cause a write. MCP is separate: its
+clients see `comment_google_doc` as a write tool (`readOnlyHint: false`) and are expected to confirm
+with their own user.
+
 ### Known limitations (Week 1 prototype)
 
 - Conversation history is in memory: lost on restart and not shared between
@@ -251,8 +272,11 @@ the skills folder copied in (or `AGENTIC_CMS_SKILLS_DIR` pointed at it).
 - If the feature flag is turned off partway through a Google Docs batch, no further writes start.
   Completed comment receipts are retained and unattempted comments return as fallbacks.
 - Document text is the consultant's work and may contain instructions aimed at the model. Tool
-  output is marked as data, and only admins, the project's PM and project-member LCs can post,
-  but "post only when the user asked" is a prompt instruction, not enforced in code.
+  output is marked as data, only admins, the project's PM and project-member LCs can post, and
+  OTCR Bot writes only after the user presses Post (see "Write approvals"). MCP clients call
+  `comment_google_doc` directly and rely on their own confirmation.
+- Pending approvals are in memory per backend process. A restart or a second instance forgets
+  them; the user asks the bot to prepare the comments again.
 - A comment is anchored to its exact quote. A quote that spans paragraphs, repeats, or was
   paraphrased comes back as a fallback for the user to add by hand.
 - Google Docs comment requests require `textHash` from the reviewed read. Changed text returns

@@ -146,12 +146,20 @@ export class PptxReviewTools {
   private addCommentsTool(): AgentTool {
     return {
       name: 'add_pptx_comments',
-      description: 'Post native comments only when the user explicitly asked to post comments in this conversation. Otherwise draft feedback in the reply. Requires a prior fetch_pptx_content for this submission; copy its exact eTag. Only project reviewers may post. Stale, locked, or unsupported decks return findings for manual application without overwriting content.',
+      description: 'Prepare native comments for the user to approve. Call this when the user asks to post comments; otherwise draft feedback in the reply. Calling it posts nothing: the user sees the comments and presses Post, and the results follow in the next turn. Requires a prior fetch_pptx_content for this submission; copy its exact eTag. Only project reviewers may post. Stale, locked, or unsupported decks return findings for manual application without overwriting content.',
       input: z.strictObject({ ...target, etag: z.string().min(1).max(500), findings: z.array(z.strictObject({
         slideIndex: z.number().int().min(1), shapeId: z.string().max(100).optional(),
         severity: z.enum(['BLOCKING', 'MATERIAL', 'MINOR']), comment: z.string().trim().min(1).max(2000),
       })).min(1).max(50) }),
       isAvailable: () => this.isConfigured(),
+      // The model can only propose these comments. The registry stores them and the user approves
+      // with a button; run() is reached only for that approved call.
+      requiresApproval: true,
+      checkBeforeApproval: async (input: Target, ctx: ToolContext) => { await this.source(input, ctx, true); },
+      describeForApproval: ({ findings }: { findings: Finding[] }) => ({
+        summary: `Post ${findings.length} comment${findings.length === 1 ? '' : 's'} to the PowerPoint`,
+        items: findings.map((finding) => ({ where: `Slide ${finding.slideIndex}`, text: `[${finding.severity}] ${finding.comment}` })),
+      }),
       label: () => 'Posting PowerPoint review comments',
       run: (input: Target & { etag: string; findings: Finding[] }, ctx) => this.safe(async () => {
         const url = await this.source(input, ctx, true);

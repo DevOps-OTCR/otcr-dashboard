@@ -9,6 +9,7 @@ import { PptxReviewTools } from './pptx-review.tools';
 import { asToolData } from './tool-content';
 import { AgentTool, ToolContext, ToolFailure } from './tool.types';
 import { WebSearchTool } from './web-search.tool';
+import { ApprovalOwner, StoredWrite, WriteApprovals } from './write-approvals';
 
 const MAX_TOOL_OUTPUT_CHARS = 30_000;
 const TRUNCATION_NOTE =
@@ -31,8 +32,20 @@ export class ToolRegistry {
   private readonly log = new Logger('OtcrBotTools');
   private readonly tools: AgentTool[];
 
-  constructor(webSearch: WebSearchTool, loadSkill: LoadSkillTool, cmsReads: CmsReadTools, pptxReview: PptxReviewTools, docTools: GoogleDocTools) {
+  constructor(
+    webSearch: WebSearchTool,
+    loadSkill: LoadSkillTool,
+    cmsReads: CmsReadTools,
+    pptxReview: PptxReviewTools,
+    docTools: GoogleDocTools,
+    private readonly approvals: WriteApprovals,
+  ) {
     this.tools = [webSearch, loadSkill, ...cmsReads.tools, ...pptxReview.tools, ...docTools.tools] as AgentTool[];
+  }
+
+  /** The stored write call the user approved, once; null if it is unknown, expired, used, or not theirs. */
+  takeApproval(id: string, owner: ApprovalOwner): StoredWrite | null {
+    return this.approvals.take(id, owner);
   }
 
   /** Tools usable right now (configured, with content). Checked at the start of each turn. */
@@ -71,6 +84,26 @@ export class ToolRegistry {
 
     send({ type: 'tool_start', id: call.id, name: tool.name, label: tool.label(parsed.data) });
     try {
+      // A write tool never runs for a call the model made on its own. The call is stored and the user
+      // is asked; only AgentService's approved run sets ctx.approvedCall, and only for that one call id.
+      if (tool.requiresApproval && ctx.approvedCall?.callId !== call.id) {
+        await tool.checkBeforeApproval?.(parsed.data, ctx);
+        const preview = tool.describeForApproval?.(parsed.data) ?? { summary: `Run ${tool.name}`, items: [] };
+        const approvalId = this.approvals.create(
+          { userId: ctx.user.id, projectId: ctx.projectId, conversationId: ctx.conversationId },
+          { toolName: tool.name, input: parsed.data },
+        );
+        send({ type: 'approval_required', id: approvalId, tool: tool.name, ...preview });
+        send({ type: 'tool_end', id: call.id, ok: true, note: 'Waiting for your approval' });
+        const count = preview.items.length;
+        return {
+          content: asToolData(
+            tool.name,
+            `Not posted. ${count ? `These ${count} item${count === 1 ? '' : 's'} are` : 'This is'} waiting for the user to approve with the Post button shown under your reply. ` +
+              'Show the user what you prepared, and tell them to press Post to send it. Do not call this tool again for the same items.',
+          ),
+        };
+      }
       const out = await tool.run(parsed.data, ctx);
       send({ type: 'tool_end', id: call.id, ok: true, ...(out.note ? { note: out.note } : {}) });
       // Only OTCR's own skill library is passed through as instructions; all else is marked as

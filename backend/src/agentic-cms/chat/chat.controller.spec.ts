@@ -20,6 +20,7 @@ import { PptxReviewTools } from '../tools/pptx-review.tools';
 import { LoadSkillTool } from '../tools/load-skill.tool';
 import { ToolRegistry } from '../tools/tool-registry';
 import { WebSearchTool } from '../tools/web-search.tool';
+import { WriteApprovals } from '../tools/write-approvals';
 import { ChatController } from './chat.controller';
 
 // Spec for POST /agentic-cms/chat over real HTTP, behind the real global
@@ -67,6 +68,7 @@ describe('POST /agentic-cms/chat', () => {
         AgentService,
         ConversationStore,
         ToolRegistry,
+        WriteApprovals,
         WebSearchTool,
         LoadSkillTool,
         CmsReadTools,
@@ -202,6 +204,19 @@ describe('POST /agentic-cms/chat', () => {
     it('rejects bad bodies with 400', async () => {
       expect((await chat({ projectId: 'p1' })).status).toBe(400);
       expect((await chat({ projectId: 'p1', message: 'hi', admin: true })).status).toBe(400);
+    });
+
+    it('rejects an approvalId that is not a UUID with 400', async () => {
+      expect((await chat({ projectId: 'p1', message: 'Post them.', approvalId: 'not-a-uuid' })).status).toBe(400);
+      expect(model.stream).not.toHaveBeenCalled();
+    });
+
+    it('passes approvalId to the agent: an unknown approval ends the turn without calling the model', async () => {
+      const r = await chat({ projectId: 'p1', message: 'Post the approved comments.', approvalId: '00000000-0000-4000-8000-000000000000' });
+      expect(r.status).toBe(200);
+      expect(r.events.map((e) => e.type)).toEqual(['conversation', 'text_delta', 'done']);
+      expect(r.events[1].text).toContain('expired or was already used');
+      expect(model.stream).not.toHaveBeenCalled();
     });
 
     it('turns a model failure into an error event followed by done', async () => {

@@ -28,8 +28,9 @@ export const readGoogleDocOutput = z.object({
   truncated: z.boolean().describe('True when later paragraphs were omitted to fit the size limit.'),
 });
 
-// comment-uncertain: the request may have reached Google but its answer was lost, so the comment
-// may already be in the document. comment-failed: it was not attempted, or Google refused it.
+// comment-uncertain: the request may have reached Google but its answer was lost or ambiguous (a 5xx
+// after the write), so the comment may already be in the document. comment-failed: it was not
+// attempted, or Google refused it.
 const fallbackReason = z.enum(['not-found', 'ambiguous', 'no-comment-access', 'document-changed', 'comment-failed', 'comment-uncertain']);
 export const commentGoogleDocInput = z.strictObject({
   ...target,
@@ -165,6 +166,11 @@ export class GoogleDocReviewService {
           if (error instanceof GoogleDocsError && (error.reason === 'forbidden' || error.reason === 'no_access')) {
             stopReason = 'no-comment-access';
             result.fallbackReason = stopReason;
+          } else if (error instanceof GoogleDocsError && error.reason === 'uncertain' && error.status !== 200) {
+            // A 5xx/408 on the write: it may have been applied, and Google is unhealthy. Report this one as
+            // possibly posted and stop; the rest were never attempted and stay retryable.
+            result.fallbackReason = 'comment-uncertain';
+            stopReason = 'comment-failed';
           } else if (error instanceof GoogleDocsError) {
             // Google answered, so keep going; but an unconfirmed save may exist and must not be retried blindly.
             result.fallbackReason = error.reason === 'revision_mismatch' ? 'document-changed' : error.reason === 'uncertain' ? 'comment-uncertain' : 'comment-failed';

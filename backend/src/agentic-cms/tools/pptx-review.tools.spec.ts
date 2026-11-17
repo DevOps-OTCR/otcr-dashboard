@@ -22,7 +22,7 @@ describe('PowerPoint submission authorization and snapshot binding', () => {
     writer = { writeComments: jest.fn().mockResolvedValue({ buffer: Buffer.from('modified'), legacy: false, commentCount: 1 }) };
     flags = { assertAgenticCmsEnabledFor: jest.fn() };
     controller = new AbortController();
-    ctx = { user: { id: 'reviewer', email: 'reviewer@example.test', role: 'LC' }, projectId: 'selected-project', signal: controller.signal, addSources: jest.fn() };
+    ctx = { user: { id: 'reviewer', email: 'reviewer@example.test', role: 'LC' }, projectId: 'selected-project', conversationId: 'conv1', signal: controller.signal, addSources: jest.fn() };
     tools = new PptxReviewTools(graph as never, { extractDeck: jest.fn().mockResolvedValue({ slideCount: 1,
       slides: [{ index: 1, sldId: '256', shapes: [], speakerNotes: '' }] }) } as never,
     writer as never, { isVisionEnabled: () => false } as never, flags as never, prisma as never, access as never);
@@ -87,5 +87,25 @@ describe('PowerPoint submission authorization and snapshot binding', () => {
     flags.assertAgenticCmsEnabledFor.mockImplementation(() => { throw new Error('disabled'); });
     await expect(fetchDeck()).rejects.toThrow('disabled');
     expect(graph.resolveLink).not.toHaveBeenCalled();
+  });
+  describe('approval', () => {
+    const tool = () => tools.tools.find((item) => item.name === 'add_pptx_comments')!;
+
+    it('asks for approval and previews the findings instead of posting', () => {
+      expect(tool().requiresApproval).toBe(true);
+      const preview = tool().describeForApproval!({ ...source, etag, findings: [
+        { slideIndex: 3, severity: 'BLOCKING', comment: 'No source line.' },
+        { slideIndex: 4, severity: 'MINOR', comment: 'Axis unit.' },
+      ] });
+      expect(preview.summary).toBe('Post 2 comments to the PowerPoint');
+      expect(preview.items).toEqual([{ where: 'Slide 3', text: '[BLOCKING] No source line.' }, { where: 'Slide 4', text: '[MINOR] Axis unit.' }]);
+    });
+
+    it('refuses before asking when the user is not a reviewer, with no remote work', async () => {
+      access.assertContextWrite.mockRejectedValue(new Error('reviewer required'));
+      await expect(tool().checkBeforeApproval!({ ...source }, ctx)).rejects.toThrow('reviewer required');
+      expect(graph.resolveLink).not.toHaveBeenCalled();
+      expect(graph.uploadPptx).not.toHaveBeenCalled();
+    });
   });
 });
