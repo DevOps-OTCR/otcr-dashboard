@@ -276,11 +276,11 @@ section directly below it. Docs are text-only; PowerPoint labels simulated
 visual/text-only coverage. History warns about older versions and stale decks.
 Review completion does not approve a deliverable; final approval stays human.
 
-Ten Northwind Bikes samples include unreviewed Docs drafts (all-posted/mixed),
-Docs sharing failure, and PowerPoint drafts for success, changed and locked decks.
+Ten Northwind Bikes samples belong to the first accessible project; others stay empty.
+They include Docs drafts, sharing failure, and successful, changed and locked decks.
 Demo controls also simulate partial posting, older comment formats, direct links,
 upload errors and unmatched slide references. Locked/error cases retry posting;
-changed decks need a new review. Older CMS-only history keeps its saved feedback.
+changed decks need a new review. Switching preserves project-scoped activity.
 All results, coverage, snapshots and links are fake; reload/sign-out resets state.
 
 ### Local demo and checks

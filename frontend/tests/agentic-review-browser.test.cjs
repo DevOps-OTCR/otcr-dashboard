@@ -317,13 +317,14 @@ for (const [id, level, mixed] of [
 }
 
 test('Google Docs sharing failure explains access and retries the same submission without resubmission', async t => {
-  const page = await open(t, '?role=PM&tab=review&submission=demo-sub-doc-access');
+  const page = await open(t, '?role=PM&tab=review&submission=demo-sub-doc-access', true);
   await statusRegion(page).getByText('We couldn’t open this Google Doc.').waitFor();
   await statusRegion(page).getByText('Ask the owner to share this Google Doc with the review bot as Commenter, then retry using the same submission link.').waitFor();
   await page.getByText('Demo: Retry simulates corrected sharing. No permissions are checked or changed.').waitFor();
   assert.equal(await page.getByRole('region', { name: 'Summary' }).count(), 0);
   await page.getByRole('button', { name: 'Retry Basic review' }).click();
   await reviewStatus(page).getByText('Awaiting review.').waitFor();
+  await page.clock.fastForward(9_000);
   await reviewStatus(page).getByText('Completed.').waitFor({ timeout: 15_000 });
   await page.getByText('Demo result: 5 comments added to Google Docs.').waitFor();
   assert.equal(params(page).get('submission'), 'demo-sub-doc-access');
@@ -390,14 +391,57 @@ for (const [outcome, title, count] of [
   });
 }
 
-test('PowerPoint sample defaults are available and read-only projects cannot retry posting', async t => {
-  const page = await open(t, '?role=PM&tab=review&submission=demo-sub-pptx-locked', true);
+test('project switching clears old review data and restores the original project’s posting retry state', async t => {
+  const page = await open(t, '?role=PM&tab=review&submission=demo-sub-pptx-locked&delayProjectTwo', true);
   await requestDeck(page);
   await page.getByRole('button', { name: 'Retry posting comments', exact: true }).waitFor();
   await page.getByRole('combobox', { name: 'Project', exact: true }).selectOption('p2');
-  await page.getByRole('region', { name: 'Summary' }).getByText('Demo result: The deck is locked for editing.').waitFor();
+  await page.getByText('No submissions yet. They appear here when consultants submit slides or whitepapers.').waitFor();
+  assert.equal(await submissions(page).count(), 0);
+  assert.equal(await page.getByRole('heading', { name: 'Partnership options — PowerPoint draft' }).count(), 0);
+  assert.equal(await page.getByRole('region', { name: 'Summary' }).count(), 0);
   assert.equal(await page.getByRole('button', { name: 'Retry posting comments', exact: true }).count(), 0);
-  assert.equal(await page.getByText('Demo controls', { exact: true }).count(), 0);
-  await page.getByText('Comments not added to PowerPoint (6)', { exact: true }).click();
-  assert.equal(await feedback(page).getByRole('article').count(), 6);
+  await page.clock.fastForward(200);
+  await page.getByRole('combobox', { name: 'Project', exact: true }).selectOption('p1');
+  await submissions(page).filter({ hasText: 'Partnership options' }).getByRole('button').click();
+  await page.getByRole('region', { name: 'Summary' }).getByText('Demo result: The deck is locked for editing.').waitFor();
+  await page.getByRole('button', { name: 'Retry posting comments', exact: true }).click();
+  await page.clock.fastForward(2_100);
+  await page.getByRole('region', { name: 'Summary' }).getByText('6 comments added to PowerPoint.').waitFor();
+});
+
+test('an active review remains in its original project across empty-project and tab switches', async t => {
+  const page = await open(t, '?role=PM&tab=review&submission=demo-sub-doc-native', true);
+  await page.getByRole('button', { name: 'Request AI review' }).click();
+  await requestForm(page).getByRole('button', { name: 'Start Basic review' }).click();
+  await reviewStatus(page).getByText('Awaiting review.').waitFor();
+  await page.getByRole('combobox', { name: 'Project', exact: true }).selectOption('p2');
+  await page.getByText('No submissions yet. They appear here when consultants submit slides or whitepapers.').waitFor();
+  await page.clock.fastForward(9_000);
+  assert.equal(await submissions(page).count(), 0);
+  assert.equal(await page.getByRole('region', { name: 'Summary' }).count(), 0);
+  await page.getByRole('tab', { name: 'Project Context' }).click();
+  await page.getByRole('tab', { name: 'AI Review' }).click();
+  await page.getByText('No submissions yet. They appear here when consultants submit slides or whitepapers.').waitFor();
+  await page.getByRole('combobox', { name: 'Project', exact: true }).selectOption('p1');
+  await submissions(page).filter({ hasText: 'Market sizing whitepaper' }).getByRole('button').click();
+  await reviewStatus(page).getByText('Completed.').waitFor();
+  await page.getByText('Demo result: 5 comments added to Google Docs.').waitFor();
+  assert.equal(await page.getByRole('region', { name: 'Review history' }).count(), 0, 'the original request was retained, not recreated');
+});
+
+test('planned demo failures do not carry across projects', async t => {
+  const page = await open(t, '?role=ADMIN&tab=review', true);
+  await page.getByText('Demo controls', { exact: true }).click();
+  await page.getByRole('combobox', { name: /Result of the next review you start/ }).selectOption('rate_limit');
+  await page.getByRole('combobox', { name: /Posting result of the next PowerPoint/ }).selectOption('locked');
+  await page.getByRole('combobox', { name: 'Project', exact: true }).selectOption('p2');
+  await page.getByText('No submissions yet. They appear here when consultants submit slides or whitepapers.').waitFor();
+  await page.getByText('Demo controls', { exact: true }).click();
+  assert.equal(await page.getByRole('combobox', { name: /Result of the next review you start/ }).inputValue(), '');
+  assert.equal(await page.getByRole('combobox', { name: /Posting result of the next PowerPoint/ }).inputValue(), '');
+  await page.getByRole('combobox', { name: 'Project', exact: true }).selectOption('p1');
+  await page.getByText('Demo controls', { exact: true }).click();
+  assert.equal(await page.getByRole('combobox', { name: /Result of the next review you start/ }).inputValue(), 'rate_limit');
+  assert.equal(await page.getByRole('combobox', { name: /Posting result of the next PowerPoint/ }).inputValue(), 'locked');
 });

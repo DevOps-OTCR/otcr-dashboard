@@ -30,7 +30,7 @@ const { FAILURES } = load('copy');
 const START = Date.parse('2026-11-12T15:00:00Z');
 function setup(viewerName = 'Pat Morgan') {
   let t = START;
-  const client = createMockReviewClient({ now: () => t, viewerName });
+  const client = createMockReviewClient({ now: () => t, viewerName, demoProjectId: 'p1' });
   return { client, advance: (ms) => { t += ms; } };
 }
 const plain = (value) => JSON.parse(JSON.stringify(value));
@@ -124,10 +124,10 @@ test('rejects unknown submissions and levels', async () => {
 test('each failure kind fails at its own point and only retryable kinds can be retried', async () => {
   for (const kind of Object.keys(FAILURES)) {
     const { client, advance } = setup();
-    client.setNextFailure(kind);
-    assert.equal(client.nextFailure(), kind);
+    client.setNextFailure('p1', kind);
+    assert.equal(client.nextFailure('p1'), kind);
     await client.request({ projectId: 'p1', submissionId: 'demo-sub-initial-slides', level: 'ADVANCED' });
-    assert.equal(client.nextFailure(), null, 'a planned failure applies to one review only');
+    assert.equal(client.nextFailure('p1'), null, 'a planned failure applies to one review only');
     advance(duration('ADVANCED', 'slides'));
     const failed = await latestFor(client, 'demo-sub-initial-slides');
     assert.equal(failed.status, 'FAILED', kind);
@@ -136,20 +136,20 @@ test('each failure kind fails at its own point and only retryable kinds can be r
     assert.equal(failed.startedAt === undefined, kind === 'config' || kind === 'rate_limit', `${kind} start time`);
 
     if (FAILURES[kind].retryable) {
-      const retried = await client.retry(failed.id);
+      const retried = await client.retry('p1', failed.id);
       assert.equal(retried.retryOf, failed.id);
       assert.equal(retried.level, 'ADVANCED');
       advance(duration('ADVANCED', 'slides'));
       assert.equal((await latestFor(client, 'demo-sub-initial-slides')).status, 'COMPLETED');
     } else {
-      await assert.rejects(client.retry(failed.id), new RegExp(FAILURES[kind].nextStep.slice(0, 20)));
+      await assert.rejects(client.retry('p1', failed.id), new RegExp(FAILURES[kind].nextStep.slice(0, 20)));
     }
   }
 });
 
 test('a model failure happens late, after progress was shown', async () => {
   const { client, advance } = setup();
-  client.setNextFailure('model');
+  client.setNextFailure('p1', 'model');
   await client.request({ projectId: 'p1', submissionId: 'demo-sub-initial-slides', level: 'BASIC' });
   advance(QUEUE_MS + STEP_MS.BASIC * 3);
   assert.equal((await latestFor(client, 'demo-sub-initial-slides')).status, 'IN_PROGRESS');
@@ -163,11 +163,11 @@ test('the seeded file-access failure can be retried, and only failed reviews can
   const failed = reviews.find((r) => r.status === 'FAILED');
   const completed = reviews.find((r) => r.status === 'COMPLETED');
   assert.equal(failed.failure.kind, 'file_access');
-  await assert.rejects(client.retry(completed.id), /Only a failed review/);
-  await assert.rejects(client.retry('missing'), /Only a failed review/);
-  const retried = await client.retry(failed.id);
+  await assert.rejects(client.retry('p1', completed.id), /Only a failed review/);
+  await assert.rejects(client.retry('p1', 'missing'), /Only a failed review/);
+  const retried = await client.retry('p1', failed.id);
   assert.equal(retried.status, 'AWAITING');
-  await assert.rejects(client.retry(failed.id), /already running/);
+  await assert.rejects(client.retry('p1', failed.id), /already running/);
 });
 
 test('reviews are listed newest first and list() returns copies', async () => {
@@ -227,7 +227,7 @@ test('queue: the current review is the newest run for the current version, histo
   const { client, advance } = setup();
   const failed = (await client.list('p1')).reviews.find((r) => r.status === 'FAILED');
   advance(1_000);
-  const retried = await client.retry(failed.id);
+  const retried = await client.retry('p1', failed.id);
   const row = buildQueue(await client.list('p1')).find((r) => r.submission.id === failed.submissionId);
   assert.equal(row.current.id, retried.id);
   assert.equal(row.state, 'AWAITING');
@@ -349,7 +349,7 @@ test('Google Docs access retry keeps the submission link and preserves the faile
   const before = await client.list('p1');
   const failed = before.reviews.find(r => r.submissionId === 'demo-sub-doc-access');
   assert.equal(failed.status, 'FAILED');
-  const retried = await client.retry(failed.id);
+  const retried = await client.retry('p1', failed.id);
   advance(duration('BASIC', 'document'));
   const done = await latestFor(client, 'demo-sub-doc-access');
   assert.equal(done.status, 'COMPLETED');
@@ -366,9 +366,9 @@ test('Google Docs access retry keeps the submission link and preserves the faile
 test('PowerPoint outcomes preserve completed findings and distinguish visual and text-only coverage', async () => {
   for (const outcome of ['comments_live', 'partial', 'stale', 'locked', 'legacy_format', 'direct_download', 'error', 'no_comments_written']) {
     const { client, advance } = setup();
-    client.setNextPowerPointResult(outcome);
+    client.setNextPowerPointResult('p1', outcome);
     await client.request({ projectId: 'p1', submissionId: 'demo-sub-pptx-native', level: 'BASIC' });
-    assert.equal(client.nextPowerPointResult(), null);
+    assert.equal(client.nextPowerPointResult('p1'), null);
     advance(duration('BASIC', 'slides'));
     const review = await latestFor(client, 'demo-sub-pptx-native');
     assert.equal(review.status, 'COMPLETED', outcome);
@@ -389,14 +389,14 @@ test('PowerPoint outcomes preserve completed findings and distinguish visual and
 test('PowerPoint posting retry retains the same review, snapshot and findings and prevents concurrent work', async () => {
   for (const outcome of ['locked', 'error']) {
     const { client, advance } = setup();
-    client.setNextPowerPointResult(outcome);
+    client.setNextPowerPointResult('p1', outcome);
     await client.request({ projectId: 'p1', submissionId: 'demo-sub-pptx-native', level: 'ADVANCED' });
     advance(duration('ADVANCED', 'slides'));
     const before = await latestFor(client, 'demo-sub-pptx-native');
-    const retry = await client.retryPowerPointPosting(before.id);
+    const retry = await client.retryPowerPointPosting('p1', before.id);
     assert.equal(retry.status, 'COMPLETED');
     assert.equal(retry.powerPoint.postingInProgress, true);
-    await assert.rejects(client.retryPowerPointPosting(before.id), /already running/);
+    await assert.rejects(client.retryPowerPointPosting('p1', before.id), /already running/);
     await assert.rejects(client.request({ projectId: 'p1', submissionId: before.submissionId, level: 'BASIC' }), /already running/);
     advance(2_000);
     const after = await latestFor(client, before.submissionId);
@@ -417,7 +417,7 @@ test('a stale deck needs a new review and a new snapshot rather than posting old
   advance(duration('BASIC', 'slides'));
   const stale = await latestFor(client, 'demo-sub-pptx-stale');
   assert.equal(stale.powerPoint.outcome, 'stale');
-  await assert.rejects(client.retryPowerPointPosting(stale.id), /Only a locked deck or posting error/);
+  await assert.rejects(client.retryPowerPointPosting('p1', stale.id), /Only a locked deck or posting error/);
   await client.request({ projectId: 'p1', submissionId: stale.submissionId, level: 'BASIC' });
   advance(duration('BASIC', 'slides'));
   const next = await latestFor(client, stale.submissionId);
@@ -428,11 +428,57 @@ test('a stale deck needs a new review and a new snapshot rather than posting old
 
 test('Docs do not consume the next PowerPoint result and cannot retry deck posting', async () => {
   const { client, advance } = setup();
-  client.setNextPowerPointResult('legacy_format');
+  client.setNextPowerPointResult('p1', 'legacy_format');
   await client.request({ projectId: 'p1', submissionId: 'demo-sub-doc-native', level: 'BASIC' });
-  assert.equal(client.nextPowerPointResult(), 'legacy_format');
+  assert.equal(client.nextPowerPointResult('p1'), 'legacy_format');
   advance(duration('BASIC', 'document'));
   const doc = await latestFor(client, 'demo-sub-doc-native');
   assert.equal(doc.powerPoint, undefined);
-  await assert.rejects(client.retryPowerPointPosting(doc.id), /Only a locked deck or posting error/);
+  await assert.rejects(client.retryPowerPointPosting('p1', doc.id), /Only a locked deck or posting error/);
+});
+
+
+test('project queues are isolated and unconfigured projects start empty', async () => {
+  const { client, advance } = setup();
+  const first = await client.list('p1');
+  assert.equal(first.submissions.length, 10);
+  assert.deepEqual(plain(await client.list('p2')), { submissions: [], reviews: [] });
+  const run = await client.request({ projectId: 'p1', submissionId: 'demo-sub-doc-native', level: 'BASIC' });
+  advance(duration('BASIC', 'document'));
+  assert.deepEqual(plain(await client.list('p2')), { submissions: [], reviews: [] });
+  assert.equal((await client.list('p1')).reviews.find(r => r.id === run.id).status, 'COMPLETED');
+  const custom = createMockReviewClient({ now: () => START, demoProjectId: 'local-project-42' });
+  assert.equal((await custom.list('local-project-42')).submissions.length, 10);
+  assert.deepEqual(plain(await custom.list('p1')), { submissions: [], reviews: [] });
+  assert.deepEqual(plain(await createMockReviewClient().list('arbitrary-project')), { submissions: [], reviews: [] });
+});
+
+test('requests and both retry paths reject records from another project without modifying them', async () => {
+  const { client, advance } = setup();
+  const before = await client.list('p1');
+  const failed = before.reviews.find(r => r.status === 'FAILED');
+  await assert.rejects(client.request({ projectId: 'p2', submissionId: failed.submissionId, level: 'BASIC' }), /no longer available/);
+  await assert.rejects(client.retry('p2', failed.id), /Only a failed review/);
+  assert.deepEqual(plain(await client.list('p1')), plain(before));
+  client.setNextPowerPointResult('p1', 'locked');
+  await client.request({ projectId: 'p1', submissionId: 'demo-sub-pptx-native', level: 'BASIC' });
+  advance(duration('BASIC', 'slides'));
+  const locked = await latestFor(client, 'demo-sub-pptx-native');
+  await assert.rejects(client.retryPowerPointPosting('p2', locked.id), /Only a locked deck or posting error/);
+  assert.deepEqual(plain(await latestFor(client, 'demo-sub-pptx-native')), plain(locked));
+  assert.deepEqual(plain(await client.list('p2')), { submissions: [], reviews: [] });
+});
+
+test('demo controls are project-scoped and cross-project failures do not consume them', async () => {
+  const { client } = setup();
+  client.setNextFailure('p2', 'model');
+  client.setNextPowerPointResult('p2', 'stale');
+  assert.equal(client.nextFailure('p1'), null);
+  assert.equal(client.nextPowerPointResult('p1'), null);
+  await assert.rejects(client.request({ projectId: 'p2', submissionId: 'demo-sub-pptx-native', level: 'BASIC' }));
+  await client.request({ projectId: 'p1', submissionId: 'demo-sub-pptx-native', level: 'BASIC' });
+  assert.equal(client.nextFailure('p2'), 'model');
+  assert.equal(client.nextPowerPointResult('p2'), 'stale');
+  assert.equal(client.nextFailure('p1'), null);
+  assert.equal(client.nextPowerPointResult('p1'), null);
 });

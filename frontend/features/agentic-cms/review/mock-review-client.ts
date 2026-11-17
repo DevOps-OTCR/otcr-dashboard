@@ -68,11 +68,11 @@ type Run = {
 
 export type MockReviewClient = ReviewClient & {
   /** Demo control: make the next requested or retried review fail with this kind. */
-  setNextFailure(kind: ReviewFailureKind | null): void;
-  nextFailure(): ReviewFailureKind | null;
-  setNextPowerPointResult(result: PowerPointDemoResult | null): void;
-  nextPowerPointResult(): PowerPointDemoResult | null;
-  retryPowerPointPosting(reviewId: string): Promise<Review>;
+  setNextFailure(projectId: string, kind: ReviewFailureKind | null): void;
+  nextFailure(projectId: string): ReviewFailureKind | null;
+  setNextPowerPointResult(projectId: string, result: PowerPointDemoResult | null): void;
+  nextPowerPointResult(projectId: string): PowerPointDemoResult | null;
+  retryPowerPointPosting(projectId: string, reviewId: string): Promise<Review>;
 };
 
 /** Stands in for the opaque revision id Group 3's document tooling will attach. */
@@ -82,20 +82,57 @@ export function mockRevisionId(submissionId: string, version: number): string {
   return `rev-${hash.toString(16).padStart(8, '0').slice(-7)}`;
 }
 
-export function createMockReviewClient(options: { now?: () => number; viewerName?: string } = {}): MockReviewClient {
+type ProjectReviewClient = {
+  list(): Promise<ReviewQueue>;
+  request(input: RequestReviewInput): Promise<Review>;
+  retry(reviewId: string): Promise<Review>;
+  setNextFailure(kind: ReviewFailureKind | null): void;
+  nextFailure(): ReviewFailureKind | null;
+  setNextPowerPointResult(result: PowerPointDemoResult | null): void;
+  nextPowerPointResult(): PowerPointDemoResult | null;
+  retryPowerPointPosting(reviewId: string): Promise<Review>;
+};
+
+/** Seed one configured project; other projects start empty. */
+export function createMockReviewClient(options: { now?: () => number; viewerName?: string; demoProjectId?: string } = {}): MockReviewClient {
+  const projects = new Map<string, ProjectReviewClient>();
+  const project = (projectId: string): ProjectReviewClient => {
+    if (!projectId.trim()) throw new Error('Choose a project before reviewing submissions.');
+    let client = projects.get(projectId);
+    if (!client) {
+      client = createProjectReviewClient({ ...options, projectId, populated: projectId === options.demoProjectId });
+      projects.set(projectId, client);
+    }
+    return client;
+  };
+  return {
+    mocked: true,
+    list: (projectId) => project(projectId).list(),
+    request: (input) => project(input.projectId).request(input),
+    retry: (projectId, reviewId) => project(projectId).retry(reviewId),
+    retryPowerPointPosting: (projectId, reviewId) => project(projectId).retryPowerPointPosting(reviewId),
+    setNextFailure: (projectId, kind) => project(projectId).setNextFailure(kind),
+    nextFailure: (projectId) => project(projectId).nextFailure(),
+    setNextPowerPointResult: (projectId, result) => project(projectId).setNextPowerPointResult(result),
+    nextPowerPointResult: (projectId) => project(projectId).nextPowerPointResult(),
+  };
+}
+
+/** Each project owns its fixtures, runs and demo controls for the lifetime of the page. */
+function createProjectReviewClient(options: { now?: () => number; viewerName?: string; projectId: string; populated: boolean }): ProjectReviewClient {
   const now = options.now ?? (() => Date.now());
   const viewerName = options.viewerName?.trim() || 'You';
   const createdAt = now();
-  const submissions = demoSubmissions(createdAt);
+  const submissions = options.populated ? demoSubmissions(createdAt) : [];
   const runs: Run[] = [];
   let counter = 0;
   let pendingFailure: ReviewFailureKind | null = null;
   let pendingPowerPointResult: PowerPointDemoResult | null = null;
 
-  const newId = () => `demo-review-${++counter}`;
+  const newId = () => `${options.projectId}:demo-review-${++counter}`;
   const submissionById = (id: string) => submissions.find((s) => s.id === id);
 
-  for (const seed of DEMO_SEED) {
+  for (const seed of options.populated ? DEMO_SEED : []) {
     runs.push({
       id: newId(),
       submissionId: seed.submissionId,
@@ -218,8 +255,6 @@ export function createMockReviewClient(options: { now?: () => number; viewerName
   };
 
   return {
-    mocked: true,
-
     async list(): Promise<ReviewQueue> {
       return {
         submissions: submissions.map((s) => ({ ...s })),

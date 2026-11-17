@@ -115,5 +115,5 @@ export interface ReviewClient {
   readonly mocked: boolean;
   list(projectId: string): Promise<ReviewQueue>;
   request(input: RequestReviewInput): Promise<Review>;
-  retry(reviewId: string): Promise<Review>;
+  retry(projectId: string, reviewId: string): Promise<Review>;
 }

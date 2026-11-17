@@ -30,9 +30,9 @@ function setReviewParams(submissionId: string | null) {
  * the demo survive switching tabs. It lives in memory: a reload or sign-out resets it.
  * Next week this returns an HTTP ReviewClient and the demo controls go away.
  */
-export function useReviewClient(viewerName?: string): MockReviewClient {
-  const [client] = useState(() => createMockReviewClient({ viewerName }));
-  return client;
+export function useReviewClient(demoProjectId?: string, viewerName?: string): MockReviewClient {
+  // Fixture ownership follows the first accessible project, never the selection.
+  return useMemo(() => createMockReviewClient({ viewerName, demoProjectId }), [viewerName, demoProjectId]);
 }
 
 type Props = {
@@ -45,9 +45,15 @@ type Props = {
   onOpenProjectContext?: () => void;
 };
 
-export function ReviewPanel({ client, projectId, projectName, canRequest, projectContextMissing, onOpenProjectContext }: Props) {
-  const [nextFailure, setNextFailure] = useState<ReviewFailureKind | null>(() => client.nextFailure());
-  const [nextPowerPoint, setNextPowerPoint] = useState(() => client.nextPowerPointResult());
+export function ReviewPanel(props: Props) {
+  // Project switches reset the panel, but only leaving the tab clears its URL.
+  useEffect(() => () => setReviewParams(null), []);
+  return <ProjectReviewPanel key={props.projectId} {...props} />;
+}
+
+function ProjectReviewPanel({ client, projectId, projectName, canRequest, projectContextMissing, onOpenProjectContext }: Props) {
+  const [nextFailure, setNextFailure] = useState<ReviewFailureKind | null>(() => client.nextFailure(projectId));
+  const [nextPowerPoint, setNextPowerPoint] = useState(() => client.nextPowerPointResult(projectId));
   const [data, setData] = useState<ReviewQueue | null>(null);
   const [error, setError] = useState('');
   const [now, setNow] = useState(() => Date.now());
@@ -92,15 +98,14 @@ export function ReviewPanel({ client, projectId, projectName, canRequest, projec
   useEffect(() => {
     if (shownId) setReviewParams(shownId);
   }, [shownId]);
-  useEffect(() => () => setReviewParams(null), []);
 
   const visible = filterRows(rows, filter);
   const counts = countByFilter(rows);
 
   // After a request or retry, reload at once and show that a planned demo failure was used.
   const afterChange = () => {
-    setNextFailure(client.nextFailure());
-    setNextPowerPoint(client.nextPowerPointResult());
+    setNextFailure(client.nextFailure(projectId));
+    setNextPowerPoint(client.nextPowerPointResult(projectId));
     setReloadKey((key) => key + 1);
   };
   const actions: ReviewActions = {
@@ -112,11 +117,11 @@ export function ReviewPanel({ client, projectId, projectName, canRequest, projec
       afterChange();
     },
     retry: async (reviewId: string) => {
-      await client.retry(reviewId);
+      await client.retry(projectId, reviewId);
       afterChange();
     },
     retryPosting: async (reviewId: string) => {
-      await client.retryPowerPointPosting(reviewId);
+      await client.retryPowerPointPosting(projectId, reviewId);
       afterChange();
     },
   };
@@ -135,7 +140,7 @@ export function ReviewPanel({ client, projectId, projectName, canRequest, projec
         <div role="note" className="flex gap-2 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--warning)_30%,transparent)] bg-[var(--warning-bg)] p-3 text-sm text-[var(--warning)]">
           <FlaskConical className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           <p>
-            <span className="font-semibold">Demo data.</span> These sample submissions for a fictional client are the same for every project, and
+            <span className="font-semibold">Demo data.</span> Fictional samples are split across the first accessible project; additional projects have empty review queues. All
             reviews are simulated in your browser: no file is read and no model is called. Real submissions{projectName ? ` for ${projectName}` : ''} appear
             here once the review service is connected.
           </p>
@@ -151,7 +156,7 @@ export function ReviewPanel({ client, projectId, projectName, canRequest, projec
               value={nextFailure ?? ''}
               onChange={(event) => {
                 const kind = (event.target.value || null) as ReviewFailureKind | null;
-                client.setNextFailure(kind);
+                client.setNextFailure(projectId, kind);
                 setNextFailure(kind);
               }}
               className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--card)] px-2 py-1"
@@ -168,7 +173,7 @@ export function ReviewPanel({ client, projectId, projectName, canRequest, projec
             <span>Posting result of the next PowerPoint review or posting retry:</span>
             <select value={nextPowerPoint ?? ''} onChange={(event) => {
               const result = (event.target.value || null) as PowerPointDemoResult | null;
-              client.setNextPowerPointResult(result);
+              client.setNextPowerPointResult(projectId, result);
               setNextPowerPoint(result);
             }} className="min-w-0 max-w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--card)] px-2 py-1">
               <option value="">Use sample’s default</option>

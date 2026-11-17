@@ -36,7 +36,7 @@ export default function AgenticCms() {
   // Each load/selection invalidates pending reads and write-side UI updates.
   const requestId = useRef(0);
   const [panel, setPanel] = useState<Panel>(initialPanel);
-  const reviewClient = useReviewClient(user?.name);
+  const reviewClient = useReviewClient(projects[0]?.id, user?.name);
 
   const load = async (id: string) => {
     const request = ++requestId.current;
