@@ -41,6 +41,8 @@ type Props = {
   projectName?: string;
   /** The backend's edit permission for this project, from the project-context response. */
   canRequest: boolean;
+  accessState: 'loading' | 'error' | 'ready';
+  onRetryAccess: () => void;
   projectContextMissing: boolean;
   onOpenProjectContext?: () => void;
 };
@@ -51,7 +53,8 @@ export function ReviewPanel(props: Props) {
   return <ProjectReviewPanel key={props.projectId} {...props} />;
 }
 
-function ProjectReviewPanel({ client, projectId, projectName, canRequest, projectContextMissing, onOpenProjectContext }: Props) {
+function ProjectReviewPanel({ client, projectId, projectName, canRequest: permitted, accessState, onRetryAccess, projectContextMissing, onOpenProjectContext }: Props) {
+  const canRequest = accessState === 'ready' && permitted;
   const [nextFailure, setNextFailure] = useState<ReviewFailureKind | null>(() => client.nextFailure(projectId));
   const [nextPowerPoint, setNextPowerPoint] = useState(() => client.nextPowerPointResult(projectId));
   const [data, setData] = useState<ReviewQueue | null>(null);
@@ -110,6 +113,7 @@ function ProjectReviewPanel({ client, projectId, projectName, canRequest, projec
     setReloadKey((key) => key + 1);
   };
   const actions: ReviewActions = {
+    permissionsReady: accessState === 'ready',
     canRequest,
     projectContextMissing,
     onOpenProjectContext,
@@ -145,6 +149,14 @@ function ProjectReviewPanel({ client, projectId, projectName, canRequest, projec
             reviews are simulated in your browser: no file is read and no model is called. Real submissions{projectName ? ` for ${projectName}` : ''} appear
             here once the review service is connected.
           </p>
+        </div>
+      )}
+
+      {accessState === 'loading' && <p role="status" className="text-sm text-[var(--text-muted)]">Checking review permissions...</p>}
+      {accessState === 'error' && (
+        <div role="alert" className="flex items-center gap-3 text-sm">
+          <span>Could not check review permissions. Try again.</span>
+          <button type="button" className="rounded border px-3 py-1" onClick={onRetryAccess}>Retry access check</button>
         </div>
       )}
 

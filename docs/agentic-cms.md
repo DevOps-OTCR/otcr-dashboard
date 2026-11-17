@@ -228,7 +228,7 @@ project, then use the Project Context, Client Call Notes, or AI Review tab.
 The existing backend-controlled feature gate must permit the account.
 
 Request/retry controls use the context API's `canEdit`: admins, LCs with project
-access, and the assigned PM can request reviews. Other readers see feedback.
+access, and the assigned PM can request reviews. Loading/error states withhold actions; errors offer retry.
 Future review endpoints must enforce the existing flag and CMS permissions
 server-side; the demo's frontend controls are not server authorization.
 

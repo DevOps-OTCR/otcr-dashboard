@@ -16,6 +16,7 @@ const runLabel = (review: Review) => `${LEVELS[review.level].label} review of ve
 export type ReviewActions = {
   /** From the backend's edit permission for the project (Admins, LCs with access, the assigned PM). */
   canRequest: boolean;
+  permissionsReady: boolean;
   projectContextMissing: boolean;
   onOpenProjectContext?: () => void;
   request: (submissionId: string, level: ReviewLevel, focusNote: string) => Promise<void>;
@@ -81,7 +82,7 @@ export function ReviewDetail({ row, now, actions, mocked }: { row: QueueRow; now
 
   // What the PM can do next with the current version. Hidden while viewing an earlier run.
   const failure = current?.failure && FAILURES[current.failure.kind];
-  const nextActions = viewingEarlier || current?.powerPoint?.postingInProgress ? null : !actions.canRequest ? (
+  const nextActions = !actions.permissionsReady || viewingEarlier || current?.powerPoint?.postingInProgress ? null : !actions.canRequest ? (
     !current && <p className="text-sm text-[var(--text-muted)]">Only this project’s PM, LCs and admins can request AI reviews.</p>
   ) : formLevel ? (
     <RequestReviewForm

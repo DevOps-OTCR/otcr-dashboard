@@ -475,3 +475,66 @@ test('planned demo failures do not carry across projects', async t => {
   assert.equal(await page.getByRole('combobox', { name: /Result of the next review you start/ }).inputValue(), 'rate_limit');
   assert.equal(await page.getByRole('combobox', { name: /Posting result of the next PowerPoint/ }).inputValue(), 'locked');
 });
+
+const restriction = 'Only this project’s PM, LCs and admins can request AI reviews.';
+const releaseContextRead = async (page, fail = false) => {
+  await page.waitForFunction(() => window.contextReads.pending.length > 0);
+  await page.evaluate(fail => window.contextReads.pending.shift().finish(fail), fail);
+};
+const assertReviewActionsHidden = async page => {
+  assert.equal(await page.getByText(restriction, { exact: true }).count(), 0);
+  assert.equal(await page.getByRole('button', { name: /^(Request AI review|Retry Basic review|Retry posting comments)$/ }).count(), 0);
+  assert.equal(await page.getByText('Demo controls', { exact: true }).count(), 0);
+};
+
+for (const role of ['PM', 'CONSULTANT']) {
+  test(`pending permissions show a neutral status before resolving for ${role}`, async t => {
+    const page = await open(t, `?role=${role}&tab=review&submission=demo-sub-doc-native&holdReads`);
+    await page.getByRole('heading', { name: 'Market sizing whitepaper — Google Doc' }).waitFor();
+    await page.getByText('Checking review permissions...', { exact: true }).waitFor();
+    await assertReviewActionsHidden(page);
+    await releaseContextRead(page);
+    if (role === 'PM') {
+      await page.getByRole('button', { name: 'Request AI review', exact: true }).waitFor();
+      assert.equal(await page.getByText(restriction, { exact: true }).count(), 0);
+    } else {
+      await page.getByText(restriction, { exact: true }).waitFor();
+      assert.equal(await page.getByRole('button', { name: 'Request AI review', exact: true }).count(), 0);
+    }
+    assert.equal(await page.getByText('Checking review permissions...', { exact: true }).count(), 0);
+  });
+}
+
+test('failed permission checks offer retry instead of a role restriction', async t => {
+  const page = await open(t, '?role=PM&tab=review&submission=demo-sub-doc-native&holdReads');
+  await page.getByText('Checking review permissions...', { exact: true }).waitFor();
+  await releaseContextRead(page, true);
+  await page.getByRole('alert').getByText('Could not check review permissions. Try again.').waitFor();
+  await assertReviewActionsHidden(page);
+  await page.getByRole('button', { name: 'Retry access check', exact: true }).click();
+  await page.getByText('Checking review permissions...', { exact: true }).waitFor();
+  await assertReviewActionsHidden(page);
+  await releaseContextRead(page);
+  await page.getByRole('button', { name: 'Request AI review', exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Retry access check' }).count(), 0);
+});
+
+test('switching projects waits for current permissions and ignores an older grant', async t => {
+  const page = await open(t, '?role=PM&tab=review&submission=demo-sub-doc-native&holdReads');
+  await page.getByText('Checking review permissions...', { exact: true }).waitFor();
+  const project = page.getByRole('combobox', { name: 'Project', exact: true });
+  await project.selectOption('p2');
+  await page.waitForFunction(() => window.contextReads.pending.length === 2);
+  await releaseContextRead(page); // Old Project One grant must not enable Project Two.
+  await assertReviewActionsHidden(page);
+  await page.getByText('Checking review permissions...', { exact: true }).waitFor();
+  await releaseContextRead(page); // Project Two is read-only for this PM.
+  await page.getByText('Checking review permissions...', { exact: true }).waitFor({ state: 'hidden' });
+  assert.equal(await page.getByText('Demo controls', { exact: true }).count(), 0);
+  await project.selectOption('p1');
+  await page.getByRole('heading', { name: 'Market sizing whitepaper — Google Doc' }).waitFor();
+  await page.getByText('Checking review permissions...', { exact: true }).waitFor();
+  await assertReviewActionsHidden(page);
+  await releaseContextRead(page);
+  await page.getByRole('button', { name: 'Request AI review', exact: true }).waitFor();
+});
