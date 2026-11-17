@@ -58,7 +58,7 @@ function ProjectReviewPanel({ client, projectId, projectName, canRequest, projec
   const [error, setError] = useState('');
   const [now, setNow] = useState(() => Date.now());
   const [filter, setFilter] = useState<QueueFilter>('ALL');
-  const [selectedId, setSelectedId] = useState(() => new URLSearchParams(window.location.search).get('submission') ?? '');
+  const [selectedId, setSelectedId] = useState<string | null>(() => new URLSearchParams(window.location.search).get('submission'));
   // Bumping this reloads immediately (Retry, and after requesting a review).
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -92,8 +92,9 @@ function ProjectReviewPanel({ client, projectId, projectName, canRequest, projec
 
   const rows = useMemo(() => (data ? buildQueue(data) : []), [data]);
 
-  // Keep a valid selection: the deep-linked submission if it exists, otherwise the first row.
-  const selected = rows.find((row) => row.submission.id === selectedId) ?? rows[0];
+  // Only default to the first row when no submission was requested in the URL.
+  const selected = selectedId !== null ? rows.find((row) => row.submission.id === selectedId) : rows[0];
+  const unavailable = data !== null && selectedId !== null && !selected;
   const shownId = selected?.submission.id;
   useEffect(() => {
     if (shownId) setReviewParams(shownId);
@@ -140,7 +141,7 @@ function ProjectReviewPanel({ client, projectId, projectName, canRequest, projec
         <div role="note" className="flex gap-2 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--warning)_30%,transparent)] bg-[var(--warning-bg)] p-3 text-sm text-[var(--warning)]">
           <FlaskConical className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           <p>
-            <span className="font-semibold">Demo data.</span> Fictional samples are split across the first accessible project; additional projects have empty review queues. All
+            <span className="font-semibold">Demo data.</span> Fictional samples belong to the first accessible project; additional projects have empty review queues. All
             reviews are simulated in your browser: no file is read and no model is called. Real submissions{projectName ? ` for ${projectName}` : ''} appear
             here once the review service is connected.
           </p>
@@ -192,6 +193,13 @@ function ProjectReviewPanel({ client, projectId, projectName, canRequest, projec
         <div role="alert" className="flex items-center gap-3 text-sm">
           <span>{error}</span>
           <button type="button" className="rounded border px-3 py-1" onClick={() => setReloadKey((key) => key + 1)}>Retry</button>
+        </div>
+      )}
+
+      {unavailable && (
+        <div role="status" className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-4 text-sm">
+          <p className="font-medium">Submission unavailable in this project.</p>
+          <p>It may have been removed or belong to another project. Choose a submission from the queue or check the project selection.</p>
         </div>
       )}
 

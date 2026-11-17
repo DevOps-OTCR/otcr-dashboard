@@ -236,7 +236,7 @@ server-side; the demo's frontend controls are not server authorization.
 
 The queue filters by Not reviewed, Awaiting review, In progress, Completed, and
 Failed. Details identify the submission, file, version, workstream, and author.
-Selection is linkable through `?tab=review&submission=<id>`.
+Selection uses `?tab=review&submission=<id>`; unavailable links stay intact and show a message.
 Choose **Request AI review**, then select:
 
 | Level | Intended checks | Optional input |

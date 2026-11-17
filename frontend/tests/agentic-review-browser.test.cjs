@@ -85,10 +85,40 @@ test('opens a deep-linked submission and follows its running review to completio
   assert.equal(await page.getByRole('button', { name: 'Completed (2)' }).count(), 1);
 });
 
-test('falls back to the first submission for an unknown deep link', async t => {
-  const page = await open(t, '?tab=review&submission=missing');
-  await page.getByRole('heading', { name: 'Pricing strategy — final deck' }).waitFor();
-  assert.equal(params(page).get('submission'), 'demo-sub-final-slides');
+for (const submission of ['missing', '']) {
+  test(`preserves an unavailable submission link (${submission || 'empty'}) until a queue item is chosen`, async t => {
+    const page = await open(t, `?role=PM&tab=review&submission=${submission}`, true);
+    await page.getByText('Submission unavailable in this project.', { exact: true }).waitFor();
+    assert.equal(params(page).get('submission'), submission);
+    assert.equal(await statusRegion(page).count(), 0);
+    assert.equal(await page.getByRole('button', { name: 'Request AI review', exact: true }).count(), 0);
+    assert.equal(await submissions(page).locator('button[aria-current="true"]').count(), 0);
+    await page.getByRole('button', { name: 'Not reviewed (6)' }).click();
+    await page.clock.fastForward(31_000);
+    assert.equal(params(page).get('submission'), submission);
+    await page.reload();
+    await page.getByText('Submission unavailable in this project.', { exact: true }).waitFor();
+    assert.equal(params(page).get('submission'), submission);
+    await submissions(page).filter({ hasText: 'Market sizing whitepaper' }).getByRole('button').click();
+    await page.getByRole('heading', { name: 'Market sizing whitepaper — Google Doc' }).waitFor();
+    assert.equal(params(page).get('submission'), 'demo-sub-doc-native');
+    assert.equal(await page.getByText('Submission unavailable in this project.', { exact: true }).count(), 0);
+  });
+}
+
+test('a submission from another project stays unavailable even when its project queue is empty', async t => {
+  const page = await open(t, '?role=PM&tab=review&submission=demo-sub-doc-native', true);
+  await page.getByRole('heading', { name: 'Market sizing whitepaper — Google Doc' }).waitFor();
+  await page.getByRole('combobox', { name: 'Project', exact: true }).selectOption('p2');
+  await page.getByText('Submission unavailable in this project.', { exact: true }).waitFor();
+  await page.getByText('No submissions yet. They appear here when consultants submit slides or whitepapers.').waitFor();
+  assert.equal(params(page).get('submission'), 'demo-sub-doc-native');
+  assert.equal(await statusRegion(page).count(), 0);
+  await page.clock.fastForward(31_000);
+  assert.equal(params(page).get('submission'), 'demo-sub-doc-native');
+  await page.getByRole('combobox', { name: 'Project', exact: true }).selectOption('p1');
+  await page.getByRole('heading', { name: 'Market sizing whitepaper — Google Doc' }).waitFor();
+  assert.equal(await page.getByText('Submission unavailable in this project.', { exact: true }).count(), 0);
 });
 
 test('leaving the tab clears its URL parameters and keeps the context tabs working', async t => {
