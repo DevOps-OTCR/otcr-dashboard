@@ -15,13 +15,14 @@ interface SlideSpec {
   body: string[];
   sldId?: number;
   shapeExtLst?: boolean; // include a shape-level extLst (simulates hyperlinks/media)
+  creationIds?: { slide: number; body: string }; // p14 slide (under p:cSld) and a16 body-shape creation IDs, as PowerPoint writes them
 }
 
 function slideXml(spec: SlideSpec): string {
   const bodyShapes = spec.body.map((line, i) => `
     <p:sp>
       <p:nvSpPr>
-        <p:cNvPr id="${3 + i}" name="Content Placeholder ${2 + i}"/>
+        <p:cNvPr id="${3 + i}" name="Content Placeholder ${2 + i}">${spec.creationIds ? `<a:extLst><a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}"><a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="${spec.creationIds.body}"/></a:ext></a:extLst>` : ''}</p:cNvPr>
         <p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr>
         <p:nvPr><p:ph type="body" idx="1"/></p:nvPr>
       </p:nvSpPr>
@@ -53,6 +54,8 @@ function slideXml(spec: SlideSpec): string {
       </p:sp>
       ${bodyShapes}
     </p:spTree>
+${spec.creationIds ? `
+    <p:extLst><p:ext uri="{BB962C8B-B14F-4D97-AF65-F5344CB8AC3E}"><p14:creationId xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" val="${spec.creationIds.slide}"/></p:ext></p:extLst>` : ''}
   </p:cSld>
 </p:sld>`;
 }
@@ -258,6 +261,95 @@ describe('PptxCommentWriterService', () => {
 
     const presRelsXml: string = await zip.file('ppt/_rels/presentation.xml.rels').async('string');
     expect(presRelsXml).toContain('relationships/author');
+  });
+});
+
+describe('PptxCommentWriterService — comment anchors ([MS-PPTX] CT_Comment)', () => {
+  const reader = new PptxReaderService();
+  const writer = new PptxCommentWriterService();
+  const BODY_CID = '{C4E574FC-40A1-3181-DA34-D2BC6E879521}';
+
+  async function commentXml(spec: SlideSpec, finding: Omit<Finding, 'slideIndex' | 'severity'>): Promise<string> {
+    const buf = await buildPptx([spec]);
+    const deck = await reader.extractDeck(buf);
+    const out = await writer.writeComments(buf, [{ slideIndex: 1, severity: 'MATERIAL', ...finding }], deck);
+    return (JSZip as any).loadAsync(out.buffer).then((z: any) => z.file('ppt/comments/modernComment_256.xml').async('string'));
+  }
+
+  it('reads the a16 shape creationId from cNvPr and the p14 slide creationId', async () => {
+    const deck = await reader.extractDeck(await buildPptx([{ title: 'T', body: ['B'], creationIds: { slide: 2846437006, body: BODY_CID } }]));
+    expect(deck.slides[0].creationId).toBe('2846437006');
+    expect(deck.slides[0].shapes.find((s) => s.spId === '3')?.creationId).toBe(BODY_CID);
+  });
+
+  it('anchors a shape finding with ac:deMkLst/ac:spMk rather than a slide moniker list', async () => {
+    const xml = await commentXml({ title: 'T', body: ['B'], creationIds: { slide: 2846437006, body: BODY_CID } }, { shapeId: '3', comment: 'x' });
+    expect(xml).toMatch(/<ac:deMkLst xmlns:ac="http:\/\/schemas\.microsoft\.com\/office\/drawing\/2013\/main\/command" xmlns:pc="http:\/\/schemas\.microsoft\.com\/office\/powerpoint\/2013\/main\/command">\s*<pc:docMk\/>\s*<pc:sldMk cId="2846437006" sldId="256"\/>\s*<ac:spMk id="3" creationId="\{C4E574FC-40A1-3181-DA34-D2BC6E879521\}"\/>\s*<\/ac:deMkLst>/);
+    expect(xml).not.toContain('sldMkLst');
+    expect(xml).not.toContain('spId=');
+  });
+
+  it('falls back to a slide anchor when the target shape has no creationId', async () => {
+    const xml = await commentXml({ title: 'T', body: ['B'] }, { shapeId: '3', comment: 'x' });
+    expect(xml).toMatch(/<pc:sldMkLst[^>]*>\s*<pc:docMk\/>\s*<pc:sldMk cId="0" sldId="256"\/>\s*<\/pc:sldMkLst>/);
+    expect(xml).not.toContain('deMkLst');
+  });
+
+  it('does not duplicate a shape-anchored comment on a second write', async () => {
+    const spec = { title: 'T', body: ['B'], creationIds: { slide: 1, body: BODY_CID } };
+    const buf = await buildPptx([spec]);
+    const deck = await reader.extractDeck(buf);
+    const f: Finding[] = [{ slideIndex: 1, shapeId: '3', severity: 'MINOR', comment: 'same' }];
+    const once = await writer.writeComments(buf, f, deck);
+    const twice = await writer.writeComments(once.buffer, f, await reader.extractDeck(once.buffer));
+    expect(twice.commentCount).toBe(0);
+  });
+});
+
+describe('PptxCommentWriterService — decks saved by PowerPoint after a bot post', () => {
+  const reader = new PptxReaderService();
+  const writer = new PptxCommentWriterService();
+
+  // PowerPoint renames modernComment_<sldId>.xml to modernComment_<sldId hex>_<creationId hex>.xml on save.
+  async function saveAsPowerPoint(buf: Buffer, from: string, to: string): Promise<Buffer> {
+    const zip = await (JSZip as any).loadAsync(buf);
+    zip.file(`ppt/comments/${to}`, await zip.file(`ppt/comments/${from}`).async('string'));
+    zip.remove(`ppt/comments/${from}`);
+    for (const part of ['ppt/slides/_rels/slide1.xml.rels', '[Content_Types].xml']) {
+      zip.file(part, (await zip.file(part).async('string')).split(from).join(to));
+    }
+    return zip.generateAsync({ type: 'nodebuffer' });
+  }
+
+  async function postTwice(renamedTo: string) {
+    const buf = await buildPptx([{ title: 'T', body: ['B'] }]);
+    const first = await writer.writeComments(buf, [{ slideIndex: 1, severity: 'MINOR', comment: 'first' }], await reader.extractDeck(buf));
+    const saved = await saveAsPowerPoint(first.buffer, 'modernComment_256.xml', renamedTo);
+    const second = await writer.writeComments(saved, [
+      { slideIndex: 1, severity: 'MINOR', comment: 'first' },
+      { slideIndex: 1, severity: 'MATERIAL', comment: 'second' },
+    ], await reader.extractDeck(saved));
+    return { saved, second, zip: await (JSZip as any).loadAsync(second.buffer) };
+  }
+
+  it('appends to the renamed part instead of falling back to text', async () => {
+    const { second, zip } = await postTwice('modernComment_100_3E9F17D.xml');
+    expect(second.legacy).toBe(false);
+    expect(second.commentCount).toBe(1); // 'first' is already there
+    expect(zip.file('ppt/comments/modernComment_256.xml')).toBeNull();
+    const xml = await zip.file('ppt/comments/modernComment_100_3E9F17D.xml').async('string');
+    expect(xml.match(/<p188:cm /g)).toHaveLength(2);
+    const rels = await zip.file('ppt/slides/_rels/slide1.xml.rels').async('string');
+    expect(rels.match(/relationships\/comments"/g)).toHaveLength(1);
+    expect(rels).toContain('Target="../comments/modernComment_100_3E9F17D.xml"');
+    const types = await zip.file('[Content_Types].xml').async('string');
+    expect(types).not.toContain('modernComment_256.xml');
+  });
+
+  it('preserves the deck when a renamed part names a different slide', async () => {
+    const { saved, second } = await postTwice('modernComment_101_3E9F17D.xml'); // 0x101 = 257, slide is 256
+    expect(second.legacy).toBe(true);
+    expect(second.buffer.equals(saved)).toBe(true);
   });
 });
 

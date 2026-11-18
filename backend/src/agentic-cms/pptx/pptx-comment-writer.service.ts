@@ -11,7 +11,9 @@ const NS_CMT  = 'http://schemas.microsoft.com/office/powerpoint/2018/8/main';
 // sldMkLst/sldMk use the 2013/main/command "pc" namespace (not 2018/10).
 // Source: [MS-PPTX] CT_SlideMasterKeyList.
 const NS_PC = 'http://schemas.microsoft.com/office/powerpoint/2013/main/command';
-const NS_DRAWING = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+// Drawing-element monikers (ac:deMkLst, ac:spMk). Source: [MS-ODRAWXML] 2.29.3.
+const NS_AC = 'http://schemas.microsoft.com/office/drawing/2013/main/command';
+const NS_DRAWING ='http://schemas.openxmlformats.org/drawingml/2006/main';
 const NS_RELS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 
 // Source: [MS-PPTX] Author Part and Comment Part — source relationship values
@@ -63,16 +65,22 @@ function buildCommentEntry(
   c: { guid: string; sldId: string; sldCreationId?: string; shapeId?: string; shapeCreationId?: string; text: string; dt: string },
   authorGuid: string,
 ): string {
-  const spMk = c.shapeId
-    ? `      <pc:spMk spId="${escapeXml(c.shapeId)}"${c.shapeCreationId ? ` creationId="${escapeXml(c.shapeCreationId)}"` : ''}/>`
-    : null;
+  // EG_CommentAnchor is a choice: pc:sldMkLst anchors to the slide; ac:deMkLst (docMk, sldMk,
+  // ac:spMk id+creationId) anchors to a drawing element. Source: [MS-PPTX] 2.16.3.3 CT_Comment,
+  // [MS-ODRAWXML] 2.29.3.17 CT_ShapeMoniker. cId is the slide's p14:creationId/@val.
+  const sldMk = `      <pc:sldMk cId="${escapeXml(c.sldCreationId ?? '0')}" sldId="${escapeXml(c.sldId)}"/>`;
+  const anchor = c.shapeId && c.shapeCreationId
+    ? [
+        `    <ac:deMkLst xmlns:ac="${NS_AC}" xmlns:pc="${NS_PC}">`,
+        '      <pc:docMk/>',
+        sldMk,
+        `      <ac:spMk id="${escapeXml(c.shapeId)}" creationId="${escapeXml(c.shapeCreationId)}"/>`,
+        '    </ac:deMkLst>',
+      ]
+    : [`    <pc:sldMkLst xmlns:pc="${NS_PC}">`, '      <pc:docMk/>', sldMk, '    </pc:sldMkLst>'];
   return [
     `  <p188:cm id="{${c.guid}}" authorId="{${authorGuid}}" created="${c.dt}">`,
-    `    <pc:sldMkLst xmlns:pc="${NS_PC}">`,
-    `      <pc:docMk/>`,
-    `      <pc:sldMk cId="0" sldId="${escapeXml(c.sldId)}"/>`,
-    spMk,
-    '    </pc:sldMkLst>',
+    ...anchor,
     '    <p188:txBody>',
     `      <a:bodyPr/>`,
     `      <a:lstStyle/>`,
@@ -141,6 +149,17 @@ function supportsPackageRoot(xml: string, name: string, namespace: string): bool
     (xml.includes(`</${name}>`) || (name === 'Relationships' && /<Relationships\b[^>]*\/>/.test(xml)));
 }
 
+// Our writer names parts modernComment_<sldId>.xml; PowerPoint renames them on save to
+// modernComment_<sldId hex>_<slide creationId hex>.xml. Accept both, nothing else.
+const COMMENT_PART = /^modernComment_(?:\d+|[0-9A-F]+_[0-9A-F]+)\.xml$/i;
+
+function commentPartBelongsTo(name: string, sldId: string): boolean {
+  const ours = /^modernComment_(\d+)\.xml$/.exec(name);
+  if (ours) return ours[1] === sldId;
+  const saved = /^modernComment_([0-9A-F]+)_[0-9A-F]+\.xml$/i.exec(name);
+  return !!saved && parseInt(saved[1], 16) === Number(sldId);
+}
+
 function hasLegacyComments(zip: any): boolean {
   return !!(
     zip.file('ppt/commentAuthors.xml') ||
@@ -175,7 +194,7 @@ export class PptxCommentWriterService {
       if (!path.startsWith('ppt/comments/') || !path.endsWith('.xml')) continue;
       const xml = await zip.file(path)?.async('string') ?? '';
       const entries = makeParser().parse(xml)?.cmLst?.cm;
-      if (!/^ppt\/comments\/modernComment_\d+\.xml$/.test(path) || !xml.includes(NS_CMT) ||
+      if (!path.startsWith('ppt/comments/') || !COMMENT_PART.test(path.slice('ppt/comments/'.length)) || !xml.includes(NS_CMT) ||
           !xml.includes('</p188:cmLst>') || !existingBotId ||
           !Array.isArray(entries) || entries.some((entry: any) => entry['@_authorId'] !== existingBotId)) {
         return { buffer, legacy: true, commentCount: 0, sanitized: false };
@@ -193,7 +212,10 @@ export class PptxCommentWriterService {
         authorRels[0]['@_Target'] !== 'authors.xml' || authorRels[0]['@_TargetMode'] === 'External' || !existingBotId)) return preserve();
     const contentTypes = makeParser().parse(contentTypesXml)?.Types?.Override ?? [];
     if (contentTypes.some((part: any) => /comments|authors/i.test(part['@_ContentType'] ?? '') &&
-        part['@_PartName'] !== '/ppt/authors.xml' && !/^\/ppt\/comments\/modernComment_\d+\.xml$/.test(part['@_PartName'] ?? ''))) return preserve();
+        part['@_PartName'] !== '/ppt/authors.xml' &&
+        !((part['@_PartName'] ?? '').startsWith('/ppt/comments/') && COMMENT_PART.test(part['@_PartName'].slice('/ppt/comments/'.length))))) return preserve();
+    // Existing bot comment part per slide, under whichever name the last writer (us or PowerPoint) gave it.
+    const existingParts = new Map<string, string>();
     for (const slide of deck.slides) {
       if (!/^slides\/[^/]+\.xml$/.test(slide.slideFile)) return preserve();
       const xml = await zip.file(`ppt/${slide.slideFile}`)?.async('string') ?? '';
@@ -206,10 +228,13 @@ export class PptxCommentWriterService {
       const commentRefs = [...xml.matchAll(/<(?:[\w.-]+:)?commentRel\b[^>]*\br:id=["']([^"']+)["'][^>]*\/?>/g)];
       if (commentRels.length || xml.includes('commentRel')) {
         const rel = commentRels[0];
+        const name = /^\.\.\/comments\/([^/]+)$/.exec(rel?.['@_Target'] ?? '')?.[1] ?? '';
+        const partPath = `ppt/comments/${name}`;
         if (!existingBotId || commentRels.length !== 1 || commentRefs.length !== 1 ||
             rel['@_Type'] !== REL_TYPE_COMMENTS || rel['@_TargetMode'] === 'External' ||
-            rel['@_Target'] !== `../comments/modernComment_${slide.sldId}.xml` ||
-            commentRefs[0][1] !== rel['@_Id'] || !zip.file(`ppt/comments/modernComment_${slide.sldId}.xml`)) return preserve();
+            !commentPartBelongsTo(name, slide.sldId) || commentRefs[0][1] !== rel['@_Id'] ||
+            !zip.file(partPath) || [...existingParts.values()].includes(partPath)) return preserve();
+        existingParts.set(slide.slideFile, partPath);
       }
     }
     let commentCount = 0;
@@ -239,15 +264,15 @@ export class PptxCommentWriterService {
           guid: newGuid(),
           sldId: slide.sldId,
           sldCreationId: slide.creationId,
-          shapeId: f.shapeId,
+          // A shape moniker needs the shape's creationId; without it, anchor to the slide.
+          shapeId: shape?.creationId ? f.shapeId : undefined,
           shapeCreationId: shape?.creationId,
           text: `[${f.severity}] ${f.comment}`,
           dt,
         };
       });
 
-      const commentPartPath = `ppt/comments/modernComment_${slide.sldId}.xml`;
-      commentCount += await this.writeCommentPart(zip, commentPartPath, comments, authorGuid);
+      const commentPartPath = existingParts.get(slide.slideFile) ?? `ppt/comments/modernComment_${slide.sldId}.xml`;      commentCount += await this.writeCommentPart(zip, commentPartPath, comments, authorGuid);
 
       const slideName = slide.slideFile.split('/').pop()!;
       const slideRelsPath = `ppt/slides/_rels/${slideName}.rels`;
@@ -332,7 +357,8 @@ export class PptxCommentWriterService {
       // Match both text and shape anchor; identical wording can legitimately target two shapes.
       const entries = makeParser().parse(existing)?.cmLst?.cm ?? [];
       const seen = new Set(entries.map((entry: any) => JSON.stringify([
-        entry.txBody?.p?.r?.t ?? '', String(entry.sldMkLst?.spMk?.['@_spId'] ?? ''),
+        // deMkLst/spMk@id is the correct anchor; sldMkLst/spMk@spId matches comments from older builds.
+        entry.txBody?.p?.r?.t ?? '', String(entry.deMkLst?.spMk?.['@_id'] ?? entry.sldMkLst?.spMk?.['@_spId'] ?? ''),
       ])));
       const fresh = comments.filter((comment) => {
         const key = JSON.stringify([escapeXml(comment.text), comment.shapeId ?? '']);

@@ -105,7 +105,8 @@ function parseShapes(spTree: any): ShapeInfo[] {
     const cNvPr = sp.nvSpPr?.cNvPr;
     const spId = String(cNvPr?.['@_id'] ?? '');
     const name = String(cNvPr?.['@_name'] ?? '');
-    const creationId = findCreationId(sp.extLst);
+    // a16:creationId lives in p:nvSpPr/p:cNvPr/a:extLst.
+    const creationId = findCreationId(cNvPr?.extLst) ?? findCreationId(sp.extLst);
     const textLines = getText(sp.txBody);
     shapes.push({
       spId,
@@ -193,7 +194,8 @@ export class PptxReaderService {
 
       const title = shapes.find((s) => s.type === 'title')?.text ?? '';
       const bodyText = shapes.filter((s) => s.type === 'body').map((s) => s.text).filter(Boolean);
-      const slideCreationId = findCreationId(sld?.extLst);
+      // PowerPoint writes p14:creationId under p:cSld/p:extLst.
+      const slideCreationId = findCreationId(sld?.cSld?.extLst) ?? findCreationId(sld?.extLst);
 
       const speakerNotes = await this.extractNotes(zip, parser, normalizedTarget);
 

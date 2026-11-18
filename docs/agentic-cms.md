@@ -303,9 +303,31 @@ Microsoft Graph requires `MSGRAPH_CLIENT_ID`, `MSGRAPH_TENANT_ID`, and either
 20 slides per call, for a vision-capable model. Without it, review uses extracted text.
 Canvas allocation is limited to a 4096-pixel edge and 8 megapixels. Oversized pages fall back
 to text; the image result warns that oversized embedded images can be omitted or downsampled.
-Uploads send the exact reviewed eTag in `If-Match`; mocked precondition tests do not prove the
-remote service enforces it. Before enabling shared write access, validate a concurrent edit
-against a controlled Office file so an outdated review cannot overwrite newer content.
+Uploads send the exact reviewed eTag in `If-Match`. Mocked tests check only the header, so
+enforcement is verified live with
+`backend/src/agentic-cms/pptx/live-verification/office-conflict.live.ts` (manual; not run in CI).
+The script uploads deck A to a new file in the operator's own OneDrive, reads it, replaces the
+file with B, posts against A, and confirms B is unchanged. It then posts against B and saves the
+result for inspection in PowerPoint. It refuses to run without `--confirm-live-write`, delegated
+credentials, and an operator email that passes `FeatureFlagsService`:
+
+```
+cd backend
+npx ts-node --transpile-only src/agentic-cms/pptx/live-verification/office-conflict.live.ts \
+  --deck <PowerPoint-authored.pptx> --operator <CMS email> --out <result.pptx> --confirm-live-write
+```
+
+**Live gate: passed 2026-11-18** (OneDrive for Business, PowerPoint 16.0 build 20527). The post
+against A returned HTTP 412. Afterwards, the remote eTag and SHA-256 still matched B, and B had
+no comment parts. The post against B returned 200. In PowerPoint, the shape comment sits at the
+anchored shape's top-right corner and the slide comment at the slide default. Re-run the script
+after changing `microsoft-graph.service.ts`, the comment writer, or the Graph tenant/account
+type.
+
+Shape comments use `ac:deMkLst` with `ac:spMk id`/`creationId` ([MS-PPTX] CT_Comment); a
+`pc:sldMkLst` anchors to the whole slide. The writer also accepts the comment-part names
+PowerPoint writes on save (`modernComment_<sldId hex>_<creationId hex>.xml`) when they match
+the linked slide.
 No live credentials or deployment configuration are changed by this PR.
 
 ## Where each group builds
