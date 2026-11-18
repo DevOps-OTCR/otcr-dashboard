@@ -152,7 +152,9 @@ export default function AgenticCms() {
     if (retryAction?.kind === 'delete') return removeNote(retryAction.id);
   };
 
-  const showEditor = pathname === '/agentic-cms' && mount && !(roleReady && projectsLoaded && projects.length === 0 && !error);
+  // Static builds use trailingSlash, so usePathname() can return '/agentic-cms/'.
+  const onPage = (pathname ?? '').replace(/\/+$/, '') === '/agentic-cms';
+  const showEditor = onPage && mount &&!(roleReady && projectsLoaded && projects.length === 0 && !error);
   const editor = showEditor ? createPortal(<main className="mx-auto max-w-5xl space-y-4 p-6">
     <h1 className="text-2xl font-semibold">Agentic CMS</h1>
     {projects.length > 0 && <div role="tablist" aria-label="Agentic CMS tools" className="flex gap-2 border-b pb-2"><button role="tab" aria-selected={panel === 'context'} onClick={() => setPanel('context')}>Project Context</button><button role="tab" aria-selected={panel === 'notes'} onClick={() => setPanel('notes')}>Client Call Notes</button><button role="tab" aria-selected={panel === 'review'} onClick={() => setPanel('review')}>AI Review</button></div>}

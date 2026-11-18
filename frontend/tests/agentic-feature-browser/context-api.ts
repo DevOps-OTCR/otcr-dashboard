@@ -23,6 +23,8 @@ const reads = { pending: [] as Array<{ projectId: string; finish: (fail: boolean
 (window as any).contextReads = reads;
 export const api = {
   get: async (url: string) => {
+    // Used only by the gated-page harness, which mounts the real AgenticCmsFeature gate.
+    if (url === '/feature-flags') return { data: { agenticCms: !(window as any).flagOff } };
     const id = projectId(url);
     if ((window as any).holdReads) {
       await new Promise<void>((resolve, reject) => reads.pending.push({ projectId: id,
