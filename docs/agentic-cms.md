@@ -217,18 +217,18 @@ the skills folder copied in (or `AGENTIC_CMS_SKILLS_DIR` pointed at it).
 ## AI Review UI (Week 2 mock prototype)
 
 The reviewer workflow lives in `frontend/features/agentic-cms/review/`.
-It uses fictional submissions and browser-simulated reviews, with no real file
-reads, model calls, review skills, native comments, or review-job backend.
+It uses fictional submissions and browser-simulated reviews. No real files are
+read, models called, review skills executed, or document comments posted.
 
 ### Access and navigation
 
-Sign in and open `/agentic-cms?tab=review`; there is no dashboard navigation
-link yet. The OTCR Bot button opens chat, not this page. Select an accessible
-project, then use the Project Context, Client Call Notes, or AI Review tab.
+Sign in and open `/agentic-cms?tab=review` (a trailing slash also works).
+There is no dashboard navigation link yet; the OTCR Bot button opens chat.
+Select an accessible project, then Project Context, Client Call Notes, or AI Review.
 The existing backend-controlled feature gate must permit the account.
-
 Request/retry controls use the context API's `canEdit`: admins, LCs with project
-access, and the assigned PM can request reviews. Loading/error states withhold actions; errors offer retry.
+access, and the assigned PM can request reviews. Loading withholds actions;
+failed checks offer retry. Other readers can view status and feedback.
 Future review endpoints must enforce the existing flag and CMS permissions
 server-side; the demo's frontend controls are not server authorization.
 
@@ -236,8 +236,8 @@ server-side; the demo's frontend controls are not server authorization.
 
 The queue filters by Not reviewed, Awaiting review, In progress, Completed, and
 Failed. Details identify the submission, file, version, workstream, and author.
-Selection uses `?tab=review&submission=<id>`; unavailable links stay intact and show a message.
-Choose **Request AI review**, then select:
+Selections use `?tab=review&submission=<id>`. The initial default stays selected
+when the queue reorders; explicit unavailable/empty links remain intact.
 
 | Level | Intended checks | Optional input |
 | --- | --- | --- |
@@ -245,84 +245,63 @@ Choose **Request AI review**, then select:
 | Advanced | Storyline, evidence, recommendations, client/SOW/workstream alignment | Focus note, up to 500 characters |
 
 Advanced warns when both overview and scope are empty and links to Project
-Context. It does not block requests; the mock stores but does not analyze the
-focus note or context. The warning uses editor values, including unsaved edits.
+Context without blocking requests. The warning includes unsaved editor values;
+the mock stores but does not analyze the focus note or project context.
+Runs move Awaiting → In progress → Completed or Failed; duplicate active runs
+are blocked. Basic takes about 8 seconds and Advanced 15 seconds in the demo.
+Completed reviews offer **Request another review**; Basic also offers **Run Advanced review**.
+Displayed minute estimates are provisional.
 
-Runs move Awaiting → In progress → Completed or Failed. Duplicate active runs
-are blocked. Completed Basic runs offer **Run Advanced review**; completed
-runs also offer **Request another review**. Basic takes about 8 seconds and
-Advanced 15 seconds in the demo; displayed minute estimates are provisional.
-
-**Demo controls** can force the next request or retry to fail once:
-
-| Failure | Next step | Retry offered |
-| --- | --- | --- |
-| File access | Check sharing | Yes |
-| Rate limit | Retry later | Yes |
-| Model timeout | Retry; contact the team if repeated | Yes |
-| Unsupported file | Resubmit a supported file | No |
-| Configuration | Contact an admin | No |
-
-Retry creates a new run with the same level/focus note and retains the failed
-run in history. Non-retryable failures currently lack a new-request action.
-Google Docs access failures explain Commenter sharing and retry the same link;
+Demo controls can force file-access, rate-limit, model-timeout, unsupported-file,
+or configuration failures. The first three offer retry; unsupported/configuration
+failures require corrective action and currently lack a new-request action.
+Retry creates a new run with the same level/focus note and retains failed history.
+Docs access failures explain Commenter sharing and retry the same submission link;
 the mock simulates corrected sharing without checking or changing permissions.
 
 ### Feedback and mock limitations
 
 Completed reviews show a brief summary and a disabled **Open in Google Docs**
-or **Open in PowerPoint** demo button. Unposted feedback is collapsed in a gray
-section directly below it. Docs are text-only; PowerPoint labels simulated
-visual/text-only coverage. History warns about older versions and stale decks.
+or **Open in PowerPoint** demo button. A gray expandable section directly below
+holds feedback to apply or check. Older versions and stale decks carry warnings.
 Review completion does not approve a deliverable; final approval stays human.
+Ten Northwind Bikes samples belong to the first accessible project; others stay
+empty. Switching projects/tabs preserves project-scoped reviews and demo settings.
+All results, coverage, snapshots and links are fake; reload/sign-out resets state.
 
-Ten Northwind Bikes samples belong to the first accessible project; others stay empty.
-They include Docs drafts, sharing failure, and successful, changed and locked decks.
-Demo controls also simulate the posting outcomes of #198's tools. Switching
-preserves project-scoped activity. All results, coverage, snapshots and links are
-fake; reload/sign-out resets state.
-
-PowerPoint outcomes follow `add_pptx_comments`. The PowerPoint and Docs results
-are listed in `review/copy.ts`; unrecognised values get cautious generic wording:
+PowerPoint outcomes mirror #198's `add_pptx_comments`; copy lives in `review/copy.ts`:
 
 | Outcome | Comments in deck | Next step |
 | --- | --- | --- |
-| `comments_live` / `already_posted` | All | Open the deck |
+| `comments_live` / `already_posted` | All | Open the deck; no duplicates added |
 | `stale`, `invalid_anchor` | None | Review the latest version |
 | `unsupported_format` | None | Apply findings by hand |
 | `locked` | None | Close the deck, then retry posting |
-| `error` | Unconfirmed | Check the deck, retry only if comments are missing |
+| `error` | Unconfirmed | Check the deck; retry only if comments are missing |
 
-A posting retry changes only which comments are in the deck; findings, coverage
-and comment IDs stay fixed. Text-only coverage (slide rendering unavailable) is
-not simulated.
-
-Google Docs results follow `comment_google_doc`'s batch rules. A changed document
-or missing comment access stops the batch with that reason. An unconfirmed save
-(`comment-uncertain`) is listed as "may already be in the document" and is never
-counted as not added. The comments after it were not attempted (`comment-failed`).
-A posted comment with `anchorVerified: false` shows the quoted and attached text.
+The demo also supports partial posting. Posting-only retries preserve findings,
+coverage, counts and comment IDs. PowerPoint inspection is simulated visual
+coverage; text-only coverage when slide rendering fails is not simulated.
+Docs are text-only. Their results follow #198's `comment_google_doc` batch rules:
+changed-document or comment-access failures stop the batch with specific guidance.
+An unconfirmed save (`comment-uncertain`) may already exist; check before adding
+it again. Later comments were not attempted (`comment-failed`). A native comment
+with `anchorVerified: false` shows quoted versus attached text. Unknown outcomes
+or fallback reasons get cautious generic guidance rather than implying failure.
 
 ### Local demo and checks
 
-Follow the README for dependencies, local database, migrations, and app servers.
-Use your own Entra client ID with a **Single-page application** redirect of
-`http://localhost:3000/auth/callback`; set it in ignored `frontend/.env.local`.
-Restart the frontend after changes. `AADSTS50011` indicates a redirect mismatch.
-Locally enable the existing flag and restrict its allowlist to your enrolled
-account; checked-in defaults stay off. An accessible project is required.
-`docker-compose.dev.yml` and `scripts/cms-dev-seed.cjs` support synthetic local
-data; the seed requires `CMS_LOCAL_EMAIL` and the dedicated local dev database.
-No Lumen/Google key is needed for this demo; OTCR Bot needs separate Lumen setup.
-
-Try the unreviewed Docs and PowerPoint drafts, expand unposted feedback, retry
-locked-deck posting, and re-review a changed deck. Run from the repo root:
-```sh
-node --test frontend/tests/unit/agentic-review.test.cjs frontend/tests/agentic-review-browser.test.cjs frontend/tests/agentic-feature-browser.test.cjs
-node scripts/check-agentic-boundaries.cjs
-node --test scripts/check-agentic-boundaries.test.cjs
-```
-Browser tests use synthetic auth/context. Record flag-off/on evidence in the PR;
+Follow the README for dependencies, database, migrations and app servers.
+Set your Entra client ID in ignored `frontend/.env.local`, with a **Single-page
+application** redirect of `http://localhost:3000/auth/callback`; restart after edits.
+`AADSTS50011` indicates a redirect mismatch. Locally enable the existing flag and
+allowlist your enrolled account; checked-in defaults stay off. A project is required.
+Local-only `docker-compose.dev.yml` and `scripts/cms-dev-seed.cjs` support synthetic
+data; seeding requires `CMS_LOCAL_EMAIL` and the dedicated local dev database.
+No Lumen/Google key is needed for review demos; OTCR Bot needs separate Lumen setup.
+Run `npm --prefix frontend test` and `npm --prefix frontend run test:navigation:browser`,
+plus `node scripts/check-agentic-boundaries.cjs` and its `.test.cjs` negative tests.
+Browser tests use synthetic auth/context. Include flag-off/on evidence in the PR;
 they do not replace live sign-in, server permissions, or normal-CMS regression checks.
 
 ## Where each group builds
