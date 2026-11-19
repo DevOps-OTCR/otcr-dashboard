@@ -41,6 +41,10 @@ export class ToolRegistry {
     private readonly approvals: WriteApprovals,
   ) {
     this.tools = [webSearch, loadSkill, ...cmsReads.tools, ...pptxReview.tools, ...docTools.tools] as AgentTool[];
+    // A write tool must say which CMS file it writes to, or the approval card could not name it.
+    for (const tool of this.tools) {
+      if (tool.requiresApproval && !tool.prepareApproval) throw new Error(`Tool ${tool.name} requires approval but has no prepareApproval.`);
+    }
   }
 
   /** The stored write call the user approved, once; null if it is unknown, expired, used, or not theirs. */
@@ -87,13 +91,13 @@ export class ToolRegistry {
       // A write tool never runs for a call the model made on its own. The call is stored and the user
       // is asked; only AgentService's approved run sets ctx.approvedCall, and only for that one call id.
       if (tool.requiresApproval && ctx.approvedCall?.callId !== call.id) {
-        await tool.checkBeforeApproval?.(parsed.data, ctx);
+        const { binding, ...target } = await tool.prepareApproval!(parsed.data, ctx);
         const preview = tool.describeForApproval?.(parsed.data) ?? { summary: `Run ${tool.name}`, items: [] };
         const approvalId = this.approvals.create(
           { userId: ctx.user.id, projectId: ctx.projectId, conversationId: ctx.conversationId },
-          { toolName: tool.name, input: parsed.data },
+          { toolName: tool.name, input: parsed.data, binding },
         );
-        send({ type: 'approval_required', id: approvalId, tool: tool.name, ...preview });
+        send({ type: 'approval_required', id: approvalId, tool: tool.name, target, ...preview });
         send({ type: 'tool_end', id: call.id, ok: true, note: 'Waiting for your approval' });
         const count = preview.items.length;
         return {
@@ -103,6 +107,16 @@ export class ToolRegistry {
               'Show the user what you prepared, and tell them to press Post to send it. Do not call this tool again for the same items.',
           ),
         };
+      }
+      if (tool.requiresApproval) {
+        // The approved call: write only if the CMS file is still the one the user was shown, and they may still write to it.
+        const now = await tool.prepareApproval!(parsed.data, ctx);
+        if (now.binding !== ctx.approvedCall!.binding) {
+          throw new ToolFailure(
+            'Submission changed',
+            'This submission changed after the user approved the comments. Nothing was posted. Ask the user to request the comments again.',
+          );
+        }
       }
       const out = await tool.run(parsed.data, ctx);
       send({ type: 'tool_end', id: call.id, ok: true, ...(out.note ? { note: out.note } : {}) });

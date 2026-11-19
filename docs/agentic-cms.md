@@ -150,7 +150,7 @@ otherwise the response is a plain 403 before any model call. The reply is a
 | `{"type":"text_delta","text"}` | Next piece of the answer |
 | `{"type":"text_replace","text"}` | Replaces this reply's text so far (sent after a word-limit cut) |
 | `{"type":"tool_start","id","name","label"}` / `{"type":"tool_end","id","ok","note?"}` | Tool progress for the UI |
-| `{"type":"approval_required","id","tool","summary","items":[{"where","text"}]}` | The bot prepared a write (such as review comments). **Nothing has been written.** Show the items with a Post button that sends `id` back as `approvalId` |
+| `{"type":"approval_required","id","tool","target":{"deliverable","file","version","submittedAt","snapshot"},"summary","items":[{"where","text"}]}` | The bot prepared a write (such as review comments). **Nothing has been written.** Show `target` (the CMS file the click will change) and the items with a Post button that sends `id` back as `approvalId` |
 | `{"type":"sources","sources":[{"id","title","url"}]}` | Sources found so far this turn, so `[id]` links work while streaming; the last event of a turn lists only the cited ones, including any from earlier turns. An `id` means the same URL for the whole conversation |
 | `{"type":"error","kind","retryable","message"}` | A user-safe error (see below) |
 | `{"type":"done"}` | End of the reply |
@@ -177,9 +177,9 @@ and the Google Docs tools (`read_google_doc`, `comment_google_doc`) over GoogleD
 A tool that writes outside the CMS also needs four things:
 
 - It sets `requiresApproval: true` and provides `describeForApproval` (what the user is asked to
-  approve) and, usually, `checkBeforeApproval` (the permission checks, so the user is never shown
-  a button they could not use). The registry then never runs the tool for a call the model made:
-  see "Write approvals" below.
+  approve) and `prepareApproval` (the permission checks, so the user is never shown a button they
+  could not use, and the CMS file the write is for; the registry refuses a write tool without
+  it). The registry then never runs the tool for a call the model made: see "Write approvals" below.
 - The service it calls rechecks the feature flag immediately before each external write
   (`GoogleDocReviewService.comment` is the example).
 - It is safe to retry. A failed turn saves only the user's message and the model may call a
@@ -243,13 +243,17 @@ the skills folder copied in (or `AGENTIC_CMS_SKILLS_DIR` pointed at it).
 ### Write approvals
 
 A tool that writes to an outside system (`comment_google_doc`, `add_pptx_comments`) cannot be run
-by the model alone. When the model calls it, `ToolRegistry` runs `checkBeforeApproval`, stores the
-validated call in `WriteApprovals`, and streams `approval_required`; the tool is not run and the
+by the model alone. When the model calls it, `ToolRegistry` runs `prepareApproval` (permissions and
+the resolved CMS deliverable, file, version and snapshot), stores the validated call and a
+server-only binding of that file in `WriteApprovals`, and streams `approval_required` with the
+file shown on the card; the tool is not run and the
 model is told "Not posted". The user presses **Post** on the card, which sends the stored call's
 `approvalId` in the next chat request. `AgentService` then runs exactly the stored call (never one
 the model rewrote) with the feature flag rechecked first, and the model reports the results. An
 approval is single use, expires after 15 minutes, and works only for the same user, project and
-conversation. Any other write call the model makes in the same turn is gated again. This is
+conversation. When the approved call runs, `prepareApproval` runs again and the write is refused
+("Submission changed") if the binding no longer matches, for example because the submission link was
+replaced, or if the user has lost permission. Any other write call the model makes in the same turn is gated again. This is
 enforced in code, so text in a submitted document cannot cause a write. MCP is separate: its
 clients see `comment_google_doc` as a write tool (`readOnlyHint: false`) and are expected to confirm
 with their own user.
@@ -282,6 +286,8 @@ with their own user.
 - Google Docs comment requests require `textHash` from the reviewed read. Changed text returns
   `document-changed`; re-read and review it before posting. Comment-only revision changes are safe
   to retry against the same text hash.
+- The PowerPoint reader returns text from text boxes and speaker notes only. Text inside tables
+  and charts (`graphicFrame`) is not read; review it from the slide images or by hand.
 
 ### PowerPoint review
 

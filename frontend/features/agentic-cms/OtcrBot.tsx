@@ -11,7 +11,8 @@ import { pickWorkstream, type WorkstreamOption } from './workstream';
 type ProjectOption = { id: string; name: string; sprintTimezone?: string };
 type ToolStep = { id: string; label: string; status: 'running' | 'ok' | 'failed'; note?: string };
 // A write the bot prepared. Nothing is written until the user presses Post, which sends this id back.
-type ApprovalCard = { id: string; summary: string; items: { where: string; text: string }[]; status: 'pending' | 'sent' | 'dismissed' };
+type ApprovalTarget = { deliverable: string; file: string; version: number; submittedAt: string; snapshot: string };
+type ApprovalCard = { id: string; target: ApprovalTarget; summary: string; items: { where: string; text: string }[]; status: 'pending' | 'sent' | 'dismissed' };
 type UserEntry = { id: string; role: 'user'; text: string };
 type BotEntry = {
   id: string;
@@ -181,7 +182,7 @@ export function OtcrBot({ deliverableId }: { deliverableId?: string } = {}) {
           }));
           break;
         case 'approval_required':
-          updateBot(botId, (e) => ({ ...e, approvals: [...e.approvals, { id: event.id, summary: event.summary, items: event.items, status: 'pending' }] }));
+          updateBot(botId, (e) => ({ ...e, approvals: [...e.approvals, { id: event.id, target: event.target, summary: event.summary, items: event.items, status: 'pending' }] }));
           break;
         case 'sources':
           updateBot(botId, (e) => ({ ...e, sources: event.sources }));
@@ -348,7 +349,11 @@ export function OtcrBot({ deliverableId }: { deliverableId?: string } = {}) {
             )}
             {entry.approvals.map((card) => (
               <div key={card.id} className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs dark:border-blue-900 dark:bg-blue-950">
-                <p className="font-semibold text-slate-800 dark:text-slate-100">{card.summary}</p>
+                <p className="break-words font-semibold text-slate-800 dark:text-slate-100">
+                  {card.target.deliverable} · {card.target.file} · v{card.target.version} · submitted {new Date(card.target.submittedAt).toLocaleDateString()}
+                </p>
+                <p className="mt-0.5 text-slate-500 dark:text-slate-400">Snapshot {card.target.snapshot}</p>
+                <p className="mt-2 font-semibold text-slate-800 dark:text-slate-100">{card.summary}</p>
                 <p className="mt-0.5 text-slate-600 dark:text-slate-300">Nothing has been posted yet.</p>
                 <ul className="mt-2 max-h-56 space-y-2 overflow-y-auto">
                   {card.items.map((item, i) => (

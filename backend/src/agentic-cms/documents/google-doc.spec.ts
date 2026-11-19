@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { findQuote, flattenDocument, GoogleDocument, parseGoogleDocLink, textHash } from './google-doc';
+import { documentExtras, findQuote, flattenDocument, GoogleDocument, parseGoogleDocLink, textHash } from './google-doc';
 
 const ID = '1AbCdEfGhIjKlMnOpQrStUvWxYz012345';
 
@@ -17,6 +17,89 @@ function para(start: number, runs: (string | { object: number })[], style = 'NOR
   });
   return { startIndex: start, endIndex: at, paragraph: { elements, paragraphStyle: { namedStyleType: style } } };
 }
+
+// Paragraph elements as documents.get returns them, written out so each index is visible.
+const run = (startIndex: number, content: string, url?: string) =>
+  ({ startIndex, endIndex: startIndex + content.length, textRun: { content, ...(url ? { textStyle: { link: { url } } } : {}) } });
+const paragraphOf = (startIndex: number, elements: object[], style = 'NORMAL_TEXT') =>
+  ({ startIndex, endIndex: (elements[elements.length - 1] as { endIndex: number }).endIndex, paragraph: { elements, paragraphStyle: { namedStyleType: style } } });
+
+describe('footnotes, contents and objects the body text leaves out', () => {
+  const cited = 'Revenue grew 12%'; // 16 characters, then the footnote reference at index 56
+  const footnoteText = ' Source: ';
+  const build = (footnoteBody = 'Acme Annual Report 2025', withExtras = true): GoogleDocument => ({
+    tabs: [{ tabProperties: { tabId: 't.0', title: 'Main' }, documentTab: {
+      body: { content: [
+        ...(withExtras ? [{ startIndex: 1, endIndex: 20, tableOfContents: { content: [
+          paragraphOf(1, [run(1, 'Findings\n')]), paragraphOf(10, [run(10, 'Sources\n')]),
+        ] } }] : []),
+        paragraphOf(20, [run(20, 'Findings\n')], 'HEADING_1'),
+        paragraphOf(40, [
+          run(40, cited),
+          { startIndex: 56, endIndex: 57, footnoteReference: { footnoteId: 'kix.fn1', footnoteNumber: '1' } },
+          run(57, ' last year.\n'),
+        ]),
+        paragraphOf(80, [
+          run(80, 'See the '), run(88, 'report', 'https://acme.example/report'), { startIndex: 94, endIndex: 95, inlineObjectElement: {} },
+          run(95, ' now '), run(100, 'bad', 'javascript:alert(1)'), run(103, '\n'),
+        ]),
+      ] },
+      footnotes: withExtras ? { 'kix.fn1': { content: [paragraphOf(0, [
+        run(0, footnoteText), run(9, footnoteBody, 'https://acme.example/ar'), run(9 + footnoteBody.length, '\n'),
+      ])] } } : {},
+    } }],
+  });
+
+  it('keeps the body text and its offsets exactly as they were', () => {
+    const paragraphs = flattenDocument(build());
+    expect(paragraphs.map((p) => p.text)).toEqual(['Findings', `${cited}\uFFFC last year.`, 'See the report\uFFFC now bad']);
+    expect(findQuote(paragraphs, 'Revenue grew 12%')).toMatchObject({ ok: true, startIndex: 40, endIndex: 56 });
+    // Same offsets as a document with no footnote, contents table or hash extras at all.
+    expect(flattenDocument(build('x', false)).map((p) => [p.startIndex, p.text])).toEqual(paragraphs.map((p) => [p.startIndex, p.text]));
+  });
+
+  it('returns the footnote a statistic cites, with its text and link, and which paragraph cites it', () => {
+    const doc = build();
+    const extras = documentExtras(doc);
+    const paragraph = flattenDocument(doc).find((p) => p.text.startsWith(cited))!;
+    expect(extras.footnotes).toEqual([{ number: '1', text: 'Source: Acme Annual Report 2025', links: ['https://acme.example/ar'] }]);
+    expect(extras.refs.get(paragraph.n)).toEqual({ footnotes: ['1'], links: [] });
+    expect(extras.unresolvedFootnotes).toBe(0);
+  });
+
+  it('returns the contents table entries, and null when there is none', () => {
+    expect(documentExtras(build()).tableOfContents).toEqual(['Findings', 'Sources']);
+    expect(documentExtras(build('x', false)).tableOfContents).toBeNull();
+  });
+
+  it('counts a picture as an object not read, but not a footnote reference', () => {
+    expect(documentExtras(build()).objectsNotRead).toBe(1);
+  });
+
+  it('passes on web links only', () => {
+    const doc = build();
+    const paragraph = flattenDocument(doc).find((p) => p.text.startsWith('See the'))!;
+    expect(documentExtras(doc).refs.get(paragraph.n)?.links).toEqual(['https://acme.example/report']);
+  });
+
+  it('reports a cited footnote whose text is missing, instead of dropping it silently', () => {
+    const doc = build();
+    delete doc.tabs![0].documentTab!.footnotes;
+    const extras = documentExtras(doc);
+    expect(extras.footnotes).toEqual([]);
+    expect(extras.unresolvedFootnotes).toBe(1);
+  });
+
+  it('changes the hash when only a footnote changes, and not for a document without footnotes or contents', () => {
+    const before = build();
+    const after = build('Acme Annual Report 2024');
+    const hash = (doc: GoogleDocument) => textHash(flattenDocument(doc), documentExtras(doc));
+    expect(hash(before)).not.toBe(hash(after));
+    expect(flattenDocument(before)).toEqual(flattenDocument(after)); // the body is identical
+    const plain = build('x', false);
+    expect(hash(plain)).toBe(textHash(flattenDocument(plain)));
+  });
+});
 
 describe('parseGoogleDocLink', () => {
   it.each([

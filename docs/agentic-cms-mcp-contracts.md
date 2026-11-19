@@ -171,8 +171,18 @@ quoted text. Code: `backend/src/agentic-cms/documents/` (`GoogleDocReviewService
 
 Access: the same as `get_deliverable` for that deliverable.
 Output: `schemaVersion: "1"`; `document: { submissionId, url, documentId, title, revisionId,
-textHash, capturedAt }`; `paragraphs: [{ n, section, text }]`; `truncated`.
-`textHash` (sha256 of the text read) identifies the snapshot reviewed. `revisionId` changes
+textHash, capturedAt }`; `paragraphs: [{ n, section, text, footnotes?, links? }]`; `truncated`;
+`footnotes: [{ number, text, links }]`; `tableOfContents` (entry lines, or `null`); `coverage`.
+`paragraphs[].footnotes` lists the footnote numbers a paragraph cites and `links` its web links
+(http/https only). Footnote text is kept to 4,000 characters and the contents table to 1,500, as
+whole entries. `coverage: { footnotes: all | some | none-in-document, tableOfContents: included |
+some | none-in-document, objectsNotRead, links: all | some }` says what the reader left out: `some`, or
+`objectsNotRead` above 0 (images, drawings, equations), must be reported as not assessed.
+`links: some` happens only in OTCR Bot's 28,000-character read: body text is fitted first and links
+are added back while they fit, so a paragraph full of long URLs never displaces later text. Comments
+anchor to body text only; to flag a footnote, quote the sentence that cites it.
+`textHash` (sha256 of the text read, including footnote text and the contents table when the
+document has them) identifies the snapshot reviewed. `revisionId` changes
 with every comment and is `null` when the bot has only Viewer access. Text beyond 100,000
 characters is dropped and `truncated` is `true`. OTCR Bot applies a tighter 28,000-character
 budget and drops whole paragraphs only, so every returned paragraph can be quoted exactly.
@@ -214,8 +224,9 @@ timeout on the comment write is reported as `comment-uncertain`, not as a refusa
 may have applied the write before the error. A 429 or quota error was refused and stays `comment-failed`.
 
 In OTCR Bot the model cannot post by itself: calling `comment_google_doc` stores the comments and
-shows an approval card, and the comments are posted only when the user presses Post. The MCP tool
-posts directly; MCP clients should confirm with their user, as its annotations indicate.
+shows an approval card naming the CMS file, and the comments are posted only when the user presses
+Post, and only if that submission is still the one shown. The MCP tool posts directly (it has no
+approval card, so the file check does not apply to it); MCP clients should confirm with their user, as its annotations indicate.
 
 Errors use `isError` with the service's own messages: `DOC_LINK_UNSUPPORTED`,
 `DOC_NOT_CONFIGURED`, `DOC_NO_ACCESS` (names the bot's email and the sharing step) and

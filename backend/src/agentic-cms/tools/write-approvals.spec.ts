@@ -1,7 +1,7 @@
 import { WriteApprovals } from './write-approvals';
 
 const owner = { userId: 'u1', projectId: 'p1', conversationId: 'c1' };
-const write = { toolName: 'comment_google_doc', input: { comments: ['x'] } };
+const write = { toolName: 'comment_google_doc', input: { comments: ['x'] }, binding: 'bind-1' };
 
 describe('WriteApprovals', () => {
   afterEach(() => jest.useRealTimers());
@@ -22,6 +22,12 @@ describe('WriteApprovals', () => {
     const id = approvals.create(owner, write);
     expect(approvals.take(id, other)).toBeNull();
     expect(approvals.take(id, owner)).toEqual(write);
+  });
+
+  it('returns the binding that was stored with the call', () => {
+    const approvals = new WriteApprovals();
+    const id = approvals.create(owner, write);
+    expect(approvals.take(id, owner)?.binding).toBe('bind-1');
   });
 
   it('refuses an id it never issued', () => {

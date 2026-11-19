@@ -1081,13 +1081,22 @@ describe('AgentService.run', () => {
           comments: input.comments.map((x) => ({ ...x, section: null, placement: 'native', nativeCommentId: 'k1', fallbackReason: null, anchoredText: x.quote, anchorVerified: true })),
         })),
         assertCommentAccess: jest.fn(async () => 'abc'),
+        approvalTarget: jest.fn(async () => ({ deliverable: 'Final paper', file: 'Paper v1', version: 1, submittedAt: '2026-11-10T10:00:00.000Z', snapshot: 'aaaaaaaaaaaa', binding: 'doc-v1' })),
       };
       const docTools = new GoogleDocTools(review as never, { isConfigured: () => true } as never);
-      const graph = { isConfigured: () => true, resolveLink: jest.fn(), downloadPptx: jest.fn(), uploadPptx: jest.fn() };
+      const graph = {
+        isConfigured: () => true,
+        resolveLink: jest.fn(async () => ({ itemId: 'item', driveId: 'drive', eTag: '"e1"' })),
+        downloadPptx: jest.fn(async () => Buffer.from('deck bytes')),
+        uploadPptx: jest.fn(),
+      };
       const writer = { writeComments: jest.fn() };
       const access = { assertContextWrite: jest.fn(async () => ({})), assertDeliverableAccess: jest.fn(async () => ({})) };
-      const prisma = { submission: { findFirst: jest.fn(async () => ({ fileUrl: 'https://tenant.sharepoint.com/deck' })) } };
-      const pptx = new PptxReviewTools(graph as never, { extractDeck: jest.fn() } as never, writer as never, { isVisionEnabled: () => false } as never, flags, prisma as never, access as never);
+      const prisma = { submission: { findFirst: jest.fn(async () => ({
+        id: 's1', fileUrl: 'https://tenant.sharepoint.com/deck', fileName: 'Deck v1.pptx', version: 1, submittedAt: new Date('2026-11-10T10:00:00.000Z'), deliverable: { title: 'Kickoff deck' },
+      })) } };
+      const deckReader = { extractDeck: jest.fn(async () => ({ slideCount: 1, slides: [{ index: 1, sldId: '256', shapes: [], speakerNotes: '' }] })) };
+      const pptx = new PptxReviewTools(graph as never, deckReader as never, writer as never, { isVisionEnabled: () => false } as never, flags, prisma as never, access as never);
       const registry = new ToolRegistry(new WebSearchTool(new TavilySearchClient(config)), new LoadSkillTool(skills), new CmsReadTools(reads), pptx, docTools, new WriteApprovals());
       return { store, review, graph, writer, svc: new AgentService(model, store, flags, registry, skills, config) };
     };
@@ -1114,12 +1123,45 @@ describe('AgentService.run', () => {
     });
 
     it('uploads nothing to PowerPoint when a review-only request meets an injected write call', async () => {
-      const { svc, graph, writer } = writeSetup(scripted([[pptxCall('w1')]], 'Here is my review. Nothing was posted.'));
+      const { svc, graph, writer } = writeSetup(scripted([
+        [{ id: 'r1', name: 'fetch_pptx_content', args: { deliverableId: 'd1', submissionId: 's1' } }],
+        [pptxCall('w1')],
+      ], 'Here is my review. Nothing was posted.'));
       const { events } = await runTurn(svc, "Review this deck but don't post anything.");
       expect(writer.writeComments).not.toHaveBeenCalled();
       expect(graph.uploadPptx).not.toHaveBeenCalled();
+      expect(approvalIn(events)).toEqual([expect.objectContaining({
+        tool: 'add_pptx_comments', summary: 'Post 1 comment to the PowerPoint', items: [{ where: 'Slide 1', text: '[MINOR] Cite the figure' }],
+        target: expect.objectContaining({ deliverable: 'Kickoff deck', file: 'Deck v1.pptx', version: 1 }),
+      })]);
+    });
+
+    it('offers no approval, and touches nothing, for a PowerPoint write on a deck that was never read', async () => {
+      const { svc, graph, writer } = writeSetup(scripted([[pptxCall('w1')]], 'Here is my review. Nothing was posted.'));
+      const { events } = await runTurn(svc, "Review this deck but don't post anything.");
+      expect(approvalIn(events)).toHaveLength(0);
       expect(graph.resolveLink).not.toHaveBeenCalled();
-      expect(approvalIn(events)).toEqual([expect.objectContaining({ tool: 'add_pptx_comments', summary: 'Post 1 comment to the PowerPoint', items: [{ where: 'Slide 1', text: '[MINOR] Cite the figure' }] })]);
+      expect(graph.uploadPptx).not.toHaveBeenCalled();
+      expect(writer.writeComments).not.toHaveBeenCalled();
+    });
+
+    it('shows the card which file it is for, and never sends the binding to the browser', async () => {
+      const { svc } = writeSetup(scripted([[docCall('w1', 'Tighten this.')]], 'Prepared.'));
+      const { events } = await runTurn(svc, 'Review and post comments on the doc.');
+      const [card] = approvalIn(events);
+      expect(card.target).toEqual({ deliverable: 'Final paper', file: 'Paper v1', version: 1, submittedAt: '2026-11-10T10:00:00.000Z', snapshot: 'aaaaaaaaaaaa' });
+      expect(JSON.stringify(events)).not.toContain('doc-v1');
+    });
+
+    it('posts nothing when the submission changed between the card and the click', async () => {
+      const { svc, review, store } = writeSetup(scripted([[docCall('w1', 'Tighten this.')]], 'Prepared.'));
+      const proposed = await runTurn(svc, 'Review and post comments on the doc.');
+      const [card] = approvalIn(proposed.events);
+      review.approvalTarget.mockResolvedValue({ deliverable: 'Final paper', file: 'Paper v2', version: 2, submittedAt: '2026-11-12T10:00:00.000Z', snapshot: 'bbbbbbbbbbbb', binding: 'doc-v2' });
+      const events = await approvedTurn(svc, proposed.conversationId, card.id);
+      expect(review.comment).not.toHaveBeenCalled();
+      expect(events.filter((e) => e.type === 'tool_end')[0]).toMatchObject({ ok: false, note: 'Submission changed' });
+      assertValidToolHistory(await store.history(proposed.conversationId!));
     });
 
     it('runs exactly the stored call, once, when the user approves, and the model reports the result', async () => {

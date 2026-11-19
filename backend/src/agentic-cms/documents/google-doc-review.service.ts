@@ -1,10 +1,12 @@
+import { createHash } from 'node:crypto';
 import { BadRequestException, ForbiddenException, HttpException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import * as z from 'zod';
 import { FeatureFlagsService } from '../../feature-flags/feature-flags.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CmsReadAccessService, CmsReader } from '../authorization/cms-read-access.service';
-import { DocParagraph, findQuote, flattenDocument, normalize, parseGoogleDocLink, textHash } from './google-doc';
+import { DocExtras, DocParagraph, documentExtras, findQuote, flattenDocument, normalize, parseGoogleDocLink, textHash } from './google-doc';
 import { GoogleDocsClient, GoogleDocsError } from './google-docs.client';
+import type { ApprovalTarget } from '../tools/tool.types';
 
 const MAX_TEXT_CHARS = 100_000;
 const id = z.string().trim().min(1).max(200);
@@ -24,9 +26,58 @@ export const readGoogleDocInput = z.strictObject(target);
 export const readGoogleDocOutput = z.object({
   schemaVersion: z.literal('1'),
   document: documentRef,
-  paragraphs: z.array(z.object({ n: z.number(), section: z.string().nullable(), text: z.string() })),
+  paragraphs: z.array(z.object({
+    n: z.number(), section: z.string().nullable(), text: z.string(),
+    footnotes: z.array(z.string()).optional().describe('Numbers of the footnotes this paragraph cites; their text is in footnotes.'),
+    links: z.array(z.string()).optional().describe('Web links in this paragraph.'),
+  })),
   truncated: z.boolean().describe('True when later paragraphs were omitted to fit the size limit.'),
+  footnotes: z.array(z.object({ number: z.string(), text: z.string(), links: z.array(z.string()) })).describe('Footnote text and links in the order the document cites them. Comments cannot anchor to a footnote; quote the citing sentence.'),
+  tableOfContents: z.array(z.string()).nullable().describe('Entries of the generated contents table; null when the document has none.'),
+  coverage: z.object({
+    footnotes: z.enum(['all', 'some', 'none-in-document']).describe('some: footnotes were cited but not all are listed here, so report the rest as not assessed.'),
+    tableOfContents: z.enum(['included', 'some', 'none-in-document']),
+    objectsNotRead: z.number().describe('Images, drawings, equations and other non-text elements that were not read. Report them as not assessed.'),
+    links: z.enum(['all', 'some']).describe('some: links were left off some paragraphs to fit the size limit; their text is complete.'),
+  }),
 });
+
+/** Footnote text and links, and contents entries, are kept to a fixed size so they leave room for the paragraphs. */
+const MAX_FOOTNOTE_CHARS = 4_000;
+const MAX_CONTENTS_CHARS = 1_500;
+
+/** Whole entries only: an entry cut in half would misquote its source. */
+function capExtras(extras: DocExtras): Pick<z.infer<typeof readGoogleDocOutput>, 'footnotes' | 'tableOfContents' | 'coverage'> {
+  let used = 0;
+  const footnotes: DocExtras['footnotes'] = [];
+  for (const note of extras.footnotes) {
+    const size = note.text.length + note.links.reduce((sum, link) => sum + link.length, 0);
+    if (used + size > MAX_FOOTNOTE_CHARS) break;
+    used += size;
+    footnotes.push(note);
+  }
+  let toc: string[] | null = null;
+  if (extras.tableOfContents) {
+    toc = [];
+    let tocUsed = 0;
+    for (const entry of extras.tableOfContents) {
+      if (tocUsed + entry.length > MAX_CONTENTS_CHARS) break;
+      tocUsed += entry.length;
+      toc.push(entry);
+    }
+  }
+  const cited = extras.footnotes.length + extras.unresolvedFootnotes;
+  return {
+    footnotes,
+    tableOfContents: toc,
+    coverage: {
+      footnotes: cited === 0 ? 'none-in-document' : footnotes.length === cited ? 'all' : 'some',
+      tableOfContents: !extras.tableOfContents ? 'none-in-document' : toc!.length === extras.tableOfContents.length ? 'included' : 'some',
+      objectsNotRead: extras.objectsNotRead,
+      links: 'all',
+    },
+  };
+}
 
 // comment-uncertain: the request may have reached Google but its answer was lost or ambiguous (a 5xx
 // after the write), so the comment may already be in the document. comment-failed: it was not
@@ -54,7 +105,7 @@ export const commentGoogleDocOutput = z.object({
   })),
 });
 
-type Snapshot = z.infer<typeof documentRef> & { paragraphs: DocParagraph[] };
+type Snapshot = z.infer<typeof documentRef> & { paragraphs: DocParagraph[]; extras: DocExtras };
 type CommentResult = z.infer<typeof commentGoogleDocOutput>['comments'][number];
 
 const fail = (Exception: new (body: object) => HttpException, code: string, message: string) => new Exception({ code, message });
@@ -85,9 +136,14 @@ export class GoogleDocReviewService {
       if (!p.text.trim()) continue;
       used += p.text.length;
       if (used > MAX_TEXT_CHARS) break;
-      paragraphs.push({ n: p.n, section: p.section, text: p.text });
+      const refs = snap.extras.refs.get(p.n);
+      paragraphs.push({
+        n: p.n, section: p.section, text: p.text,
+        ...(refs?.footnotes.length ? { footnotes: refs.footnotes } : {}),
+        ...(refs?.links.length ? { links: refs.links } : {}),
+      });
     }
-    return { schemaVersion: '1', document: documentRef.parse(snap), paragraphs, truncated: used > MAX_TEXT_CHARS };
+    return { schemaVersion: '1', document: documentRef.parse(snap), paragraphs, truncated: used > MAX_TEXT_CHARS, ...capExtras(snap.extras) };
   }
 
   async assertCommentAccess(user: CmsReader, input: z.infer<typeof readGoogleDocInput>): Promise<string> {
@@ -95,6 +151,27 @@ export class GoogleDocReviewService {
     await this.access.assertContextWrite(user, input.projectId);
     await this.access.assertDeliverableAccess(user, input.projectId, input.deliverableId);
     return (await this.submissionLink(input)).documentId;
+  }
+
+  /**
+   * The CMS file a comment approval is about, for the approval card and for rechecking when posting.
+   * Same permission checks as posting; reads the CMS database only.
+   */
+  async approvalTarget(user: CmsReader, input: z.infer<typeof commentGoogleDocInput>): Promise<ApprovalTarget> {
+    await this.assertCommentAccess(user, input);
+    const submission = await this.prisma.submission.findFirst({
+      where: { id: input.submissionId, deliverableId: input.deliverableId },
+      select: { id: true, fileUrl: true, fileName: true, version: true, submittedAt: true, deliverable: { select: { title: true } } },
+    });
+    if (!submission) throw fail(NotFoundException, 'NOT_FOUND_OR_FORBIDDEN', 'The requested CMS record is unavailable.');
+    return {
+      deliverable: submission.deliverable.title,
+      file: submission.fileName,
+      version: submission.version,
+      submittedAt: submission.submittedAt.toISOString(),
+      snapshot: input.textHash.replace(/^sha256:/, '').slice(0, 12),
+      binding: createHash('sha256').update(JSON.stringify([input.deliverableId, submission.id, submission.fileUrl, submission.version])).digest('hex'),
+    };
   }
 
   async comment(user: CmsReader, input: z.infer<typeof commentGoogleDocInput>, options: { signal?: AbortSignal; documentId?: string; onResult?: (result: CommentResult) => void } = {}): Promise<z.infer<typeof commentGoogleDocOutput>> {
@@ -222,9 +299,10 @@ export class GoogleDocReviewService {
     signal?.throwIfAborted();
     this.flags.assertAgenticCmsEnabledFor(user.email);
     const paragraphs = flattenDocument(doc);
+    const extras = documentExtras(doc);
     return {
       ...link, title: doc.title ?? null,
-      revisionId: doc.revisionId ?? null, textHash: textHash(paragraphs), capturedAt: new Date().toISOString(), paragraphs,
+      revisionId: doc.revisionId ?? null, textHash: textHash(paragraphs, extras), capturedAt: new Date().toISOString(), paragraphs, extras,
     };
   }
 

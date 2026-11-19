@@ -51,6 +51,88 @@ const reasons = (out: { comments: readonly unknown[] }) => out.comments.map((x) 
 const placements = (out: { comments: readonly unknown[] }) => out.comments.map((x) => (x as { placement: string }).placement);
 const failure = (promise: Promise<unknown>) => promise.then(() => { throw new Error('expected a failure'); }, (error) => error);
 
+describe('GoogleDocReviewService.read: what was left out', () => {
+  const footnoted = (count: number, size: number, withContents = true) => {
+    const refs = Array.from({ length: count }, (_, i) => ({ startIndex: 20 + i, endIndex: 21 + i, footnoteReference: { footnoteId: `fn${i}`, footnoteNumber: String(i + 1) } }));
+    const end = 20 + count;
+    return {
+      title: 'Paper', revisionId: 'r1',
+      body: { content: [
+        ...(withContents ? [{ startIndex: 1, endIndex: 10, tableOfContents: { content: [para(1, 'Findings\n')] } }] : []),
+        { startIndex: 10, endIndex: end + 1, paragraph: { elements: [{ startIndex: 10, endIndex: 20, textRun: { content: 'Cited text' } }, ...refs, { startIndex: end, endIndex: end + 1, textRun: { content: '\n' } }] } },
+      ] },
+      footnotes: Object.fromEntries(refs.map((_, i) => [`fn${i}`, { content: [para(0, `${'s'.repeat(size)}\n`)] }])),
+    };
+  };
+  // A footnote cannot sit in `body` in a real response; the reader accepts the tabless shape too.
+  const read = (doc: object) => setup({ getDocument: jest.fn(async () => doc) }).service.read(user, target);
+
+  it('returns footnotes, the contents table and full coverage when everything fits', async () => {
+    const out = await read(footnoted(2, 50));
+    expect(out.footnotes).toHaveLength(2);
+    expect(out.tableOfContents).toEqual(['Findings']);
+    expect(out.paragraphs[0].footnotes).toEqual(['1', '2']);
+    expect(out.coverage).toEqual({ footnotes: 'all', tableOfContents: 'included', objectsNotRead: 0, links: 'all' });
+  });
+
+  it('says there is nothing to report when the document has no footnotes or contents', async () => {
+    const out = await read(footnoted(0, 0, false));
+    expect(out.footnotes).toEqual([]);
+    expect(out.tableOfContents).toBeNull();
+    expect(out.coverage).toEqual({ footnotes: 'none-in-document', tableOfContents: 'none-in-document', objectsNotRead: 0, links: 'all' });
+  });
+
+  it('keeps whole footnotes up to 4,000 characters and marks the rest as not covered', async () => {
+    const out = await read(footnoted(50, 200));
+    expect(out.footnotes).toHaveLength(20);
+    expect(out.footnotes.every((note) => note.text.length === 200)).toBe(true);
+    expect(out.coverage.footnotes).toBe('some');
+  });
+
+  it('puts footnote text in the hash the comment call checks', async () => {
+    const a = await read(footnoted(1, 50));
+    const b = await read(footnoted(1, 51));
+    expect(a.document.textHash).not.toBe(b.document.textHash);
+  });
+});
+
+describe('GoogleDocReviewService.approvalTarget', () => {
+  const file = (over: Record<string, unknown>) => ({
+    id: 'sub1', fileUrl: FILE_URL, fileName: 'Paper v1', version: 1, submittedAt: new Date('2026-11-10T10:00:00.000Z'), deliverable: { title: 'Final paper' }, ...over,
+  });
+  const input = { ...comments('alpha one') };
+
+  it('names the CMS deliverable, file, version, date and snapshot, and scopes the lookup to the deliverable', async () => {
+    const { service, prisma } = setup({ submission: file({}) });
+    const out = await service.approvalTarget(user, input);
+    expect(out).toMatchObject({ deliverable: 'Final paper', file: 'Paper v1', version: 1, submittedAt: '2026-11-10T10:00:00.000Z' });
+    expect(out.snapshot).toBe(input.textHash.replace('sha256:', '').slice(0, 12));
+    expect(prisma.submission.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'sub1', deliverableId: 'd1' } }));
+  });
+
+  it('gives two submissions with the same passage and feedback different targets and bindings', async () => {
+    const v1 = await setup({ submission: file({}) }).service.approvalTarget(user, input);
+    const v2 = await setup({ submission: file({ id: 'sub2', fileName: 'Paper v2', version: 2, fileUrl: `${FILE_URL}2` }) })
+      .service.approvalTarget(user, { ...input, submissionId: 'sub2', textHash: 'sha256:' + 'b'.repeat(64) });
+    expect([v1.file, v2.file]).toEqual(['Paper v1', 'Paper v2']);
+    expect([v1.version, v2.version]).toEqual([1, 2]);
+    expect(v1.snapshot).not.toBe(v2.snapshot);
+    expect(v1.binding).not.toBe(v2.binding);
+  });
+
+  it('changes the binding when the submission link is replaced', async () => {
+    const before = await setup({ submission: file({}) }).service.approvalTarget(user, input);
+    const after = await setup({ submission: file({ fileUrl: `${FILE_URL}2` }) }).service.approvalTarget(user, input);
+    expect(after.binding).not.toBe(before.binding);
+  });
+
+  it('refuses a user who may not post', async () => {
+    const { service, access } = setup({ submission: file({}) });
+    access.assertContextWrite.mockRejectedValue(new NotFoundException({ code: 'NOT_FOUND_OR_FORBIDDEN', message: 'x' }));
+    await expect(service.approvalTarget(user, input)).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
 describe('GoogleDocReviewService.comment', () => {
   it('carries each new revision into the next write', async () => {
     let call = 0;

@@ -9,7 +9,7 @@ import { PptxReaderService } from '../pptx/pptx-reader.service';
 import { PptxRendererService } from '../pptx/pptx-renderer.service';
 import type { DeckContent, Finding } from '../pptx/pptx.types';
 import { CmsReadAccessService, CmsReader } from '../authorization/cms-read-access.service';
-import type { AgentTool, ToolContext, ToolOutput } from './tool.types';
+import type { AgentTool, ApprovalTarget, ToolContext, ToolOutput } from './tool.types';
 import { ToolFailure } from './tool.types';
 
 const target = {
@@ -20,11 +20,14 @@ type Target = { deliverableId: string; submissionId: string };
 type Snapshot = { url: string; etag: string; hash: string; itemId: string; driveId: string; capturedAt: number };
 const hash = (buffer: Buffer) => createHash('sha256').update(buffer).digest('hex');
 
+/** Keeps a multi-line text box readable as one entry of the summary. */
+const indent = (text: string) => text.replace(/\n/g, '\n    ');
+
 function formatDeckSummary(deck: DeckContent): string {
   return deck.slides.map((slide) => [
     `Slide ${slide.index} (sldId=${slide.sldId})`,
-    ...slide.shapes.filter((shape) => shape.text).map((shape) => `  [${shape.type}] shape ${shape.spId}: ${shape.text}`),
-    slide.speakerNotes ? `  Notes: ${slide.speakerNotes}` : '',
+    ...slide.shapes.filter((shape) => shape.text).map((shape) => `  [${shape.type}] shape ${shape.spId}: ${indent(shape.text)}`),
+    slide.speakerNotes ? `  Notes: ${indent(slide.speakerNotes)}` : '',
   ].filter(Boolean).join('\n')).join('\n\n');
 }
 
@@ -58,16 +61,20 @@ export class PptxReviewTools {
   }
 
   private async source(input: Target, ctx: ToolContext, write = false): Promise<string> {
+    return (await this.submission(input, ctx, write)).fileUrl;
+  }
+
+  private async submission(input: Target, ctx: ToolContext, write = false) {
     this.check(ctx);
     if (write) await this.access.assertContextWrite(ctx.user as CmsReader, ctx.projectId);
     await this.access.assertDeliverableAccess(ctx.user as CmsReader, ctx.projectId, input.deliverableId);
     const submission = await this.prisma.submission.findFirst({
       where: { id: input.submissionId, deliverableId: input.deliverableId },
-      select: { fileUrl: true },
+      select: { id: true, fileUrl: true, fileName: true, version: true, submittedAt: true, deliverable: { select: { title: true } } },
     });
     this.check(ctx);
     if (!submission) throw new ToolFailure('Submission unavailable', 'The requested CMS submission is unavailable.');
-    return submission.fileUrl;
+    return submission;
   }
 
   private async safe(operation: () => Promise<ToolOutput>): Promise<ToolOutput> {
@@ -155,7 +162,22 @@ export class PptxReviewTools {
       // The model can only propose these comments. The registry stores them and the user approves
       // with a button; run() is reached only for that approved call.
       requiresApproval: true,
-      checkBeforeApproval: async (input: Target, ctx: ToolContext) => { await this.source(input, ctx, true); },
+      prepareApproval: async (input: Target & { etag: string }, ctx: ToolContext): Promise<ApprovalTarget> => {
+        const submission = await this.submission(input, ctx, true);
+        const snapshot = this.snapshots.get(this.key(input, ctx));
+        // Fail now rather than after the user has pressed Post.
+        if (!snapshot || snapshot.url !== submission.fileUrl || snapshot.etag !== input.etag) {
+          throw new ToolFailure('Read deck again', 'Read this submission with fetch_pptx_content before posting comments, and copy its exact eTag.');
+        }
+        return {
+          deliverable: submission.deliverable.title,
+          file: submission.fileName,
+          version: submission.version,
+          submittedAt: submission.submittedAt.toISOString(),
+          snapshot: snapshot.hash.slice(0, 12),
+          binding: createHash('sha256').update(JSON.stringify([input.deliverableId, submission.id, submission.fileUrl, submission.version, snapshot.hash])).digest('hex'),
+        };
+      },
       describeForApproval: ({ findings }: { findings: Finding[] }) => ({
         summary: `Post ${findings.length} comment${findings.length === 1 ? '' : 's'} to the PowerPoint`,
         items: findings.map((finding) => ({ where: `Slide ${finding.slideIndex}`, text: `[${finding.severity}] ${finding.comment}` })),

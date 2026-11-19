@@ -5,7 +5,7 @@ const TTL_MS = 15 * 60 * 1000;
 const MAX_ENTRIES = 100;
 
 export type ApprovalOwner = { userId: string; projectId: string; conversationId: string };
-export type StoredWrite = { toolName: string; input: unknown };
+export type StoredWrite = { toolName: string; input: unknown; binding: string };
 
 type Entry = ApprovalOwner & StoredWrite & { expiresAt: number };
 
@@ -36,7 +36,7 @@ export class WriteApprovals {
     if (!entry) return null;
     if (entry.userId !== owner.userId || entry.projectId !== owner.projectId || entry.conversationId !== owner.conversationId) return null;
     this.entries.delete(id);
-    return { toolName: entry.toolName, input: entry.input };
+    return { toolName: entry.toolName, input: entry.input, binding: entry.binding };
   }
 
   private sweep() {

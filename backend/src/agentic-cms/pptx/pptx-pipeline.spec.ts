@@ -16,7 +16,17 @@ interface SlideSpec {
   sldId?: number;
   shapeExtLst?: boolean; // include a shape-level extLst (simulates hyperlinks/media)
   creationIds?: { slide: number; body: string }; // p14 slide (under p:cSld) and a16 body-shape creation IDs, as PowerPoint writes them
+  bodyXml?: string; // raw <a:p> elements replacing the first body shape's paragraph
+  notesXml?: string; // raw <a:p> elements for a speaker notes page
 }
+
+const NS = 'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"';
+const notesPart = (paragraphs: string) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:notes ${NS}><p:cSld><p:spTree>
+  <p:sp><p:nvSpPr><p:cNvPr id="2" name="Slide Image"/><p:cNvSpPr/><p:nvPr><p:ph type="sldImg"/></p:nvPr></p:nvSpPr></p:sp>
+  <p:sp><p:nvSpPr><p:cNvPr id="3" name="Notes"/><p:cNvSpPr/><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr>
+    <p:txBody><a:bodyPr/><a:lstStyle/>${paragraphs}</p:txBody></p:sp>
+</p:spTree></p:cSld></p:notes>`;
 
 function slideXml(spec: SlideSpec): string {
   const bodyShapes = spec.body.map((line, i) => `
@@ -28,7 +38,7 @@ function slideXml(spec: SlideSpec): string {
       </p:nvSpPr>
       <p:txBody>
         <a:bodyPr/><a:lstStyle/>
-        <a:p><a:r><a:t>${line}</a:t></a:r></a:p>
+        ${i === 0 && spec.bodyXml ? spec.bodyXml : `<a:p><a:r><a:t>${line}</a:t></a:r></a:p>`}
       </p:txBody>
     </p:sp>`).join('\n');
 
@@ -96,8 +106,10 @@ ${presRels}
 
   for (let i = 0; i < slides.length; i++) {
     zip.file(`ppt/slides/slide${i + 1}.xml`, slideXml(slides[i]));
+    const notes = slides[i].notesXml;
     zip.file(`ppt/slides/_rels/slide${i + 1}.xml.rels`, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>`);
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${notes ? `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" Target="../notesSlides/notesSlide${i + 1}.xml"/>` : ''}</Relationships>`);
+    if (notes) zip.file(`ppt/notesSlides/notesSlide${i + 1}.xml`, notesPart(notes));
   }
 
   if (opts.legacyComments) {
@@ -123,6 +135,60 @@ describe('PptxReaderService', () => {
     expect(deck.slides[0].sldId).toBe('256');
     expect(deck.slides[0].title).toBe('Market Analysis');
     expect(deck.slides[0].bodyText).toEqual(['E-bike market grew 12% in 2025']);
+  });
+
+  describe('text fidelity', () => {
+    const run = (text: string, props = '') => `<a:r>${props}<a:t>${text}</a:t></a:r>`;
+    const slideText = async (spec: Partial<SlideSpec>) =>
+      (await reader.extractDeck(await buildPptx([{ title: 'T', body: ['x'], ...spec }]))).slides[0];
+
+    it('keeps the spaces between runs and puts a soft break where it stands', async () => {
+      const slide = await slideText({ bodyXml: `<a:p>${run('Revenue rose ')}${run('12%', '<a:rPr b="1"/>')}<a:br/>${run('R&amp;D')}</a:p>` });
+      expect(slide.bodyText).toEqual(['Revenue rose 12%\nR&D']);
+      expect(slide.shapes.find((shape) => shape.type === 'body')!.text).toBe('Revenue rose 12%\nR&D');
+    });
+
+    it('reads a speaker note with two paragraphs and escaped characters', async () => {
+      const slide = await slideText({ notesXml: `<a:p>${run('Say that margins stay &lt;5%&gt; ')}${run('in 2026.')}</a:p><a:p>${run('Then pause.')}</a:p>` });
+      expect(slide.speakerNotes).toBe('Say that margins stay <5%> in 2026.\nThen pause.');
+    });
+
+    it('joins the paragraphs of one text box with a newline', async () => {
+      const slide = await slideText({ bodyXml: `<a:p>${run('First point')}</a:p><a:p></a:p><a:p>${run('Second point')}</a:p>` });
+      expect(slide.bodyText).toEqual(['First point\nSecond point']);
+    });
+
+    it('reads a break written as an element with content, and an empty run', async () => {
+      const slide = await slideText({ bodyXml: `<a:p>${run('A')}<a:br><a:rPr lang="en-US"/></a:br><a:r><a:t/></a:r>${run('B')}</a:p>` });
+      expect(slide.bodyText).toEqual(['A\nB']);
+    });
+
+    it('decodes numeric and standard references, leaving a doubly escaped one escaped once', async () => {
+      const slide = await slideText({ bodyXml: `<a:p>${run('a &#38; b &#x2014; c &quot;d&quot; &apos;e&apos; &amp;lt;')}</a:p>` });
+      expect(slide.bodyText).toEqual(['a & b \u2014 c "d" \'e\' &lt;']);
+    });
+
+    it('turns an impossible character reference into U+FFFD instead of failing', async () => {
+      const slide = await slideText({ bodyXml: `<a:p>${run('x&#xD800;y&#0;z&#99999999;')}</a:p>` });
+      expect(slide.bodyText).toEqual(['x\uFFFDy\uFFFDz\uFFFD']);
+    });
+
+    it('reads a field such as a slide number in order', async () => {
+      const slide = await slideText({ bodyXml: `<a:p>${run('Page ')}<a:fld id="{1}" type="slidenum"><a:rPr/><a:t>7</a:t></a:fld>${run(' of 9')}</a:p>` });
+      expect(slide.bodyText).toEqual(['Page 7 of 9']);
+    });
+
+    it('keeps a CDATA run literal', async () => {
+      const slide = await slideText({ bodyXml: `<a:p><a:r><a:t><![CDATA[a &amp; <b>]]></a:t></a:r></a:p>` });
+      expect(slide.bodyText).toEqual(['a &amp; <b>']);
+    });
+
+    it('still rejects a slide that declares an entity', async () => {
+      const buf = await buildPptx([{ title: 'T', body: ['x'], bodyXml: `<a:p>${run('&xxe;')}</a:p>` }]);
+      const zip = await (JSZip as any).loadAsync(buf);
+      zip.file('ppt/slides/slide1.xml', `<?xml version="1.0"?><!DOCTYPE x [<!ENTITY xxe "boom">]>` + (await zip.file('ppt/slides/slide1.xml').async('string')));
+      await expect(reader.extractDeck(await zip.generateAsync({ type: 'nodebuffer' }))).rejects.toThrow();
+    });
   });
 
   it('extracts multiple slides with correct indices and titles', async () => {

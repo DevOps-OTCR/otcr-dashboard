@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
 import type { AgentEvent } from '../agent/agent.events';
 import type { AgentUser } from '../agent/agent.types';
-import { GoogleDocReviewService } from '../documents/google-doc-review.service';
+import { GoogleDocReviewService, readGoogleDocOutput } from '../documents/google-doc-review.service';
 import { textHash } from '../documents/google-doc';
 import { GoogleDocsError, type GoogleDocsClient } from '../documents/google-docs.client';
 import { GoogleDocTools } from './google-doc.tools';
@@ -22,8 +22,13 @@ const native = (quote: string, id: string) => ({ quote, comment: `about ${quote}
 const fallback = (quote: string) => ({ quote, comment: `about ${quote}`, section: null, placement: 'fallback', nativeCommentId: null, fallbackReason: 'not-found' });
 const commentResult = (comments: unknown[]) => ({ schemaVersion: '1', document: documentRef, revisionGuarded: true, comments });
 
+const fileTarget = { deliverable: 'Final paper', file: 'Paper v1', version: 1, submittedAt: '2026-11-10T10:00:00.000Z', snapshot: 'aaaaaaaaaaaa' };
+
 function setup(configured = true) {
-  const review = { read: jest.fn(), comment: jest.fn(), assertCommentAccess: jest.fn(async () => undefined) };
+  const review = {
+    read: jest.fn(), comment: jest.fn(), assertCommentAccess: jest.fn(async () => undefined),
+    approvalTarget: jest.fn<Promise<typeof fileTarget & { binding: string }>, [unknown, { submissionId?: string }]>(async () => ({ ...fileTarget, binding: 'bind-v1' })),
+  };
   const client = { isConfigured: jest.fn(() => configured) };
   const tools = new GoogleDocTools(review as unknown as GoogleDocReviewService, client as unknown as GoogleDocsClient);
   const named = (name: string): AgentTool => {
@@ -251,6 +256,56 @@ describe('GoogleDocTools', () => {
       const service = new GoogleDocReviewService(prisma as never, access as never, (opts.flags ?? okFlags) as never, client as never);
       return new GoogleDocTools(service, client as never).tools[1];
     }
+    it('keeps a read with 50 footnotes inside the size budget and still valid output', async () => {
+      const refs = Array.from({ length: 50 }, (_, i) => ({ startIndex: 1000 + i, endIndex: 1001 + i, footnoteReference: { footnoteId: `fn${i}`, footnoteNumber: String(i + 1) } }));
+      const big = {
+        title: 'T', revisionId: 'r1',
+        body: { content: [
+          ...Array.from({ length: 60 }, (_, n) => para(1 + n * 500, `${'word '.repeat(98)}${n}\n`)),
+          { startIndex: 40000, endIndex: 40060, paragraph: { elements: [{ startIndex: 40000, endIndex: 40010, textRun: { content: 'Cited text' } }, ...refs.map((r) => ({ ...r, startIndex: r.startIndex + 39000, endIndex: r.endIndex + 39000 }))] } },
+        ] },
+        footnotes: Object.fromEntries(refs.map((_, i) => [`fn${i}`, { content: [para(0, `${'source '.repeat(25)}\n`)] }])),
+      };
+      const client = { isConfigured: () => true, serviceAccountEmail: () => 'bot@x', getDocument: jest.fn(async () => big), insertComment: jest.fn() };
+      const service = new GoogleDocReviewService(prisma as never, access as never, okFlags as never, client as never);
+      const read = new GoogleDocTools(service, client as never).tools[0];
+      const out = await runRead(read);
+      expect(out.content.length).toBeLessThanOrEqual(28_000);
+      const parsed = readGoogleDocOutput.parse(JSON.parse(out.content));
+      expect(parsed.footnotes.length).toBeGreaterThan(0);
+      expect(parsed.coverage.footnotes).toBe('some');
+      expect(parsed.paragraphs.length).toBeGreaterThan(0);
+    });
+
+    it('never lets a paragraph of long links push the paragraphs after it out of the read', async () => {
+      let at = 1;
+      const content: object[] = [];
+      const add = (runs: [string, string?][]) => {
+        const start = at;
+        const elements = runs.map(([text, url]) => {
+          const element = { startIndex: at, endIndex: at + text.length, textRun: { content: text, ...(url ? { textStyle: { link: { url } } } : {}) } };
+          at += text.length;
+          return element;
+        });
+        content.push({ startIndex: start, endIndex: at, paragraph: { elements } });
+      };
+      add([['Intro paragraph that matters.\n']]);
+      // A reference list: 60 linked words, each URL about 450 characters (27,000 characters of links).
+      add([...Array.from({ length: 60 }, (_, i): [string, string] => [`ref${i} `, `https://example.com/${'a'.repeat(430)}${i}`]), ['\n']]);
+      for (let i = 0; i < 20; i++) add([[`Body paragraph ${i} with the analysis.\n`]]);
+      const client = { isConfigured: () => true, serviceAccountEmail: () => 'bot@x', getDocument: jest.fn(async () => ({ title: 'T', revisionId: 'r1', body: { content } })), insertComment: jest.fn() };
+      const service = new GoogleDocReviewService(prisma as never, access as never, okFlags as never, client as never);
+      const out = await runRead(new GoogleDocTools(service, client as never).tools[0]);
+
+      expect(out.content.length).toBeLessThanOrEqual(28_000);
+      const parsed = readGoogleDocOutput.parse(JSON.parse(out.content));
+      expect(parsed.paragraphs).toHaveLength(22);
+      expect(parsed.truncated).toBe(false);
+      expect(parsed.paragraphs[1].text).toContain('ref59');
+      expect(parsed.coverage.links).toBe('some');
+      expect(parsed.paragraphs[1].links ?? []).toHaveLength(0); // its links did not fit; its text did
+    });
+
     const posted = (insert: jest.Mock, content: string) => insert.mock.calls.filter(([, input]) => (input as { content: string }).content === content);
     const placements = (out: { content: string }) => JSON.parse(out.content).comments.map((x: { placement: string }) => x.placement);
 
@@ -487,10 +542,10 @@ describe('GoogleDocTools', () => {
 
     it('refuses before asking when the user may not post, using the request project', async () => {
       const { review, comment } = setup();
-      review.assertCommentAccess.mockRejectedValue(new NotFoundException({ code: 'NOT_FOUND_OR_FORBIDDEN', message: 'x' }));
-      await expect(comment.checkBeforeApproval!(comment.input.parse({ ...target, comments: [c('alpha one')] }), ctxFor()))
+      review.approvalTarget.mockRejectedValue(new NotFoundException({ code: 'NOT_FOUND_OR_FORBIDDEN', message: 'x' }));
+      await expect(comment.prepareApproval!(comment.input.parse({ ...target, comments: [c('alpha one')] }), ctxFor()))
         .rejects.toMatchObject({ note: 'CMS record unavailable' });
-      expect(review.assertCommentAccess).toHaveBeenCalledWith(user, { projectId: 'selected', deliverableId: 'd1', submissionId: 'sub1' });
+      expect(review.approvalTarget).toHaveBeenCalledWith(user, expect.objectContaining({ projectId: 'selected', deliverableId: 'd1', submissionId: 'sub1' }));
       expect(review.comment).not.toHaveBeenCalled();
     });
 
@@ -504,6 +559,50 @@ describe('GoogleDocTools', () => {
       expect(review.comment).not.toHaveBeenCalled();
       expect(events.map((e) => e.type)).toEqual(['tool_start', 'approval_required', 'tool_end']);
       expect(result.content).toContain('Not posted.');
+    });
+
+    describe('which file the approval is for', () => {
+      const registryFor = (tools: GoogleDocTools, approvals: WriteApprovals) =>
+        new ToolRegistry({} as never, {} as never, { tools: [] } as never, { tools: [] } as never, tools, approvals);
+      const propose = async (registry: ToolRegistry, submissionId: string) => {
+        const events: AgentEvent[] = [];
+        await registry.execute(
+          { id: 'c1', name: 'comment_google_doc', args: { ...target, submissionId, comments: [c('alpha one')] } }, await registry.available(), ctxFor(), (e) => events.push(e),
+        );
+        return events.find((e) => e.type === 'approval_required') as Extract<AgentEvent, { type: 'approval_required' }>;
+      };
+
+      it('shows two submissions with the same passage and feedback as different files', async () => {
+        const { review, tools } = setup();
+        const registry = registryFor(tools, new WriteApprovals());
+        review.approvalTarget.mockImplementation(async (_user, input) =>
+          input.submissionId === 'sub1'
+            ? { ...fileTarget, binding: 'bind-v1' }
+            : { ...fileTarget, file: 'Paper v2', version: 2, snapshot: 'bbbbbbbbbbbb', binding: 'bind-v2' });
+        const first = await propose(registry, 'sub1');
+        const second = await propose(registry, 'sub2');
+        expect(first.items).toEqual(second.items);
+        expect(first.target).toMatchObject({ file: 'Paper v1', version: 1, snapshot: 'aaaaaaaaaaaa' });
+        expect(second.target).toMatchObject({ file: 'Paper v2', version: 2, snapshot: 'bbbbbbbbbbbb' });
+        expect(JSON.stringify([first, second])).not.toContain('bind-v');
+      });
+
+      it('does not post when the submission changed after the user approved', async () => {
+        const { review, tools } = setup();
+        const approvals = new WriteApprovals();
+        const registry = registryFor(tools, approvals);
+        const proposed = await propose(registry, 'sub1');
+        const stored = approvals.take(proposed.id, { userId: user.id, projectId: 'selected', conversationId: 'conv1' })!;
+        review.approvalTarget.mockResolvedValue({ ...fileTarget, binding: 'bind-v2' }); // the CMS link now points elsewhere
+        const events: AgentEvent[] = [];
+        const result = await registry.execute(
+          { id: 'approved-1', name: 'comment_google_doc', args: stored.input }, await registry.available(),
+          ctxFor({ approvedCall: { callId: 'approved-1', approvalId: proposed.id, binding: stored.binding } }), (e) => events.push(e),
+        );
+        expect(review.comment).not.toHaveBeenCalled();
+        expect(result.content).toContain('Nothing was posted');
+        expect(events[events.length - 1]).toMatchObject({ ok: false, note: 'Submission changed' });
+      });
     });
   });
 

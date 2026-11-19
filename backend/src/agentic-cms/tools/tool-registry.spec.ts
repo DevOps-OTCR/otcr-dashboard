@@ -203,30 +203,37 @@ describe('ToolRegistry', () => {
   describe('write tools that need the user\'s approval', () => {
     const owner = { userId: 'u', projectId: 'p1', conversationId: 'conv1' };
     const writes: string[] = [];
+    const target = { deliverable: 'Final report', file: 'report-v2.docx', version: 2, submittedAt: '2026-11-10T10:00:00.000Z', snapshot: 'abc123def456' };
+    let binding = 'file-1';
     const writeTool = (over: Partial<AgentTool<typeof echoInput>> = {}) => tool({
       name: 'post_it',
       requiresApproval: true,
+      prepareApproval: async () => ({ ...target, binding }),
       describeForApproval: ({ text }) => ({ summary: 'Post 1 thing', items: [{ where: 'Intro', text }] }),
       run: async ({ text }) => { writes.push(text); return { content: `posted ${text}` }; },
       ...over,
     });
-    beforeEach(() => { writes.length = 0; });
+    beforeEach(() => { writes.length = 0; binding = 'file-1'; });
+    const approvedCtx = (callId = 'c1', bound = 'file-1') => ({ ...ctx(), approvedCall: { callId, approvalId: 'a1', binding: bound } });
 
     it('does not run a write the model asked for: it stores the call and asks the user', async () => {
       const { content, events } = await exec(registryWith(writeTool()), 'post_it', { text: 'hello' });
       expect(writes).toEqual([]);
       expect(events.map((e) => e.type)).toEqual(['tool_start', 'approval_required', 'tool_end']);
-      expect(events[1]).toMatchObject({ type: 'approval_required', tool: 'post_it', summary: 'Post 1 thing', items: [{ where: 'Intro', text: 'hello' }] });
+      expect(events[1]).toMatchObject({ type: 'approval_required', tool: 'post_it', target, summary: 'Post 1 thing', items: [{ where: 'Intro', text: 'hello' }] });
+      expect(events[1]).not.toHaveProperty('binding');
+      expect(events[1]).not.toHaveProperty('target.binding');
+      expect(JSON.stringify(events)).not.toContain('file-1');
       expect(events[2]).toMatchObject({ ok: true, note: 'Waiting for your approval' });
       expect(content).toContain('Not posted.');
       const id = (events[1] as { id: string }).id;
       expect(content).not.toContain(id); // the model never sees the approval id
-      expect(approvals.take(id, owner)).toEqual({ toolName: 'post_it', input: { text: 'hello' } });
+      expect(approvals.take(id, owner)).toEqual({ toolName: 'post_it', input: { text: 'hello' }, binding: 'file-1' });
     });
 
     it('runs the tool only for the call the user approved', async () => {
       const registry = registryWith(writeTool());
-      const approved = { ...ctx(), approvedCall: { callId: 'c1', approvalId: 'a1' } };
+      const approved = approvedCtx();
       const { content } = await exec(registry, 'post_it', { text: 'hello' }, approved);
       expect(writes).toEqual(['hello']);
       expect(content).toBe('<tool_data tool="post_it">\nposted hello\n</tool_data>');
@@ -234,7 +241,7 @@ describe('ToolRegistry', () => {
 
     it('still gates a different call id in an approved context', async () => {
       const registry = registryWith(writeTool());
-      const approved = { ...ctx(), approvedCall: { callId: 'approved-1', approvalId: 'a1' } };
+      const approved = approvedCtx('approved-1');
       const { events } = await exec(registry, 'post_it', { text: 'other' }, approved); // exec uses call id "c1"
       expect(writes).toEqual([]);
       expect(events.some((e) => e.type === 'approval_required')).toBe(true);
@@ -242,7 +249,7 @@ describe('ToolRegistry', () => {
 
     it('fails before asking when the permission check refuses, and creates no approval', async () => {
       const checked = jest.fn(async () => { throw new ToolFailure('CMS record unavailable', 'No permission.'); });
-      const { content, events } = await exec(registryWith(writeTool({ checkBeforeApproval: checked })), 'post_it', { text: 'hello' });
+      const { content, events } = await exec(registryWith(writeTool({ prepareApproval: checked })), 'post_it', { text: 'hello' });
       expect(checked).toHaveBeenCalledTimes(1);
       expect(content).toBe('No permission.');
       expect(events.map((e) => e.type)).toEqual(['tool_start', 'tool_end']);
@@ -250,11 +257,31 @@ describe('ToolRegistry', () => {
       expect(writes).toEqual([]);
     });
 
-    it('does not run the permission check again when the approved call runs', async () => {
-      const checked = jest.fn(async () => undefined);
-      await exec(registryWith(writeTool({ checkBeforeApproval: checked })), 'post_it', { text: 'hello' }, { ...ctx(), approvedCall: { callId: 'c1', approvalId: 'a1' } });
-      expect(checked).not.toHaveBeenCalled();
+    it('checks the file again when the approved call runs, and writes only if it is the same file', async () => {
+      const prepared = jest.fn(async () => ({ ...target, binding: 'file-1' }));
+      await exec(registryWith(writeTool({ prepareApproval: prepared })), 'post_it', { text: 'hello' }, approvedCtx());
+      expect(prepared).toHaveBeenCalledTimes(1);
       expect(writes).toEqual(['hello']);
+    });
+
+    it('does not write when the file changed after the user approved', async () => {
+      binding = 'file-2';
+      const { content, events } = await exec(registryWith(writeTool()), 'post_it', { text: 'hello' }, approvedCtx('c1', 'file-1'));
+      expect(writes).toEqual([]);
+      expect(content).toContain('Nothing was posted');
+      expect(events[events.length - 1]).toMatchObject({ type: 'tool_end', ok: false, note: 'Submission changed' });
+    });
+
+    it('does not write when the user lost permission after approving', async () => {
+      const refused = jest.fn(async () => { throw new ToolFailure('CMS record unavailable', 'No permission.'); });
+      const { events } = await exec(registryWith(writeTool({ prepareApproval: refused })), 'post_it', { text: 'hello' }, approvedCtx());
+      expect(writes).toEqual([]);
+      expect(events[events.length - 1]).toMatchObject({ ok: false, note: 'CMS record unavailable' });
+    });
+
+    it('refuses to build a registry with a write tool that cannot name its file', () => {
+      const bad = writeTool({ prepareApproval: undefined });
+      expect(() => new ToolRegistry({} as never, {} as never, { tools: [] } as never, { tools: [bad] } as never, { tools: [] } as never, approvals)).toThrow(/prepareApproval/);
     });
 
     it('does not gate tools that do not write', async () => {

@@ -63,18 +63,54 @@ function makeParser() {
     parseAttributeValue: false,
     parseTagValue: false,
     processEntities: false,
+    // Text boxes come back as raw XML so getText can read runs and breaks in the order they were written.
+    stopNodes: ['*.txBody'],
   });
 }
 
-function getText(txBody: any): string[] {
-  if (!txBody) return [];
-  const paragraphs: any[] = Array.isArray(txBody.p) ? txBody.p : txBody.p ? [txBody.p] : [];
-  return paragraphs.map((p) => {
-    const runs: any[] = Array.isArray(p.r) ? p.r : p.r ? [p.r] : [];
-    const lineBreaks: any[] = Array.isArray(p.br) ? p.br : [];
-    if (!runs.length && !lineBreaks.length) return '';
-    return runs.map((r) => (typeof r.t === 'string' ? r.t : '')).join('');
-  }).filter(Boolean);
+/**
+ * Decodes the references XML allows in text: the five named ones and numeric ones. Anything else is
+ * left as written. One pass, so "&amp;lt;" becomes "&lt;" and not "<". A number that is not a valid
+ * character becomes U+FFFD instead of failing the read.
+ */
+export function decodeXmlText(text: string): string {
+  return text.replace(/&(?:#([0-9]{1,8})|#x([0-9a-fA-F]{1,8})|(lt|gt|quot|apos|amp));/g, (_, dec, hex, name) => {
+    if (name) return { lt: '<', gt: '>', quot: '"', apos: "'", amp: '&' }[name as string]!;
+    const code = hex ? Number.parseInt(hex, 16) : Number.parseInt(dec, 10);
+    return code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? String.fromCodePoint(code) : '\uFFFD';
+  });
+}
+
+const TAG = /<(\/?)(?:[\w.-]+:)?([\w.-]+)((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)>/g;
+const T_CLOSE = /<\/(?:[\w.-]+:)?t\s*>/g;
+
+/**
+ * The text of one text box, a string per paragraph. Runs are joined exactly as written, so spaces
+ * at a run boundary survive, and a soft break (a:br) becomes a newline where it stands.
+ */
+function getText(txBody: unknown): string[] {
+  if (typeof txBody !== 'string') return [];
+  const xml = txBody.replace(/<!--[\s\S]*?-->/g, '');
+  const paragraphs: string[] = [];
+  let current = '';
+  const tag = new RegExp(TAG.source, 'g');
+  for (let match = tag.exec(xml); match; match = tag.exec(xml)) {
+    const [, closing, name, , selfClosing] = match;
+    if (name === 'p') {
+      if (closing) { paragraphs.push(current); current = ''; }
+    } else if (name === 'br' && !closing) {
+      current += '\n';
+    } else if (name === 't' && !closing && !selfClosing) {
+      T_CLOSE.lastIndex = tag.lastIndex;
+      const end = T_CLOSE.exec(xml);
+      if (!end) break;
+      current += xml.slice(tag.lastIndex, end.index).split(/(<!\[CDATA\[[\s\S]*?\]\]>)/)
+        .map((part) => (part.startsWith('<![CDATA[') ? part.slice(9, -3) : decodeXmlText(part))).join('');
+      tag.lastIndex = end.index + end[0].length;
+    }
+  }
+  if (current) paragraphs.push(current);
+  return paragraphs.filter((paragraph) => paragraph.trim());
 }
 
 function findCreationId(extLst: any): string | undefined {
@@ -114,7 +150,7 @@ function parseShapes(spTree: any): ShapeInfo[] {
       type: shapeType(sp),
       hasCreationId: !!creationId,
       creationId,
-      text: textLines.join(' '),
+      text: textLines.join('\n'),
     });
   }
 

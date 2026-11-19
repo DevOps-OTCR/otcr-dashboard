@@ -132,7 +132,7 @@ export class AgentService {
 
     // 3b. The user pressed Post on an approval card. Take the stored write call (single use, bound to
     // this user, project and conversation). Nothing the model said can supply or change it.
-    let approved: { call: ToolCall; approvalId: string } | undefined;
+    let approved: { call: ToolCall; approvalId: string; binding: string } | undefined;
     if (input.approvalId) {
       const stored = this.tools.takeApproval(input.approvalId, { userId: input.user.id, projectId: input.projectId, conversationId: convo.id });
       if (!stored) {
@@ -141,7 +141,7 @@ export class AgentService {
         await this.store.append(convo.id, [...turnMessages, assistantMessage(notice, [])]);
         return;
       }
-      approved = { call: { id: `approved-${input.approvalId}`, name: stored.toolName, args: stored.input }, approvalId: input.approvalId };
+      approved = { call: { id: `approved-${input.approvalId}`, name: stored.toolName, args: stored.input }, approvalId: input.approvalId, binding: stored.binding };
     }
 
     // 4. The loop: ask the model; if it wants tools, run them and ask again.
@@ -153,7 +153,7 @@ export class AgentService {
         input.signal.throwIfAborted();
         this.assertStillEnabled(input.user);
         turnMessages.push(assistantMessage('', [approved.call]));
-        const result = await this.tools.execute(approved.call, tools, { ...ctx, approvedCall: { callId: approved.call.id, approvalId: approved.approvalId } }, send);
+        const result = await this.tools.execute(approved.call, tools, { ...ctx, approvedCall: { callId: approved.call.id, approvalId: approved.approvalId, binding: approved.binding } }, send);
         turnMessages.push({ role: 'tool', tool_call_id: approved.call.id, content: result.content });
       }
       for (let round = 0; round < MAX_ROUNDS; round++) {

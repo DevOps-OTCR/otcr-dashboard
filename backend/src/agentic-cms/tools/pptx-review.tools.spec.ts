@@ -3,6 +3,10 @@ import type { ToolContext } from './tool.types';
 
 const source = { deliverableId: 'deliverable', submissionId: 'submission' };
 const etag = '"reviewed,1"';
+const deck = (over: Record<string, unknown> = {}) => ({
+  id: 'submission', fileUrl: 'https://tenant.sharepoint.com/submitted', fileName: 'Deck v1.pptx', version: 1,
+  submittedAt: new Date('2026-11-10T10:00:00.000Z'), deliverable: { title: 'Kickoff deck' }, ...over,
+});
 
 describe('PowerPoint submission authorization and snapshot binding', () => {
   let tools: PptxReviewTools;
@@ -18,7 +22,7 @@ describe('PowerPoint submission authorization and snapshot binding', () => {
       downloadPptx: jest.fn().mockResolvedValue(Buffer.from('reviewed content')),
       uploadPptx: jest.fn().mockResolvedValue({ status: 200, newEtag: '"next,2"' }), isConfigured: jest.fn().mockReturnValue(true) };
     access = { assertDeliverableAccess: jest.fn().mockResolvedValue({}), assertContextWrite: jest.fn().mockResolvedValue({}) };
-    prisma = { submission: { findFirst: jest.fn().mockResolvedValue({ fileUrl: 'https://tenant.sharepoint.com/submitted' }) } };
+    prisma = { submission: { findFirst: jest.fn().mockResolvedValue(deck())  } };
     writer = { writeComments: jest.fn().mockResolvedValue({ buffer: Buffer.from('modified'), legacy: false, commentCount: 1 }) };
     flags = { assertAgenticCmsEnabledFor: jest.fn() };
     controller = new AbortController();
@@ -37,7 +41,7 @@ describe('PowerPoint submission authorization and snapshot binding', () => {
     expect(tool.input.safeParse({ url: 'https://attacker.test/a.pptx' }).success).toBe(false);
     await fetchDeck();
     expect(access.assertDeliverableAccess).toHaveBeenCalledWith(ctx.user, 'selected-project', 'deliverable');
-    expect(prisma.submission.findFirst).toHaveBeenCalledWith({ where: { id: 'submission', deliverableId: 'deliverable' }, select: { fileUrl: true } });
+    expect(prisma.submission.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'submission', deliverableId: 'deliverable' } }));
     expect(graph.resolveLink).toHaveBeenCalledWith('https://tenant.sharepoint.com/submitted', ctx.signal);
   });
 
@@ -101,11 +105,50 @@ describe('PowerPoint submission authorization and snapshot binding', () => {
       expect(preview.items).toEqual([{ where: 'Slide 3', text: '[BLOCKING] No source line.' }, { where: 'Slide 4', text: '[MINOR] Axis unit.' }]);
     });
 
+    const proposal = { ...source, etag, findings: [{ slideIndex: 1, severity: 'MINOR', comment: 'Cite the figure' }] };
+
     it('refuses before asking when the user is not a reviewer, with no remote work', async () => {
       access.assertContextWrite.mockRejectedValue(new Error('reviewer required'));
-      await expect(tool().checkBeforeApproval!({ ...source }, ctx)).rejects.toThrow('reviewer required');
+      await expect(tool().prepareApproval!(proposal, ctx)).rejects.toThrow('reviewer required');
       expect(graph.resolveLink).not.toHaveBeenCalled();
       expect(graph.uploadPptx).not.toHaveBeenCalled();
+    });
+
+    it('fails before asking when the deck was not read in this session', async () => {
+      await expect(tool().prepareApproval!(proposal, ctx)).rejects.toMatchObject({ note: 'Read deck again' });
+    });
+
+    it('fails before asking when the eTag is not the one that was read', async () => {
+      await fetchDeck();
+      await expect(tool().prepareApproval!({ ...proposal, etag: '"other,9"' }, ctx)).rejects.toMatchObject({ note: 'Read deck again' });
+    });
+
+    it('names the CMS deliverable, file, version, date and snapshot, without remote work after the read', async () => {
+      await fetchDeck();
+      graph.resolveLink.mockClear();
+      const out = await tool().prepareApproval!(proposal, ctx);
+      expect(out).toMatchObject({ deliverable: 'Kickoff deck', file: 'Deck v1.pptx', version: 1, submittedAt: '2026-11-10T10:00:00.000Z' });
+      expect(out.snapshot).toMatch(/^[0-9a-f]{12}$/);
+      expect(graph.resolveLink).not.toHaveBeenCalled();
+    });
+
+    it('tells two submissions with the same slide label apart, and notices a replaced link', async () => {
+      await fetchDeck();
+      const v1 = await tool().prepareApproval!(proposal, ctx);
+
+      const second = { deliverableId: 'deliverable', submissionId: 'submission2' };
+      prisma.submission.findFirst.mockResolvedValue(deck({ id: 'submission2', fileName: 'Deck v2.pptx', version: 2, fileUrl: 'https://tenant.sharepoint.com/v2' }));
+      graph.downloadPptx.mockResolvedValue(Buffer.from('second deck content'));
+      await tools.tools.find((item) => item.name === 'fetch_pptx_content')!.run(second, ctx);
+      const v2 = await tool().prepareApproval!({ ...proposal, ...second }, ctx);
+
+      expect([v1.file, v2.file]).toEqual(['Deck v1.pptx', 'Deck v2.pptx']);
+      expect([v1.version, v2.version]).toEqual([1, 2]);
+      expect(v1.snapshot).not.toBe(v2.snapshot);
+      expect(v1.binding).not.toBe(v2.binding);
+
+      prisma.submission.findFirst.mockResolvedValue(deck({ fileUrl: 'https://tenant.sharepoint.com/replaced' }));
+      await expect(tool().prepareApproval!(proposal, ctx)).rejects.toMatchObject({ note: 'Read deck again' }); // link no longer matches the read snapshot
     });
   });
 });
