@@ -54,6 +54,32 @@ test('shows demo submissions in every review state, failures first with a next s
   assert.equal(params(page).get('role'), 'PM');
 });
 
+test('pins the default submission through retry, queue reordering and completion', async t => {
+  const page = await open(t, '?role=PM&tab=review', true);
+  const title = page.getByRole('heading', { name: 'Pricing strategy — final deck', exact: true });
+  await title.waitFor();
+  const assertPinned = async () => {
+    assert.equal(await title.count(), 1);
+    assert.equal(params(page).get('submission'), 'demo-sub-final-slides');
+    assert.equal(params(page).get('role'), 'PM');
+    assert.equal(await submissions(page).filter({ hasText: 'Pricing strategy — final deck' }).getByRole('button').getAttribute('aria-current'), 'true');
+  };
+  await assertPinned();
+  await page.getByRole('button', { name: 'Retry Advanced review', exact: true }).click();
+  // The other failed submission now sorts ahead of the review we just retried.
+  await submissions(page).first().getByText('Partnership proposal — Google Doc', { exact: true }).waitFor();
+  await reviewStatus(page).getByText('Awaiting review.', { exact: true }).waitFor();
+  await assertPinned();
+  await page.clock.fastForward(3_000);
+  await reviewStatus(page).getByText('In progress.', { exact: true }).waitFor();
+  await assertPinned();
+  await page.clock.fastForward(12_000);
+  await reviewStatus(page).getByText('Completed.', { exact: true }).waitFor();
+  await assertPinned();
+  await page.getByRole('region', { name: 'Summary' }).waitFor();
+  assert.equal(await page.getByRole('region', { name: 'Review history' }).getByRole('listitem').count(), 2);
+});
+
 test('filters the queue and explains that only an earlier version was reviewed', async t => {
   const page = await open(t, '?tab=review');
   await page.getByRole('button', { name: 'Not reviewed (6)' }).click();

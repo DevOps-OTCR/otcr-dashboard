@@ -76,6 +76,9 @@ function ProjectReviewPanel({ client, projectId, projectName, canRequest: permit
         (next) => {
           if (!active) return;
           setData(next);
+          // Pin the first default before a retry or poll changes the queue order.
+          // Explicit IDs (including an empty or unavailable link) stay untouched.
+          setSelectedId((current) => current ?? buildQueue(next)[0]?.submission.id ?? null);
           setError('');
           setNow(Date.now());
           timer = window.setTimeout(poll, next.reviews.some((review) => isActive(review.status) || review.powerPoint?.postingInProgress) ? ACTIVE_POLL_MS : IDLE_POLL_MS);
