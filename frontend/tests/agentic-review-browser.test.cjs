@@ -373,12 +373,12 @@ const requestDeck = async (page) => {
 for (const [outcome, title, count] of [
   ['comments_live', 'Comments added to PowerPoint.', 0],
   ['partial', 'Some comments couldn’t be added.', 2],
+  ['already_posted', 'These comments are already in the deck.', 0],
   ['stale', 'The deck changed during review.', 6],
   ['locked', 'The deck is locked for editing.', 6],
-  ['legacy_format', 'This deck uses an older comment format.', 6],
-  ['direct_download', 'This link doesn’t support writing comments back.', 4],
-  ['error', 'Comments couldn’t be uploaded.', 6],
-  ['no_comments_written', 'No comments were added.', 6],
+  ['invalid_anchor', 'A slide or shape these comments point to is no longer in the deck.', 6],
+  ['unsupported_format', 'This deck has comments in an older or unsupported format.', 6],
+  ['error', 'We couldn’t confirm whether the comments were saved.', 6],
 ]) {
   test(`PowerPoint ${outcome} shows the correct action and keeps unposted findings`, async t => {
     const page = await open(t, '?role=PM&tab=review&submission=demo-sub-pptx-native', true);
@@ -391,11 +391,13 @@ for (const [outcome, title, count] of [
     await summary.getByText(`Demo result: ${title}`, { exact: true }).waitFor();
     assert.equal(await summary.getByRole('button', { name: 'Open in PowerPoint' }).isDisabled(), true);
     await summary.getByText('Demo only: no real deck is linked, changed or uploaded. Comments and posting retries are simulated.').waitFor();
-    await summary.getByText(outcome === 'direct_download' ? /Simulated coverage: text only/ : 'Simulated coverage: slide text and visual layout.').waitFor();
-    assert.equal(await summary.getByRole('button', { name: 'Retry posting comments', exact: true }).count(), ['locked', 'error'].includes(outcome) ? 1 : 0);
+    await summary.getByText('Simulated coverage: slide text and visual layout.').waitFor();
+    // An unconfirmed upload may already be in the deck, so its retry asks the PM to check first.
+    const retryName = outcome === 'error' ? 'Comments aren’t in the deck — retry posting' : 'Retry posting comments';
+    assert.equal(await summary.getByRole('button', { name: /retry posting/i }).count(), ['locked', 'error'].includes(outcome) ? 1 : 0);
     if (count) {
       assert.equal(await feedback(page).isVisible(), false);
-      await summary.getByText(`Comments not added to PowerPoint (${count})`, { exact: true }).click();
+      await summary.getByText(outcome === 'error' ? `Findings to check against the deck (${count})` : `Comments not added to PowerPoint (${count})`, { exact: true }).click();
       assert.equal(await feedback(page).getByRole('article').count(), count);
       assert.equal(await feedback(page).getByText(/quoted passage/).count(), 0, 'deck failures must not show Docs anchoring errors');
       if (outcome === 'stale') {
@@ -406,7 +408,12 @@ for (const [outcome, title, count] of [
         await page.getByRole('region', { name: 'Summary' }).getByText('6 comments added to PowerPoint.').waitFor();
         assert.equal(await page.getByRole('region', { name: 'Review history' }).getByRole('listitem').count(), 2);
       } else if (['locked', 'error'].includes(outcome)) {
-        await summary.getByRole('button', { name: 'Retry posting comments', exact: true }).click();
+        if (outcome === 'error') {
+          await summary.getByText('Posting wasn’t confirmed for 6 comments. The findings are available in CMS.').waitFor();
+          await summary.getByText('Some or all of these may already be in the deck. Check before adding any by hand.').waitFor();
+          assert.equal(await summary.getByText(/comments added to PowerPoint/).count(), 0, 'an unconfirmed upload is not reported as zero comments added');
+        }
+        await summary.getByRole('button', { name: retryName, exact: true }).click();
         await summary.getByRole('button', { name: 'Posting comments…' }).waitFor();
         assert.equal(await page.getByRole('button', { name: 'Request another review' }).count(), 0);
         await page.clock.fastForward(2_100);
@@ -538,3 +545,51 @@ test('switching projects waits for current permissions and ignores an older gran
   await releaseContextRead(page);
   await page.getByRole('button', { name: 'Request AI review', exact: true }).waitFor();
 });
+
+// Google Docs posting outcomes from comment_google_doc (#198), chosen with the demo control.
+const requestDocWith = async (page, result) => {
+  await page.getByText('Demo controls', { exact: true }).click();
+  await page.getByRole('combobox', { name: /Posting result of the next Google Docs review/ }).selectOption(result);
+  await requestDeck(page);
+  return page.getByRole('region', { name: 'Summary' });
+};
+
+test('an unconfirmed Google Docs save is flagged to check, never counted as not added', async t => {
+  const page = await open(t, '?role=PM&tab=review&submission=demo-sub-doc-native', true);
+  const summary = await requestDocWith(page, 'uncertain');
+  await summary.getByText('Demo result: 2 comments added to Google Docs. 1 may already be in the document; check before adding it again. 2 couldn’t be added; view them below.', { exact: true }).waitFor();
+  await summary.getByText('Comments to check in Google Docs (3)', { exact: true }).click();
+  await summary.getByText(/Check each of these against the document before adding anything by hand/).waitFor();
+  assert.equal(await feedback(page).getByRole('article').count(), 3);
+  const uncertain = feedback(page).getByText(/^May already be in the document:/);
+  assert.equal(await uncertain.count(), 1);
+  assert.match(await uncertain.innerText(), /Check the document before adding it again, so it isn’t duplicated\./);
+  assert.equal(await feedback(page).getByText(/^Not added: it wasn’t posted to Google Docs\./).count(), 2);
+});
+
+test('a Google Docs comment attached to different text shows a placement warning', async t => {
+  const page = await open(t, '?role=PM&tab=review&submission=demo-sub-doc-native', true);
+  const summary = await requestDocWith(page, 'misplaced');
+  await summary.getByText('Demo result: 5 comments added to Google Docs. 1 is attached to different text; check where it sits.', { exact: true }).waitFor();
+  await summary.getByText('Comments to check in Google Docs (1)', { exact: true }).click();
+  const card = feedback(page).getByRole('article');
+  assert.equal(await card.count(), 1);
+  await card.getByText('Added, but attached to different text than quoted.').waitFor();
+  await card.getByText('Quoted: “Campus demand increased during the pilot.”').waitFor();
+  await card.getByText('Attached to: “This report evaluates the campus fleet market and recommends a partnership strategy.”').waitFor();
+  await card.getByText('Check where this comment sits in the document and move it if needed.').waitFor();
+});
+
+for (const [result, line, count, guidance] of [
+  ['no_access', 'Demo result: 0 comments added to Google Docs. 5 couldn’t be added; view them below.', 5, /share it with the review bot as Commenter/],
+  ['document_changed', 'Demo result: 2 comments added to Google Docs. 3 couldn’t be added; view them below.', 3, /the document changed while comments were being added\. Check that it still applies to the latest version/],
+]) {
+  test(`Google Docs ${result} explains its own next step`, async t => {
+    const page = await open(t, '?role=PM&tab=review&submission=demo-sub-doc-native', true);
+    const summary = await requestDocWith(page, result);
+    await summary.getByText(line, { exact: true }).waitFor();
+    await summary.getByText(`Comments not added to Google Docs (${count})`, { exact: true }).click();
+    assert.equal(await feedback(page).getByText(guidance).count(), count);
+    assert.equal(await feedback(page).getByText(/the quoted passage could not be found/).count(), 0, 'not explained as a missing quote');
+  });
+}

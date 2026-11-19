@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { FlaskConical } from 'lucide-react';
-import { FAILURES, POWERPOINT_RESULTS } from './copy';
+import { FAILURES, GOOGLE_DOCS_RESULTS, POWERPOINT_RESULTS } from './copy';
 import { createMockReviewClient, type MockReviewClient } from './mock-review-client';
 import { buildQueue, countByFilter, filterRows, isActive, type QueueFilter } from './queue';
 import { ReviewDetail, type ReviewActions } from './ReviewDetail';
 import { ReviewQueueList } from './ReviewQueueList';
-import type { PowerPointDemoResult, ReviewFailureKind, ReviewLevel, ReviewQueue } from './types';
+import type { GoogleDocsDemoResult, PowerPointDemoResult, ReviewFailureKind, ReviewLevel, ReviewQueue } from './types';
 
 const ACTIVE_POLL_MS = 1_000;
 const IDLE_POLL_MS = 30_000;
@@ -57,6 +57,7 @@ function ProjectReviewPanel({ client, projectId, projectName, canRequest: permit
   const canRequest = accessState === 'ready' && permitted;
   const [nextFailure, setNextFailure] = useState<ReviewFailureKind | null>(() => client.nextFailure(projectId));
   const [nextPowerPoint, setNextPowerPoint] = useState(() => client.nextPowerPointResult(projectId));
+  const [nextDocs, setNextDocs] = useState(() => client.nextDocsResult(projectId));
   const [data, setData] = useState<ReviewQueue | null>(null);
   const [error, setError] = useState('');
   const [now, setNow] = useState(() => Date.now());
@@ -110,6 +111,7 @@ function ProjectReviewPanel({ client, projectId, projectName, canRequest: permit
   const afterChange = () => {
     setNextFailure(client.nextFailure(projectId));
     setNextPowerPoint(client.nextPowerPointResult(projectId));
+    setNextDocs(client.nextDocsResult(projectId));
     setReloadKey((key) => key + 1);
   };
   const actions: ReviewActions = {
@@ -193,9 +195,21 @@ function ProjectReviewPanel({ client, projectId, projectName, canRequest: permit
               {(Object.keys(POWERPOINT_RESULTS) as PowerPointDemoResult[]).map((result) => <option key={result} value={result}>{POWERPOINT_RESULTS[result].label}</option>)}
             </select>
           </label>
+          <label className="mt-2 flex flex-wrap items-center gap-2">
+            <span>Posting result of the next Google Docs review:</span>
+            <select value={nextDocs ?? ''} onChange={(event) => {
+              const result = (event.target.value || null) as GoogleDocsDemoResult | null;
+              client.setNextDocsResult(projectId, result);
+              setNextDocs(result);
+            }} className="min-w-0 max-w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--card)] px-2 py-1">
+              <option value="">Use sample’s default</option>
+              {(Object.keys(GOOGLE_DOCS_RESULTS) as GoogleDocsDemoResult[]).map((result) => <option key={result} value={result}>{GOOGLE_DOCS_RESULTS[result]}</option>)}
+            </select>
+          </label>
           <p className="mt-2 text-[var(--text-muted)]">
             Google Docs samples: Market sizing starts unreviewed and simulates all comments added; Campus growth starts unreviewed and keeps two comments in CMS;
-            Partnership proposal starts with a sharing failure that you can retry.
+            Partnership proposal starts with a sharing failure that you can retry. Choose a Google Docs posting result above to see unconfirmed saves,
+            a document that changed while posting, view-only access, or a comment attached to the wrong text.
           </p>
           <p className="mt-2 text-[var(--text-muted)]">PowerPoint samples: Campus launch simulates successful comments; Expansion roadmap simulates a changed deck; Partnership options simulates a locked deck. All start unreviewed.</p>
         </details>

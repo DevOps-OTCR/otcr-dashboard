@@ -1,4 +1,5 @@
 import { ExternalLink } from 'lucide-react';
+import { docFallbackCopy } from './copy';
 import type { SeverityFilter } from './feedback';
 import { FeedbackList } from './ReviewFeedback';
 import type { Review, ReviewSubmission } from './types';
@@ -11,8 +12,14 @@ export function GoogleDocFeedback({ review, submission, mocked, filter, onFilter
   filter: SeverityFilter;
   onFilter: (filter: SeverityFilter) => void;
 }) {
-  const unposted = review.comments.filter((comment) => comment.placement !== 'native');
-  const posted = review.comments.length - unposted.length;
+  // Uncertain saves may already be in the document, so they are never counted as "couldn't be added".
+  const fallbacks = review.comments.filter((comment) => comment.placement !== 'native');
+  const uncertain = fallbacks.filter((comment) => docFallbackCopy(comment.fallbackReason).kind === 'uncertain').length;
+  const notAdded = fallbacks.length - uncertain;
+  const misplaced = review.comments.filter((comment) => comment.placement === 'native' && comment.anchorVerified === false).length;
+  const posted = review.comments.length - fallbacks.length;
+  const toCheck = review.comments.filter((comment) => comment.placement !== 'native' || comment.anchorVerified === false);
+  const onlyNotAdded = uncertain === 0 && misplaced === 0;
   const buttonClass = 'inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)]';
 
   return (
@@ -21,7 +28,9 @@ export function GoogleDocFeedback({ review, submission, mocked, filter, onFilter
       <p className="text-sm leading-relaxed">{review.summary?.overview}</p>
       <p className="text-sm font-medium">
         {mocked && 'Demo result: '}{posted} {posted === 1 ? 'comment' : 'comments'} added to Google Docs.
-        {unposted.length > 0 && ` ${unposted.length} couldn’t be added; view them below.`}
+        {misplaced > 0 && ` ${misplaced} ${misplaced === 1 ? 'is' : 'are'} attached to different text; check where ${misplaced === 1 ? 'it sits' : 'they sit'}.`}
+        {uncertain > 0 && ` ${uncertain} may already be in the document; check before adding ${uncertain === 1 ? 'it' : 'them'} again.`}
+        {notAdded > 0 && ` ${notAdded} couldn’t be added; view them below.`}
       </p>
       {mocked ? (
         <button type="button" disabled className={`${buttonClass} cursor-not-allowed opacity-60`}>
@@ -33,12 +42,18 @@ export function GoogleDocFeedback({ review, submission, mocked, filter, onFilter
           <span className="sr-only">(opens in a new tab)</span>
         </a>
       )}
-      {unposted.length > 0 && (
+      {toCheck.length > 0 && (
         <details key={review.id} className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-4">
-          <summary className="cursor-pointer text-sm font-semibold">Comments not added to Google Docs ({unposted.length})</summary>
+          <summary className="cursor-pointer text-sm font-semibold">
+            {onlyNotAdded ? `Comments not added to Google Docs (${toCheck.length})` : `Comments to check in Google Docs (${toCheck.length})`}
+          </summary>
           <div className="mt-3 space-y-3">
-            <p className="text-sm text-[var(--text-muted)]">The review finished. These comments are available here because they couldn’t be attached to the document.</p>
-            <FeedbackList review={{ ...review, comments: unposted }} submission={submission} filter={filter} onFilter={onFilter} />
+            <p className="text-sm text-[var(--text-muted)]">
+              {onlyNotAdded
+                ? 'The review finished. These comments are available here because they couldn’t be attached to the document.'
+                : 'The review finished. Check each of these against the document before adding anything by hand, so no comment is duplicated.'}
+            </p>
+            <FeedbackList review={{ ...review, comments: toCheck }} submission={submission} filter={filter} onFilter={onFilter} />
           </div>
         </details>
       )}

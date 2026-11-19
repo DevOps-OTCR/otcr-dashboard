@@ -1,7 +1,7 @@
 import { Badge } from '@/components/ui/Badge';
-import { SEVERITIES } from './copy';
+import { docFallbackCopy, SEVERITIES } from './copy';
 import { countBySeverity, groupComments, locationLabel, SEVERITY_ORDER, topIssues, type SeverityFilter } from './feedback';
-import type { Review, ReviewSubmission, Severity } from './types';
+import type { Review, ReviewComment, ReviewSubmission, Severity } from './types';
 
 const SEVERITY_VARIANT = { BLOCKING: 'danger', MATERIAL: 'warning', MINOR: 'default' } as const;
 
@@ -14,6 +14,37 @@ export function SeverityBadge({ severity }: { severity: Severity }) {
 }
 
 const commentDomId = (id: string) => `feedback-${id}`;
+
+/**
+ * Google Docs posting notes: why a comment isn't (or may not be) in the document, or that Google
+ * attached a posted comment to different text than the quote. Deck comments carry no reason.
+ */
+function PlacementNote({ comment }: { comment: ReviewComment }) {
+  const quote = comment.quote && <blockquote className="break-words border-l-2 border-[var(--border)] pl-3 text-[var(--text-muted)]">“{comment.quote}”</blockquote>;
+  if (comment.placement === 'fallback' && comment.fallbackReason) {
+    const copy = docFallbackCopy(comment.fallbackReason);
+    return (
+      <>
+        {quote}
+        <p className={copy.kind === 'uncertain' ? 'text-xs font-medium text-[var(--warning)]' : 'text-xs text-[var(--text-muted)]'}>
+          {copy.kind === 'uncertain' ? 'May already be in the document: ' : 'Not added: '}
+          {copy.explanation} {copy.nextStep}
+        </p>
+      </>
+    );
+  }
+  if (comment.placement === 'native' && comment.anchorVerified === false) {
+    return (
+      <div className="space-y-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--warning)_30%,transparent)] bg-[var(--warning-bg)] p-2 text-xs text-[var(--warning)]">
+        <p className="font-semibold">Added, but attached to different text than quoted.</p>
+        {comment.quote && <p className="break-words">Quoted: “{comment.quote}”</p>}
+        {comment.anchoredText && <p className="break-words">Attached to: “{comment.anchoredText}”</p>}
+        <p>Check where this comment sits in the document and move it if needed.</p>
+      </div>
+    );
+  }
+  return null;
+}
 
 /** Scrolls to a comment card and moves focus to it, so keyboard users land there too. */
 export function focusComment(id: string) {
@@ -127,14 +158,7 @@ export function FeedbackList({ review, submission, filter, onFilter }: {
                   <SeverityBadge severity={comment.severity} />
                   <span className="text-xs text-[var(--text-muted)]">{SEVERITIES[comment.severity].action}</span>
                 </div>
-                {comment.placement === 'fallback' && comment.fallbackReason && (
-                  <>
-                    {comment.quote && <blockquote className="break-words border-l-2 border-[var(--border)] pl-3 text-[var(--text-muted)]">“{comment.quote}”</blockquote>}
-                    <p className="text-xs text-[var(--text-muted)]">
-                      Not added: {comment.fallbackReason === 'ambiguous' ? 'this passage appears more than once, so the comment could not be attached reliably.' : 'the quoted passage could not be found in the document.'}
-                    </p>
-                  </>
-                )}
+                <PlacementNote comment={comment} />
                 <p className="font-medium">{comment.issue}</p>
                 <dl className="space-y-1">
                   <div>

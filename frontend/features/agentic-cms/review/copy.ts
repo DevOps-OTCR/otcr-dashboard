@@ -1,14 +1,111 @@
-import type { PowerPointDemoResult, ReviewFailureKind, ReviewLevel, ReviewStatus, Severity, SubmissionKind } from './types';
+import type { DocFallbackReason, GoogleDocsDemoResult, PowerPointDemoResult, ReviewFailureKind, ReviewLevel, ReviewStatus, Severity, SubmissionKind } from './types';
 
-export const POWERPOINT_RESULTS: Record<PowerPointDemoResult, { label: string; title: string; nextStep: string }> = {
-  comments_live: { label: 'All comments added', title: 'Comments added to PowerPoint.', nextStep: 'Read the feedback in the presentation.' },
-  partial: { label: 'Some comments not added', title: 'Some comments couldn’t be added.', nextStep: 'Read the posted comments in PowerPoint and the remaining feedback below.' },
-  stale: { label: 'Deck changed during review', title: 'The deck changed during review.', nextStep: 'These findings refer to an earlier snapshot. Review the latest version before applying them.' },
-  locked: { label: 'Deck locked for editing', title: 'The deck is locked for editing.', nextStep: 'Close the deck in other editing sessions, wait 1–2 minutes, then retry posting. Your findings are kept below.' },
-  legacy_format: { label: 'Older comment format', title: 'This deck uses an older comment format.', nextStep: 'Native comments weren’t added. Use the slide feedback below or submit a compatible deck.' },
-  direct_download: { label: 'Direct download link (text only)', title: 'This link doesn’t support writing comments back.', nextStep: 'Use the feedback below. A OneDrive or SharePoint share link is needed to add native comments.' },
-  error: { label: 'Comment upload error', title: 'Comments couldn’t be uploaded.', nextStep: 'Your review findings are kept below. Try posting again.' },
-  no_comments_written: { label: 'No matching slide references', title: 'No comments were added.', nextStep: 'The slide references didn’t match the deck. Request another review or use the findings below.' },
+export type PowerPointResultCopy = {
+  label: string;
+  title: string;
+  nextStep: string;
+  /** Which comments are in the deck: 'unknown' when an upload was not confirmed either way. */
+  inDeck: 'all' | 'some' | 'none' | 'unknown';
+  /** 'check_first': the earlier write may have succeeded, so retry only after checking the deck. */
+  retry: 'none' | 'retry' | 'check_first';
+};
+
+export const POWERPOINT_RESULTS: Record<PowerPointDemoResult, PowerPointResultCopy> = {
+  comments_live: { label: 'All comments added', title: 'Comments added to PowerPoint.', nextStep: 'Read the feedback in the presentation.', inDeck: 'all', retry: 'none' },
+  partial: { label: 'Some comments not added', title: 'Some comments couldn’t be added.', nextStep: 'Read the posted comments in PowerPoint and the remaining feedback below.', inDeck: 'some', retry: 'none' },
+  stale: { label: 'Deck changed during review', title: 'The deck changed during review.', nextStep: 'These findings refer to an earlier snapshot. Review the latest version before applying them.', inDeck: 'none', retry: 'none' },
+  locked: { label: 'Deck locked for editing', title: 'The deck is locked for editing.', nextStep: 'Close the deck in other editing sessions, wait 1–2 minutes, then retry posting. Your findings are kept below.', inDeck: 'none', retry: 'retry' },
+  invalid_anchor: {
+    label: 'Slide or shape no longer in the deck',
+    title: 'A slide or shape these comments point to is no longer in the deck.',
+    nextStep: 'No comments were posted. Review the latest version so the comments point to slides that exist; the findings are kept below.',
+    inDeck: 'none',
+    retry: 'none',
+  },
+  unsupported_format: {
+    label: 'Unsupported comment format',
+    title: 'This deck has comments in an older or unsupported format.',
+    nextStep: 'Nothing in the deck was changed and no comments were posted. Apply the findings below by hand.',
+    inDeck: 'none',
+    retry: 'none',
+  },
+  already_posted: {
+    label: 'Comments already in the deck',
+    title: 'These comments are already in the deck.',
+    nextStep: 'No duplicates were added. Open the deck to read them.',
+    inDeck: 'all',
+    retry: 'none',
+  },
+  error: {
+    label: 'Upload not confirmed',
+    title: 'We couldn’t confirm whether the comments were saved.',
+    nextStep: 'Open the deck and look for the comments first. Retry posting only if they aren’t there, so they aren’t added twice.',
+    inDeck: 'unknown',
+    retry: 'check_first',
+  },
+};
+
+const UNKNOWN_POWERPOINT_RESULT: PowerPointResultCopy = {
+  label: 'Unrecognized result',
+  title: 'Comment posting returned a result this page doesn’t recognize.',
+  nextStep: 'Open the deck to check which comments were added, and use the findings below for any that are missing.',
+  inDeck: 'unknown',
+  retry: 'none',
+};
+
+/** Never undefined: an outcome added on the server later gets cautious generic copy. */
+export function powerPointResultCopy(outcome: string): PowerPointResultCopy {
+  return Object.prototype.hasOwnProperty.call(POWERPOINT_RESULTS, outcome) ? POWERPOINT_RESULTS[outcome as PowerPointDemoResult] : UNKNOWN_POWERPOINT_RESULT;
+}
+
+export type DocFallbackCopy = {
+  /** 'uncertain': Google may already have saved the comment, so it must not be re-added blindly. */
+  kind: 'not_added' | 'uncertain';
+  explanation: string;
+  nextStep: string;
+};
+
+// The first two keep the wording Stefan's demo and tests already use.
+export const DOC_FALLBACKS: Record<DocFallbackReason, DocFallbackCopy> = {
+  ambiguous: { kind: 'not_added', explanation: 'this passage appears more than once, so the comment could not be attached reliably.', nextStep: 'Add it by hand at the right place.' },
+  'not-found': { kind: 'not_added', explanation: 'the quoted passage could not be found in the document.', nextStep: 'Add it by hand next to the passage it refers to.' },
+  'no-comment-access': {
+    kind: 'not_added',
+    explanation: 'the review bot can view this document but not comment on it.',
+    nextStep: 'Ask the owner to share it with the review bot as Commenter, then request another review, or add the comment by hand.',
+  },
+  'document-changed': {
+    kind: 'not_added',
+    explanation: 'the document changed while comments were being added.',
+    nextStep: 'Check that it still applies to the latest version, or request another review.',
+  },
+  'comment-failed': { kind: 'not_added', explanation: 'it wasn’t posted to Google Docs.', nextStep: 'Add it by hand, or request another review to post it.' },
+  'comment-uncertain': {
+    kind: 'uncertain',
+    explanation: 'Google may already have saved this comment, but didn’t confirm it.',
+    nextStep: 'Check the document before adding it again, so it isn’t duplicated.',
+  },
+};
+
+const UNKNOWN_DOC_FALLBACK: DocFallbackCopy = {
+  kind: 'uncertain',
+  explanation: 'Google Docs returned a result this page doesn’t recognize.',
+  nextStep: 'Check the document before adding this comment by hand.',
+};
+
+/** Never undefined; an unrecognized reason is treated as uncertain so nothing is re-added blindly. */
+export function docFallbackCopy(reason: string | undefined): DocFallbackCopy {
+  return reason && Object.prototype.hasOwnProperty.call(DOC_FALLBACKS, reason) ? DOC_FALLBACKS[reason as DocFallbackReason] : UNKNOWN_DOC_FALLBACK;
+}
+
+/** Demo controls for simulated Google Docs posting; each mirrors how #198 ends a batch. */
+export const GOOGLE_DOCS_RESULTS: Record<GoogleDocsDemoResult, string> = {
+  all_native: 'All comments added',
+  mixed: 'Two quotes not found or repeated',
+  misplaced: 'One comment attached to different text',
+  uncertain: 'One save unconfirmed, rest not attempted',
+  document_changed: 'Document changed during posting',
+  no_access: 'Bot has view-only access',
 };
 
 export const LEVELS: Record<ReviewLevel, { label: string; tagline: string; checks: string; estimate: string }> = {

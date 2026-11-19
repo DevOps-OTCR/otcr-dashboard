@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ExternalLink } from 'lucide-react';
-import { POWERPOINT_RESULTS } from './copy';
+import { POWERPOINT_RESULTS, powerPointResultCopy } from './copy';
 import type { SeverityFilter } from './feedback';
 import { FeedbackList } from './ReviewFeedback';
 import type { Review, ReviewSubmission } from './types';
@@ -21,7 +21,10 @@ export function PowerPointFeedback({ review, submission, mocked, canRetry, onRet
   if (!result) return null;
   const unposted = review.comments.filter((comment) => comment.placement !== 'native');
   const posted = review.comments.length - unposted.length;
-  const copy = POWERPOINT_RESULTS[result.outcome === 'comments_live' && unposted.length ? 'partial' : result.outcome];
+  // Never undefined: unrecognized outcomes from the API get cautious generic copy.
+  const copy = result.outcome === 'comments_live' && unposted.length ? POWERPOINT_RESULTS.partial : powerPointResultCopy(result.outcome);
+  // An unconfirmed upload may have saved the comments, so they are not reported as missing.
+  const unconfirmed = copy.inDeck === 'unknown';
   const busy = startingRetry || result.postingInProgress;
   const retryPosting = async () => {
     setError('');
@@ -38,7 +41,9 @@ export function PowerPointFeedback({ review, submission, mocked, canRetry, onRet
       <p className="text-sm leading-relaxed">{review.summary?.overview}</p>
       <div className="space-y-1 text-sm" role="status">
         <p className="font-semibold">{mocked && 'Demo result: '}{busy ? 'Posting comments…' : copy.title}</p>
-        {!busy && <p>{posted} comments added to PowerPoint.{unposted.length > 0 && ` ${unposted.length} available in CMS.`}</p>}
+        {!busy && (unconfirmed
+          ? <p>Posting wasn’t confirmed for {unposted.length} comments. The findings are available in CMS.</p>
+          : <p>{posted} comments added to PowerPoint.{unposted.length > 0 && ` ${unposted.length} available in CMS.`}</p>)}
         <p>{copy.nextStep}</p>
       </div>
       {mocked ? (
@@ -53,16 +58,19 @@ export function PowerPointFeedback({ review, submission, mocked, canRetry, onRet
       )}
       {unposted.length > 0 && (
         <details key={review.id} className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-4">
-          <summary className="cursor-pointer text-sm font-semibold">Comments not added to PowerPoint ({unposted.length})</summary>
+          <summary className="cursor-pointer text-sm font-semibold">
+            {unconfirmed ? `Findings to check against the deck (${unposted.length})` : `Comments not added to PowerPoint (${unposted.length})`}
+          </summary>
           <div className="mt-3 space-y-3">
             {result.outcome === 'stale' && <p className="text-sm font-medium">Feedback from an earlier deck snapshot; it may not match the latest version.</p>}
+            {unconfirmed && <p className="text-sm font-medium">Some or all of these may already be in the deck. Check before adding any by hand.</p>}
             <FeedbackList review={{ ...review, comments: unposted }} submission={submission} filter={filter} onFilter={onFilter} />
           </div>
         </details>
       )}
-      {canRetry && ['locked', 'error'].includes(result.outcome) && (
+      {canRetry && copy.retry !== 'none' && (
         <button type="button" disabled={busy} onClick={() => void retryPosting()} className="rounded border border-[var(--border)] px-3 py-2 text-sm font-medium disabled:opacity-60">
-          {busy ? 'Posting comments…' : 'Retry posting comments'}
+          {busy ? 'Posting comments…' : copy.retry === 'check_first' ? 'Comments aren’t in the deck — retry posting' : 'Retry posting comments'}
         </button>
       )}
       {error && <p role="alert" className="text-sm text-[var(--danger)]">{error}</p>}

@@ -278,10 +278,30 @@ Review completion does not approve a deliverable; final approval stays human.
 
 Ten Northwind Bikes samples belong to the first accessible project; others stay empty.
 They include Docs drafts, sharing failure, and successful, changed and locked decks.
-Demo controls also simulate partial posting, older comment formats, direct links,
-upload errors and unmatched slide references. Locked/error cases retry posting;
-changed decks need a new review. Switching preserves project-scoped activity.
-All results, coverage, snapshots and links are fake; reload/sign-out resets state.
+Demo controls also simulate the posting outcomes of #198's tools. Switching
+preserves project-scoped activity. All results, coverage, snapshots and links are
+fake; reload/sign-out resets state.
+
+PowerPoint outcomes follow `add_pptx_comments`. The PowerPoint and Docs results
+are listed in `review/copy.ts`; unrecognised values get cautious generic wording:
+
+| Outcome | Comments in deck | Next step |
+| --- | --- | --- |
+| `comments_live` / `already_posted` | All | Open the deck |
+| `stale`, `invalid_anchor` | None | Review the latest version |
+| `unsupported_format` | None | Apply findings by hand |
+| `locked` | None | Close the deck, then retry posting |
+| `error` | Unconfirmed | Check the deck, retry only if comments are missing |
+
+A posting retry changes only which comments are in the deck; findings, coverage
+and comment IDs stay fixed. Text-only coverage (slide rendering unavailable) is
+not simulated.
+
+Google Docs results follow `comment_google_doc`'s batch rules. A changed document
+or missing comment access stops the batch with that reason. An unconfirmed save
+(`comment-uncertain`) is listed as "may already be in the document" and is never
+counted as not added. The comments after it were not attempted (`comment-failed`).
+A posted comment with `anchorVerified: false` shows the quoted and attached text.
 
 ### Local demo and checks
 

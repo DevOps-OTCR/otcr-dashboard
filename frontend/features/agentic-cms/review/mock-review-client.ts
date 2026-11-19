@@ -6,10 +6,12 @@
 // no timers to cancel: the UI polls list(), as it will against the real API.
 // State lives in memory and resets when the page reloads.
 
-import { FAILURES } from './copy';
+import { FAILURES, powerPointResultCopy } from './copy';
 import { DEMO_FEEDBACK, DEMO_SEED, DOC_ALL_NATIVE, demoSubmissions } from './mock-fixtures';
 import { MAX_FOCUS_NOTE } from './types';
 import type {
+  DocFallbackReason,
+  GoogleDocsDemoResult,
   RequestReviewInput,
   Review,
   ReviewClient,
@@ -64,7 +66,29 @@ type Run = {
   cmsFeedback?: boolean;
   powerPointResult?: PowerPointDemoResult;
   postingRetry?: { at: number; result: PowerPointDemoResult };
+  docsResult?: GoogleDocsDemoResult;
 };
+
+type DocPlacement = Pick<ReviewComment, 'placement' | 'fallbackReason' | 'anchorVerified' | 'anchoredText'>;
+
+/**
+ * Simulated comment_google_doc results for comment `index` of `count`, following #198's batch
+ * rules: a changed document or missing comment access stops the batch with that reason, and an
+ * unconfirmed save marks that comment uncertain and leaves the rest unattempted (comment-failed).
+ */
+export function docPlacement(result: GoogleDocsDemoResult, index: number, count: number, quotes: (string | undefined)[]): DocPlacement {
+  const native: DocPlacement = { placement: 'native', anchorVerified: true, anchoredText: quotes[index] ?? null };
+  const fallback = (reason: DocFallbackReason): DocPlacement => ({ placement: 'fallback', fallbackReason: reason, anchorVerified: null, anchoredText: null });
+  switch (result) {
+    case 'all_native': return native;
+    case 'mixed': return index === 1 ? fallback('ambiguous') : index === count - 1 ? fallback('not-found') : native;
+    // Google attached the second comment to the third comment's passage.
+    case 'misplaced': return index === 1 ? { ...native, anchorVerified: false, anchoredText: quotes[2] ?? 'a different passage' } : native;
+    case 'uncertain': return index < 2 ? native : index === 2 ? fallback('comment-uncertain') : fallback('comment-failed');
+    case 'document_changed': return index < 2 ? native : fallback('document-changed');
+    case 'no_access': return fallback('no-comment-access');
+  }
+}
 
 export type MockReviewClient = ReviewClient & {
   /** Demo control: make the next requested or retried review fail with this kind. */
@@ -72,6 +96,8 @@ export type MockReviewClient = ReviewClient & {
   nextFailure(projectId: string): ReviewFailureKind | null;
   setNextPowerPointResult(projectId: string, result: PowerPointDemoResult | null): void;
   nextPowerPointResult(projectId: string): PowerPointDemoResult | null;
+  setNextDocsResult(projectId: string, result: GoogleDocsDemoResult | null): void;
+  nextDocsResult(projectId: string): GoogleDocsDemoResult | null;
   retryPowerPointPosting(projectId: string, reviewId: string): Promise<Review>;
 };
 
@@ -90,6 +116,8 @@ type ProjectReviewClient = {
   nextFailure(): ReviewFailureKind | null;
   setNextPowerPointResult(result: PowerPointDemoResult | null): void;
   nextPowerPointResult(): PowerPointDemoResult | null;
+  setNextDocsResult(result: GoogleDocsDemoResult | null): void;
+  nextDocsResult(): GoogleDocsDemoResult | null;
   retryPowerPointPosting(reviewId: string): Promise<Review>;
 };
 
@@ -115,6 +143,8 @@ export function createMockReviewClient(options: { now?: () => number; viewerName
     nextFailure: (projectId) => project(projectId).nextFailure(),
     setNextPowerPointResult: (projectId, result) => project(projectId).setNextPowerPointResult(result),
     nextPowerPointResult: (projectId) => project(projectId).nextPowerPointResult(),
+    setNextDocsResult: (projectId, result) => project(projectId).setNextDocsResult(result),
+    nextDocsResult: (projectId) => project(projectId).nextDocsResult(),
   };
 }
 
@@ -128,6 +158,7 @@ function createProjectReviewClient(options: { now?: () => number; viewerName?: s
   let counter = 0;
   let pendingFailure: ReviewFailureKind | null = null;
   let pendingPowerPointResult: PowerPointDemoResult | null = null;
+  let pendingDocsResult: GoogleDocsDemoResult | null = null;
 
   const newId = () => `${options.projectId}:demo-review-${++counter}`;
   const submissionById = (id: string) => submissions.find((s) => s.id === id);
@@ -188,31 +219,31 @@ function createProjectReviewClient(options: { now?: () => number; viewerName?: s
     const feedback = DEMO_FEEDBACK[submission.format][run.level];
     const postingInProgress = Boolean(run.postingRetry && now() - run.postingRetry.at < POSTING_RETRY_MS);
     const deckResult = !postingInProgress && run.postingRetry ? run.postingRetry.result : run.powerPointResult ?? 'comments_live';
+    // Coverage is fixed when the review completes; a posting retry changes only which comments
+    // are in the deck, never the findings or their IDs. Text-only review happens when slide
+    // rendering is unavailable, which this demo does not simulate.
+    const inspection = 'visual' as 'visual' | 'text_only';
     const powerPoint: Review['powerPoint'] = submission.format === 'slides' && !run.cmsFeedback ? {
       outcome: deckResult === 'partial' ? 'comments_live' : deckResult,
-      inspection: deckResult === 'direct_download' ? 'text_only' : 'visual',
+      inspection,
       reviewedETag: `demo-etag-${run.id}`,
       postingInProgress,
     } : undefined;
     const revisionId = mockRevisionId(run.submissionId, run.submissionVersion);
-    const sourceComments = feedback.comments.filter((comment) => powerPoint?.inspection !== 'text_only' || !comment.requiresVisual);
-    const comments: ReviewComment[] = sourceComments.map((comment, index) => {
-      const document = submission.format === 'document';
-      const fallback = document && !DOC_ALL_NATIVE.includes(submission.id) && (index === 1 || index === sourceComments.length - 1);
-      return {
-        ...comment,
-        id: `${run.id}-c${index + 1}`,
-        level: run.level,
-        revisionId,
-        ...(document ? {
-          placement: fallback ? 'fallback' as const : 'native' as const,
-          fallbackReason: fallback ? (index === 1 ? 'ambiguous' as const : 'not-found' as const) : undefined,
-        } : {}),
-        ...(powerPoint ? {
-          placement: deckResult === 'comments_live' || (deckResult === 'partial' && index < sourceComments.length - 2) ? 'native' as const : 'fallback' as const,
-        } : {}),
-      };
-    });
+    const sourceComments = feedback.comments.filter((comment) => inspection === 'visual' || !comment.requiresVisual);
+    const docsResult = run.docsResult ?? (DOC_ALL_NATIVE.includes(submission.id) ? 'all_native' : 'mixed');
+    const quotes = sourceComments.map((comment) => comment.quote);
+    const inDeck = powerPointResultCopy(deckResult).inDeck;
+    const comments: ReviewComment[] = sourceComments.map((comment, index) => ({
+      ...comment,
+      id: `${run.id}-c${index + 1}`,
+      level: run.level,
+      revisionId,
+      ...(submission.format === 'document' ? docPlacement(docsResult, index, sourceComments.length, quotes) : {}),
+      ...(powerPoint ? {
+        placement: inDeck === 'all' || (inDeck === 'some' && index < sourceComments.length - 2) ? 'native' as const : 'fallback' as const,
+      } : {}),
+    }));
     const counts: Record<Severity, number> = { BLOCKING: 0, MATERIAL: 0, MINOR: 0 };
     for (const comment of comments) counts[comment.severity] += 1;
     return {
@@ -241,15 +272,18 @@ function createProjectReviewClient(options: { now?: () => number; viewerName?: s
 
   const start = (run: Pick<Run, 'submissionId' | 'submissionVersion' | 'level' | 'focusNote' | 'retryOf'>): Review => {
     const slides = submissionById(run.submissionId)?.format === 'slides';
+    const document = submissionById(run.submissionId)?.format === 'document';
     const firstRun = !runs.some((existing) => existing.submissionId === run.submissionId);
     const defaultResult = firstRun && run.submissionId === 'demo-sub-pptx-stale' ? 'stale'
       : firstRun && run.submissionId === 'demo-sub-pptx-locked' ? 'locked' : 'comments_live';
     const created: Run = {
       ...run, id: newId(), requestedBy: viewerName, requestedAt: now(), failure: pendingFailure ?? undefined,
       powerPointResult: slides ? pendingPowerPointResult ?? defaultResult : undefined,
+      docsResult: document ? pendingDocsResult ?? undefined : undefined,
     };
     pendingFailure = null;
     if (slides) pendingPowerPointResult = null;
+    if (document) pendingDocsResult = null;
     runs.push(created);
     return toReview(created);
   };
@@ -298,10 +332,16 @@ function createProjectReviewClient(options: { now?: () => number; viewerName?: s
     nextPowerPointResult() {
       return pendingPowerPointResult;
     },
+    setNextDocsResult(result) {
+      pendingDocsResult = result;
+    },
+    nextDocsResult() {
+      return pendingDocsResult;
+    },
     async retryPowerPointPosting(reviewId) {
       const run = runs.find((item) => item.id === reviewId);
       const review = run && toReview(run);
-      if (!run || !review?.powerPoint || review.status !== 'COMPLETED' || !['locked', 'error'].includes(review.powerPoint.outcome)) {
+      if (!run || !review?.powerPoint || review.status !== 'COMPLETED' || powerPointResultCopy(review.powerPoint.outcome).retry === 'none') {
         throw new Error('Only a locked deck or posting error can retry posting.');
       }
       if (runs.some((item) => item.submissionId === run.submissionId && isActive(item))) {

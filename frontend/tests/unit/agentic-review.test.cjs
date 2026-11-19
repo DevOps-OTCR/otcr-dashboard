@@ -363,8 +363,9 @@ test('Google Docs access retry keeps the submission link and preserves the faile
 });
 
 
-test('PowerPoint outcomes preserve completed findings and distinguish visual and text-only coverage', async () => {
-  for (const outcome of ['comments_live', 'partial', 'stale', 'locked', 'legacy_format', 'direct_download', 'error', 'no_comments_written']) {
+test('PowerPoint outcomes follow the #198 writer and keep every completed finding', async () => {
+  const inDeck = { comments_live: 6, partial: 4, already_posted: 6, stale: 0, locked: 0, invalid_anchor: 0, unsupported_format: 0, error: 0 };
+  for (const [outcome, native] of Object.entries(inDeck)) {
     const { client, advance } = setup();
     client.setNextPowerPointResult('p1', outcome);
     await client.request({ projectId: 'p1', submissionId: 'demo-sub-pptx-native', level: 'BASIC' });
@@ -374,15 +375,29 @@ test('PowerPoint outcomes preserve completed findings and distinguish visual and
     assert.equal(review.status, 'COMPLETED', outcome);
     assert.equal(review.failure, undefined);
     assert.equal(review.powerPoint.outcome, outcome === 'partial' ? 'comments_live' : outcome);
-    assert.equal(review.powerPoint.inspection, outcome === 'direct_download' ? 'text_only' : 'visual');
-    const native = review.comments.filter(c => c.placement === 'native');
-    assert.equal(native.length, outcome === 'comments_live' ? 6 : outcome === 'partial' ? 4 : 0);
-    assert.equal(review.comments.length, outcome === 'direct_download' ? 4 : 6);
-    if (outcome === 'direct_download') {
-      assert.ok(review.comments.every(c => !c.requiresVisual));
-      assert.match(review.summary.notCheckable[0], /visual layout.*not assessed/);
-    }
+    assert.equal(review.powerPoint.inspection, 'visual', 'coverage does not depend on how posting went');
+    assert.equal(review.comments.length, 6, outcome);
+    assert.equal(review.comments.filter(c => c.placement === 'native').length, native, outcome);
+    assert.ok(review.comments.every(c => !c.fallbackReason), 'deck comments carry no Google Docs reasons');
     assert.ok(review.powerPoint.reviewedETag.startsWith('demo-etag-'));
+  }
+});
+
+test('a posting retry never changes the findings, coverage or comment IDs', async () => {
+  for (const next of ['comments_live', 'partial', 'already_posted', 'locked', 'invalid_anchor', 'unsupported_format', 'error', 'stale']) {
+    const { client, advance } = setup();
+    client.setNextPowerPointResult('p1', 'error');
+    await client.request({ projectId: 'p1', submissionId: 'demo-sub-pptx-native', level: 'BASIC' });
+    advance(duration('BASIC', 'slides'));
+    const before = await latestFor(client, 'demo-sub-pptx-native');
+    client.setNextPowerPointResult('p1', next);
+    await client.retryPowerPointPosting('p1', before.id);
+    advance(2_000);
+    const after = await latestFor(client, 'demo-sub-pptx-native');
+    assert.equal(after.powerPoint.outcome, next === 'partial' ? 'comments_live' : next, next);
+    assert.equal(after.powerPoint.inspection, before.powerPoint.inspection);
+    assert.deepEqual(plain(after.summary.counts), plain(before.summary.counts));
+    assert.deepEqual(plain(after.comments.map(c => [c.id, c.issue, c.severity])), plain(before.comments.map(c => [c.id, c.issue, c.severity])), next);
   }
 });
 
@@ -428,9 +443,9 @@ test('a stale deck needs a new review and a new snapshot rather than posting old
 
 test('Docs do not consume the next PowerPoint result and cannot retry deck posting', async () => {
   const { client, advance } = setup();
-  client.setNextPowerPointResult('p1', 'legacy_format');
+  client.setNextPowerPointResult('p1', 'unsupported_format');
   await client.request({ projectId: 'p1', submissionId: 'demo-sub-doc-native', level: 'BASIC' });
-  assert.equal(client.nextPowerPointResult('p1'), 'legacy_format');
+  assert.equal(client.nextPowerPointResult('p1'), 'unsupported_format');
   advance(duration('BASIC', 'document'));
   const doc = await latestFor(client, 'demo-sub-doc-native');
   assert.equal(doc.powerPoint, undefined);
@@ -481,4 +496,84 @@ test('demo controls are project-scoped and cross-project failures do not consume
   assert.equal(client.nextPowerPointResult('p2'), 'stale');
   assert.equal(client.nextFailure('p1'), null);
   assert.equal(client.nextPowerPointResult('p1'), null);
+});
+
+// Google Docs posting outcomes from comment_google_doc (#198), simulated per batch.
+const docsRun = async (result, submissionId = 'demo-sub-doc-native') => {
+  const { client, advance } = setup();
+  client.setNextDocsResult('p1', result);
+  await client.request({ projectId: 'p1', submissionId, level: 'BASIC' });
+  assert.equal(client.nextDocsResult('p1'), null, 'a planned Docs result is used once');
+  advance(duration('BASIC', 'document'));
+  const review = await latestFor(client, submissionId);
+  assert.equal(review.status, 'COMPLETED');
+  return review.comments.map(c => c.placement === 'native' ? (c.anchorVerified === false ? 'misplaced' : 'native') : c.fallbackReason);
+};
+
+test('Docs batches end the way #198 ends them', async () => {
+  assert.deepEqual(plain(await docsRun('all_native')), ['native', 'native', 'native', 'native', 'native']);
+  assert.deepEqual(plain(await docsRun('mixed')), ['native', 'ambiguous', 'native', 'native', 'not-found']);
+  assert.deepEqual(plain(await docsRun('misplaced')), ['native', 'misplaced', 'native', 'native', 'native']);
+  // An unconfirmed save stops the batch; later comments were never attempted.
+  assert.deepEqual(plain(await docsRun('uncertain')), ['native', 'native', 'comment-uncertain', 'comment-failed', 'comment-failed']);
+  // A changed document or missing access stops every remaining comment with the same reason.
+  assert.deepEqual(plain(await docsRun('document_changed')), ['native', 'native', 'document-changed', 'document-changed', 'document-changed']);
+  assert.deepEqual(plain(await docsRun('no_access')), Array(5).fill('no-comment-access'));
+});
+
+test('a misplaced Docs comment reports the text Google attached it to', async () => {
+  const { client, advance } = setup();
+  client.setNextDocsResult('p1', 'misplaced');
+  await client.request({ projectId: 'p1', submissionId: 'demo-sub-doc-native', level: 'BASIC' });
+  advance(duration('BASIC', 'document'));
+  const [, misplaced, third] = (await latestFor(client, 'demo-sub-doc-native')).comments;
+  assert.equal(misplaced.anchorVerified, false);
+  assert.equal(misplaced.anchoredText, third.quote);
+  assert.notEqual(misplaced.anchoredText, misplaced.quote);
+  assert.equal(third.anchorVerified, true);
+  assert.equal(third.anchoredText, third.quote);
+});
+
+test('the Docs demo result applies only to documents, and sample defaults are unchanged', async () => {
+  const { client, advance } = setup();
+  client.setNextDocsResult('p1', 'no_access');
+  await client.request({ projectId: 'p1', submissionId: 'demo-sub-pptx-native', level: 'BASIC' });
+  assert.equal(client.nextDocsResult('p1'), 'no_access', 'a deck does not consume the Docs result');
+  await client.request({ projectId: 'p1', submissionId: 'demo-sub-doc-mixed', level: 'BASIC' });
+  await client.request({ projectId: 'p1', submissionId: 'demo-sub-doc-native', level: 'BASIC' });
+  advance(duration('BASIC', 'document'));
+  assert.ok((await latestFor(client, 'demo-sub-doc-mixed')).comments.every(c => c.fallbackReason === 'no-comment-access'));
+  assert.ok((await latestFor(client, 'demo-sub-doc-native')).comments.every(c => c.placement === 'native'), 'later requests use the default');
+  assert.equal(client.nextDocsResult('p2'), null, 'demo results are per project');
+});
+
+const { POWERPOINT_RESULTS, powerPointResultCopy, DOC_FALLBACKS, docFallbackCopy, GOOGLE_DOCS_RESULTS } = load('copy');
+
+test('copy: every #198 outcome and reason has guidance, and unknown values fail safe', () => {
+  assert.deepEqual(plain(Object.keys(POWERPOINT_RESULTS).sort()),
+    ['already_posted', 'comments_live', 'error', 'invalid_anchor', 'locked', 'partial', 'stale', 'unsupported_format']);
+  assert.deepEqual(plain(Object.keys(DOC_FALLBACKS).sort()),
+    ['ambiguous', 'comment-failed', 'comment-uncertain', 'document-changed', 'no-comment-access', 'not-found']);
+  assert.equal(Object.keys(GOOGLE_DOCS_RESULTS).length, 6);
+  // An unconfirmed upload may have succeeded: check the deck before any retry.
+  assert.equal(POWERPOINT_RESULTS.error.inDeck, 'unknown');
+  assert.equal(POWERPOINT_RESULTS.error.retry, 'check_first');
+  assert.match(POWERPOINT_RESULTS.error.nextStep, /look for the comments first/);
+  for (const outcome of ['already_posted', 'invalid_anchor', 'unsupported_format']) {
+    assert.equal(POWERPOINT_RESULTS[outcome].retry, 'none', outcome);
+  }
+  assert.notEqual(POWERPOINT_RESULTS.already_posted.nextStep, POWERPOINT_RESULTS.invalid_anchor.nextStep);
+  // Retired or future outcomes never leave the summary without copy.
+  for (const outcome of ['legacy_format', 'direct_download', 'something_new', 'toString']) {
+    const copy = powerPointResultCopy(outcome);
+    assert.ok(copy.title && copy.nextStep, outcome);
+    assert.equal(copy.retry, 'none');
+    assert.equal(copy.inDeck, 'unknown');
+  }
+  assert.equal(docFallbackCopy('comment-uncertain').kind, 'uncertain');
+  assert.match(docFallbackCopy('comment-uncertain').nextStep, /Check the document before adding it again/);
+  assert.match(docFallbackCopy('no-comment-access').nextStep, /Commenter/);
+  for (const reason of ['something-new', undefined, 'constructor']) {
+    assert.equal(docFallbackCopy(reason).kind, 'uncertain', String(reason));
+  }
 });

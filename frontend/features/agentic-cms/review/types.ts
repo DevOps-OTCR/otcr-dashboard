@@ -16,9 +16,20 @@ export type SubmissionKind = 'INITIAL_SLIDES' | 'FINAL_SLIDES' | 'INITIAL_WHITEP
 /** Slides are located by slide number; documents by section heading. */
 export type SubmissionFormat = 'slides' | 'document';
 
-export type PowerPointOutcome = 'comments_live' | 'stale' | 'locked' | 'legacy_format' | 'direct_download' | 'error' | 'no_comments_written';
+/**
+ * Outcomes add_pptx_comments returns in #198. Its PptxOutcome type still lists the retired
+ * legacy_format and direct_download; the tool now reports unsupported_format instead, and
+ * rejects direct-download links when reading the deck. Copy lookups fall back safely for
+ * anything else (see powerPointResultCopy).
+ */
+export type PowerPointOutcome = 'comments_live' | 'stale' | 'locked' | 'invalid_anchor' | 'unsupported_format' | 'already_posted' | 'error';
 /** Additional demo scenario for a successful upload with some findings unposted. */
 export type PowerPointDemoResult = PowerPointOutcome | 'partial';
+
+/** fallbackReason values comment_google_doc returns in #198. */
+export type DocFallbackReason = 'not-found' | 'ambiguous' | 'no-comment-access' | 'document-changed' | 'comment-failed' | 'comment-uncertain';
+/** Demo-only: how a simulated Google Docs posting batch ends. */
+export type GoogleDocsDemoResult = 'all_native' | 'mixed' | 'misplaced' | 'uncertain' | 'document_changed' | 'no_access';
 
 export type ReviewSubmission = {
   id: string;
@@ -55,7 +66,12 @@ export type ReviewComment = {
   /** Simulated posting outcome; absent on older CMS-only review history. */
   placement?: 'native' | 'fallback';
   quote?: string;
-  fallbackReason?: 'ambiguous' | 'not-found';
+  /** Google Docs: why a fallback comment was not (or may not have been) posted. */
+  fallbackReason?: DocFallbackReason;
+  /** Google Docs: false when Google attached a native comment to different text than the quote. */
+  anchorVerified?: boolean | null;
+  /** Google Docs: the text Google reports the native comment is attached to. */
+  anchoredText?: string | null;
 };
 
 export type ReviewSummary = {
