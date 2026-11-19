@@ -18,9 +18,18 @@ const write = async <T,>(method: string, id: string, operation: () => T): Promis
 };
 // Fails the first matching write only, so Retry exercises the same request again.
 const failOnce = (flag: string) => { if (!(window as any)[flag]) return false; (window as any)[flag] = false; return true; };
+// Hold context reads so tests can inspect pending permission checks and release them.
+const reads = { pending: [] as Array<{ projectId: string; finish: (fail: boolean) => void }> };
+(window as any).contextReads = reads;
 export const api = {
   get: async (url: string) => {
+    // Used only by the gated-page harness, which mounts the real AgenticCmsFeature gate.
+    if (url === '/feature-flags') return { data: { agenticCms: !(window as any).flagOff } };
     const id = projectId(url);
+    if ((window as any).holdReads) {
+      await new Promise<void>((resolve, reject) => reads.pending.push({ projectId: id,
+        finish: fail => fail ? reject(new Error('Synthetic context read failure')) : resolve() }));
+    }
     if ((window as any).failProjectTwo && id === 'p2') throw new Error('Synthetic project load failure');
     if ((window as any).delayProjectTwo && id === 'p2') await new Promise(resolve => setTimeout(resolve, 100));
     const data = readAll()[id];
