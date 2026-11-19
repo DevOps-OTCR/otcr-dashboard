@@ -11,6 +11,7 @@ function makeCtx(): ToolContext {
   return {
     user,
     projectId: 'selected',
+    conversationId: 'conv1',
     signal: new AbortController().signal,
     addSources: async () => [],
   };

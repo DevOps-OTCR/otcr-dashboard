@@ -144,15 +144,18 @@ integration('MCP client -> Nest endpoint -> migrated PostgreSQL', () => {
     }
   });
 
-  it('discovers exactly five read-only tools with input and output schemas', async () => {
+  it('discovers the CMS read tools and the Google Doc review tools with input and output schemas', async () => {
     const client = await connect();
     const result = await client.listTools();
-    expect(result.tools.map(tool => tool.name).sort()).toEqual(['get_deliverable', 'get_project_context', 'get_workstream', 'list_deliverables', 'list_workstreams']);
+    expect(result.tools.map(tool => tool.name).sort()).toEqual([
+      'comment_google_doc', 'get_deliverable', 'get_project_context', 'get_workstream', 'list_deliverables', 'list_workstreams', 'read_google_doc',
+    ]);
     for (const tool of result.tools) {
       expect(tool.description).toBeTruthy();
       expect(tool.inputSchema).toBeDefined();
       expect(tool.outputSchema).toBeDefined();
-      expect(tool.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
+      // Only comment_google_doc writes, and it writes outside the CMS.
+      expect(tool.annotations).toMatchObject({ readOnlyHint: tool.name !== 'comment_google_doc', destructiveHint: false });
       expect(tool.inputSchema.properties).toMatchObject({ projectId: { description: expect.stringContaining('selected project') } });
     }
     expect(result.tools.find(tool => tool.name === 'get_workstream').description).toContain('list_workstreams');
@@ -161,7 +164,7 @@ integration('MCP client -> Nest endpoint -> migrated PostgreSQL', () => {
 
   it('also accepts the legacy initialize handshake through stateless HTTP', async () => {
     const client = await connect('reader', false);
-    expect((await client.listTools()).tools).toHaveLength(5);
+    expect((await client.listTools()).tools).toHaveLength(7); // five CMS reads plus the two Google Doc tools
     const output = schemas.getDeliverableOutput.parse(await call(client, 'get_deliverable', { projectId: 'project', deliverableId: 'd1' }));
     expect(output.deliverableId).toBe('d1');
   });

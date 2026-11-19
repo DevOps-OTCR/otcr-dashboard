@@ -80,6 +80,11 @@ in-flight request or undo a completed write.
    `/agentic-cms/*` returns 404, and Lumen usage (`GET /v1/usage`) does not
    increase. Normal CMS pages keep working.
 
+To try Google Doc review locally, fill `GOOGLE_DOCS_CLIENT_EMAIL` and `GOOGLE_DOCS_PRIVATE_KEY` as
+described in [`backend/.env.example`](../backend/.env.example), share a test document with that
+email as Commenter, and submit its link on a deliverable you manage. The bot then posts real
+comments into that document, so use a test copy.
+
 ## How OTCR Bot works
 
 ```
@@ -130,8 +135,10 @@ or a skill's own default isn't enforced.
 `POST /agentic-cms/chat` with the user's CMS token:
 
 ```json
-{ "projectId": "…", "sprintId": "… (optional)", "conversationId": "… (optional)", "message": "…" }
+{ "projectId": "…", "sprintId": "… (optional)", "conversationId": "… (optional)", "approvalId": "… (optional)", "message": "…" }
 ```
+
+`approvalId` is sent only by the Post button on an approval card (see "Write approvals").
 
 The user must have access to `projectId` (same rules as the projects pages);
 otherwise the response is a plain 403 before any model call. The reply is a
@@ -143,6 +150,7 @@ otherwise the response is a plain 403 before any model call. The reply is a
 | `{"type":"text_delta","text"}` | Next piece of the answer |
 | `{"type":"text_replace","text"}` | Replaces this reply's text so far (sent after a word-limit cut) |
 | `{"type":"tool_start","id","name","label"}` / `{"type":"tool_end","id","ok","note?"}` | Tool progress for the UI |
+| `{"type":"approval_required","id","tool","target":{"deliverable","file","version","submittedAt","snapshot"},"summary","items":[{"where","text"}]}` | The bot prepared a write (such as review comments). **Nothing has been written.** Show `target` (the CMS file the click will change) and the items with a Post button that sends `id` back as `approvalId` |
 | `{"type":"sources","sources":[{"id","title","url"}]}` | Sources found so far this turn, so `[id]` links work while streaming; the last event of a turn lists only the cited ones, including any from earlier turns. An `id` means the same URL for the whole conversation |
 | `{"type":"error","kind","retryable","message"}` | A user-safe error (see below) |
 | `{"type":"done"}` | End of the reply |
@@ -163,7 +171,26 @@ the model as JSON Schema), a progress `label`, and `run(input, ctx)`. Register
 it in `AgenticCmsModule` and `ToolRegistry`. Tools must read the project from
 `ctx.projectId`/`ctx.sprintId` — already access-checked — and never accept a
 project id from the model. Throw `ToolFailure(note, modelMessage)` for an
-expected failure. The five CMS read tools are registered this way over CmsReadService.
+expected failure. The five CMS read tools are registered this way over CmsReadService,
+and the Google Docs tools (`read_google_doc`, `comment_google_doc`) over GoogleDocReviewService.
+
+A tool that writes outside the CMS also needs four things:
+
+- It sets `requiresApproval: true` and provides `describeForApproval` (what the user is asked to
+  approve) and `prepareApproval` (the permission checks, so the user is never shown a button they
+  could not use, and the CMS file the write is for; the registry refuses a write tool without
+  it). The registry then never runs the tool for a call the model made: see "Write approvals" below.
+- The service it calls rechecks the feature flag immediately before each external write
+  (`GoogleDocReviewService.comment` is the example).
+- It is safe to retry. A failed turn saves only the user's message and the model may call a
+  tool twice, so `tools/google-doc.tools.ts` remembers what it posted for an hour and runs calls
+  on one submission one at a time.
+- It checks a role as well as project access (`CmsReadAccessService.assertContextWrite`).
+
+The specs that build the tool registry by hand also need the new tool group (and a `WriteApprovals`):
+`tools/tool-registry.spec.ts`, `agent/agent.service.spec.ts`, and `chat/chat.controller.spec.ts`
+(which lists providers by hand). PowerPoint review can follow the same shape: a service under
+`backend/src/agentic-cms/`, a thin adapter in `tools/`, and an MCP registration.
 
 ### Adding a skill
 
@@ -191,9 +218,15 @@ separate service. Set these on that backend's Render Environment settings
 | `LUMEN_BASE_URL` | `https://lumen.ncsa.illinois.edu/v1` (the default if unset) |
 | `LUMEN_MODEL` | `deepseek-v4.1-flash` (the default if unset) |
 | `TAVILY_API_KEY` | Shared Tavily key for web search (secret; optional) |
+| `GOOGLE_DOCS_CLIENT_EMAIL` | The review bot's Google service account email (optional). Document owners share their Docs with it as Commenter |
+| `GOOGLE_DOCS_PRIVATE_KEY` | That account's private key (secret; enter it only in Render; optional). Without both, the Google Docs tools report that review is not set up |
 | `OTCR_BOT_MAX_MESSAGES_PER_HOUR` | Per-user limit, default `60` |
 | `AGENTIC_CMS_ALLOWED_EMAILS` | Pilot emails, comma-separated |
 | `AGENTIC_CMS_ENABLED` | `true` only when the pilot starts; otherwise `false` |
+
+The Google Docs tools use the same service-account pattern as the calendar integration, with
+separate credentials so access can be granted and revoked on its own. Isaiah sets the live
+values; nothing in this repository does.
 
 The Lumen account behind `LUMEN_API_KEY` must have acknowledged the model's
 notice. Verify the deployment with `GET /agentic-cms/status` as a pilot user:
@@ -207,12 +240,101 @@ the folder in during the build. Two further caveats need review before a pilot: 
 `backend/Dockerfile.prod` copies only `backend/`, so a Docker deployment needs
 the skills folder copied in (or `AGENTIC_CMS_SKILLS_DIR` pointed at it).
 
+### Write approvals
+
+A tool that writes to an outside system (`comment_google_doc`, `add_pptx_comments`) cannot be run
+by the model alone. When the model calls it, `ToolRegistry` runs `prepareApproval` (permissions and
+the resolved CMS deliverable, file, version and snapshot), stores the validated call and a
+server-only binding of that file in `WriteApprovals`, and streams `approval_required` with the
+file shown on the card; the tool is not run and the
+model is told "Not posted". The user presses **Post** on the card, which sends the stored call's
+`approvalId` in the next chat request. `AgentService` then runs exactly the stored call (never one
+the model rewrote) with the feature flag rechecked first, and the model reports the results. An
+approval is single use, expires after 15 minutes, and works only for the same user, project and
+conversation. When the approved call runs, `prepareApproval` runs again and the write is refused
+("Submission changed") if the binding no longer matches, for example because the submission link was
+replaced, or if the user has lost permission. Any other write call the model makes in the same turn is gated again. This is
+enforced in code, so text in a submitted document cannot cause a write. MCP is separate: its
+clients see `comment_google_doc` as a write tool (`readOnlyHint: false`) and are expected to confirm
+with their own user.
+
 ### Known limitations (Week 1 prototype)
 
 - Conversation history is in memory: lost on restart and not shared between
   server instances. The per-user hourly limit resets with it.
 - Search excerpts are unverified leads. There is no full-page `read_web_source` yet.
-- Week 2 review UI, review skills, and native document comments are not connected.
+- Week 2 review UI and review skills are not connected. OTCR Bot and MCP clients can read Google
+  Docs submissions and post anchored comments. PowerPoint review is available in OTCR Bot only;
+  its tools are not registered on MCP.
+- Google Docs comments need the document shared with the bot's service account as Commenter or
+  Editor. A document shared only as Viewer can be read but not commented on, and a public link
+  allows reading only.
+- Google Docs batches stop before the next write when the browser disconnects. A request already
+  sent to Google may have succeeded; `comment-uncertain` means to check before retrying manually.
+- OTCR Bot remembers the comments it posted for one hour per backend process, so a retry does
+  not post them twice. A restart or a second backend instance forgets them.
+- If the feature flag is turned off partway through a Google Docs batch, no further writes start.
+  Completed comment receipts are retained and unattempted comments return as fallbacks.
+- Document text is the consultant's work and may contain instructions aimed at the model. Tool
+  output is marked as data, only admins, the project's PM and project-member LCs can post, and
+  OTCR Bot writes only after the user presses Post (see "Write approvals"). MCP clients call
+  `comment_google_doc` directly and rely on their own confirmation.
+- Pending approvals are in memory per backend process. A restart or a second instance forgets
+  them; the user asks the bot to prepare the comments again.
+- A comment is anchored to its exact quote. A quote that spans paragraphs, repeats, or was
+  paraphrased comes back as a fallback for the user to add by hand.
+- Google Docs comment requests require `textHash` from the reviewed read. Changed text returns
+  `document-changed`; re-read and review it before posting. Comment-only revision changes are safe
+  to retry against the same text hash.
+- The PowerPoint reader returns text from text boxes and speaker notes only. Text inside tables
+  and charts (`graphicFrame`) is not read; review it from the slide images or by hand.
+
+### PowerPoint review
+
+`fetch_pptx_content`, `get_pptx_slide_images`, and `add_pptx_comments` accept a
+`deliverableId` and `submissionId` from the selected project's CMS submissions. The backend
+checks deliverable access and resolves the stored link; tools do not accept arbitrary URLs.
+Posting additionally requires an admin, the project's PM, or an LC with project access.
+Only HTTPS OneDrive/SharePoint share links are supported.
+
+The read returns the snapshot values needed for posting. A changed source or expired/missing
+process-local snapshot requires a fresh read and review. Existing comments that cannot be safely
+preserved cause a text fallback rather than rewriting their parts. Findings are drafts unless
+the user asks to post them; receiving slide images never forces a write. Image payloads are
+used for the current turn and are not retained in conversation history.
+
+Microsoft Graph requires `MSGRAPH_CLIENT_ID`, `MSGRAPH_TENANT_ID`, and either
+`MSGRAPH_REFRESH_TOKEN` (delegated account) or `MSGRAPH_CLIENT_SECRET` (application credentials).
+`MSGRAPH_VISION_ENABLED=true` additionally enables PDF conversion and PNG slide images, up to
+20 slides per call, for a vision-capable model. Without it, review uses extracted text.
+Canvas allocation is limited to a 4096-pixel edge and 8 megapixels. Oversized pages fall back
+to text; the image result warns that oversized embedded images can be omitted or downsampled.
+Uploads send the exact reviewed eTag in `If-Match`. Mocked tests check only the header, so
+enforcement is verified live with
+`backend/src/agentic-cms/pptx/live-verification/office-conflict.live.ts` (manual; not run in CI).
+The script uploads deck A to a new file in the operator's own OneDrive, reads it, replaces the
+file with B, posts against A, and confirms B is unchanged. It then posts against B and saves the
+result for inspection in PowerPoint. It refuses to run without `--confirm-live-write`, delegated
+credentials, and an operator email that passes `FeatureFlagsService`:
+
+```
+cd backend
+npx ts-node --transpile-only src/agentic-cms/pptx/live-verification/office-conflict.live.ts \
+  --deck <PowerPoint-authored.pptx> --operator <CMS email> --out <result.pptx> --confirm-live-write
+```
+
+**Live gate: passed 2026-11-18** (OneDrive for Business, PowerPoint 16.0 build 20527). The post
+against A returned HTTP 412. Afterwards, the remote eTag and SHA-256 still matched B, and B had
+no comment parts. The post against B returned 200. In PowerPoint, the shape comment sits at the
+anchored shape's top-right corner and the slide comment at the slide default. Re-run the script
+after changing `microsoft-graph.service.ts`, the comment writer, or the Graph tenant/account
+type.
+
+Shape comments use `ac:deMkLst` with `ac:spMk id`/`creationId` ([MS-PPTX] CT_Comment); a
+`pc:sldMkLst` anchors to the whole slide. The writer also accepts the comment-part names
+PowerPoint writes on save (`modernComment_<sldId hex>_<creationId hex>.xml`) when they match
+the linked slide.
+No live credentials or deployment configuration are changed by this PR.
 
 ## Where each group builds
 
@@ -310,11 +432,14 @@ model's own conversions used the wrong daylight-saving offset; without it the ti
 are marked UTC. `weekStartDate`/`weekEndDate` are calendar dates and are never
 converted. A page of 50 deliverables fits in the map, and a workstream list that has only week dates still gets the calendar-date note. Skills loaded are research, whitepaper-writing and
 consulting-slides. Web search citations are live when a search key is configured.
-Full-source web reading, persistent chat history, document review and editors are not.
+Full-source web reading, persistent chat history and editors are not.
+The bot can read Google Doc submissions and post anchored comments (PM, LC or admin only;
+the doc must be shared with the bot's service account as Commenter).
 
 ## Required checks and PR review
 
 Group 2's five tools are documented in [MCP read-tool contracts](agentic-cms-mcp-contracts.md).
+The Google Docs tools are in the same file under "Google Docs review tools".
 See [MCP connection and usage](agentic-cms-mcp.md) for authentication, an SDK client,
 captured synthetic responses and current limitations.
 
@@ -386,7 +511,10 @@ saved values survive reload.
 `listDeliverables` and `getDeliverable` with strict input/output schemas, authorized query scopes,
 signed pagination, source metadata and explicit text truncation. Deliverable detail
 sections expose assignments, subtasks and submission history/feedback. All five
-operations are registered as read-only tools at `/agentic-cms/mcp`.
+operations are registered as read-only tools at `/agentic-cms/mcp`. The two Google Docs review
+tools are registered beside them
+([contracts](agentic-cms-mcp-contracts.md#google-docs-review-tools)); `comment_google_doc` is
+not read-only.
 
 For local PostgreSQL integration tests, start Docker Desktop and run
 `npm --prefix backend run test:integration` from the repository root. This manages
