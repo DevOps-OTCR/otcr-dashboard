@@ -96,7 +96,9 @@ export function ReviewDetail({ row, now, actions, mocked }: { row: QueueRow; now
 
   // What the PM can do next with the current version. Hidden while viewing an earlier run.
   const failure = current?.failure && FAILURES[current.failure.kind];
-  const canPost = current?.status === 'COMPLETED' && current.posting !== 'in_progress' && current.posting !== 'done' && current.comments.length > 0;
+  const canRetryPost = current?.posting === 'done' && (current.powerPoint?.outcome === 'locked' || current.powerPoint?.outcome === 'error');
+  const postableCount = current?.postableCount ?? current?.comments.length ?? 0;
+  const canPost = current?.status === 'COMPLETED' && current.posting !== 'in_progress' && (current.posting !== 'done' || canRetryPost) && postableCount > 0;
   const nextActions = !actions.permissionsReady || viewingEarlier || current?.powerPoint?.postingInProgress || current?.posting === 'in_progress' ? null : !actions.canRequest ? (
     !current && <p className="text-sm text-[var(--text-muted)]">Only this project’s PM, LCs and admins can request AI reviews.</p>
   ) : formLevel ? (
@@ -128,8 +130,13 @@ export function ReviewDetail({ row, now, actions, mocked }: { row: QueueRow; now
         )}
         {!mocked && canPost && current && (
           <button type="button" className={primaryButton} disabled={posting} onClick={() => void post(current.id)}>
-            {posting ? 'Posting…' : `Post ${current.comments.length} comment${current.comments.length === 1 ? '' : 's'} to the file`}
+            {posting ? 'Posting…' : `Post ${postableCount} comment${postableCount === 1 ? '' : 's'} to the file`}
           </button>
+        )}
+        {!mocked && canPost && current && current.posting === 'done' && postableCount < current.comments.length && (
+          <p className="text-sm text-[var(--text-muted)]">
+            {current.comments.length - postableCount} comments have no exact quote or slide anchor and stay in the CMS only.
+          </p>
         )}
         {current?.status === 'FAILED' && failure?.retryable && (
           <button type="button" className={primaryButton} disabled={retrying} onClick={() => void retry(current.id)}>

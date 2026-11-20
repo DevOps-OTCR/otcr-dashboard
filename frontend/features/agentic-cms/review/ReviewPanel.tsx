@@ -149,7 +149,7 @@ function ProjectReviewPanel({ client, projectId, projectName, canRequest: permit
         await mock.retryPowerPointPosting(projectId, reviewId);
       } else {
         // Re-post only when the last attempt ended locked or errored; a fresh review rereads the file otherwise.
-        await client.retry(projectId, reviewId);
+        await client.post?.(projectId, reviewId);
       }
       afterChange();
     },

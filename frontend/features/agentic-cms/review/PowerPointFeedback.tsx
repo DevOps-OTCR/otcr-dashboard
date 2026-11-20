@@ -75,7 +75,7 @@ export function PowerPointFeedback({ review, submission, mocked, canRetry, onRet
       )}
       {error && <p role="alert" className="text-sm text-[var(--danger)]">{error}</p>}
       <p className="text-xs text-[var(--text-muted)]">
-        Simulated coverage: {result.inspection === 'visual' ? 'slide text and visual layout.' : 'text only; visual layout was not assessed.'}
+        Simulated coverage: {(result.inspection ?? review.deck?.inspection) === 'visual' ? 'slide text and visual layout.' : 'text only; visual layout was not assessed.'}
       </p>
       <p className="break-all text-xs text-[var(--text-muted)]">Reviewed snapshot: <code>{result.reviewedETag}</code></p>
       {review.summary?.skipped.length ? <p className="text-xs text-[var(--text-muted)]">Not read (hidden or confidential): {review.summary.skipped.join(', ')}</p> : null}

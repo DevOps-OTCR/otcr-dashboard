@@ -2,6 +2,7 @@
 import { ConflictException, ForbiddenException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PrismaService } from '../../prisma/prisma.service';
+import { FeatureFlagsService } from '../../feature-flags/feature-flags.service';
 import { CmsReadAccessService, type CmsReader } from '../authorization/cms-read-access.service';
 import { AgentError } from '../agent/agent-errors';
 import { GoogleDocReviewService } from '../documents/google-doc-review.service';
@@ -111,6 +112,7 @@ describe('ReviewJobsService', () => {
   let docs: any;
   let pptx: any;
   let reads: any;
+  let flags: any;
   let model: ReturnType<typeof buildModelClient>;
 
   async function setup(options: {
@@ -136,6 +138,9 @@ describe('ReviewJobsService', () => {
         findUnique: options.freshUserOnce
           ? jest.fn().mockResolvedValueOnce(fr).mockResolvedValueOnce(options.freshUserOnce)
           : jest.fn(async () => fr),
+      },
+      allowedEmail: {
+        findFirst: jest.fn(async () => ({ id: 'a' })),
       },
     };
     access = {
@@ -225,6 +230,9 @@ describe('ReviewJobsService', () => {
         return { workstream: { label: 'Week 3' }, deliverables: { items: [] } };
       }),
     };
+    flags = {
+      assertAgenticCmsEnabledFor: jest.fn(() => undefined),
+    };
     model = buildModelClient(options.modelScript ?? [docReviewJson]);
     const mod = await Test.createTestingModule({
       providers: [
@@ -235,6 +243,7 @@ describe('ReviewJobsService', () => {
         { provide: GoogleDocReviewService, useValue: docs },
         { provide: PptxReviewTools, useValue: pptx },
         { provide: CmsReadService, useValue: reads },
+        { provide: FeatureFlagsService, useValue: flags },
         { provide: MODEL_CLIENT, useValue: model },
       ],
     }).compile();
@@ -280,7 +289,9 @@ describe('ReviewJobsService', () => {
     expect(stored.comments[0].placement).toBeUndefined();
     expect(stored.comments[0].location).toEqual({ type: 'section', section: 'Intro' });
     expect(stored.comments[1].placement).toBeUndefined();
-    expect(stored.comments[2].placement).toBeUndefined();
+    // The no-quote finding is not postable; it is marked fallback at completion.
+    expect(stored.comments[2].placement).toBe('fallback');
+    expect(stored.comments[2].fallbackReason).toBeDefined();
     expect(stored.summary?.counts).toEqual({ BLOCKING: 1, MATERIAL: 1, MINOR: 1 });
     expect(docs.comment).not.toHaveBeenCalled();
   });
@@ -316,7 +327,8 @@ describe('ReviewJobsService', () => {
       expect(posted.comments[0].anchorVerified).toBe(true);
       expect(posted.comments[1].placement).toBe('fallback');
       expect(posted.comments[1].fallbackReason).toBe('not-found');
-      expect(posted.comments[2].placement).toBeUndefined();
+      // The no-quote finding was never postable, so its completion-time fallback stands.
+      expect(posted.comments[2].placement).toBe('fallback');
     });
 
     it('maps slides placement native on already_posted outcome', async () => {
@@ -394,9 +406,17 @@ describe('ReviewJobsService', () => {
     });
 
     it('rechecks the fresh user and fails when inactive', async () => {
-      await setup({ freshUserOnce: { ...freshUser, active: false } });
+      await setup();
+      // Run the job to completion with the active user so the review reaches
+      // COMPLETED (otherwise post() would 409 on status rather than 403 on auth).
       const created = await service.request(user(), 'p1', { submissionId: 'sub-1', level: 'BASIC' });
       await service.whenIdle();
+      const completed = await storedReview('p1', created.id);
+      expect(completed.status).toBe('COMPLETED');
+
+      // From here on, every user re-lookup returns inactive; post() re-authorizes
+      // and must surface 403 before attempting any external write.
+      prisma.user.findUnique.mockImplementation(async () => ({ ...freshUser, active: false }));
 
       await expect(service.post(user(), 'p1', created.id)).rejects.toBeInstanceOf(ForbiddenException);
       expect(docs.comment).not.toHaveBeenCalled();
@@ -565,8 +585,9 @@ describe('ReviewJobsService', () => {
     const created = await service.request(user(), 'p1', { submissionId: 'sub-1', level: 'BASIC' });
     await service.whenIdle();
     const stored = await storedReview('p1', created.id);
+    // Identical findings collapse to one stored comment; counts reflect stored comments.
     expect(stored.comments).toHaveLength(2);
-    expect(stored.summary?.counts).toEqual({ BLOCKING: 0, MATERIAL: 2, MINOR: 1 });
+    expect(stored.summary?.counts).toEqual({ BLOCKING: 0, MATERIAL: 1, MINOR: 1 });
   });
 
   it('strips sprintId from HTTP-facing submissions', async () => {

@@ -113,6 +113,10 @@ export type Review = {
     reviewedETag: string;
     postingInProgress: boolean;
   };
+  /** Number of comments that will actually be posted into the file, when the backend reports it. */
+  postableCount?: number;
+  /** Slides: the deck snapshot the review read and how deeply it was inspected. */
+  deck?: { reviewedETag: string; inspection: 'visual' | 'text_only' };
   comments: ReviewComment[];
 };
 
