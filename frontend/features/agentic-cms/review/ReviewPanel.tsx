@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FlaskConical } from 'lucide-react';
 import { FAILURES, GOOGLE_DOCS_RESULTS, POWERPOINT_RESULTS } from './copy';
+import { createHttpReviewClient } from './http-review-client';
 import { createMockReviewClient, type MockReviewClient } from './mock-review-client';
 import { buildQueue, countByFilter, filterRows, isActive, type QueueFilter } from './queue';
 import { ReviewDetail, type ReviewActions } from './ReviewDetail';
 import { ReviewQueueList } from './ReviewQueueList';
-import type { GoogleDocsDemoResult, PowerPointDemoResult, ReviewFailureKind, ReviewLevel, ReviewQueue } from './types';
+import type { GoogleDocsDemoResult, PowerPointDemoResult, ReviewClient, ReviewFailureKind, ReviewLevel, ReviewQueue } from './types';
 
 const ACTIVE_POLL_MS = 1_000;
 const IDLE_POLL_MS = 30_000;
@@ -25,18 +26,30 @@ function setReviewParams(submissionId: string | null) {
   if (url.href !== window.location.href) window.history.replaceState(window.history.state, '', url);
 }
 
+/** True when the demo client should back the review UI rather than the review-job API. */
+function reviewDemoEnabled(): boolean {
+  if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('reviewDemo')) return true;
+  return process.env.NEXT_PUBLIC_AGENTIC_REVIEW_DEMO === 'true';
+}
+
+/** Narrows a ReviewClient to the demo client so its demo controls can be used. */
+export function isMock(c: ReviewClient): c is MockReviewClient {
+  return c.mocked;
+}
+
 /**
  * The page's review client. Create it in the page, not the tab, so reviews started in
- * the demo survive switching tabs. It lives in memory: a reload or sign-out resets it.
- * Next week this returns an HTTP ReviewClient and the demo controls go away.
+ * the demo survive switching tabs. The mock lives in memory: a reload or sign-out resets it.
  */
-export function useReviewClient(demoProjectId?: string, viewerName?: string): MockReviewClient {
-  // Fixture ownership follows the first accessible project, never the selection.
-  return useMemo(() => createMockReviewClient({ viewerName, demoProjectId }), [viewerName, demoProjectId]);
+export function useReviewClient(demoProjectId?: string, viewerName?: string): ReviewClient | MockReviewClient {
+  return useMemo(
+    () => (reviewDemoEnabled() ? createMockReviewClient({ viewerName, demoProjectId }) : createHttpReviewClient()),
+    [viewerName, demoProjectId],
+  );
 }
 
 type Props = {
-  client: MockReviewClient;
+  client: ReviewClient | MockReviewClient;
   projectId: string;
   projectName?: string;
   /** The backend's edit permission for this project, from the project-context response. */
@@ -54,10 +67,11 @@ export function ReviewPanel(props: Props) {
 }
 
 function ProjectReviewPanel({ client, projectId, projectName, canRequest: permitted, accessState, onRetryAccess, projectContextMissing, onOpenProjectContext }: Props) {
+  const mock = isMock(client) ? client : null;
   const canRequest = accessState === 'ready' && permitted;
-  const [nextFailure, setNextFailure] = useState<ReviewFailureKind | null>(() => client.nextFailure(projectId));
-  const [nextPowerPoint, setNextPowerPoint] = useState(() => client.nextPowerPointResult(projectId));
-  const [nextDocs, setNextDocs] = useState(() => client.nextDocsResult(projectId));
+  const [nextFailure, setNextFailure] = useState<ReviewFailureKind | null>(() => mock?.nextFailure(projectId) ?? null);
+  const [nextPowerPoint, setNextPowerPoint] = useState<PowerPointDemoResult | null>(() => mock?.nextPowerPointResult(projectId) ?? null);
+  const [nextDocs, setNextDocs] = useState<GoogleDocsDemoResult | null>(() => mock?.nextDocsResult(projectId) ?? null);
   const [data, setData] = useState<ReviewQueue | null>(null);
   const [error, setError] = useState('');
   const [now, setNow] = useState(() => Date.now());
@@ -112,9 +126,9 @@ function ProjectReviewPanel({ client, projectId, projectName, canRequest: permit
 
   // After a request or retry, reload at once and show that a planned demo failure was used.
   const afterChange = () => {
-    setNextFailure(client.nextFailure(projectId));
-    setNextPowerPoint(client.nextPowerPointResult(projectId));
-    setNextDocs(client.nextDocsResult(projectId));
+    setNextFailure(mock?.nextFailure(projectId) ?? null);
+    setNextPowerPoint(mock?.nextPowerPointResult(projectId) ?? null);
+    setNextDocs(mock?.nextDocsResult(projectId) ?? null);
     setReloadKey((key) => key + 1);
   };
   const actions: ReviewActions = {
@@ -131,7 +145,12 @@ function ProjectReviewPanel({ client, projectId, projectName, canRequest: permit
       afterChange();
     },
     retryPosting: async (reviewId: string) => {
-      await client.retryPowerPointPosting(projectId, reviewId);
+      if (mock) {
+        await mock.retryPowerPointPosting(projectId, reviewId);
+      } else {
+        // No separate repost endpoint yet: a fresh review rereads the deck.
+        await client.retry(projectId, reviewId);
+      }
       afterChange();
     },
   };
@@ -165,7 +184,7 @@ function ProjectReviewPanel({ client, projectId, projectName, canRequest: permit
         </div>
       )}
 
-      {client.mocked && canRequest && (
+      {mock && canRequest && (
         <details className="rounded-[var(--radius-md)] border border-dashed border-[var(--border)] px-3 py-2 text-sm">
           <summary className="cursor-pointer font-medium">Demo controls</summary>
           <label className="mt-2 flex flex-wrap items-center gap-2">
@@ -174,7 +193,7 @@ function ProjectReviewPanel({ client, projectId, projectName, canRequest: permit
               value={nextFailure ?? ''}
               onChange={(event) => {
                 const kind = (event.target.value || null) as ReviewFailureKind | null;
-                client.setNextFailure(projectId, kind);
+                mock.setNextFailure(projectId, kind);
                 setNextFailure(kind);
               }}
               className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--card)] px-2 py-1"
@@ -191,7 +210,7 @@ function ProjectReviewPanel({ client, projectId, projectName, canRequest: permit
             <span>Posting result of the next PowerPoint review or posting retry:</span>
             <select value={nextPowerPoint ?? ''} onChange={(event) => {
               const result = (event.target.value || null) as PowerPointDemoResult | null;
-              client.setNextPowerPointResult(projectId, result);
+              mock.setNextPowerPointResult(projectId, result);
               setNextPowerPoint(result);
             }} className="min-w-0 max-w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--card)] px-2 py-1">
               <option value="">Use sample’s default</option>
@@ -202,7 +221,7 @@ function ProjectReviewPanel({ client, projectId, projectName, canRequest: permit
             <span>Posting result of the next Google Docs review:</span>
             <select value={nextDocs ?? ''} onChange={(event) => {
               const result = (event.target.value || null) as GoogleDocsDemoResult | null;
-              client.setNextDocsResult(projectId, result);
+              mock.setNextDocsResult(projectId, result);
               setNextDocs(result);
             }} className="min-w-0 max-w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--card)] px-2 py-1">
               <option value="">Use sample’s default</option>

@@ -19,12 +19,16 @@ before(async () => {
 });
 after(() => browser?.close());
 
+// Always adds reviewDemo=1 so the AI Review tab uses the in-browser mock client.
 const open = async (t, query = '', clock = false) => {
+  const params = new URLSearchParams(query);
+  params.set('reviewDemo', '1');
+  const url = `http://review.test/agentic-cms?${params.toString()}`;
   const context = await browser.newContext(); t.after(() => context.close());
   await context.route('**/*', route => route.fulfill({ contentType: route.request().url().endsWith('/bundle.js') ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8', body: route.request().url().endsWith('/bundle.js') ? bundle : document }));
   const page = await context.newPage();
   if (clock) await page.clock.install({ time: new Date('2026-11-14T18:00:00Z') });
-  await page.goto(`http://review.test/agentic-cms${query}`);
+  await page.goto(url);
   await page.getByRole('tab', { name: 'Project Context' }).waitFor();
   return page;
 };

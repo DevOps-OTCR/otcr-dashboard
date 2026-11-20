@@ -33,7 +33,7 @@ const open = async (t, url) => {
 
 for (const pagePath of ['/agentic-cms', '/agentic-cms/']) {
   test(`with the feature enabled, ${pagePath} opens the AI Review tab and its queue`, async t => {
-    const page = await open(t, `${pagePath}?role=PM&tab=review`);
+    const page = await open(t, `${pagePath}?role=PM&reviewDemo=1&tab=review`);
     await page.getByRole('heading', { name: 'Agentic CMS' }).waitFor();
     assert.equal(await page.getByRole('tab').count(), 3);
     assert.equal(await page.getByRole('tab', { name: 'AI Review' }).getAttribute('aria-selected'), 'true');
@@ -44,7 +44,7 @@ for (const pagePath of ['/agentic-cms', '/agentic-cms/']) {
   });
 
   test(`with the feature off, ${pagePath} explains that the account is not enabled`, async t => {
-    const page = await open(t, `${pagePath}?role=PM&tab=review&flagOff`);
+    const page = await open(t, `${pagePath}?role=PM&reviewDemo=1&tab=review&flagOff`);
     await page.getByText('Agentic CMS loads when this account is enabled for the feature.').waitFor();
     assert.equal(await page.getByRole('tab').count(), 0);
     assert.equal(await page.getByRole('heading', { name: 'AI review' }).count(), 0);
@@ -53,7 +53,7 @@ for (const pagePath of ['/agentic-cms', '/agentic-cms/']) {
 
 for (const otherPath of ['/agentic-cms-preview/', '/overview/']) {
   test(`${otherPath} does not render the Agentic CMS page`, async t => {
-    const page = await open(t, `${otherPath}?role=PM&tab=review`);
+    const page = await open(t, `${otherPath}?role=PM&reviewDemo=1&tab=review`);
     // OTCR Bot mounts on every page once the feature is enabled; the page itself must not.
     await page.getByRole('button', { name: 'OTCR Bot' }).waitFor();
     assert.equal(await page.getByRole('heading', { name: 'Agentic CMS' }).count(), 0);
