@@ -88,6 +88,7 @@ export type ReviewProgress = { step: number; total: number; label: string };
 export type ReviewDeck = {
   reviewedETag: string;
   inspection: 'visual' | 'text_only';
+  visibleSlides?: number[];
 };
 
 export type Review = {
@@ -128,6 +129,7 @@ const MAX_FINDINGS = 20;
 const MAX_CONCURRENT_JOBS = 2;
 const TOTAL_STEPS = 4;
 const WITHHELD_MARKERS = ['[HIDDEN]', '[CONFIDENTIAL]', '[PROPRIETARY]'];
+const DOC_BODY_MAX_CHARS = 2000;
 const DOC_BODY_MAX_BYTES = 2048;
 const DOC_QUOTE_MIN = 3;
 
@@ -290,7 +292,7 @@ type StoredUser = {
   lastName: string | null;
   active: boolean;
 };
-type DocBatchEntry = { quote: string; comment: string; commentId: string };
+
 
 const reviewerSelect = {
   id: true, email: true, role: true, firstName: true, lastName: true, active: true,
@@ -426,7 +428,7 @@ export class ReviewJobsService {
       } else {
         await this.postSlides(review, submission, ctx);
       }
-      review.posting = 'done';
+      if (review.posting !== undefined) review.posting = 'done';
     } catch (error) {
       // Reset on ANY exception, including user/scope failures.
       this.failPosting(review);
@@ -468,63 +470,61 @@ export class ReviewJobsService {
       throw new ConflictException('Document changed since review; request a new review');
     }
 
-    const postable = review.comments
-      .filter((comment) => typeof comment.quote === 'string' && comment.quote.trim().length >= DOC_QUOTE_MIN)
-      .filter((comment) => this.isPostableDocComment(comment))
-      .slice(0, MAX_FINDINGS);
+    const postable = this.postableFindings(review, 'document');
     if (postable.length === 0) return;
 
-    const batch: DocBatchEntry[] = [];
-    const seen = new Set<string>();
+    let attempted = 0;
+    let failed = 0;
+    // Post one comment per write so an interrupted batch keeps the receipts it earned.
     for (const comment of postable) {
       const quote = (comment.quote as string).slice(0, 500);
       const body = this.formatComment(comment);
-      if (utf8ByteLength(body) > DOC_BODY_MAX_BYTES) continue;
-      const dedupeKey = `${quote}\u0000${body}`;
-      if (seen.has(dedupeKey)) continue;
-      seen.add(dedupeKey);
-      batch.push({ quote, comment: body, commentId: comment.id });
-    }
-    if (batch.length === 0) return;
+      attempted++;
+      const commentInput = {
+        projectId: ctx.projectId,
+        deliverableId: submission.deliverableId,
+        submissionId: submission.id,
+        textHash: expectedTextHash,
+        comments: [{ quote, comment: body }],
+      };
+      try {
+        commentGoogleDocInput.parse(commentInput);
+      } catch (error) {
+        failed++;
+        this.log.warn(`Review ${review.id}: post batch failed validation: ${error instanceof Error ? error.name : typeof error}`);
+        continue;
+      }
 
-    const commentInput = {
-      projectId: ctx.projectId,
-      deliverableId: submission.deliverableId,
-      submissionId: submission.id,
-      textHash: expectedTextHash,
-      comments: batch.map(({ quote, comment }) => ({ quote, comment })),
-    };
-    try {
-      commentGoogleDocInput.parse(commentInput);
-    } catch (error) {
-      this.log.warn(`Review ${review.id}: post batch failed validation: ${error instanceof Error ? error.name : typeof error}`);
-      throw error;
-    }
-
-    const byId = new Map(review.comments.map((comment) => [comment.id, comment]));
-    let result: Awaited<ReturnType<GoogleDocReviewService['comment']>>;
-    try {
-      result = await this.docs.comment(
-        reader,
-        commentInput,
-        { signal: ctx.signal, documentId: expectedDocumentId },
-      );
-    } catch (error) {
-      this.log.warn(`Review ${review.id}: post to Google Doc failed: ${error instanceof Error ? error.name : typeof error}`);
-      throw error;
-    }
-
-    // Apply results through the per-batch comment ID mapping so dedupe reordering
-    // does not shift placements onto the wrong finding.
-    batch.forEach((entry, index) => {
-      const posted = result.comments[index];
-      const comment = byId.get(entry.commentId);
-      if (!comment || !posted) return;
+      // Reauthorize before every external write.
+      const writeReader = await this.authorize(reader.id, ctx.projectId);
+      const writeSignal = ctx.signal.aborted ? ctx.signal : (ctx.signal ?? new AbortController().signal);
+      let posted: Awaited<ReturnType<GoogleDocReviewService['comment']>>['comments'][number] | undefined;
+      try {
+        const result = await this.docs.comment(
+          writeReader,
+          commentInput,
+          { signal: writeSignal, documentId: expectedDocumentId },
+        );
+        posted = result.comments[0];
+      } catch (error) {
+        failed++;
+        this.log.warn(`Review ${review.id}: post to Google Doc failed: ${error instanceof Error ? error.name : typeof error}`);
+        continue;
+      }
+      if (!posted) {
+        failed++;
+        continue;
+      }
       comment.placement = posted.placement ?? 'fallback';
       comment.fallbackReason = posted.fallbackReason ?? undefined;
       comment.anchorVerified = posted.anchorVerified ?? null;
       comment.anchoredText = posted.anchoredText ?? null;
-    });
+    }
+
+    // Every write failed: don't pretend this was a live posting.
+    if (attempted > 0 && failed === attempted) {
+      throw new ServiceUnavailableException({ code: 'CONFIG', message: 'Posting comments failed; retry when the document is available' });
+    }
   }
 
   private async postSlides(review: Review, submission: InternalSubmission, ctx: ToolContext): Promise<void> {
@@ -560,6 +560,9 @@ export class ReviewJobsService {
       return;
     }
 
+    // Reauthorize immediately before the single PowerPoint write.
+    const writeReader = await this.authorize(ctx.user.id, ctx.projectId);
+    const writeCtx: ToolContext = { ...ctx, user: writeReader };
     const posted = await commentTool.run(
       {
         deliverableId: submission.deliverableId,
@@ -571,7 +574,7 @@ export class ReviewJobsService {
           comment: this.formatComment(comment),
         })),
       },
-      ctx,
+      writeCtx,
     );
     const parsed = this.parseToolJson(posted);
     const outcome = (parsed.outcome as PowerPointOutcome) ?? 'error';
@@ -579,6 +582,8 @@ export class ReviewJobsService {
       outcome === 'comments_live' || outcome === 'already_posted' ? 'native' : 'fallback';
     for (const comment of poster) comment.placement = placement;
     review.powerPoint = { outcome, inspection, reviewedETag: etag, postingInProgress: false };
+    // Recoverable outcomes must not leave the review as "done"; let Post be pressed again.
+    if (outcome === 'locked' || outcome === 'error') review.posting = undefined;
   }
 
   /** Waits until every queued job has finished. Only for tests. */
@@ -822,6 +827,13 @@ export class ReviewJobsService {
       withheld.withheldIndices.size === withheld.totalSlides;
     if (allWithheld) fetched.content = '';
 
+    const revision = typeof fetched.textHash === 'string' ? fetched.textHash : '';
+    const etag = typeof fetched.eTag === 'string' ? fetched.eTag : '';
+    const visibleSlides: number[] = [];
+    for (let n = 1; n <= withheld.totalSlides; n++) {
+      if (!withheld.withheldIndices.has(n)) visibleSlides.push(n);
+    }
+
     this.setProgress(review, 2, review.level === 'BASIC' ? 'Rendering slides' : 'Loading project context');
 
     let images: Array<{ base64: string; mimeType: string }> = [];
@@ -853,6 +865,17 @@ export class ReviewJobsService {
       }
     }
 
+    // Every slide withheld: complete with zero findings without calling the model.
+    if (allWithheld) {
+      const revision = typeof fetched.textHash === 'string' ? fetched.textHash : '';
+      const etag = typeof fetched.eTag === 'string' ? fetched.eTag : '';
+      const visibleSlides: number[] = [];
+      review.deck = { reviewedETag: etag, inspection: 'text_only', visibleSlides };
+      const skipped = [...new Set(['All slides were withheld', ...withheld.withheldLabels])];
+      this.finishWithNoFindings(review, revision, skipped);
+      return;
+    }
+
     const advanced = review.level === 'ADVANCED' ? await this.loadAdvancedContext(review, submission, ctx) : null;
 
     this.setProgress(review, 3, `Reviewing with ${skill.name}`);
@@ -861,10 +884,8 @@ export class ReviewJobsService {
       output.skipped = [...new Set([...output.skipped, ...withheld.withheldLabels])];
     }
 
-    const revision = typeof fetched.textHash === 'string' ? fetched.textHash : '';
-    const etag = typeof fetched.eTag === 'string' ? fetched.eTag : '';
     // Drafts have no powerPoint.outcome until a post attempt; store snapshot on deck.
-    review.deck = { reviewedETag: etag, inspection };
+    review.deck = { reviewedETag: etag, inspection, visibleSlides };
     this.finish(review, output, revision, new Map(), advanced?.notCheckable ?? []);
   }
 
@@ -915,41 +936,41 @@ export class ReviewJobsService {
       fileData.document = { ...doc, paragraphs: kept };
     }
 
-    // Drop footnotes / tableOfContents that belong to withheld sections. If we
-    // cannot attribute a footnote to a paragraph we keep the safe default: drop them.
+    // Footnotes: keep only entries whose number is referenced by a kept paragraph;
+    // no positional fallback, since we cannot confirm attribution otherwise.
     const footnotes = this.collectFootnotes(fileData, docRead);
     const tocEntries = this.collectToc(fileData, docRead);
     const keptFootnoteRefs = new Set<string>();
     for (const para of kept) {
       for (const ref of this.paragraphFootnoteRefs(para)) keptFootnoteRefs.add(ref);
     }
-    const filteredFootnotes = footnotes.filter((entry, index) => {
-      if (skippedSections.size === 0) return true;
-      const ref = this.footnoteRefOf(entry, index);
-      if (ref && keptFootnoteRefs.has(ref)) return true;
-      const text = typeof entry.text === 'string' ? entry.text : '';
-      return text.length > 0 && !hasWithheldMarker(text) && !this.footnoteBelongsToWithheldSection(index, skippedSections);
+    const filteredFootnotes = footnotes.filter((entry) => {
+      const number = this.footnoteNumber(entry);
+      if (number == null) return false;
+      return keptFootnoteRefs.has(String(number));
     });
-    const useFootnotes = skippedSections.size === 0 ? footnotes : filteredFootnotes;
+    const docFootnotesPresent = footnotes.length > 0;
 
-    const filteredToc = tocEntries.filter((entry) => {
-      const section = this.tocSectionOf(entry);
-      if (section && skippedSections.has(section)) return false;
-      const text = typeof entry.text === 'string' ? entry.text : '';
-      if (text && hasWithheldMarker(text)) return false;
-      return true;
-    });
+    // tableOfContents is string[]; drop entries that name a withheld section.
+    const filteredToc = tocEntries
+      .map((entry) => (typeof entry === 'string' ? entry : this.tocSectionOf(entry)))
+      .filter((entry): entry is string => typeof entry === 'string')
+      .filter((name) => {
+        const key = name.trim().toLowerCase();
+        if (!key) return false;
+        for (const withheld of skippedSections) {
+          if (withheld.trim().toLowerCase() === key) return false;
+        }
+        return true;
+      });
 
-    if (footnotes.length) fileData.footnotes = useFootnotes;
+    if (docFootnotesPresent) fileData.footnotes = filteredFootnotes;
     if (tocEntries.length) fileData.tableOfContents = filteredToc;
-    const docFootnotes = this.getArray((fileData.document as Record<string, unknown> | undefined)?.footnotes);
-    const docToc = this.getArray((fileData.document as Record<string, unknown> | undefined)?.tableOfContents);
-    if (docFootnotes.length) {
-      (fileData.document as Record<string, unknown>).footnotes = useFootnotes;
-    }
-    if (docToc.length) {
-      (fileData.document as Record<string, unknown>).tableOfContents = filteredToc;
-    }
+    const docRecord = fileData.document as Record<string, unknown> | undefined;
+    const docFootnotes = this.getArray(docRecord?.footnotes);
+    const docToc = this.getArray(docRecord?.tableOfContents);
+    if (docFootnotes.length) docRecord!.footnotes = filteredFootnotes;
+    if (docToc.length || Array.isArray(docRecord?.tableOfContents)) docRecord!.tableOfContents = filteredToc;
 
     return { fileData, skippedSections: [...skippedSections] };
   }
@@ -978,34 +999,39 @@ export class ReviewJobsService {
       if (Array.isArray(value)) {
         for (const entry of value) {
           if (typeof entry === 'string') refs.push(entry);
-          else if (entry && typeof entry === 'object' && typeof (entry as { ref?: unknown }).ref === 'string') {
-            refs.push((entry as { ref: string }).ref);
+          else if (typeof entry === 'number') refs.push(String(entry));
+          else if (entry && typeof entry === 'object') {
+            const record = entry as { ref?: unknown; number?: unknown; id?: unknown };
+            if (typeof record.ref === 'string') refs.push(record.ref);
+            else if (typeof record.ref === 'number') refs.push(String(record.ref));
+            else if (typeof record.number === 'string') refs.push(record.number);
+            else if (typeof record.number === 'number') refs.push(String(record.number));
+            else if (typeof record.id === 'string') refs.push(record.id);
           }
         }
       }
     }
     if (typeof para.footnoteRef === 'string') refs.push(para.footnoteRef);
+    if (typeof para.footnoteRef === 'number') refs.push(String(para.footnoteRef));
     const text = typeof para.text === 'string' ? para.text : '';
     for (const match of text.matchAll(/\[\^([^\]]+)\]/g)) refs.push(match[1]);
     return refs;
   }
 
-  private footnoteRefOf(entry: Record<string, unknown>, index: number): string | null {
-    for (const key of ['ref', 'id', 'key', 'footnoteId']) {
-      if (typeof entry[key] === 'string') return entry[key] as string;
-    }
-    return String(index + 1);
+  private footnoteNumber(entry: Record<string, unknown>): number | null {
+    const raw = entry.number;
+    if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+    if (typeof raw === 'string' && /^\d+$/.test(raw.trim())) return Number(raw.trim());
+    return null;
   }
 
-  private footnoteBelongsToWithheldSection(index: number, sections: Set<string>): boolean {
-    // Best-effort: an entry with an unknown section is dropped, because we cannot
-    // confirm it belongs to a visible paragraph.
-    return sections.size > 0 && index >= 0;
-  }
-
-  private tocSectionOf(entry: Record<string, unknown>): string | null {
-    for (const key of ['section', 'heading', 'title']) {
-      if (typeof entry[key] === 'string') return entry[key] as string;
+  private tocSectionOf(entry: unknown): string | null {
+    if (typeof entry === 'string') return entry;
+    if (entry && typeof entry === 'object') {
+      const record = entry as Record<string, unknown>;
+      for (const key of ['section', 'heading', 'title', 'text']) {
+        if (typeof record[key] === 'string') return record[key] as string;
+      }
     }
     return null;
   }
@@ -1044,21 +1070,9 @@ export class ReviewJobsService {
   }
 
   private blockIsWithheld(block: string): boolean {
-    if (hasWithheldMarker(block)) return true;
-    // Any hidden attribute encoding that implies a hidden slide.
-    const hideAttr = /\b(?:show|hidden|visible|hiddenSlide)\s*=\s*"?(false|0|no|true|1|yes)"?/i.exec(block);
-    if (hideAttr) {
-      const value = hideAttr[1].toLowerCase();
-      const attrName = hideAttr[0].toLowerCase().split('=')[0].trim();
-      if (attrName === 'show' && (value === 'false' || value === '0' || value === 'no')) return true;
-      if (attrName === 'hidden' && (value === 'true' || value === '1' || value === 'yes')) return true;
-      if (attrName === 'hidden' && value === 'hidden') return true;
-      if (attrName === 'hiddenslide' && value !== 'false' && value !== '0') return true;
-      if (attrName === 'visible' && (value === 'false' || value === '0' || value === 'no')) return true;
-    }
-    if (/\bhidden\s*[:=]\s*true\b/i.test(block)) return true;
-    if (/\bshow\s*[:=]\s*false\b/i.test(block)) return true;
-    return false;
+    // The tool already marks hidden slides with [HIDDEN]; only explicit markers
+    // matter here.
+    return hasWithheldMarker(block);
   }
 
   private findingDedupeKey(comment: ReviewComment): string {
@@ -1076,7 +1090,41 @@ export class ReviewJobsService {
     if (typeof comment.quote !== 'string') return false;
     if (comment.quote.trim().length < DOC_QUOTE_MIN) return false;
     const body = this.formatComment(comment);
+    if (body.trim().length > DOC_BODY_MAX_CHARS) return false;
     return utf8ByteLength(body) <= DOC_BODY_MAX_BYTES;
+  }
+
+  /**
+   * Single source of truth for "what can we actually post". Used for both
+   * `postableCount` and the writer so the button and the writer agree.
+   */
+  private postableFindings(review: Review, format: SubmissionFormat): ReviewComment[] {
+    const seen = new Set<string>();
+    const result: ReviewComment[] = [];
+    if (format === 'document') {
+      for (const comment of review.comments) {
+        if (comment.location.type === 'slide') continue;
+        if (!this.isPostableDocComment(comment)) continue;
+        const key = `${(comment.quote as string).slice(0, 500)}\u0000${this.formatComment(comment)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push(comment);
+        if (result.length >= MAX_FINDINGS) break;
+      }
+      return result;
+    }
+    // Slides: only findings whose slide is in the reviewed visible-slide set.
+    const visible = new Set<number>(review.deck?.visibleSlides ?? []);
+    for (const comment of review.comments) {
+      if (comment.location.type !== 'slide') continue;
+      if (!visible.has((comment.location as { slide: number }).slide)) continue;
+      const key = this.findingDedupeKey(comment);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push(comment);
+      if (result.length >= MAX_FINDINGS) break;
+    }
+    return result;
   }
 
   private finish(
@@ -1116,37 +1164,17 @@ export class ReviewJobsService {
       const dedupeKey = this.findingDedupeKey(proposed);
       if (seen.has(dedupeKey)) return;
       seen.add(dedupeKey);
-      // Compute postability from the exact post-time filter so approval matches reality.
-      if (proposed.location.type === 'slide') {
-        // Slides: any finding with a slide is postable.
-        stored.push(proposed);
-      } else if (this.isPostableDocComment(proposed)) {
-        stored.push(proposed);
-      } else {
-        // Non-postable: mark fallback and do not claim a Google placement.
-        stored.push({ ...proposed, placement: 'fallback', fallbackReason: proposed.fallbackReason ?? 'comment-failed' });
+      // Non-postable docs get a fallback placement; the shared postableFindings()
+      // below is the only source of truth for what will actually be posted.
+      if (proposed.location.type !== 'slide' && !this.isPostableDocComment(proposed)) {
+        proposed.placement = 'fallback';
+        proposed.fallbackReason = proposed.fallbackReason ?? 'comment-failed';
       }
+      stored.push(proposed);
     });
 
     const counts: Record<Severity, number> = { BLOCKING: 0, MATERIAL: 0, MINOR: 0 };
-    let postableCount = 0;
-    const postableSeen = new Set<string>();
-    for (const comment of stored) {
-      counts[comment.severity]++;
-      if (comment.location.type === 'slide') {
-        const key = this.findingDedupeKey(comment);
-        if (!postableSeen.has(key)) {
-          postableSeen.add(key);
-          postableCount++;
-        }
-      } else if (this.isPostableDocComment(comment) && comment.placement !== 'fallback') {
-        const key = `${comment.quote!.slice(0, 500)}\u0000${this.formatComment(comment)}`;
-        if (!postableSeen.has(key)) {
-          postableSeen.add(key);
-          postableCount++;
-        }
-      }
-    }
+    for (const comment of stored) counts[comment.severity]++;
 
     review.summary = {
       overview: output.overview,
@@ -1155,7 +1183,31 @@ export class ReviewJobsService {
       notCheckable: [...output.notCheckable, ...extra],
     };
     review.comments = stored;
-    review.postableCount = postableCount;
+    // Compute postableCount via the same helper that post-time uses, so the
+    // approval count and the writer cannot drift.
+    const format = this.submissionFormat(review, revisionId);
+    review.postableCount = this.postableFindings(review, format).length;
+    review.progress = undefined;
+    review.status = 'COMPLETED';
+    review.finishedAt = isoNow();
+  }
+
+  private submissionFormat(review: Review, revisionId: string): SubmissionFormat {
+    void revisionId;
+    // Slides reviews set review.deck during runSlides; documents do not.
+    return review.deck ? 'slides' : 'document';
+  }
+
+  private finishWithNoFindings(review: Review, revisionId: string, skipped: string[]): void {
+    review.revisionId = revisionId;
+    review.summary = {
+      overview: 'No visible content to review; all slides were withheld.',
+      counts: { BLOCKING: 0, MATERIAL: 0, MINOR: 0 },
+      skipped,
+      notCheckable: [],
+    };
+    review.comments = [];
+    review.postableCount = 0;
     review.progress = undefined;
     review.status = 'COMPLETED';
     review.finishedAt = isoNow();

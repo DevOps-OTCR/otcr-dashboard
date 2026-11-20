@@ -29,7 +29,7 @@ function setReviewParams(submissionId: string | null) {
 /** True when the demo client should back the review UI rather than the review-job API. */
 function reviewDemoEnabled(): boolean {
   if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('reviewDemo')) return true;
-  return process.env.NEXT_PUBLIC_AGENTIC_REVIEW_DEMO === 'true';
+  return typeof process !== 'undefined' && process.env.NEXT_PUBLIC_AGENTIC_REVIEW_DEMO === 'true';
 }
 
 /** Narrows a ReviewClient to the demo client so its demo controls can be used. */

@@ -225,7 +225,7 @@ export class PptxReaderService {
 
       // A slide is hidden when its root <p:sld> carries show="0"; other values mean visible.
       const rootTag = slideXml.match(/<(?:[A-Za-z_][\w.-]*:)?sld\b[^>]*>/)?.[0] ?? '';
-      const hidden = /\bshow\s*=\s*"0"/.test(rootTag);
+      const hidden = /\bshow\s*=\s*(?:"(?:0|false)"|'(?:0|false)'|0\b|false\b)/i.test(rootTag);
 
       const slideDoc = parser.parse(slideXml);
       const sld = slideDoc?.sld ?? slideDoc?.wksp ?? slideDoc;

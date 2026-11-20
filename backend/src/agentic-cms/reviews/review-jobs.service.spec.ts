@@ -174,16 +174,22 @@ describe('ReviewJobsService', () => {
           capturedAt: new Date().toISOString(),
         },
         revisionGuarded: true,
-        comments: input.comments.map((entry: any, i: number) => ({
-          quote: entry.quote,
-          comment: entry.comment,
-          section: 'Intro',
-          placement: i === 0 ? 'native' : 'fallback',
-          nativeCommentId: i === 0 ? 'native-1' : null,
-          fallbackReason: i === 0 ? null : 'not-found',
-          anchoredText: i === 0 ? entry.quote : null,
-          anchorVerified: i === 0 ? true : null,
-        })),
+        comments: input.comments.map((entry: any) => {
+          // The service posts one comment per docs.comment call, so decide
+          // placement from the comment itself rather than a batch position:
+          // the anchored "exact quote one" lands natively; the rest fall back.
+          const native = entry.quote === 'exact quote one';
+          return {
+            quote: entry.quote,
+            comment: entry.comment,
+            section: 'Intro',
+            placement: native ? 'native' : 'fallback',
+            nativeCommentId: native ? 'native-1' : null,
+            fallbackReason: native ? null : 'not-found',
+            anchoredText: native ? entry.quote : null,
+            anchorVerified: native ? true : null,
+          };
+        }),
       })),
     };
     const slideTools = [
@@ -315,12 +321,16 @@ describe('ReviewJobsService', () => {
       await service.whenIdle();
 
       const posted = await service.post(user(), 'p1', created.id);
-      expect(docs.comment).toHaveBeenCalledTimes(1);
-      const [userArg, inputArg, optionsArg] = docs.comment.mock.calls[0];
-      expect(inputArg.comments).toHaveLength(2);
-      expect(inputArg.comments[0].comment).toMatch(/^\[MATERIAL\] issue 1/);
-      expect(optionsArg).toEqual(expect.objectContaining({ documentId: 'abc' }));
-      expect(userArg.id).toBe('pm-1');
+      // One docs.comment call per postable comment.
+      expect(docs.comment).toHaveBeenCalledTimes(2);
+      const [firstUserArg, firstInputArg, firstOptionsArg] = docs.comment.mock.calls[0];
+      expect(firstInputArg.comments).toHaveLength(1);
+      expect(firstInputArg.comments[0].comment).toMatch(/^\[MATERIAL\] issue 1/);
+      expect(firstOptionsArg).toEqual(expect.objectContaining({ documentId: 'abc' }));
+      expect(firstUserArg.id).toBe('pm-1');
+      const [, secondInputArg, secondOptionsArg] = docs.comment.mock.calls[1];
+      expect(secondInputArg.comments).toHaveLength(1);
+      expect(secondOptionsArg).toEqual(expect.objectContaining({ documentId: 'abc' }));
 
       expect(posted.posting).toBe('done');
       expect(posted.comments[0].placement).toBe('native');
@@ -377,7 +387,8 @@ describe('ReviewJobsService', () => {
       await service.whenIdle();
       await service.post(user(), 'p1', created.id);
       await expect(service.post(user(), 'p1', created.id)).rejects.toBeInstanceOf(ConflictException);
-      expect(docs.comment).toHaveBeenCalledTimes(1);
+      // One docs.comment call per postable comment (two postable findings).
+      expect(docs.comment).toHaveBeenCalledTimes(2);
     });
 
     it('rejects a second concurrent post with 409', async () => {
@@ -387,7 +398,9 @@ describe('ReviewJobsService', () => {
 
       let release: () => void = () => undefined;
       const gate = new Promise<void>((resolve) => { release = resolve; });
-      docs.comment.mockImplementationOnce(async (_u: any, input: any) => {
+      // Comments are posted one per docs.comment call; gate every call so posting
+      // stays in_progress until we release.
+      docs.comment.mockImplementation(async (_u: any, input: any) => {
         await gate;
         return {
           schemaVersion: '1',

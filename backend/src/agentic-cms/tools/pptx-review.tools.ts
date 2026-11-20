@@ -23,9 +23,22 @@ const hash = (buffer: Buffer) => createHash('sha256').update(buffer).digest('hex
 /** Keeps a multi-line text box readable as one entry of the summary. */
 const indent = (text: string) => text.replace(/\n/g, '\n    ');
 
+const WITHHELD_MARKERS = ['[HIDDEN]', '[CONFIDENTIAL]', '[PROPRIETARY]'];
+
+function hasWithheldMarker(text: string): boolean {
+  const upper = text.toUpperCase();
+  return WITHHELD_MARKERS.some((marker) => upper.includes(marker));
+}
+
 function formatDeckSummary(deck: DeckContent): string {
   return deck.slides.map((slide) => {
-    if (slide.hidden) return `Slide ${slide.index} [HIDDEN]`;
+    // Mark a slide hidden when the XML show attribute hides it, when any shape
+    // text contains a withheld marker, or when the speaker notes do.
+    const shapeTexts = slide.shapes.filter((shape) => shape.text).map((shape) => shape.text);
+    const hasMarker =
+      hasWithheldMarker(slide.speakerNotes ?? '') ||
+      shapeTexts.some((text) => hasWithheldMarker(text));
+    if (slide.hidden || hasMarker) return `Slide ${slide.index} [HIDDEN]`;
     return [
       `Slide ${slide.index} (sldId=${slide.sldId})`,
       ...slide.shapes.filter((shape) => shape.text).map((shape) => `  [${shape.type}] shape ${shape.spId}: ${indent(shape.text)}`),

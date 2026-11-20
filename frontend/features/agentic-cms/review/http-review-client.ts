@@ -17,6 +17,12 @@ const FALLBACK_COPY = 'Could not reach AI review. Try again.';
 function toError(error: unknown): Error {
   if (axios.isAxiosError(error)) {
     const status = error.response?.status;
+    if (status === 409) {
+      const message = error.response?.data?.message;
+      if (typeof message === 'string' && message.trim()) {
+        return new Error(message);
+      }
+    }
     return new Error((status && ERROR_COPY[status]) || FALLBACK_COPY);
   }
   return new Error(FALLBACK_COPY);
