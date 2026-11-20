@@ -9,6 +9,7 @@ if (params.has('delayProjectTwo')) (window as any).delayProjectTwo = true;
 if (params.has('failProjectTwo')) (window as any).failProjectTwo = true;
 if (params.has('failSaveOnce')) (window as any).failSaveOnce = true;
 if (params.has('failNoteOnce')) (window as any).failNoteOnce = true;
+if (params.has('holdReads')) (window as any).holdReads = true;
 if (params.has('holdWrites')) (window as any).holdWrites = true;
 if (params.has('lateMount')) {
   document.getElementById('agentic-cms-root')?.remove();

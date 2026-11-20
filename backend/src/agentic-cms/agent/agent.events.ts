@@ -11,6 +11,12 @@ export type AgentEvent =
   | { type: 'text_replace'; text: string }
   | { type: 'tool_start'; id: string; name: string; label: string }
   | { type: 'tool_end'; id: string; ok: boolean; note?: string }
+  // A write tool was called. Nothing has been written; the user approves with the id in the next request.
+  | {
+      type: 'approval_required'; id: string; tool: string;
+      target: { deliverable: string; file: string; version: number; submittedAt: string; snapshot: string };
+      summary: string; items: { where: string; text: string }[];
+    }
   | { type: 'sources'; sources: AgentSource[] }
   | { type: 'error'; kind: AgentErrorKind; retryable: boolean; message: string }
   | { type: 'done' };

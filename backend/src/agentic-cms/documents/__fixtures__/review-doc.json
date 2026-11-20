@@ -1,0 +1,1786 @@
+{
+  "title": "Review",
+  "revisionId": "AHj4eMRNErtOvLW0okGMMcTr5N9XFhZZVg8DIsCYli8WG3tlakEkVBBeVnKSsYMrn71vsfdskEuKhbeAQM-J4SxsjoSr1d0why1cer0lC8cDEQA",
+  "suggestionsViewMode": "SUGGESTIONS_INLINE",
+  "documentId": "FIXTURE_DOCUMENT_ID",
+  "tabs": [
+    {
+      "tabProperties": {
+        "tabId": "t.0",
+        "title": "Tab 1",
+        "index": 0
+      },
+      "documentTab": {
+        "body": {
+          "content": [
+            {
+              "endIndex": 1,
+              "sectionBreak": {
+                "sectionStyle": {
+                  "columnSeparatorStyle": "NONE",
+                  "contentDirection": "LEFT_TO_RIGHT",
+                  "sectionType": "CONTINUOUS"
+                }
+              }
+            },
+            {
+              "startIndex": 1,
+              "endIndex": 80,
+              "paragraph": {
+                "elements": [
+                  {
+                    "startIndex": 1,
+                    "endIndex": 80,
+                    "textRun": {
+                      "content": "Group 3 — PowerPoint and Google Docs review mechanism\u000bOwners: Akshay and Satya\n",
+                      "textStyle": {
+                        "bold": true
+                      }
+                    }
+                  }
+                ],
+                "paragraphStyle": {
+                  "namedStyleType": "NORMAL_TEXT",
+                  "direction": "LEFT_TO_RIGHT",
+                  "spaceAbove": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  },
+                  "spaceBelow": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  }
+                }
+              }
+            },
+            {
+              "startIndex": 80,
+              "endIndex": 290,
+              "paragraph": {
+                "elements": [
+                  {
+                    "startIndex": 80,
+                    "endIndex": 290,
+                    "textRun": {
+                      "content": "Find and implement the most practical way for the agent to receive, read, and comment on PowerPoint presentations and Google Docs whitepapers. You have flexibility to choose the tools and integration approach.\n",
+                      "textStyle": {}
+                    }
+                  }
+                ],
+                "paragraphStyle": {
+                  "namedStyleType": "NORMAL_TEXT",
+                  "direction": "LEFT_TO_RIGHT",
+                  "spaceAbove": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  },
+                  "spaceBelow": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  }
+                }
+              }
+            },
+            {
+              "startIndex": 290,
+              "endIndex": 504,
+              "paragraph": {
+                "elements": [
+                  {
+                    "startIndex": 290,
+                    "endIndex": 504,
+                    "textRun": {
+                      "content": "Start from the current CMS submission-link flow. Determine which links, file formats, and hosting arrangements are supported, and whether additional sharing, authentication, upload, or conversion steps are needed.\n",
+                      "textStyle": {}
+                    }
+                  }
+                ],
+                "paragraphStyle": {
+                  "namedStyleType": "NORMAL_TEXT",
+                  "direction": "LEFT_TO_RIGHT",
+                  "spaceAbove": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  },
+                  "spaceBelow": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  },
+                  "indentFirstLine": {
+                    "magnitude": 18,
+                    "unit": "PT"
+                  },
+                  "indentStart": {
+                    "magnitude": 36,
+                    "unit": "PT"
+                  }
+                },
+                "bullet": {
+                  "listId": "kix.jnfmpgi9ehdu",
+                  "textStyle": {}
+                }
+              }
+            },
+            {
+              "startIndex": 504,
+              "endIndex": 674,
+              "paragraph": {
+                "elements": [
+                  {
+                    "startIndex": 504,
+                    "endIndex": 674,
+                    "textRun": {
+                      "content": "Ensure the agent receives the document’s actual content. For slide-formatting review, establish a way to inspect the visual layout; extracted text alone is insufficient.\n",
+                      "textStyle": {}
+                    }
+                  }
+                ],
+                "paragraphStyle": {
+                  "namedStyleType": "NORMAL_TEXT",
+                  "direction": "LEFT_TO_RIGHT",
+                  "spaceAbove": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  },
+                  "spaceBelow": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  },
+                  "indentFirstLine": {
+                    "magnitude": 18,
+                    "unit": "PT"
+                  },
+                  "indentStart": {
+                    "magnitude": 36,
+                    "unit": "PT"
+                  }
+                },
+                "bullet": {
+                  "listId": "kix.jnfmpgi9ehdu",
+                  "textStyle": {}
+                }
+              }
+            },
+            {
+              "startIndex": 674,
+              "endIndex": 780,
+              "paragraph": {
+                "elements": [
+                  {
+                    "startIndex": 674,
+                    "endIndex": 780,
+                    "textRun": {
+                      "content": "Investigate and implement native comments where feasible, tied to the relevant slide or document passage.\n",
+                      "textStyle": {}
+                    }
+                  }
+                ],
+                "paragraphStyle": {
+                  "namedStyleType": "NORMAL_TEXT",
+                  "direction": "LEFT_TO_RIGHT",
+                  "spaceAbove": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  },
+                  "spaceBelow": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  },
+                  "indentFirstLine": {
+                    "magnitude": 18,
+                    "unit": "PT"
+                  },
+                  "indentStart": {
+                    "magnitude": 36,
+                    "unit": "PT"
+                  }
+                },
+                "bullet": {
+                  "listId": "kix.jnfmpgi9ehdu",
+                  "textStyle": {}
+                }
+              }
+            },
+            {
+              "startIndex": 780,
+              "endIndex": 901,
+              "paragraph": {
+                "elements": [
+                  {
+                    "startIndex": 780,
+                    "endIndex": 901,
+                    "textRun": {
+                      "content": "Handle document access and comment permissions explicitly. Make required setup steps and access failures understandable.\n",
+                      "textStyle": {}
+                    }
+                  }
+                ],
+                "paragraphStyle": {
+                  "namedStyleType": "NORMAL_TEXT",
+                  "direction": "LEFT_TO_RIGHT",
+                  "spaceAbove": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  },
+                  "spaceBelow": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  },
+                  "indentFirstLine": {
+                    "magnitude": 18,
+                    "unit": "PT"
+                  },
+                  "indentStart": {
+                    "magnitude": 36,
+                    "unit": "PT"
+                  }
+                },
+                "bullet": {
+                  "listId": "kix.jnfmpgi9ehdu",
+                  "textStyle": {}
+                }
+              }
+            },
+            {
+              "startIndex": 901,
+              "endIndex": 1069,
+              "paragraph": {
+                "elements": [
+                  {
+                    "startIndex": 901,
+                    "endIndex": 1069,
+                    "textRun": {
+                      "content": "Demonstrate the mechanism independently using sample documents and sample review comments. You do not need to connect it to Teja’s skills or the reviewer UI by Friday.\n",
+                      "textStyle": {}
+                    }
+                  }
+                ],
+                "paragraphStyle": {
+                  "namedStyleType": "NORMAL_TEXT",
+                  "direction": "LEFT_TO_RIGHT",
+                  "spaceAbove": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  },
+                  "spaceBelow": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  },
+                  "indentFirstLine": {
+                    "magnitude": 18,
+                    "unit": "PT"
+                  },
+                  "indentStart": {
+                    "magnitude": 36,
+                    "unit": "PT"
+                  }
+                },
+                "bullet": {
+                  "listId": "kix.jnfmpgi9ehdu",
+                  "textStyle": {}
+                }
+              }
+            },
+            {
+              "startIndex": 1069,
+              "endIndex": 1159,
+              "paragraph": {
+                "elements": [
+                  {
+                    "startIndex": 1069,
+                    "endIndex": 1159,
+                    "textRun": {
+                      "content": "Share findings with Sriram and Stefan so they can account for where feedback will appear.\n",
+                      "textStyle": {}
+                    }
+                  }
+                ],
+                "paragraphStyle": {
+                  "namedStyleType": "NORMAL_TEXT",
+                  "direction": "LEFT_TO_RIGHT",
+                  "spaceAbove": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  },
+                  "spaceBelow": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  },
+                  "indentFirstLine": {
+                    "magnitude": 18,
+                    "unit": "PT"
+                  },
+                  "indentStart": {
+                    "magnitude": 36,
+                    "unit": "PT"
+                  }
+                },
+                "bullet": {
+                  "listId": "kix.jnfmpgi9ehdu",
+                  "textStyle": {}
+                }
+              }
+            },
+            {
+              "startIndex": 1159,
+              "endIndex": 1369,
+              "paragraph": {
+                "elements": [
+                  {
+                    "startIndex": 1159,
+                    "endIndex": 1369,
+                    "textRun": {
+                      "content": "If native commenting is not feasible, report the specific limitation and what was tested. Propose a practical fallback, such as returning comments with slide or section references for later display in the CMS.\n",
+                      "textStyle": {}
+                    }
+                  }
+                ],
+                "paragraphStyle": {
+                  "namedStyleType": "NORMAL_TEXT",
+                  "direction": "LEFT_TO_RIGHT",
+                  "spaceAbove": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  },
+                  "spaceBelow": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  },
+                  "indentFirstLine": {
+                    "magnitude": 18,
+                    "unit": "PT"
+                  },
+                  "indentStart": {
+                    "magnitude": 36,
+                    "unit": "PT"
+                  }
+                },
+                "bullet": {
+                  "listId": "kix.jnfmpgi9ehdu",
+                  "textStyle": {}
+                }
+              }
+            },
+            {
+              "startIndex": 1369,
+              "endIndex": 1484,
+              "paragraph": {
+                "elements": [
+                  {
+                    "startIndex": 1369,
+                    "endIndex": 1484,
+                    "textRun": {
+                      "content": "Identify the reviewed document revision or captured snapshot so feedback remains understandable after later edits.\n",
+                      "textStyle": {}
+                    }
+                  }
+                ],
+                "paragraphStyle": {
+                  "namedStyleType": "NORMAL_TEXT",
+                  "direction": "LEFT_TO_RIGHT",
+                  "spaceAbove": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  },
+                  "spaceBelow": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  },
+                  "indentFirstLine": {
+                    "magnitude": 18,
+                    "unit": "PT"
+                  },
+                  "indentStart": {
+                    "magnitude": 36,
+                    "unit": "PT"
+                  }
+                },
+                "bullet": {
+                  "listId": "kix.jnfmpgi9ehdu",
+                  "textStyle": {}
+                }
+              }
+            },
+            {
+              "startIndex": 1484,
+              "endIndex": 1726,
+              "paragraph": {
+                "elements": [
+                  {
+                    "startIndex": 1484,
+                    "endIndex": 1494,
+                    "textRun": {
+                      "content": "Done when:",
+                      "textStyle": {
+                        "bold": true
+                      }
+                    }
+                  },
+                  {
+                    "startIndex": 1494,
+                    "endIndex": 1726,
+                    "textRun": {
+                      "content": " A standalone demonstration shows a Google Doc and a PowerPoint being read and comments being placed where supported. For unsupported commenting, provide the tested limitation and sample feedback in a form the UI can display later.\n",
+                      "textStyle": {}
+                    }
+                  }
+                ],
+                "paragraphStyle": {
+                  "namedStyleType": "NORMAL_TEXT",
+                  "direction": "LEFT_TO_RIGHT",
+                  "spaceAbove": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  },
+                  "spaceBelow": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  }
+                }
+              }
+            },
+            {
+              "startIndex": 1726,
+              "endIndex": 1727,
+              "paragraph": {
+                "elements": [
+                  {
+                    "startIndex": 1726,
+                    "endIndex": 1727,
+                    "textRun": {
+                      "content": "\n",
+                      "textStyle": {}
+                    }
+                  }
+                ],
+                "paragraphStyle": {
+                  "namedStyleType": "NORMAL_TEXT",
+                  "direction": "LEFT_TO_RIGHT",
+                  "spaceAbove": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  },
+                  "spaceBelow": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  }
+                }
+              }
+            },
+            {
+              "startIndex": 1727,
+              "endIndex": 1759,
+              "table": {
+                "rows": 1,
+                "columns": 2,
+                "tableRows": [
+                  {
+                    "startIndex": 1728,
+                    "endIndex": 1758,
+                    "tableCells": [
+                      {
+                        "startIndex": 1729,
+                        "endIndex": 1756,
+                        "content": [
+                          {
+                            "startIndex": 1730,
+                            "endIndex": 1756,
+                            "paragraph": {
+                              "elements": [
+                                {
+                                  "startIndex": 1730,
+                                  "endIndex": 1756,
+                                  "textRun": {
+                                    "content": "Table cell sentence bravo\n",
+                                    "textStyle": {}
+                                  }
+                                }
+                              ],
+                              "paragraphStyle": {
+                                "namedStyleType": "NORMAL_TEXT",
+                                "alignment": "START",
+                                "lineSpacing": 100,
+                                "direction": "LEFT_TO_RIGHT",
+                                "spacingMode": "COLLAPSE_LISTS",
+                                "spaceAbove": {
+                                  "unit": "PT"
+                                },
+                                "spaceBelow": {
+                                  "unit": "PT"
+                                },
+                                "borderBetween": {
+                                  "color": {},
+                                  "width": {
+                                    "unit": "PT"
+                                  },
+                                  "padding": {
+                                    "unit": "PT"
+                                  },
+                                  "dashStyle": "SOLID"
+                                },
+                                "borderTop": {
+                                  "color": {},
+                                  "width": {
+                                    "unit": "PT"
+                                  },
+                                  "padding": {
+                                    "unit": "PT"
+                                  },
+                                  "dashStyle": "SOLID"
+                                },
+                                "borderBottom": {
+                                  "color": {},
+                                  "width": {
+                                    "unit": "PT"
+                                  },
+                                  "padding": {
+                                    "unit": "PT"
+                                  },
+                                  "dashStyle": "SOLID"
+                                },
+                                "borderLeft": {
+                                  "color": {},
+                                  "width": {
+                                    "unit": "PT"
+                                  },
+                                  "padding": {
+                                    "unit": "PT"
+                                  },
+                                  "dashStyle": "SOLID"
+                                },
+                                "borderRight": {
+                                  "color": {},
+                                  "width": {
+                                    "unit": "PT"
+                                  },
+                                  "padding": {
+                                    "unit": "PT"
+                                  },
+                                  "dashStyle": "SOLID"
+                                },
+                                "indentFirstLine": {
+                                  "unit": "PT"
+                                },
+                                "indentStart": {
+                                  "unit": "PT"
+                                },
+                                "indentEnd": {
+                                  "unit": "PT"
+                                },
+                                "keepLinesTogether": false,
+                                "keepWithNext": false,
+                                "avoidWidowAndOrphan": false,
+                                "shading": {
+                                  "backgroundColor": {}
+                                },
+                                "pageBreakBefore": false
+                              }
+                            }
+                          }
+                        ],
+                        "tableCellStyle": {
+                          "rowSpan": 1,
+                          "columnSpan": 1,
+                          "backgroundColor": {},
+                          "paddingLeft": {
+                            "magnitude": 5,
+                            "unit": "PT"
+                          },
+                          "paddingRight": {
+                            "magnitude": 5,
+                            "unit": "PT"
+                          },
+                          "paddingTop": {
+                            "magnitude": 5,
+                            "unit": "PT"
+                          },
+                          "paddingBottom": {
+                            "magnitude": 5,
+                            "unit": "PT"
+                          },
+                          "contentAlignment": "TOP"
+                        }
+                      },
+                      {
+                        "startIndex": 1756,
+                        "endIndex": 1758,
+                        "content": [
+                          {
+                            "startIndex": 1757,
+                            "endIndex": 1758,
+                            "paragraph": {
+                              "elements": [
+                                {
+                                  "startIndex": 1757,
+                                  "endIndex": 1758,
+                                  "textRun": {
+                                    "content": "\n",
+                                    "textStyle": {}
+                                  }
+                                }
+                              ],
+                              "paragraphStyle": {
+                                "namedStyleType": "NORMAL_TEXT",
+                                "alignment": "START",
+                                "lineSpacing": 100,
+                                "direction": "LEFT_TO_RIGHT",
+                                "spacingMode": "COLLAPSE_LISTS",
+                                "spaceAbove": {
+                                  "unit": "PT"
+                                },
+                                "spaceBelow": {
+                                  "unit": "PT"
+                                },
+                                "borderBetween": {
+                                  "color": {},
+                                  "width": {
+                                    "unit": "PT"
+                                  },
+                                  "padding": {
+                                    "unit": "PT"
+                                  },
+                                  "dashStyle": "SOLID"
+                                },
+                                "borderTop": {
+                                  "color": {},
+                                  "width": {
+                                    "unit": "PT"
+                                  },
+                                  "padding": {
+                                    "unit": "PT"
+                                  },
+                                  "dashStyle": "SOLID"
+                                },
+                                "borderBottom": {
+                                  "color": {},
+                                  "width": {
+                                    "unit": "PT"
+                                  },
+                                  "padding": {
+                                    "unit": "PT"
+                                  },
+                                  "dashStyle": "SOLID"
+                                },
+                                "borderLeft": {
+                                  "color": {},
+                                  "width": {
+                                    "unit": "PT"
+                                  },
+                                  "padding": {
+                                    "unit": "PT"
+                                  },
+                                  "dashStyle": "SOLID"
+                                },
+                                "borderRight": {
+                                  "color": {},
+                                  "width": {
+                                    "unit": "PT"
+                                  },
+                                  "padding": {
+                                    "unit": "PT"
+                                  },
+                                  "dashStyle": "SOLID"
+                                },
+                                "indentFirstLine": {
+                                  "unit": "PT"
+                                },
+                                "indentStart": {
+                                  "unit": "PT"
+                                },
+                                "indentEnd": {
+                                  "unit": "PT"
+                                },
+                                "keepLinesTogether": false,
+                                "keepWithNext": false,
+                                "avoidWidowAndOrphan": false,
+                                "shading": {
+                                  "backgroundColor": {}
+                                },
+                                "pageBreakBefore": false
+                              }
+                            }
+                          }
+                        ],
+                        "tableCellStyle": {
+                          "rowSpan": 1,
+                          "columnSpan": 1,
+                          "backgroundColor": {},
+                          "paddingLeft": {
+                            "magnitude": 5,
+                            "unit": "PT"
+                          },
+                          "paddingRight": {
+                            "magnitude": 5,
+                            "unit": "PT"
+                          },
+                          "paddingTop": {
+                            "magnitude": 5,
+                            "unit": "PT"
+                          },
+                          "paddingBottom": {
+                            "magnitude": 5,
+                            "unit": "PT"
+                          },
+                          "contentAlignment": "TOP"
+                        }
+                      }
+                    ],
+                    "tableRowStyle": {
+                      "minRowHeight": {
+                        "unit": "PT"
+                      }
+                    }
+                  }
+                ],
+                "tableStyle": {
+                  "tableColumnProperties": [
+                    {
+                      "widthType": "EVENLY_DISTRIBUTED"
+                    },
+                    {
+                      "widthType": "EVENLY_DISTRIBUTED"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "startIndex": 1759,
+              "endIndex": 1760,
+              "paragraph": {
+                "elements": [
+                  {
+                    "startIndex": 1759,
+                    "endIndex": 1760,
+                    "textRun": {
+                      "content": "\n",
+                      "textStyle": {}
+                    }
+                  }
+                ],
+                "paragraphStyle": {
+                  "namedStyleType": "NORMAL_TEXT",
+                  "direction": "LEFT_TO_RIGHT",
+                  "spaceAbove": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  },
+                  "spaceBelow": {
+                    "magnitude": 12,
+                    "unit": "PT"
+                  }
+                }
+              }
+            },
+            {
+              "startIndex": 1760,
+              "endIndex": 1761,
+              "paragraph": {
+                "elements": [
+                  {
+                    "startIndex": 1760,
+                    "endIndex": 1761,
+                    "textRun": {
+                      "content": "\n",
+                      "textStyle": {}
+                    }
+                  }
+                ],
+                "paragraphStyle": {
+                  "namedStyleType": "NORMAL_TEXT",
+                  "direction": "LEFT_TO_RIGHT"
+                }
+              }
+            }
+          ]
+        },
+        "documentStyle": {
+          "background": {
+            "color": {}
+          },
+          "pageNumberStart": 1,
+          "marginTop": {
+            "magnitude": 72,
+            "unit": "PT"
+          },
+          "marginBottom": {
+            "magnitude": 72,
+            "unit": "PT"
+          },
+          "marginRight": {
+            "magnitude": 72,
+            "unit": "PT"
+          },
+          "marginLeft": {
+            "magnitude": 72,
+            "unit": "PT"
+          },
+          "pageSize": {
+            "height": {
+              "magnitude": 792,
+              "unit": "PT"
+            },
+            "width": {
+              "magnitude": 612,
+              "unit": "PT"
+            }
+          },
+          "marginHeader": {
+            "magnitude": 36,
+            "unit": "PT"
+          },
+          "marginFooter": {
+            "magnitude": 36,
+            "unit": "PT"
+          },
+          "useCustomHeaderFooterMargins": true,
+          "documentFormat": {
+            "documentMode": "PAGES"
+          }
+        },
+        "namedStyles": {
+          "styles": [
+            {
+              "namedStyleType": "NORMAL_TEXT",
+              "textStyle": {
+                "bold": false,
+                "italic": false,
+                "underline": false,
+                "strikethrough": false,
+                "smallCaps": false,
+                "backgroundColor": {},
+                "foregroundColor": {
+                  "color": {
+                    "rgbColor": {}
+                  }
+                },
+                "fontSize": {
+                  "magnitude": 11,
+                  "unit": "PT"
+                },
+                "weightedFontFamily": {
+                  "fontFamily": "Arial",
+                  "weight": 400
+                },
+                "baselineOffset": "NONE"
+              },
+              "paragraphStyle": {
+                "namedStyleType": "NORMAL_TEXT",
+                "alignment": "START",
+                "lineSpacing": 115,
+                "direction": "LEFT_TO_RIGHT",
+                "spacingMode": "COLLAPSE_LISTS",
+                "spaceAbove": {
+                  "unit": "PT"
+                },
+                "spaceBelow": {
+                  "unit": "PT"
+                },
+                "borderBetween": {
+                  "color": {},
+                  "width": {
+                    "unit": "PT"
+                  },
+                  "padding": {
+                    "unit": "PT"
+                  },
+                  "dashStyle": "SOLID"
+                },
+                "borderTop": {
+                  "color": {},
+                  "width": {
+                    "unit": "PT"
+                  },
+                  "padding": {
+                    "unit": "PT"
+                  },
+                  "dashStyle": "SOLID"
+                },
+                "borderBottom": {
+                  "color": {},
+                  "width": {
+                    "unit": "PT"
+                  },
+                  "padding": {
+                    "unit": "PT"
+                  },
+                  "dashStyle": "SOLID"
+                },
+                "borderLeft": {
+                  "color": {},
+                  "width": {
+                    "unit": "PT"
+                  },
+                  "padding": {
+                    "unit": "PT"
+                  },
+                  "dashStyle": "SOLID"
+                },
+                "borderRight": {
+                  "color": {},
+                  "width": {
+                    "unit": "PT"
+                  },
+                  "padding": {
+                    "unit": "PT"
+                  },
+                  "dashStyle": "SOLID"
+                },
+                "indentFirstLine": {
+                  "unit": "PT"
+                },
+                "indentStart": {
+                  "unit": "PT"
+                },
+                "indentEnd": {
+                  "unit": "PT"
+                },
+                "keepLinesTogether": false,
+                "keepWithNext": false,
+                "avoidWidowAndOrphan": true,
+                "shading": {
+                  "backgroundColor": {}
+                },
+                "pageBreakBefore": false
+              }
+            },
+            {
+              "namedStyleType": "HEADING_1",
+              "textStyle": {
+                "fontSize": {
+                  "magnitude": 20,
+                  "unit": "PT"
+                }
+              },
+              "paragraphStyle": {
+                "namedStyleType": "NORMAL_TEXT",
+                "direction": "LEFT_TO_RIGHT",
+                "spaceAbove": {
+                  "magnitude": 20,
+                  "unit": "PT"
+                },
+                "spaceBelow": {
+                  "magnitude": 6,
+                  "unit": "PT"
+                },
+                "keepLinesTogether": true,
+                "keepWithNext": true,
+                "pageBreakBefore": false
+              }
+            },
+            {
+              "namedStyleType": "HEADING_2",
+              "textStyle": {
+                "bold": false,
+                "fontSize": {
+                  "magnitude": 16,
+                  "unit": "PT"
+                }
+              },
+              "paragraphStyle": {
+                "namedStyleType": "NORMAL_TEXT",
+                "direction": "LEFT_TO_RIGHT",
+                "spaceAbove": {
+                  "magnitude": 18,
+                  "unit": "PT"
+                },
+                "spaceBelow": {
+                  "magnitude": 6,
+                  "unit": "PT"
+                },
+                "keepLinesTogether": true,
+                "keepWithNext": true,
+                "pageBreakBefore": false
+              }
+            },
+            {
+              "namedStyleType": "HEADING_3",
+              "textStyle": {
+                "bold": false,
+                "foregroundColor": {
+                  "color": {
+                    "rgbColor": {
+                      "red": 0.2627451,
+                      "green": 0.2627451,
+                      "blue": 0.2627451
+                    }
+                  }
+                },
+                "fontSize": {
+                  "magnitude": 14,
+                  "unit": "PT"
+                }
+              },
+              "paragraphStyle": {
+                "namedStyleType": "NORMAL_TEXT",
+                "direction": "LEFT_TO_RIGHT",
+                "spaceAbove": {
+                  "magnitude": 16,
+                  "unit": "PT"
+                },
+                "spaceBelow": {
+                  "magnitude": 4,
+                  "unit": "PT"
+                },
+                "keepLinesTogether": true,
+                "keepWithNext": true,
+                "pageBreakBefore": false
+              }
+            },
+            {
+              "namedStyleType": "HEADING_4",
+              "textStyle": {
+                "foregroundColor": {
+                  "color": {
+                    "rgbColor": {
+                      "red": 0.4,
+                      "green": 0.4,
+                      "blue": 0.4
+                    }
+                  }
+                },
+                "fontSize": {
+                  "magnitude": 12,
+                  "unit": "PT"
+                }
+              },
+              "paragraphStyle": {
+                "namedStyleType": "NORMAL_TEXT",
+                "direction": "LEFT_TO_RIGHT",
+                "spaceAbove": {
+                  "magnitude": 14,
+                  "unit": "PT"
+                },
+                "spaceBelow": {
+                  "magnitude": 4,
+                  "unit": "PT"
+                },
+                "keepLinesTogether": true,
+                "keepWithNext": true,
+                "pageBreakBefore": false
+              }
+            },
+            {
+              "namedStyleType": "HEADING_5",
+              "textStyle": {
+                "foregroundColor": {
+                  "color": {
+                    "rgbColor": {
+                      "red": 0.4,
+                      "green": 0.4,
+                      "blue": 0.4
+                    }
+                  }
+                },
+                "fontSize": {
+                  "magnitude": 11,
+                  "unit": "PT"
+                }
+              },
+              "paragraphStyle": {
+                "namedStyleType": "NORMAL_TEXT",
+                "direction": "LEFT_TO_RIGHT",
+                "spaceAbove": {
+                  "magnitude": 12,
+                  "unit": "PT"
+                },
+                "spaceBelow": {
+                  "magnitude": 4,
+                  "unit": "PT"
+                },
+                "keepLinesTogether": true,
+                "keepWithNext": true,
+                "pageBreakBefore": false
+              }
+            },
+            {
+              "namedStyleType": "HEADING_6",
+              "textStyle": {
+                "italic": true,
+                "foregroundColor": {
+                  "color": {
+                    "rgbColor": {
+                      "red": 0.4,
+                      "green": 0.4,
+                      "blue": 0.4
+                    }
+                  }
+                },
+                "fontSize": {
+                  "magnitude": 11,
+                  "unit": "PT"
+                }
+              },
+              "paragraphStyle": {
+                "namedStyleType": "NORMAL_TEXT",
+                "direction": "LEFT_TO_RIGHT",
+                "spaceAbove": {
+                  "magnitude": 12,
+                  "unit": "PT"
+                },
+                "spaceBelow": {
+                  "magnitude": 4,
+                  "unit": "PT"
+                },
+                "keepLinesTogether": true,
+                "keepWithNext": true,
+                "pageBreakBefore": false
+              }
+            },
+            {
+              "namedStyleType": "TITLE",
+              "textStyle": {
+                "fontSize": {
+                  "magnitude": 26,
+                  "unit": "PT"
+                }
+              },
+              "paragraphStyle": {
+                "namedStyleType": "NORMAL_TEXT",
+                "direction": "LEFT_TO_RIGHT",
+                "spaceAbove": {
+                  "unit": "PT"
+                },
+                "spaceBelow": {
+                  "magnitude": 3,
+                  "unit": "PT"
+                },
+                "keepLinesTogether": true,
+                "keepWithNext": true,
+                "pageBreakBefore": false
+              }
+            },
+            {
+              "namedStyleType": "SUBTITLE",
+              "textStyle": {
+                "italic": false,
+                "foregroundColor": {
+                  "color": {
+                    "rgbColor": {
+                      "red": 0.4,
+                      "green": 0.4,
+                      "blue": 0.4
+                    }
+                  }
+                },
+                "fontSize": {
+                  "magnitude": 15,
+                  "unit": "PT"
+                },
+                "weightedFontFamily": {
+                  "fontFamily": "Arial",
+                  "weight": 400
+                }
+              },
+              "paragraphStyle": {
+                "namedStyleType": "NORMAL_TEXT",
+                "direction": "LEFT_TO_RIGHT",
+                "spaceAbove": {
+                  "unit": "PT"
+                },
+                "spaceBelow": {
+                  "magnitude": 16,
+                  "unit": "PT"
+                },
+                "keepLinesTogether": true,
+                "keepWithNext": true,
+                "pageBreakBefore": false
+              }
+            }
+          ]
+        },
+        "lists": {
+          "kix.jnfmpgi9ehdu": {
+            "listProperties": {
+              "nestingLevels": [
+                {
+                  "bulletAlignment": "START",
+                  "glyphType": "GLYPH_TYPE_UNSPECIFIED",
+                  "indentFirstLine": {
+                    "magnitude": 18,
+                    "unit": "PT"
+                  },
+                  "indentStart": {
+                    "magnitude": 36,
+                    "unit": "PT"
+                  },
+                  "textStyle": {
+                    "underline": false
+                  },
+                  "startNumber": 1
+                },
+                {
+                  "bulletAlignment": "START",
+                  "glyphType": "GLYPH_TYPE_UNSPECIFIED",
+                  "indentFirstLine": {
+                    "magnitude": 54,
+                    "unit": "PT"
+                  },
+                  "indentStart": {
+                    "magnitude": 72,
+                    "unit": "PT"
+                  },
+                  "textStyle": {
+                    "underline": false
+                  },
+                  "startNumber": 1
+                },
+                {
+                  "bulletAlignment": "START",
+                  "glyphType": "GLYPH_TYPE_UNSPECIFIED",
+                  "indentFirstLine": {
+                    "magnitude": 90,
+                    "unit": "PT"
+                  },
+                  "indentStart": {
+                    "magnitude": 108,
+                    "unit": "PT"
+                  },
+                  "textStyle": {
+                    "underline": false
+                  },
+                  "startNumber": 1
+                },
+                {
+                  "bulletAlignment": "START",
+                  "glyphType": "GLYPH_TYPE_UNSPECIFIED",
+                  "indentFirstLine": {
+                    "magnitude": 126,
+                    "unit": "PT"
+                  },
+                  "indentStart": {
+                    "magnitude": 144,
+                    "unit": "PT"
+                  },
+                  "textStyle": {
+                    "underline": false
+                  },
+                  "startNumber": 1
+                },
+                {
+                  "bulletAlignment": "START",
+                  "glyphType": "GLYPH_TYPE_UNSPECIFIED",
+                  "indentFirstLine": {
+                    "magnitude": 162,
+                    "unit": "PT"
+                  },
+                  "indentStart": {
+                    "magnitude": 180,
+                    "unit": "PT"
+                  },
+                  "textStyle": {
+                    "underline": false
+                  },
+                  "startNumber": 1
+                },
+                {
+                  "bulletAlignment": "START",
+                  "glyphType": "GLYPH_TYPE_UNSPECIFIED",
+                  "indentFirstLine": {
+                    "magnitude": 198,
+                    "unit": "PT"
+                  },
+                  "indentStart": {
+                    "magnitude": 216,
+                    "unit": "PT"
+                  },
+                  "textStyle": {
+                    "underline": false
+                  },
+                  "startNumber": 1
+                },
+                {
+                  "bulletAlignment": "START",
+                  "glyphType": "GLYPH_TYPE_UNSPECIFIED",
+                  "indentFirstLine": {
+                    "magnitude": 234,
+                    "unit": "PT"
+                  },
+                  "indentStart": {
+                    "magnitude": 252,
+                    "unit": "PT"
+                  },
+                  "textStyle": {
+                    "underline": false
+                  },
+                  "startNumber": 1
+                },
+                {
+                  "bulletAlignment": "START",
+                  "glyphType": "GLYPH_TYPE_UNSPECIFIED",
+                  "indentFirstLine": {
+                    "magnitude": 270,
+                    "unit": "PT"
+                  },
+                  "indentStart": {
+                    "magnitude": 288,
+                    "unit": "PT"
+                  },
+                  "textStyle": {
+                    "underline": false
+                  },
+                  "startNumber": 1
+                },
+                {
+                  "bulletAlignment": "START",
+                  "glyphType": "GLYPH_TYPE_UNSPECIFIED",
+                  "indentFirstLine": {
+                    "magnitude": 306,
+                    "unit": "PT"
+                  },
+                  "indentStart": {
+                    "magnitude": 324,
+                    "unit": "PT"
+                  },
+                  "textStyle": {
+                    "underline": false
+                  },
+                  "startNumber": 1
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "tabProperties": {
+        "tabId": "t.etdbt2g74173",
+        "title": "Tab 2",
+        "index": 1
+      },
+      "documentTab": {
+        "body": {
+          "content": [
+            {
+              "endIndex": 1,
+              "sectionBreak": {
+                "sectionStyle": {
+                  "columnSeparatorStyle": "NONE",
+                  "contentDirection": "LEFT_TO_RIGHT",
+                  "sectionType": "CONTINUOUS"
+                }
+              }
+            },
+            {
+              "startIndex": 1,
+              "endIndex": 41,
+              "paragraph": {
+                "elements": [
+                  {
+                    "startIndex": 1,
+                    "endIndex": 41,
+                    "textRun": {
+                      "content": "Second tab sentence alpha for the spike\n",
+                      "textStyle": {}
+                    }
+                  }
+                ],
+                "paragraphStyle": {
+                  "namedStyleType": "NORMAL_TEXT",
+                  "direction": "LEFT_TO_RIGHT"
+                }
+              }
+            }
+          ]
+        },
+        "documentStyle": {
+          "background": {
+            "color": {}
+          },
+          "pageNumberStart": 1,
+          "marginTop": {
+            "magnitude": 72,
+            "unit": "PT"
+          },
+          "marginBottom": {
+            "magnitude": 72,
+            "unit": "PT"
+          },
+          "marginRight": {
+            "magnitude": 72,
+            "unit": "PT"
+          },
+          "marginLeft": {
+            "magnitude": 72,
+            "unit": "PT"
+          },
+          "pageSize": {
+            "height": {
+              "magnitude": 792,
+              "unit": "PT"
+            },
+            "width": {
+              "magnitude": 612,
+              "unit": "PT"
+            }
+          },
+          "marginHeader": {
+            "magnitude": 36,
+            "unit": "PT"
+          },
+          "marginFooter": {
+            "magnitude": 36,
+            "unit": "PT"
+          },
+          "useCustomHeaderFooterMargins": true,
+          "documentFormat": {
+            "documentMode": "PAGES"
+          }
+        },
+        "namedStyles": {
+          "styles": [
+            {
+              "namedStyleType": "NORMAL_TEXT",
+              "textStyle": {
+                "bold": false,
+                "italic": false,
+                "underline": false,
+                "strikethrough": false,
+                "smallCaps": false,
+                "backgroundColor": {},
+                "foregroundColor": {
+                  "color": {
+                    "rgbColor": {}
+                  }
+                },
+                "fontSize": {
+                  "magnitude": 11,
+                  "unit": "PT"
+                },
+                "weightedFontFamily": {
+                  "fontFamily": "Arial",
+                  "weight": 400
+                },
+                "baselineOffset": "NONE"
+              },
+              "paragraphStyle": {
+                "namedStyleType": "NORMAL_TEXT",
+                "alignment": "START",
+                "lineSpacing": 115,
+                "direction": "LEFT_TO_RIGHT",
+                "spacingMode": "COLLAPSE_LISTS",
+                "spaceAbove": {
+                  "unit": "PT"
+                },
+                "spaceBelow": {
+                  "unit": "PT"
+                },
+                "borderBetween": {
+                  "color": {},
+                  "width": {
+                    "unit": "PT"
+                  },
+                  "padding": {
+                    "unit": "PT"
+                  },
+                  "dashStyle": "SOLID"
+                },
+                "borderTop": {
+                  "color": {},
+                  "width": {
+                    "unit": "PT"
+                  },
+                  "padding": {
+                    "unit": "PT"
+                  },
+                  "dashStyle": "SOLID"
+                },
+                "borderBottom": {
+                  "color": {},
+                  "width": {
+                    "unit": "PT"
+                  },
+                  "padding": {
+                    "unit": "PT"
+                  },
+                  "dashStyle": "SOLID"
+                },
+                "borderLeft": {
+                  "color": {},
+                  "width": {
+                    "unit": "PT"
+                  },
+                  "padding": {
+                    "unit": "PT"
+                  },
+                  "dashStyle": "SOLID"
+                },
+                "borderRight": {
+                  "color": {},
+                  "width": {
+                    "unit": "PT"
+                  },
+                  "padding": {
+                    "unit": "PT"
+                  },
+                  "dashStyle": "SOLID"
+                },
+                "indentFirstLine": {
+                  "unit": "PT"
+                },
+                "indentStart": {
+                  "unit": "PT"
+                },
+                "indentEnd": {
+                  "unit": "PT"
+                },
+                "keepLinesTogether": false,
+                "keepWithNext": false,
+                "avoidWidowAndOrphan": true,
+                "shading": {
+                  "backgroundColor": {}
+                },
+                "pageBreakBefore": false
+              }
+            },
+            {
+              "namedStyleType": "HEADING_1",
+              "textStyle": {
+                "fontSize": {
+                  "magnitude": 20,
+                  "unit": "PT"
+                }
+              },
+              "paragraphStyle": {
+                "namedStyleType": "NORMAL_TEXT",
+                "direction": "LEFT_TO_RIGHT",
+                "spaceAbove": {
+                  "magnitude": 20,
+                  "unit": "PT"
+                },
+                "spaceBelow": {
+                  "magnitude": 6,
+                  "unit": "PT"
+                },
+                "keepLinesTogether": true,
+                "keepWithNext": true,
+                "pageBreakBefore": false
+              }
+            },
+            {
+              "namedStyleType": "HEADING_2",
+              "textStyle": {
+                "bold": false,
+                "fontSize": {
+                  "magnitude": 16,
+                  "unit": "PT"
+                }
+              },
+              "paragraphStyle": {
+                "namedStyleType": "NORMAL_TEXT",
+                "direction": "LEFT_TO_RIGHT",
+                "spaceAbove": {
+                  "magnitude": 18,
+                  "unit": "PT"
+                },
+                "spaceBelow": {
+                  "magnitude": 6,
+                  "unit": "PT"
+                },
+                "keepLinesTogether": true,
+                "keepWithNext": true,
+                "pageBreakBefore": false
+              }
+            },
+            {
+              "namedStyleType": "HEADING_3",
+              "textStyle": {
+                "bold": false,
+                "foregroundColor": {
+                  "color": {
+                    "rgbColor": {
+                      "red": 0.2627451,
+                      "green": 0.2627451,
+                      "blue": 0.2627451
+                    }
+                  }
+                },
+                "fontSize": {
+                  "magnitude": 14,
+                  "unit": "PT"
+                }
+              },
+              "paragraphStyle": {
+                "namedStyleType": "NORMAL_TEXT",
+                "direction": "LEFT_TO_RIGHT",
+                "spaceAbove": {
+                  "magnitude": 16,
+                  "unit": "PT"
+                },
+                "spaceBelow": {
+                  "magnitude": 4,
+                  "unit": "PT"
+                },
+                "keepLinesTogether": true,
+                "keepWithNext": true,
+                "pageBreakBefore": false
+              }
+            },
+            {
+              "namedStyleType": "HEADING_4",
+              "textStyle": {
+                "foregroundColor": {
+                  "color": {
+                    "rgbColor": {
+                      "red": 0.4,
+                      "green": 0.4,
+                      "blue": 0.4
+                    }
+                  }
+                },
+                "fontSize": {
+                  "magnitude": 12,
+                  "unit": "PT"
+                }
+              },
+              "paragraphStyle": {
+                "namedStyleType": "NORMAL_TEXT",
+                "direction": "LEFT_TO_RIGHT",
+                "spaceAbove": {
+                  "magnitude": 14,
+                  "unit": "PT"
+                },
+                "spaceBelow": {
+                  "magnitude": 4,
+                  "unit": "PT"
+                },
+                "keepLinesTogether": true,
+                "keepWithNext": true,
+                "pageBreakBefore": false
+              }
+            },
+            {
+              "namedStyleType": "HEADING_5",
+              "textStyle": {
+                "foregroundColor": {
+                  "color": {
+                    "rgbColor": {
+                      "red": 0.4,
+                      "green": 0.4,
+                      "blue": 0.4
+                    }
+                  }
+                },
+                "fontSize": {
+                  "magnitude": 11,
+                  "unit": "PT"
+                }
+              },
+              "paragraphStyle": {
+                "namedStyleType": "NORMAL_TEXT",
+                "direction": "LEFT_TO_RIGHT",
+                "spaceAbove": {
+                  "magnitude": 12,
+                  "unit": "PT"
+                },
+                "spaceBelow": {
+                  "magnitude": 4,
+                  "unit": "PT"
+                },
+                "keepLinesTogether": true,
+                "keepWithNext": true,
+                "pageBreakBefore": false
+              }
+            },
+            {
+              "namedStyleType": "HEADING_6",
+              "textStyle": {
+                "italic": true,
+                "foregroundColor": {
+                  "color": {
+                    "rgbColor": {
+                      "red": 0.4,
+                      "green": 0.4,
+                      "blue": 0.4
+                    }
+                  }
+                },
+                "fontSize": {
+                  "magnitude": 11,
+                  "unit": "PT"
+                }
+              },
+              "paragraphStyle": {
+                "namedStyleType": "NORMAL_TEXT",
+                "direction": "LEFT_TO_RIGHT",
+                "spaceAbove": {
+                  "magnitude": 12,
+                  "unit": "PT"
+                },
+                "spaceBelow": {
+                  "magnitude": 4,
+                  "unit": "PT"
+                },
+                "keepLinesTogether": true,
+                "keepWithNext": true,
+                "pageBreakBefore": false
+              }
+            },
+            {
+              "namedStyleType": "TITLE",
+              "textStyle": {
+                "fontSize": {
+                  "magnitude": 26,
+                  "unit": "PT"
+                }
+              },
+              "paragraphStyle": {
+                "namedStyleType": "NORMAL_TEXT",
+                "direction": "LEFT_TO_RIGHT",
+                "spaceAbove": {
+                  "unit": "PT"
+                },
+                "spaceBelow": {
+                  "magnitude": 3,
+                  "unit": "PT"
+                },
+                "keepLinesTogether": true,
+                "keepWithNext": true,
+                "pageBreakBefore": false
+              }
+            },
+            {
+              "namedStyleType": "SUBTITLE",
+              "textStyle": {
+                "italic": false,
+                "foregroundColor": {
+                  "color": {
+                    "rgbColor": {
+                      "red": 0.4,
+                      "green": 0.4,
+                      "blue": 0.4
+                    }
+                  }
+                },
+                "fontSize": {
+                  "magnitude": 15,
+                  "unit": "PT"
+                },
+                "weightedFontFamily": {
+                  "fontFamily": "Arial",
+                  "weight": 400
+                }
+              },
+              "paragraphStyle": {
+                "namedStyleType": "NORMAL_TEXT",
+                "direction": "LEFT_TO_RIGHT",
+                "spaceAbove": {
+                  "unit": "PT"
+                },
+                "spaceBelow": {
+                  "magnitude": 16,
+                  "unit": "PT"
+                },
+                "keepLinesTogether": true,
+                "keepWithNext": true,
+                "pageBreakBefore": false
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "commentsViewMode": "COMMENTS_VIEW_MODE_OMITTED"
+}

@@ -10,12 +10,16 @@ import { pickWorkstream, type WorkstreamOption } from './workstream';
 
 type ProjectOption = { id: string; name: string; sprintTimezone?: string };
 type ToolStep = { id: string; label: string; status: 'running' | 'ok' | 'failed'; note?: string };
+// A write the bot prepared. Nothing is written until the user presses Post, which sends this id back.
+type ApprovalTarget = { deliverable: string; file: string; version: number; submittedAt: string; snapshot: string };
+type ApprovalCard = { id: string; target: ApprovalTarget; summary: string; items: { where: string; text: string }[]; status: 'pending' | 'sent' | 'dismissed' };
 type UserEntry = { id: string; role: 'user'; text: string };
 type BotEntry = {
   id: string;
   role: 'assistant';
   text: string;
   tools: ToolStep[];
+  approvals: ApprovalCard[];
   sources: AgentSource[];
   error?: { message: string; retryable: boolean };
   pending: boolean;
@@ -50,7 +54,7 @@ function savedWidth() {
 let nextId = 0;
 const newId = () => `m${++nextId}`;
 
-export function OtcrBot() {
+export function OtcrBot({ deliverableId }: { deliverableId?: string } = {}) {
   const { getToken } = useAuth();
   const [open, setOpen] = useState(false);
   const [projects, setProjects] = useState<ProjectOption[] | null>(null);
@@ -141,7 +145,7 @@ export function OtcrBot() {
     setConversationId(undefined);
   }, []);
 
-  const send = useCallback(async (text: string) => {
+  const send = useCallback(async (text: string, approvalId?: string) => {
     const message = text.trim();
     if (!message || busy || !projectId || !workstreamsReady) return;
     const generation = chatGeneration.current;
@@ -149,7 +153,7 @@ export function OtcrBot() {
     setEntries((list) => [
       ...list,
       { id: newId(), role: 'user', text: message },
-      { id: botId, role: 'assistant', text: '', tools: [], sources: [], pending: true },
+      { id: botId, role: 'assistant', text: '', tools: [], approvals: [], sources: [], pending: true },
     ]);
     setDraft('');
     setBusy(true);
@@ -177,6 +181,9 @@ export function OtcrBot() {
             tools: e.tools.map((t) => (t.id === event.id ? { ...t, status: event.ok ? 'ok' : 'failed', note: event.note } : t)),
           }));
           break;
+        case 'approval_required':
+          updateBot(botId, (e) => ({ ...e, approvals: [...e.approvals, { id: event.id, target: event.target, summary: event.summary, items: event.items, status: 'pending' }] }));
+          break;
         case 'sources':
           updateBot(botId, (e) => ({ ...e, sources: event.sources }));
           break;
@@ -189,7 +196,7 @@ export function OtcrBot() {
     try {
       const token = await getToken();
       if (!token) throw new ChatRequestError('Your session expired. Sign in again.', false);
-      await streamChat({ projectId, sprintId: sprintId || undefined, conversationId, message }, token, onEvent, abort.signal);
+      await streamChat({ projectId, sprintId: sprintId || undefined, conversationId, deliverableId, approvalId, message }, token, onEvent, abort.signal);
     } catch (err) {
       if (abort.signal.aborted) {
         updateBot(botId, (e) => ({ ...e, text: e.text ? `${e.text}\n\n(Stopped)` : '(Stopped)' }));
@@ -205,6 +212,15 @@ export function OtcrBot() {
       setBusy(false);
     }
   }, [busy, projectId, sprintId, workstreamsReady, conversationId, getToken, updateBot]);
+
+  const setApproval = (botId: string, approvalId: string, status: ApprovalCard['status']) =>
+    updateBot(botId, (e) => ({ ...e, approvals: e.approvals.map((a) => (a.id === approvalId ? { ...a, status } : a)) }));
+
+  const approve = (botId: string, approvalId: string) => {
+    if (busy) return;
+    setApproval(botId, approvalId, 'sent');
+    void send('Post the approved comments.', approvalId);
+  };
 
   const retry = (botId: string) => {
     const index = entries.findIndex((e) => e.id === botId);
@@ -331,6 +347,38 @@ export function OtcrBot() {
             {entry.pending && !entry.text && (
               <div className="flex items-center gap-2 text-xs text-slate-500"><Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> Thinking…</div>
             )}
+            {entry.approvals.map((card) => (
+              <div key={card.id} className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs dark:border-blue-900 dark:bg-blue-950">
+                <p className="break-words font-semibold text-slate-800 dark:text-slate-100">
+                  {card.target.deliverable} · {card.target.file} · v{card.target.version} · submitted {new Date(card.target.submittedAt).toLocaleDateString()}
+                </p>
+                <p className="mt-0.5 text-slate-500 dark:text-slate-400">Snapshot {card.target.snapshot}</p>
+                <p className="mt-2 font-semibold text-slate-800 dark:text-slate-100">{card.summary}</p>
+                <p className="mt-0.5 text-slate-600 dark:text-slate-300">Nothing has been posted yet.</p>
+                <ul className="mt-2 max-h-56 space-y-2 overflow-y-auto">
+                  {card.items.map((item, i) => (
+                    <li key={i} className="rounded border border-blue-100 bg-white p-2 dark:border-blue-900 dark:bg-slate-900">
+                      <p className="break-words text-slate-500 dark:text-slate-400">{item.where}</p>
+                      <p className="mt-0.5 whitespace-pre-wrap break-words text-slate-800 dark:text-slate-100">{item.text}</p>
+                    </li>
+                  ))}
+                </ul>
+                {card.status === 'pending' ? (
+                  <div className="mt-3 flex gap-2">
+                    <button type="button" onClick={() => approve(entry.id, card.id)} disabled={busy}
+                      className="rounded-lg bg-blue-700 px-3 py-1.5 font-semibold text-white hover:bg-blue-800 disabled:opacity-40">
+                      Post {card.items.length === 1 ? '1 comment' : `${card.items.length} comments`}
+                    </button>
+                    <button type="button" onClick={() => setApproval(entry.id, card.id, 'dismissed')} disabled={busy}
+                      className="rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-white disabled:opacity-40 dark:border-slate-600 dark:hover:bg-slate-800">
+                      Don&apos;t post
+                    </button>
+                  </div>
+                ) : (
+                  <p className="mt-3 text-slate-600 dark:text-slate-300">{card.status === 'sent' ? 'Sent for posting.' : 'Not posting these.'}</p>
+                )}
+              </div>
+            ))}
             {entry.sources.length > 0 && (
               <div className="rounded-lg border border-slate-200 p-2 text-xs dark:border-slate-700">
                 <p className="mb-1 font-semibold text-slate-600 dark:text-slate-300">Sources</p>

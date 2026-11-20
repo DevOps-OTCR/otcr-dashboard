@@ -1,8 +1,13 @@
 export type ToolCall = { id: string; name: string; args: unknown };
 
+/** Content parts for multimodal user messages (image injection after vision tool calls). */
+export type TextPart = { type: 'text'; text: string };
+export type ImagePart = { type: 'image_url'; image_url: { url: string } };
+export type ContentPart = TextPart | ImagePart;
+
 export type ChatMessage =
   | { role: 'system'; content: string }
-  | { role: 'user'; content: string }
+  | { role: 'user'; content: string | ContentPart[] }
   | {
       role: 'assistant';
       content: string | null;
@@ -21,6 +26,8 @@ export type ModelRequest = {
   messages: ChatMessage[];
   tools: ToolSchema[];
   signal: AbortSignal;
+  /** Force the model to call this specific tool (tool_choice). */
+  toolChoice?: string;
 };
 
 export type ModelTurn = {

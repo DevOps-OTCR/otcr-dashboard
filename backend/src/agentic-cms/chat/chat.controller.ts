@@ -6,6 +6,7 @@ import { toAgentErrorEvent } from '../agent/agent-errors';
 import type { AgentEvent } from '../agent/agent.events';
 import { AgentService } from '../agent/agent.service';
 import type { AgentUser } from '../agent/agent.types';
+import { CmsReadAccessService, type CmsReader } from '../authorization/cms-read-access.service';
 import { ChatDto } from './chat.dto';
 
 // The global AgenticCmsGuard already checks the release flag, signs the user in
@@ -15,13 +16,15 @@ export class ChatController {
   constructor(
     private readonly agent: AgentService,
     private readonly projects: ProjectsService,
+    private readonly access: CmsReadAccessService,
   ) {}
 
 // POST /agentic-cms/chat — streams AgentEvents as Server-Sent Events.
   @Post()
-  async chat(@Body() dto: ChatDto, @GetUser() user: AgentUser, @Res() res: Response) {
+  async chat(@Body() dto: ChatDto, @GetUser() user: CmsReader, @Res() res: Response) {
     await this.projects.assertProjectAccess(dto.projectId, user);
     if (dto.sprintId) await this.assertSprintVisible(dto.projectId, dto.sprintId, user);
+    if (dto.deliverableId) await this.access.assertDeliverableAccess(user, dto.projectId, dto.deliverableId);
 
     res.status(200);
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -40,7 +43,7 @@ export class ChatController {
 
     try {
       await this.agent.run(
-        { user, projectId: dto.projectId, sprintId: dto.sprintId, conversationId: dto.conversationId, message: dto.message, signal: abort.signal },
+        { user, projectId: dto.projectId, sprintId: dto.sprintId, conversationId: dto.conversationId, deliverableId: dto.deliverableId, approvalId: dto.approvalId, message: dto.message, signal: abort.signal },
         send,
       );
     } catch (err) {

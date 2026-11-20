@@ -1,12 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
 import type { SendEvent } from '../agent/agent.events';
-import type { ToolCall, ToolSchema } from '../model/model-client';
+import type { ImagePart, ToolCall, ToolSchema } from '../model/model-client';
 import { CmsReadTools } from './cms-read.tools';
+import { GoogleDocTools } from './google-doc.tools';
 import { LoadSkillTool } from './load-skill.tool';
+import { PptxReviewTools } from './pptx-review.tools';
 import { asToolData } from './tool-content';
 import { AgentTool, ToolContext, ToolFailure } from './tool.types';
 import { WebSearchTool } from './web-search.tool';
+import { ApprovalOwner, StoredWrite, WriteApprovals } from './write-approvals';
 
 const MAX_TOOL_OUTPUT_CHARS = 30_000;
 const TRUNCATION_NOTE =
@@ -21,15 +24,32 @@ const CMS_TRUNCATION_SUFFIX = '\n\nSome fields are shortened; see truncatedField
 /**
  * The tools OTCR Bot can call. To add one: implement AgentTool in this folder,
  * add it to AgenticCmsModule providers and to the constructor below.
- * CMS reads are thin adapters over CmsReadService. The selected project comes from the request.
+ * CMS reads are thin adapters over CmsReadService; Google Docs review is a thin adapter over
+ * GoogleDocReviewService. The selected project comes from the request.
  */
 @Injectable()
 export class ToolRegistry {
   private readonly log = new Logger('OtcrBotTools');
   private readonly tools: AgentTool[];
 
-  constructor(webSearch: WebSearchTool, loadSkill: LoadSkillTool, cmsReads: CmsReadTools) {
-    this.tools = [webSearch, loadSkill, ...cmsReads.tools] as AgentTool[];
+  constructor(
+    webSearch: WebSearchTool,
+    loadSkill: LoadSkillTool,
+    cmsReads: CmsReadTools,
+    pptxReview: PptxReviewTools,
+    docTools: GoogleDocTools,
+    private readonly approvals: WriteApprovals,
+  ) {
+    this.tools = [webSearch, loadSkill, ...cmsReads.tools, ...pptxReview.tools, ...docTools.tools] as AgentTool[];
+    // A write tool must say which CMS file it writes to, or the approval card could not name it.
+    for (const tool of this.tools) {
+      if (tool.requiresApproval && !tool.prepareApproval) throw new Error(`Tool ${tool.name} requires approval but has no prepareApproval.`);
+    }
+  }
+
+  /** The stored write call the user approved, once; null if it is unknown, expired, used, or not theirs. */
+  takeApproval(id: string, owner: ApprovalOwner): StoredWrite | null {
+    return this.approvals.take(id, owner);
   }
 
   /** Tools usable right now (configured, with content). Checked at the start of each turn. */
@@ -51,40 +71,78 @@ export class ToolRegistry {
    * Always returns content for the model (including on failure) so it can
    * explain the problem; only an abort is rethrown.
    */
-  async execute(call: ToolCall, tools: AgentTool[], ctx: ToolContext, send: SendEvent): Promise<string> {
+  async execute(call: ToolCall, tools: AgentTool[], ctx: ToolContext, send: SendEvent): Promise<{ content: string; images?: ImagePart[] }> {
     const tool = tools.find((t) => t.name === call.name);
     if (!tool) {
       send({ type: 'tool_start', id: call.id, name: call.name, label: `Running ${call.name}…` });
       send({ type: 'tool_end', id: call.id, ok: false, note: 'Tool not available' });
-      return `Unknown tool "${call.name}". Available tools: ${tools.map((t) => t.name).join(', ') || 'none'}.`;
+      return { content: `Unknown tool "${call.name}". Available tools: ${tools.map((t) => t.name).join(', ') || 'none'}.` };
     }
 
     const parsed = tool.input.safeParse(call.args);
     if (!parsed.success) {
       send({ type: 'tool_start', id: call.id, name: tool.name, label: `Running ${tool.name}…` });
       send({ type: 'tool_end', id: call.id, ok: false, note: 'Invalid request' });
-      return `Invalid arguments for ${tool.name}: ${z.prettifyError(parsed.error)}. Fix them and call the tool again.`;
+      return { content: `Invalid arguments for ${tool.name}: ${z.prettifyError(parsed.error)}. Fix them and call the tool again.` };
     }
 
     send({ type: 'tool_start', id: call.id, name: tool.name, label: tool.label(parsed.data) });
     try {
+      // A write tool never runs for a call the model made on its own. The call is stored and the user
+      // is asked; only AgentService's approved run sets ctx.approvedCall, and only for that one call id.
+      if (tool.requiresApproval && ctx.approvedCall?.callId !== call.id) {
+        const { binding, ...target } = await tool.prepareApproval!(parsed.data, ctx);
+        const preview = tool.describeForApproval?.(parsed.data) ?? { summary: `Run ${tool.name}`, items: [] };
+        const approvalId = this.approvals.create(
+          { userId: ctx.user.id, projectId: ctx.projectId, conversationId: ctx.conversationId },
+          { toolName: tool.name, input: parsed.data, binding },
+        );
+        send({ type: 'approval_required', id: approvalId, tool: tool.name, target, ...preview });
+        send({ type: 'tool_end', id: call.id, ok: true, note: 'Waiting for your approval' });
+        const count = preview.items.length;
+        return {
+          content: asToolData(
+            tool.name,
+            `Not posted. ${count ? `These ${count} item${count === 1 ? '' : 's'} are` : 'This is'} waiting for the user to approve with the Post button shown under your reply. ` +
+              'Show the user what you prepared, and tell them to press Post to send it. Do not call this tool again for the same items.',
+          ),
+        };
+      }
+      if (tool.requiresApproval) {
+        // The approved call: write only if the CMS file is still the one the user was shown, and they may still write to it.
+        const now = await tool.prepareApproval!(parsed.data, ctx);
+        if (now.binding !== ctx.approvedCall!.binding) {
+          throw new ToolFailure(
+            'Submission changed',
+            'This submission changed after the user approved the comments. Nothing was posted. Ask the user to request the comments again.',
+          );
+        }
+      }
       const out = await tool.run(parsed.data, ctx);
       send({ type: 'tool_end', id: call.id, ok: true, ...(out.note ? { note: out.note } : {}) });
       // Only OTCR's own skill library is passed through as instructions; all else is marked as
       // data. A tool may set its own output limit; the marker tags count toward it.
       const reserved = tool.returnsInstructions ? 0 : asToolData(tool.name, '').length;
       const limit = (tool.maxOutputChars ?? MAX_TOOL_OUTPUT_CHARS) - reserved;
-      const content = out.content.length <= limit ? out.content : this.shorten(out.content, limit);
-      return tool.returnsInstructions ? content : asToolData(tool.name, content);
+      const text = out.content.length <= limit ? out.content : this.shorten(out.content, limit);
+      const wrapped = tool.returnsInstructions ? text : asToolData(tool.name, text);
+      if (out.images?.length) {
+        const images: ImagePart[] = out.images.map((img) => ({
+          type: 'image_url' as const,
+          image_url: { url: `data:${img.mimeType};base64,${img.base64}` },
+        }));
+        return { content: wrapped, images };
+      }
+      return { content: wrapped };
     } catch (err) {
       if (ctx.signal.aborted) throw err;
       if (err instanceof ToolFailure) {
         send({ type: 'tool_end', id: call.id, ok: false, note: err.note });
-        return err.modelMessage;
+        return { content: err.modelMessage };
       }
       this.log.warn(`Tool ${tool.name} failed unexpectedly: ${err instanceof Error ? err.name : typeof err}`);
       send({ type: 'tool_end', id: call.id, ok: false, note: `${tool.name} failed` });
-      return `The ${tool.name} tool failed unexpectedly. Tell the user this step could not be completed.`;
+      return { content: `The ${tool.name} tool failed unexpectedly. Tell the user this step could not be completed.` };
     }
   }
 

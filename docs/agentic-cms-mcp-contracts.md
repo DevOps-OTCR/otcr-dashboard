@@ -1,6 +1,8 @@
 # Agentic CMS MCP read-tool contracts
 
-Status: Five read-only tools implemented at the gated MCP endpoint.
+Status: Five read-only CMS tools (Group 2) and two Google Docs review tools (Group 3: one read,
+one write) are implemented at the gated MCP endpoint. The Google Docs tools are documented under
+[Google Docs review tools](#google-docs-review-tools).
 See [connection examples and captured responses](agentic-cms-mcp.md).
 Follow [the integration guide](agentic-cms.md). Code lives under
 `backend/src/agentic-cms/` through a Nest controller at `/agentic-cms/mcp`.
@@ -83,7 +85,8 @@ alone bypasses them. Preserve the matrix in reusable authorized read operations.
   use `isError: true` with safe codes/messages; use SDK protocol errors for invalid
   arguments/unknown tools. Invalid credentials return HTTP 401 when enabled;
   database failures use `CMS_UNAVAILABLE` without SQL, stack traces or client text.
-- Tool annotations: read-only/idempotent true; destructive/open-world false.
+- Tool annotations: read-only/idempotent true; destructive/open-world false. This describes the
+  five CMS tools; the Google Docs tools differ (see below).
 
 ## Tools
 
@@ -144,6 +147,90 @@ All sections return `projectId`, `deliverableId`, `section`, `sourceUpdatedAt`
 
 Merge legacy assigneeId only if absent from assignment rows, using stored assignedAt
 or null. No extension requests or external document/slide comments in this contract.
+
+## Google Docs review tools
+
+Two tools read a Google Doc submitted to a deliverable and place review comments anchored to
+quoted text. Code: `backend/src/agentic-cms/documents/` (`GoogleDocReviewService`,
+`GoogleDocsClient`), registered in `mcp/mcp-server.service.ts` and, for OTCR Bot, in
+`tools/google-doc.tools.ts`.
+
+- The document is found through a CMS **submission** the caller can already see. A link is never
+  taken from tool input. Only `https://docs.google.com/document/d/...` links work.
+- The review bot is a Google service account (`GOOGLE_DOCS_CLIENT_EMAIL`,
+  `GOOGLE_DOCS_PRIVATE_KEY`). The document must be shared with it: **Commenter** is the minimum
+  for posting. A document public to "anyone with the link" can be read but not commented on.
+  Without the credentials the tools return `DOC_NOT_CONFIGURED`.
+- Inputs, both tools: **`projectId`**, **`deliverableId`**, **`submissionId`** (a
+  `submissions.items[].id` from `get_deliverable section=submissions`).
+  `comment_google_doc` also requires **`textHash`** from `read_google_doc.document.textHash`
+  and `comments`: 1 to 20 distinct items of
+  `{ quote (3-500 characters), comment (up to 2000 characters and 2048 UTF-8 bytes) }`.
+
+### `read_google_doc`
+
+Access: the same as `get_deliverable` for that deliverable.
+Output: `schemaVersion: "1"`; `document: { submissionId, url, documentId, title, revisionId,
+textHash, capturedAt }`; `paragraphs: [{ n, section, text, footnotes?, links? }]`; `truncated`;
+`footnotes: [{ number, text, links }]`; `tableOfContents` (entry lines, or `null`); `coverage`.
+`paragraphs[].footnotes` lists the footnote numbers a paragraph cites and `links` its web links
+(http/https only). Footnote text is kept to 4,000 characters and the contents table to 1,500, as
+whole entries. `coverage: { footnotes: all | some | none-in-document, tableOfContents: included |
+some | none-in-document, objectsNotRead, links: all | some }` says what the reader left out: `some`, or
+`objectsNotRead` above 0 (images, drawings, equations), must be reported as not assessed.
+`links: some` happens only in OTCR Bot's 28,000-character read: body text is fitted first and links
+are added back while they fit, so a paragraph full of long URLs never displaces later text. Comments
+anchor to body text only; to flag a footnote, quote the sentence that cites it.
+`textHash` (sha256 of the text read, including footnote text and the contents table when the
+document has them) identifies the snapshot reviewed. `revisionId` changes
+with every comment and is `null` when the bot has only Viewer access. Text beyond 100,000
+characters is dropped and `truncated` is `true`. OTCR Bot applies a tighter 28,000-character
+budget and drops whole paragraphs only, so every returned paragraph can be quoted exactly.
+
+### `comment_google_doc`
+
+Access: admin, the project's PM, or an LC who is a member of the project (the rule for writing
+project context), plus access to the deliverable. Others get `NOT_FOUND_OR_FORBIDDEN`.
+Annotations: `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: false`,
+`openWorldHint: true`. It writes outside the CMS, and comments are visible to everyone on the
+document.
+Output: `schemaVersion`; `document` (as above, with the final revision); `revisionGuarded`
+(`false` when Google gave no revision, so no stale-position check protected the writes);
+`comments: [{ quote, comment, section, placement, nativeCommentId, fallbackReason,
+anchoredText, anchorVerified }]`.
+
+- `placement: "native"` is a real Google comment. `anchoredText` is Google's read-back of the
+  text it attached the comment to. `anchorVerified` is `false` when that differs from the quote
+  and `null` when Google gave no read-back.
+- `placement: "fallback"` was not posted as a native comment. Show it to the user with its
+  `quote` and `section`. `fallbackReason` is one of:
+
+| `fallbackReason` | Meaning | What to do |
+| --- | --- | --- |
+| `not-found` | The quote is not in the document, or spans paragraphs | Copy the quote exactly from one paragraph |
+| `ambiguous` | The quote occurs more than once | Add surrounding words |
+| `no-comment-access` | Google refused the bot; the rest of the batch fell back too | Usually Viewer-only sharing: ask the owner for Commenter |
+| `document-changed` | The document text differs from the reviewed textHash, or a revision retry failed; the rest of the batch fell back | Read and review the new text before posting |
+| `comment-failed` | Google refused the comment, or it was not attempted because an earlier error stopped the batch | Retry |
+| `comment-uncertain` | The request may have reached Google but its answer was lost or unconfirmed (a network error, or a 408/500/502/503/504 after the write): the comment may already exist; the rest of the batch fell back | Check the document before adding it by hand |
+
+Each posted comment creates a new document revision. The service carries the new revision into
+the next write, and retries once on a fresh read after a revision mismatch only while the textHash
+still matches. Once posting has started, failures retain completed receipts. Revocation of the
+feature flag stops subsequent writes and returns unattempted comments as `comment-failed` fallbacks.
+OTCR Bot additionally remembers native or uncertain receipts for an hour per process; MCP writes
+remain non-idempotent across separate calls, so do not blindly retry a completed request. A 5xx or
+timeout on the comment write is reported as `comment-uncertain`, not as a refusal, because Google
+may have applied the write before the error. A 429 or quota error was refused and stays `comment-failed`.
+
+In OTCR Bot the model cannot post by itself: calling `comment_google_doc` stores the comments and
+shows an approval card naming the CMS file, and the comments are posted only when the user presses
+Post, and only if that submission is still the one shown. The MCP tool posts directly (it has no
+approval card, so the file check does not apply to it); MCP clients should confirm with their user, as its annotations indicate.
+
+Errors use `isError` with the service's own messages: `DOC_LINK_UNSUPPORTED`,
+`DOC_NOT_CONFIGURED`, `DOC_NO_ACCESS` (names the bot's email and the sharing step) and
+`DOC_UNAVAILABLE`, plus `NOT_FOUND_OR_FORBIDDEN`. Google's own error text is never returned.
 
 ## Output fields and example
 
