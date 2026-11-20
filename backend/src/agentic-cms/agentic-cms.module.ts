@@ -24,10 +24,12 @@ import { PptxReviewTools } from './tools/pptx-review.tools';
 import { ToolRegistry } from './tools/tool-registry';
 import { WebSearchTool } from './tools/web-search.tool';
 import { WriteApprovals } from './tools/write-approvals';
+import { ReviewsController } from './reviews/reviews.controller';
+import { ReviewJobsService } from './reviews/review-jobs.service';
 
 @Module({
   imports: [FeatureFlagsModule, PrismaModule, ProjectsModule, PptxModule],
-  controllers: [AgenticCmsController, McpController, ChatController],
+  controllers: [AgenticCmsController, McpController, ChatController, ReviewsController],
   providers: [
     CmsReadAccessService,
     CmsReadService,
@@ -47,6 +49,7 @@ import { WriteApprovals } from './tools/write-approvals';
     GoogleDocTools,
     GoogleDocsClient,
     GoogleDocReviewService,
+    ReviewJobsService,
   ],
 })
 export class AgenticCmsModule {}
