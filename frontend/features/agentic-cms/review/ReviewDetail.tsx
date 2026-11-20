@@ -133,7 +133,7 @@ export function ReviewDetail({ row, now, actions, mocked }: { row: QueueRow; now
             {posting ? 'Posting…' : `Post ${postableCount} comment${postableCount === 1 ? '' : 's'} to the file`}
           </button>
         )}
-        {!mocked && canPost && current && current.posting === 'done' && postableCount < current.comments.length && (
+        {!mocked && current?.status === 'COMPLETED' && postableCount < current.comments.length && (
           <p className="text-sm text-[var(--text-muted)]">
             {current.comments.length - postableCount} comments have no exact quote or slide anchor and stay in the CMS only.
           </p>

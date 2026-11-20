@@ -497,8 +497,8 @@ export class ReviewJobsService {
 
       // Reauthorize before every external write.
       const writeReader = await this.authorize(reader.id, ctx.projectId);
-      const writeSignal = ctx.signal.aborted ? ctx.signal : (ctx.signal ?? new AbortController().signal);
-      let posted: Awaited<ReturnType<GoogleDocReviewService['comment']>>['comments'][number] | undefined;
+      const writeSignal = ctx.signal;
+      let posted: Awaited<ReturnType<GoogleDocReviewService['comment']>>['comments'][number];
       try {
         const result = await this.docs.comment(
           writeReader,
@@ -507,9 +507,12 @@ export class ReviewJobsService {
         );
         posted = result.comments[0];
       } catch (error) {
-        failed++;
+        comment.placement = 'fallback';
+        comment.fallbackReason = 'comment-failed';
         this.log.warn(`Review ${review.id}: post to Google Doc failed: ${error instanceof Error ? error.name : typeof error}`);
-        continue;
+        // Stop the loop and let the PM retry; do not mark as done.
+        review.posting = undefined;
+        return;
       }
       if (!posted) {
         failed++;
@@ -519,6 +522,12 @@ export class ReviewJobsService {
       comment.fallbackReason = posted.fallbackReason ?? undefined;
       comment.anchorVerified = posted.anchorVerified ?? null;
       comment.anchoredText = posted.anchoredText ?? null;
+      // Uncertain quote placement: stop so the PM can check the doc before retrying. Remaining
+      // findings keep their state and stay unattempted.
+      if (posted.fallbackReason === 'comment-uncertain') {
+        review.posting = undefined;
+        return;
+      }
     }
 
     // Every write failed: don't pretend this was a live posting.
@@ -539,16 +548,9 @@ export class ReviewJobsService {
     const etag = review.deck?.reviewedETag ?? review.powerPoint?.reviewedETag ?? '';
     const inspection = review.deck?.inspection ?? review.powerPoint?.inspection ?? 'text_only';
 
-    const seen = new Set<string>();
-    const poster = review.comments
-      .filter((comment) => comment.location.type === 'slide')
-      .filter((comment) => {
-        const key = this.findingDedupeKey(comment);
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      })
-      .slice(0, MAX_FINDINGS);
+    // Use the SAME selector as postableCount so the button and writer never drift, and never post
+    // to withheld (invisible) slides.
+    const poster = this.postableFindings(review, 'slides');
 
     if (poster.length === 0) {
       // Nothing to post, but this post attempt means the draft is confirmed.
@@ -818,7 +820,9 @@ export class ReviewJobsService {
     const target = { deliverableId: submission.deliverableId, submissionId: submission.id };
     const fetched = this.parseToolJson(await fetchTool.run(target, ctx));
 
-    // Withhold slides marked [HIDDEN]/[CONFIDENTIAL]/[PROPRIETARY] (or hidden===true).
+    // Withhold slides marked [HIDDEN]/[CONFIDENTIAL]/[PROPRIETARY] (or hidden===true). Prefer the
+    // tool's full-deck `withheldSlides` (computed before truncation) so slides past the 24k cutoff
+    // are still excluded; fall back to scanning the (possibly truncated) text.
     const withheld = this.withholdSlides(fetched);
     fetched.content = withheld.content;
 
@@ -936,8 +940,8 @@ export class ReviewJobsService {
       fileData.document = { ...doc, paragraphs: kept };
     }
 
-    // Footnotes: keep only entries whose number is referenced by a kept paragraph;
-    // no positional fallback, since we cannot confirm attribution otherwise.
+    // Footnotes: keep only entries whose number string is referenced by a KEPT paragraph, and whose
+    // own text has no withheld marker. String compare only, no positional fallback.
     const footnotes = this.collectFootnotes(fileData, docRead);
     const tocEntries = this.collectToc(fileData, docRead);
     const keptFootnoteRefs = new Set<string>();
@@ -945,9 +949,12 @@ export class ReviewJobsService {
       for (const ref of this.paragraphFootnoteRefs(para)) keptFootnoteRefs.add(ref);
     }
     const filteredFootnotes = footnotes.filter((entry) => {
-      const number = this.footnoteNumber(entry);
-      if (number == null) return false;
-      return keptFootnoteRefs.has(String(number));
+      const raw = entry.number;
+      const numberKey = typeof raw === 'string' ? raw : typeof raw === 'number' ? String(raw) : null;
+      if (numberKey == null || !keptFootnoteRefs.has(numberKey)) return false;
+      const text = typeof entry.text === 'string' ? entry.text : '';
+      if (hasWithheldMarker(text)) return false;
+      return true;
     });
     const docFootnotesPresent = footnotes.length > 0;
 
@@ -958,19 +965,21 @@ export class ReviewJobsService {
       .filter((name) => {
         const key = name.trim().toLowerCase();
         if (!key) return false;
+        if (hasWithheldMarker(name)) return false;
         for (const withheld of skippedSections) {
           if (withheld.trim().toLowerCase() === key) return false;
         }
         return true;
       });
 
-    if (docFootnotesPresent) fileData.footnotes = filteredFootnotes;
-    if (tocEntries.length) fileData.tableOfContents = filteredToc;
+    // ALWAYS assign the filtered array to every location the model can read.
     const docRecord = fileData.document as Record<string, unknown> | undefined;
-    const docFootnotes = this.getArray(docRecord?.footnotes);
-    const docToc = this.getArray(docRecord?.tableOfContents);
-    if (docFootnotes.length) docRecord!.footnotes = filteredFootnotes;
-    if (docToc.length || Array.isArray(docRecord?.tableOfContents)) docRecord!.tableOfContents = filteredToc;
+    if (docFootnotesPresent || Array.isArray(fileData.footnotes)) fileData.footnotes = filteredFootnotes;
+    if (tocEntries.length || Array.isArray(fileData.tableOfContents)) fileData.tableOfContents = filteredToc;
+    if (docRecord && (docFootnotesPresent || Array.isArray(docRecord.footnotes))) {
+      docRecord.footnotes = filteredFootnotes;
+    }
+    if (docRecord && (Array.isArray(docRecord.tableOfContents))) docRecord.tableOfContents = filteredToc;
 
     return { fileData, skippedSections: [...skippedSections] };
   }
@@ -1013,16 +1022,7 @@ export class ReviewJobsService {
     }
     if (typeof para.footnoteRef === 'string') refs.push(para.footnoteRef);
     if (typeof para.footnoteRef === 'number') refs.push(String(para.footnoteRef));
-    const text = typeof para.text === 'string' ? para.text : '';
-    for (const match of text.matchAll(/\[\^([^\]]+)\]/g)) refs.push(match[1]);
     return refs;
-  }
-
-  private footnoteNumber(entry: Record<string, unknown>): number | null {
-    const raw = entry.number;
-    if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
-    if (typeof raw === 'string' && /^\d+$/.test(raw.trim())) return Number(raw.trim());
-    return null;
   }
 
   private tocSectionOf(entry: unknown): string | null {
@@ -1045,11 +1045,24 @@ export class ReviewJobsService {
     const raw = typeof fetched.content === 'string' ? fetched.content : '';
     const withheldIndices = new Set<number>();
     const withheldLabels: string[] = [];
-    if (!raw) return { content: raw, withheldIndices, withheldLabels, totalSlides: 0 };
+    // Prefer the tool's full-deck set (never truncated).
+    const toolWithheld = Array.isArray(fetched.withheldSlides) ? fetched.withheldSlides : null;
+    if (toolWithheld) {
+      for (const value of toolWithheld) {
+        if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+          withheldIndices.add(value);
+          withheldLabels.push(`Slide ${value}`);
+        }
+      }
+    }
+    if (!raw) {
+      const total = typeof fetched.slides === 'number' ? fetched.slides : 0;
+      return { content: raw, withheldIndices, withheldLabels, totalSlides: total };
+    }
     // Slide blocks are separated by blank lines and start with "Slide N ...".
     const blocks = raw.split(/\n{2,}/);
     const kept: string[] = [];
-    let total = 0;
+    let total = typeof fetched.slides === 'number' ? fetched.slides : 0;
     for (const block of blocks) {
       const header = /^Slide\s+(\d+)/.exec(block);
       if (!header) {
@@ -1058,9 +1071,9 @@ export class ReviewJobsService {
       }
       const number = Number(header[1]);
       total = Math.max(total, number);
-      if (this.blockIsWithheld(block)) {
+      if (this.blockIsWithheld(block) || withheldIndices.has(number)) {
         withheldIndices.add(number);
-        withheldLabels.push(`Slide ${number}`);
+        if (!withheldLabels.includes(`Slide ${number}`)) withheldLabels.push(`Slide ${number}`);
         kept.push(`Slide ${number} [HIDDEN]`);
         continue;
       }

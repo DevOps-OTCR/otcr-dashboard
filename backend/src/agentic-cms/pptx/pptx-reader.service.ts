@@ -169,12 +169,30 @@ function parseShapes(spTree: any): ShapeInfo[] {
     const name = String(cNvPr?.['@_name'] ?? '');
     const graphicType = frame.graphic?.graphicData?.['@_uri'] ?? '';
     const type = graphicType.includes('chart') ? 'chart' : graphicType.includes('table') ? 'table' : 'other';
-    shapes.push({ spId, name, type, hasCreationId: false, text: '' });
+    // Table cell text is surfaced in `text` so the withheld-marker check sees it (not just titles/body).
+    const text = type === 'table' ? getTableText(frame) : '';
+    shapes.push({ spId, name, type, hasCreationId: false, text });
   }
 
   const groups = Array.isArray(spTree.grpSp) ? spTree.grpSp : spTree.grpSp ? [spTree.grpSp] : [];
   for (const group of groups) shapes.push(...parseShapes(group));
   return shapes;
+}
+
+/** Collects cell text from an a:tbl (all tc[]→txBody→a:t[]). */
+function getTableText(frame: any): string {
+  const tbl = frame?.graphic?.graphicData?.tbl;
+  if (!tbl) return '';
+  const rows: any[] = Array.isArray(tbl.tr) ? tbl.tr : tbl.tr ? [tbl.tr] : [];
+  const lines: string[] = [];
+  for (const row of rows) {
+    const cells: any[] = Array.isArray(row.tc) ? row.tc : row.tc ? [row.tc] : [];
+    for (const cell of cells) {
+      const text = getText(cell.txBody).join('\n').trim();
+      if (text) lines.push(text);
+    }
+  }
+  return lines.join('\n');
 }
 
 @Injectable()

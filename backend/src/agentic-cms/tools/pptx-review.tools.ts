@@ -30,15 +30,18 @@ function hasWithheldMarker(text: string): boolean {
   return WITHHELD_MARKERS.some((marker) => upper.includes(marker));
 }
 
+function slideIsWithheld(slide: DeckContent['slides'][number]): boolean {
+  // Hidden when the XML show attribute hides it, when any shape text (incl. table cells) contains a
+  // marker, or when the speaker notes do.
+  const shapeTexts = slide.shapes.filter((shape) => shape.text).map((shape) => shape.text);
+  return slide.hidden ||
+    hasWithheldMarker(slide.speakerNotes ?? '') ||
+    shapeTexts.some((text) => hasWithheldMarker(text));
+}
+
 function formatDeckSummary(deck: DeckContent): string {
   return deck.slides.map((slide) => {
-    // Mark a slide hidden when the XML show attribute hides it, when any shape
-    // text contains a withheld marker, or when the speaker notes do.
-    const shapeTexts = slide.shapes.filter((shape) => shape.text).map((shape) => shape.text);
-    const hasMarker =
-      hasWithheldMarker(slide.speakerNotes ?? '') ||
-      shapeTexts.some((text) => hasWithheldMarker(text));
-    if (slide.hidden || hasMarker) return `Slide ${slide.index} [HIDDEN]`;
+    if (slideIsWithheld(slide)) return `Slide ${slide.index} [HIDDEN]`;
     return [
       `Slide ${slide.index} (sldId=${slide.sldId})`,
       ...slide.shapes.filter((shape) => shape.text).map((shape) => `  [${shape.type}] shape ${shape.spId}: ${indent(shape.text)}`),
@@ -120,6 +123,9 @@ export class PptxReviewTools {
         const deck = await this.reader.extractDeck(buffer);
         this.check(ctx);
         const summary = formatDeckSummary(deck);
+        // Compute the withheld set from the FULL deck before truncation so hidden slides past the
+        // 24k cutoff are still excluded from images and postable findings.
+        const withheldSlides = deck.slides.filter(slideIsWithheld).map((slide) => slide.index);
         const snapshot = { url, etag: ref.eTag, hash: hash(buffer), itemId: ref.itemId, driveId: ref.driveId, capturedAt: Date.now() };
         const key = this.key(input, ctx);
         this.snapshots.delete(key);
@@ -128,6 +134,7 @@ export class PptxReviewTools {
         return {
           content: JSON.stringify({ submissionId: input.submissionId, eTag: ref.eTag, textHash: snapshot.hash,
             capturedAt: new Date(snapshot.capturedAt).toISOString(), slides: deck.slideCount,
+            withheldSlides,
             truncated: summary.length > 24_000, content: summary.slice(0, 24_000) }),
           note: `${deck.slideCount} slides`,
         };
