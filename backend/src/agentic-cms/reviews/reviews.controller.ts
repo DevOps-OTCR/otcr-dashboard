@@ -75,4 +75,16 @@ export class ReviewsController {
     await this.access.assertContextWrite(user, projectId);
     return this.jobs.retry(user, projectId, reviewId);
   }
+
+  @Post('projects/:projectId/:reviewId/post')
+  @HttpCode(201)
+  async post(
+    @Param('projectId') projectId: string,
+    @Param('reviewId') reviewId: string,
+    @GetUser() user: CmsReader,
+  ): Promise<Review> {
+    await this.projects.assertProjectAccess(projectId, user);
+    await this.access.assertContextWrite(user, projectId);
+    return this.jobs.post(user, projectId, reviewId);
+  }
 }

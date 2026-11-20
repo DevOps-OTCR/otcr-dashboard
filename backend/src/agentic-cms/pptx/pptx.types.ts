@@ -12,6 +12,7 @@ export interface SlideContent {
   sldId: string;
   slideFile: string;
   creationId?: string;
+  hidden: boolean;
   title: string;
   bodyText: string[];
   speakerNotes: string;

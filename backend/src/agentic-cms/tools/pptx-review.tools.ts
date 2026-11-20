@@ -24,11 +24,14 @@ const hash = (buffer: Buffer) => createHash('sha256').update(buffer).digest('hex
 const indent = (text: string) => text.replace(/\n/g, '\n    ');
 
 function formatDeckSummary(deck: DeckContent): string {
-  return deck.slides.map((slide) => [
-    `Slide ${slide.index} (sldId=${slide.sldId})`,
-    ...slide.shapes.filter((shape) => shape.text).map((shape) => `  [${shape.type}] shape ${shape.spId}: ${indent(shape.text)}`),
-    slide.speakerNotes ? `  Notes: ${indent(slide.speakerNotes)}` : '',
-  ].filter(Boolean).join('\n')).join('\n\n');
+  return deck.slides.map((slide) => {
+    if (slide.hidden) return `Slide ${slide.index} [HIDDEN]`;
+    return [
+      `Slide ${slide.index} (sldId=${slide.sldId})`,
+      ...slide.shapes.filter((shape) => shape.text).map((shape) => `  [${shape.type}] shape ${shape.spId}: ${indent(shape.text)}`),
+      slide.speakerNotes ? `  Notes: ${indent(slide.speakerNotes)}` : '',
+    ].filter(Boolean).join('\n');
+  }).join('\n\n');
 }
 
 @Injectable()
@@ -129,6 +132,8 @@ export class PptxReviewTools {
       run: (input: Target & { slide_indices?: number[] }, ctx) => this.safe(async () => {
         const url = await this.source(input, ctx);
         if (!this.renderer.isVisionEnabled()) return { content: 'Slide rendering is unavailable. Continue with text-only review.', note: 'Vision unavailable' };
+        const urlNow = await this.source(input, ctx);
+        if (urlNow !== url) throw new ToolFailure('Deck changed', 'The deck changed during rendering. Read it again.');
         const snapshot = this.snapshots.get(this.key(input, ctx));
         const ref = await this.graph.resolveLink(url, ctx.signal);
         if (!snapshot || snapshot.url !== url || snapshot.etag !== ref.eTag || snapshot.itemId !== ref.itemId || snapshot.driveId !== ref.driveId) {

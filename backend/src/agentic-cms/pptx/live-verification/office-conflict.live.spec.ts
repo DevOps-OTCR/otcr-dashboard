@@ -10,8 +10,8 @@ const shape = (spId: string, type: 'title' | 'body', creationId?: string) =>
 const deck: DeckContent = {
   slideCount: 2,
   slides: [
-    { index: 1, sldId: '256', slideFile: 'slides/slide1.xml', title: 'A', bodyText: [], speakerNotes: '', shapes: [shape('2', 'title', '{T}'), shape('3', 'body', '{B}')] },
-    { index: 2, sldId: '257', slideFile: 'slides/slide2.xml', title: 'B', bodyText: [], speakerNotes: '', shapes: [shape('2', 'title')] },
+    { index: 1, sldId: '256', slideFile: 'slides/slide1.xml', hidden: false, title: 'A', bodyText: [], speakerNotes: '', shapes: [shape('2', 'title', '{T}'), shape('3', 'body', '{B}')] },
+    { index: 2, sldId: '257', slideFile: 'slides/slide2.xml', hidden: false, title: 'B', bodyText: [], speakerNotes: '', shapes: [shape('2', 'title')] },
   ],
 };
 

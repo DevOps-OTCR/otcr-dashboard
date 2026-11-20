@@ -223,6 +223,10 @@ export class PptxReaderService {
       if (!slideXml) throw new Error('PPTX slide part is missing.');
       if (/<!DOCTYPE|<!ENTITY/i.test(slideXml)) throw new Error('PPTX XML entities are unsupported.');
 
+      // A slide is hidden when its root <p:sld> carries show="0"; other values mean visible.
+      const rootTag = slideXml.match(/<(?:[A-Za-z_][\w.-]*:)?sld\b[^>]*>/)?.[0] ?? '';
+      const hidden = /\bshow\s*=\s*"0"/.test(rootTag);
+
       const slideDoc = parser.parse(slideXml);
       const sld = slideDoc?.sld ?? slideDoc?.wksp ?? slideDoc;
       const spTree = sld?.cSld?.spTree;
@@ -240,6 +244,7 @@ export class PptxReaderService {
         sldId,
         slideFile: normalizedTarget,
         creationId: slideCreationId,
+        hidden,
         title,
         bodyText,
         speakerNotes,
