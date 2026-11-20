@@ -44,7 +44,9 @@ function AgenticCmsSession({ getToken }: { getToken: () => Promise<string | null
   }, [getToken]);
 
   if (!enabled) {
-    const mount = pathname === '/agentic-cms' && document.getElementById('agentic-cms-root');
+    // Static builds use trailingSlash, so usePathname() can return '/agentic-cms/'.
+    const onPage = (pathname ?? '').replace(/\/+$/, '') === '/agentic-cms';
+    const mount = onPage && document.getElementById('agentic-cms-root');
     return checked && mount ? createPortal(<p className="m-6">Agentic CMS loads when this account is enabled for the feature.</p>, mount) : null;
   }
   return <Suspense fallback={null}><AgenticCms /></Suspense>;

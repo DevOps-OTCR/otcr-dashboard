@@ -336,6 +336,96 @@ PowerPoint writes on save (`modernComment_<sldId hex>_<creationId hex>.xml`) whe
 the linked slide.
 No live credentials or deployment configuration are changed by this PR.
 
+## AI Review UI (Week 2 mock prototype)
+
+The reviewer workflow lives in `frontend/features/agentic-cms/review/`.
+It uses fictional submissions and browser-simulated reviews. No real files are
+read, models called, review skills executed, or document comments posted.
+
+### Access and navigation
+
+Sign in and open `/agentic-cms?tab=review` (a trailing slash also works).
+There is no dashboard navigation link yet; the OTCR Bot button opens chat.
+Select an accessible project, then Project Context, Client Call Notes, or AI Review.
+The existing backend-controlled feature gate must permit the account.
+Request/retry controls use the context API's `canEdit`: admins, LCs with project
+access, and the assigned PM can request reviews. Loading withholds actions;
+failed checks offer retry. Other readers can view status and feedback.
+Future review endpoints must enforce the existing flag and CMS permissions
+server-side; the demo's frontend controls are not server authorization.
+
+### Requesting and tracking reviews
+
+The queue filters by Not reviewed, Awaiting review, In progress, Completed, and
+Failed. Details identify the submission, file, version, workstream, and author.
+Selections use `?tab=review&submission=<id>`. The initial default stays selected
+when the queue reorders; explicit unavailable/empty links remain intact.
+
+| Level | Intended checks | Optional input |
+| --- | --- | --- |
+| Basic | Text quality and consistency; slide formatting when visuals are available | None |
+| Advanced | Storyline, evidence, recommendations, client/SOW/workstream alignment | Focus note, up to 500 characters |
+
+Advanced warns when both overview and scope are empty and links to Project
+Context without blocking requests. The warning includes unsaved editor values;
+the mock stores but does not analyze the focus note or project context.
+Runs move Awaiting → In progress → Completed or Failed; duplicate active runs
+are blocked. Basic takes about 8 seconds and Advanced 15 seconds in the demo.
+Completed reviews offer **Request another review**; Basic also offers **Run Advanced review**.
+Displayed minute estimates are provisional.
+
+Demo controls can force file-access, rate-limit, model-timeout, unsupported-file,
+or configuration failures. The first three offer retry; unsupported/configuration
+failures require corrective action and currently lack a new-request action.
+Retry creates a new run with the same level/focus note and retains failed history.
+Docs access failures explain Commenter sharing and retry the same submission link;
+the mock simulates corrected sharing without checking or changing permissions.
+
+### Feedback and mock limitations
+
+Completed reviews show a brief summary and a disabled **Open in Google Docs**
+or **Open in PowerPoint** demo button. A gray expandable section directly below
+holds feedback to apply or check. Older versions and stale decks carry warnings.
+Review completion does not approve a deliverable; final approval stays human.
+Ten Northwind Bikes samples belong to the first accessible project; others stay
+empty. Switching projects/tabs preserves project-scoped reviews and demo settings.
+All results, coverage, snapshots and links are fake; reload/sign-out resets state.
+
+PowerPoint outcomes mirror #198's `add_pptx_comments`; copy lives in `review/copy.ts`:
+
+| Outcome | Comments in deck | Next step |
+| --- | --- | --- |
+| `comments_live` / `already_posted` | All | Open the deck; no duplicates added |
+| `stale`, `invalid_anchor` | None | Review the latest version |
+| `unsupported_format` | None | Apply findings by hand |
+| `locked` | None | Close the deck, then retry posting |
+| `error` | Unconfirmed | Check the deck; retry only if comments are missing |
+
+The demo also supports partial posting. Posting-only retries preserve findings,
+coverage, counts and comment IDs. PowerPoint inspection is simulated visual
+coverage; text-only coverage when slide rendering fails is not simulated.
+Docs are text-only. Their results follow #198's `comment_google_doc` batch rules:
+changed-document or comment-access failures stop the batch with specific guidance.
+An unconfirmed save (`comment-uncertain`) may already exist; check before adding
+it again. Later comments were not attempted (`comment-failed`). A native comment
+with `anchorVerified: false` shows quoted versus attached text. Unknown outcomes
+or fallback reasons get cautious generic guidance rather than implying failure.
+
+### Local demo and checks
+
+Follow the README for dependencies, database, migrations and app servers.
+Set your Entra client ID in ignored `frontend/.env.local`, with a **Single-page
+application** redirect of `http://localhost:3000/auth/callback`; restart after edits.
+`AADSTS50011` indicates a redirect mismatch. Locally enable the existing flag and
+allowlist your enrolled account; checked-in defaults stay off. A project is required.
+Local-only `docker-compose.dev.yml` and `scripts/cms-dev-seed.cjs` support synthetic
+data; seeding requires `CMS_LOCAL_EMAIL` and the dedicated local dev database.
+No Lumen/Google key is needed for review demos; OTCR Bot needs separate Lumen setup.
+Run `npm --prefix frontend test` and `npm --prefix frontend run test:navigation:browser`,
+plus `node scripts/check-agentic-boundaries.cjs` and its `.test.cjs` negative tests.
+Browser tests use synthetic auth/context. Include flag-off/on evidence in the PR;
+they do not replace live sign-in, server permissions, or normal-CMS regression checks.
+
 ## Where each group builds
 
 | Group                        | Required integration boundary                                                                                                                                                                                          |
