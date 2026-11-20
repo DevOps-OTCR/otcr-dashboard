@@ -22,6 +22,8 @@ export type ReviewActions = {
   request: (submissionId: string, level: ReviewLevel, focusNote: string) => Promise<void>;
   retry: (reviewId: string) => Promise<void>;
   retryPosting: (reviewId: string) => Promise<void>;
+  /** Post the stored findings of a COMPLETED review into its file. */
+  post: (reviewId: string) => Promise<void>;
 };
 
 const secondaryButton = 'rounded-[var(--radius-sm)] border border-[var(--border)] px-3 py-2 text-sm font-medium hover:bg-[var(--surface-muted)] disabled:opacity-60';
@@ -33,6 +35,7 @@ export function ReviewDetail({ row, now, actions, mocked }: { row: QueueRow; now
   // The open request form's preselected level, or null when it is closed.
   const [formLevel, setFormLevel] = useState<ReviewLevel | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [posting, setPosting] = useState(false);
   const [actionError, setActionError] = useState('');
   const Icon = submission.format === 'slides' ? Presentation : FileText;
   // Which run's status and feedback are shown: the current one unless an earlier run is chosen.
@@ -79,10 +82,22 @@ export function ReviewDetail({ row, now, actions, mocked }: { row: QueueRow; now
       setRetrying(false);
     }
   };
+  const post = async (reviewId: string) => {
+    setPosting(true);
+    setActionError('');
+    try {
+      await actions.post(reviewId);
+    } catch (err) {
+      setActionError(err instanceof Error && err.message ? err.message : 'Could not post the comments to the file. Try again.');
+    } finally {
+      setPosting(false);
+    }
+  };
 
   // What the PM can do next with the current version. Hidden while viewing an earlier run.
   const failure = current?.failure && FAILURES[current.failure.kind];
-  const nextActions = !actions.permissionsReady || viewingEarlier || current?.powerPoint?.postingInProgress ? null : !actions.canRequest ? (
+  const canPost = current?.status === 'COMPLETED' && current.posting !== 'in_progress' && current.posting !== 'done' && current.comments.length > 0;
+  const nextActions = !actions.permissionsReady || viewingEarlier || current?.powerPoint?.postingInProgress || current?.posting === 'in_progress' ? null : !actions.canRequest ? (
     !current && <p className="text-sm text-[var(--text-muted)]">Only this project’s PM, LCs and admins can request AI reviews.</p>
   ) : formLevel ? (
     <RequestReviewForm
@@ -109,6 +124,11 @@ export function ReviewDetail({ row, now, actions, mocked }: { row: QueueRow; now
         {current?.status === 'COMPLETED' && (
           <button type="button" className={secondaryButton} onClick={() => openForm(current.level)}>
             {current.powerPoint?.outcome === 'stale' ? 'Review latest version' : 'Request another review'}
+          </button>
+        )}
+        {!mocked && canPost && current && (
+          <button type="button" className={primaryButton} disabled={posting} onClick={() => void post(current.id)}>
+            {posting ? 'Posting…' : `Post ${current.comments.length} comment${current.comments.length === 1 ? '' : 's'} to the file`}
           </button>
         )}
         {current?.status === 'FAILED' && failure?.retryable && (

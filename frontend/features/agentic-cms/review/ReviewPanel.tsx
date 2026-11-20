@@ -95,7 +95,7 @@ function ProjectReviewPanel({ client, projectId, projectName, canRequest: permit
           setSelectedId((current) => current ?? buildQueue(next)[0]?.submission.id ?? null);
           setError('');
           setNow(Date.now());
-          timer = window.setTimeout(poll, next.reviews.some((review) => isActive(review.status) || review.powerPoint?.postingInProgress) ? ACTIVE_POLL_MS : IDLE_POLL_MS);
+          timer = window.setTimeout(poll, next.reviews.some((review) => isActive(review.status) || review.powerPoint?.postingInProgress || review.posting === 'in_progress') ? ACTIVE_POLL_MS : IDLE_POLL_MS);
         },
         () => {
           if (!active) return;
@@ -148,8 +148,23 @@ function ProjectReviewPanel({ client, projectId, projectName, canRequest: permit
       if (mock) {
         await mock.retryPowerPointPosting(projectId, reviewId);
       } else {
-        // No separate repost endpoint yet: a fresh review rereads the deck.
+        // Re-post only when the last attempt ended locked or errored; a fresh review rereads the file otherwise.
         await client.retry(projectId, reviewId);
+      }
+      afterChange();
+    },
+    // The real client posts to the file; the mock replays its simulated posting.
+    post: async (reviewId: string) => {
+      if (mock) {
+        const queue = await mock.list(projectId);
+        const review = queue.reviews.find((r) => r.id === reviewId);
+        const submission = review && queue.submissions.find((s) => s.id === review.submissionId);
+        if (submission?.format === 'slides') {
+          await mock.retryPowerPointPosting(projectId, reviewId);
+        }
+        // Documents: the demo has no simulated post; the review is returned unchanged.
+      } else {
+        await client.post?.(projectId, reviewId);
       }
       afterChange();
     },

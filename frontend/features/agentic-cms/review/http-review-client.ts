@@ -48,5 +48,7 @@ export function createHttpReviewClient(): ReviewClient {
     },
     retry: (projectId, reviewId) =>
       call<Review>(() => api.post(`${base(projectId)}/${encodeURIComponent(reviewId)}/retry`)),
+    post: (projectId, reviewId) =>
+      call<Review>(() => api.post(`${base(projectId)}/${encodeURIComponent(reviewId)}/post`)),
   };
 }

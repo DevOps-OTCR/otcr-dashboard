@@ -104,6 +104,8 @@ export type Review = {
   /** Set when COMPLETED. */
   revisionId?: string;
   summary?: ReviewSummary;
+  /** Set while the review's findings are being posted into the file, then 'done'. */
+  posting?: 'in_progress' | 'done';
   /** Demo-only deck posting metadata, separate from review completion. */
   powerPoint?: {
     outcome: PowerPointOutcome;
@@ -132,4 +134,6 @@ export interface ReviewClient {
   list(projectId: string): Promise<ReviewQueue>;
   request(input: RequestReviewInput): Promise<Review>;
   retry(projectId: string, reviewId: string): Promise<Review>;
+  /** Post the stored findings of a COMPLETED review into its file. */
+  post?(projectId: string, reviewId: string): Promise<Review>;
 }
