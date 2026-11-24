@@ -17,8 +17,22 @@ const button = 'rounded-lg border border-[var(--border)] px-3 py-2 text-sm disab
 const field = 'w-full rounded-lg border border-[var(--border)] bg-[var(--background)] p-3 text-[var(--foreground)]';
 const discard = () => window.confirm('Discard your unsaved research changes? Copy any text you want to keep before continuing.');
 
+function groupDeliverables(items: ResearchDeliverable[]) {
+  const groups = new Map<string, { id: string; label: string; sequence: number; start: string; items: ResearchDeliverable[] }>();
+  for (const item of items) {
+    const id = item.sprintId ?? item.sprint?.id ?? '';
+    if (!groups.has(id)) groups.set(id, {
+      id, label: item.sprint?.label ?? (id ? 'Workstream' : 'No workstream'),
+      sequence: item.sprint?.sequenceNumber ?? 0, start: item.sprint?.weekStartDate ?? '', items: [],
+    });
+    groups.get(id)!.items.push(item);
+  }
+  return [...groups.values()].sort((a, b) => Number(!a.id) - Number(!b.id) || b.start.localeCompare(a.start) || b.sequence - a.sequence);
+}
+
 export function ResearchWorkspace({ projectId, onDirtyChange }: { projectId: string; onDirtyChange: (dirty: boolean) => void }) {
   const [deliverables, setDeliverables] = useState<ResearchDeliverable[]>([]);
+  const [workstream, setWorkstream] = useState('');
   const [selected, setSelected] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -29,7 +43,9 @@ export function ResearchWorkspace({ projectId, onDirtyChange }: { projectId: str
     return researchAPI.deliverables(projectId).then(items => {
       if (request !== generation.current) return;
       setDeliverables(items);
-      setSelected(items[0]?.id ?? '');
+      const first = groupDeliverables(items)[0];
+      setWorkstream(first?.id ?? '');
+      setSelected(first?.items[0]?.id ?? '');
     }).catch(() => {
       if (request === generation.current) setError(true);
     }).finally(() => {
@@ -43,6 +59,8 @@ export function ResearchWorkspace({ projectId, onDirtyChange }: { projectId: str
     return () => { ++requests.current; };
   }, [load]);
   const updateDirty = useCallback((value: boolean) => { setDirty(value); onDirtyChange(value); }, [onDirtyChange]);
+  const groups = groupDeliverables(deliverables);
+  const currentGroup = groups.find(group => group.id === workstream);
 
   return <section aria-label="Research workspace" className="space-y-5">
     <div>
@@ -53,14 +71,26 @@ export function ResearchWorkspace({ projectId, onDirtyChange }: { projectId: str
       <p>Could not load deliverables. Check your connection and project access.</p>
       <button className={`${button} mt-2`} onClick={() => { setLoading(true); setError(false); void load(); }}>Retry deliverables</button>
     </div> : deliverables.length === 0 ? <p>No deliverables are available for this project. Ask your PM to create or release an assignment.</p> : <>
-      <label className="block space-y-2 text-sm font-medium">Deliverable
-        <select aria-label="Research deliverable" className={field} value={selected} onChange={event => {
-          if (dirty && !discard()) return;
-          updateDirty(false); setSelected(event.target.value);
-        }}>
-          {deliverables.map(item => <option key={item.id} value={item.id}>{item.title}{item.sprint?.label ? ` · ${item.sprint.label}` : ''}</option>)}
-        </select>
-      </label>
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="block min-w-0 space-y-2 text-sm font-medium">Workstream
+          <select aria-label="Research workstream" className={field} value={workstream} onChange={event => {
+            if (dirty && !discard()) return;
+            updateDirty(false);
+            setWorkstream(event.target.value);
+            setSelected(groups.find(group => group.id === event.target.value)?.items[0]?.id ?? '');
+          }}>
+            {groups.map(group => <option key={group.id} value={group.id}>{group.label}</option>)}
+          </select>
+        </label>
+        <label className="block min-w-0 space-y-2 text-sm font-medium">Deliverable
+          <select aria-label="Research deliverable" className={field} value={selected} onChange={event => {
+            if (dirty && !discard()) return;
+            updateDirty(false); setSelected(event.target.value);
+          }}>
+            {currentGroup?.items.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}
+          </select>
+        </label>
+      </div>
       {selected && <ResearchEditor key={selected} projectId={projectId} deliverableId={selected} onDirtyChange={updateDirty} />}
     </>}
   </section>;

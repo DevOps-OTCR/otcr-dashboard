@@ -358,7 +358,10 @@ with the research migration applied. Enable the existing backend flag and limit
 the pilot allowlist to your account locally. Keep the checked-in flag default
 off. No model key is needed to use the manual research workspace. Sign in with
 your normal enrolled Microsoft account and open `/agentic-cms`, then choose
-**Research**, a project and a deliverable. Project selection is shared with the
+**Research**, a project, a workstream and a deliverable within that workstream.
+The two research dropdowns group by workstream ID, default to the newest available
+workstream, and retain standalone deliverables under **No workstream**. Only
+workstreams with visible deliverables appear. Project selection is shared with the
 existing context panels. Selecting a deliverable reads its workspace without
 creating anything automatically. If it is missing, the server's `canEdit`
 response determines whether **Create research workspace** is offered. Other
@@ -373,7 +376,7 @@ later steps. Saved documents remain CMS-native until an external adapter is
 connected.
 
 Switching research tabs or existing Agentic CMS tool tabs preserves the draft.
-Switching projects/deliverables or reloading saved research asks before discarding
+Switching projects/workstreams/deliverables or reloading saved research asks before discarding
 unsaved text; closing/reloading the browser uses the native unsaved-changes
 warning. Drafts are held in memory, not local storage. Navigate away only after
 saving: internal navigation away from the Agentic CMS page unmounts its editor.

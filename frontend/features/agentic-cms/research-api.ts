@@ -21,7 +21,10 @@ export type ResearchPreparation = {
   attempts: number; lastAttemptAt: string | null; completedAt: string | null;
   interrupted: boolean; canRetry: boolean; message: string | null;
 };
-export type ResearchDeliverable = { id: string; title: string; sprint?: { label: string } | null };
+export type ResearchDeliverable = {
+  id: string; title: string; sprintId?: string | null;
+  sprint?: { id: string; label: string; sequenceNumber?: number; weekStartDate?: string } | null;
+};
 const base = (projectId: string, deliverableId: string) =>
   `/agentic-cms/research/projects/${encodeURIComponent(projectId)}/deliverables/${encodeURIComponent(deliverableId)}`;
 

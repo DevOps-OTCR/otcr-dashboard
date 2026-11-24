@@ -57,10 +57,15 @@ async function setup(t, options = {}) {
     if (url.pathname === '/api/deliverables') {
       if (state.failDeliverablesOnce) { state.failDeliverablesOnce = false; return json(route, {}, 503); }
       const page = Number(url.searchParams.get('page') || 1);
+      const week1 = { id: 'w1', label: 'Week 1', sequenceNumber: 1, weekStartDate: '2026-11-23T00:00:00Z' };
+      const week0 = { id: 'w0', label: state.duplicateWorkstreamLabels ? 'Week 1' : 'Week 0', sequenceNumber: 0, weekStartDate: '2026-11-16T00:00:00Z' };
       const list = url.searchParams.get('projectId') === 'p2'
-        ? [{ id: 'd3', title: 'Project Two assignment' }]
-        : [{ id: 'd1', title: 'Market research', sprint: { label: 'Week 1' } }, { id: 'd2', title: 'Client recommendation', sprint: { label: 'Week 1' } }];
-      return json(route, { deliverables: state.empty ? [] : state.paged && page === 2 ? [{ id: 'd4', title: 'Second-page assignment' }] : list, pagination: { totalPages: state.paged ? 2 : 1 } });
+        ? [{ id: 'd3', title: 'Project Two assignment', sprintId: 'w3', sprint: { id: 'w3', label: 'Project Two workstream' } }]
+        : [{ id: 'd1', title: 'Market research', sprintId: 'w1', sprint: week1 }, { id: 'd2', title: 'Client recommendation', sprintId: 'w1', sprint: week1 },
+          ...(state.extraWorkstreams ? [{ id: 'd4', title: 'Earlier research', sprintId: 'w0', sprint: week0 }, { id: 'd5', title: 'Earlier recommendation', sprintId: 'w0', sprint: week0 }] : []),
+          ...(state.unscoped ? [{ id: 'd6', title: 'Standalone research', sprintId: null, sprint: null }] : []),
+        ];
+      return json(route, { deliverables: state.empty ? [] : state.paged && page === 2 ? [{ id: 'd4', title: 'Second-page assignment', sprintId: 'w1', sprint: week1 }] : list, pagination: { totalPages: state.paged ? 2 : 1 } });
     }
     const match = url.pathname.match(/\/research\/projects\/(p[12])\/deliverables\/(d\d)(.*)$/);
     if (!match) { errors.push(`Unexpected request: ${url.pathname}`); return json(route, {}, 500); }
@@ -335,6 +340,39 @@ test('empty projects show a useful message without research requests', async t =
   const { page, state } = await setup(t, { empty: true });
   await page.getByText('No deliverables are available for this project. Ask your PM to create or release an assignment.').waitFor();
   assert.equal(state.calls.some(call => call.path.includes('/research/')), false);
+});
+
+test('filters deliverables by workstream and protects drafts when switching workstreams', async t => {
+  const { page, state } = await setup(t, { seed: true, extraWorkstreams: true, acceptDialog: false });
+  const workstream = page.getByRole('combobox', { name: 'Research workstream', exact: true });
+  const deliverable = page.getByRole('combobox', { name: 'Research deliverable', exact: true });
+  assert.equal(await workstream.inputValue(), 'w1');
+  assert.deepEqual(await deliverable.locator('option').allTextContents(), ['Market research', 'Client recommendation']);
+  await editor(page).fill('Keep this research draft');
+  await workstream.selectOption('w0');
+  assert.equal(await workstream.inputValue(), 'w1');
+  assert.equal(await deliverable.inputValue(), 'd1');
+  assert.equal(await editor(page).inputValue(), 'Keep this research draft');
+  state.acceptDialog = true;
+  await workstream.selectOption('w0');
+  await page.getByRole('heading', { name: 'Research has not been started' }).waitFor();
+  assert.equal(await deliverable.inputValue(), 'd4');
+  assert.deepEqual(await deliverable.locator('option').allTextContents(), ['Earlier research', 'Earlier recommendation']);
+  assert.equal(await editor(page).count(), 0);
+  await workstream.selectOption('w1');
+  await editor(page).waitFor();
+  assert.equal(await editor(page).inputValue(), '');
+});
+
+test('uses workstream IDs even when labels match and retains standalone deliverables', async t => {
+  const { page } = await setup(t, { extraWorkstreams: true, duplicateWorkstreamLabels: true, unscoped: true });
+  const workstream = page.getByRole('combobox', { name: 'Research workstream', exact: true });
+  const deliverable = page.getByRole('combobox', { name: 'Research deliverable', exact: true });
+  assert.deepEqual(await workstream.locator('option').allTextContents(), ['Week 1', 'Week 1', 'No workstream']);
+  await workstream.selectOption('w0');
+  assert.deepEqual(await deliverable.locator('option').allTextContents(), ['Earlier research', 'Earlier recommendation']);
+  await workstream.selectOption({ label: 'No workstream' });
+  assert.deepEqual(await deliverable.locator('option').allTextContents(), ['Standalone research']);
 });
 
 test('retries failed preparation and opens the prepared workspace', async t => {
