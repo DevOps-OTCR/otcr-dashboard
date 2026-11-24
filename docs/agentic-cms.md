@@ -259,6 +259,97 @@ accessible projects do not see the context tabs. The read-only MCP tool
 `get_project_context` returns overview, scope and paginated call notes under the
 same project access rules. It does not fetch linked files.
 
+## Research workspace foundation (Step 1)
+
+Research is currently a CMS-native, plain-text document stored in PostgreSQL,
+with one shared workspace per deliverable. This is the functional storage
+fallback while Google Docs integration is being investigated. There is no
+research UI, release hook, model generation or research bot tool yet. Existing
+project-context editors and submission/approval flows are unchanged.
+
+Apply the committed `20261124202640_research_workspace` migration to a local
+development database using the README's `prisma migrate deploy` instructions,
+and regenerate the backend Prisma client. No flag default or live configuration
+change is necessary. The API remains unavailable unless the existing Agentic CMS
+flag and pilot admission permit the signed-in user.
+
+The HTTP base path is
+`/agentic-cms/research/projects/:projectId/deliverables/:deliverableId`.
+Every request uses the same verified Microsoft authentication/enrollment policy
+as the other Agentic CMS endpoints. `ResearchAccessService` reuses CMS deliverable
+scopes, preserving membership, project relationships and draft-week visibility.
+Existing authorized readers can read research. Writes require an assigned
+consultant (including the legacy `assigneeId`), an admin, an LC with project
+access, or the project's owning PM. Assignment never overrides lost project
+access. Read responses include `canEdit` for the future interface.
+
+| Method / suffix | Behavior |
+| --- | --- |
+| `POST` base path | Explicitly initialize three empty root sections; repeat calls reuse the existing workspace without resetting content or adding history. Requires write access. |
+| `GET` base path | Read saved content and current version; never creates a workspace implicitly. |
+| `PUT` base path | Save `{ expectedVersion, document }` as a new revision. |
+| `PATCH /sections/:sectionId` | Save `{ expectedVersion, content?, title?, sourceIds? }` to one existing section without replacing other sections. |
+| `GET /revisions?limit=20&beforeVersion=…` | List revision metadata newest first; continue with `nextBeforeVersion` until null. Maximum page size is 50. |
+| `POST /restore` | Restore `{ expectedVersion, targetVersion }` as a new revision; earlier versions remain available. |
+
+Workspace responses contain `id`, `deliverableId`, `projectId`, `storage: "cms"`,
+`version`, `document`, `canEdit`, `createdAt` and `updatedAt`. A document has:
+
+```json
+{
+  "schemaVersion": 1,
+  "sections": [
+    { "id": "past-data", "tab": "past-data", "title": "Relevant Past Data", "content": "", "sourceIds": [] },
+    { "id": "framework", "tab": "framework", "title": "Framework / Structure", "content": "", "sourceIds": [] },
+    { "id": "findings", "tab": "findings", "title": "Findings", "content": "", "sourceIds": [] }
+  ],
+  "sources": []
+}
+```
+
+The three root IDs are stable even when titles change. Additional sections can
+use distinct stable IDs and one of the three tab values. Array order is display
+order; section identity must never depend on its title or index. Sources are
+`{ id, title, url }` with HTTP(S) URLs. Each section's `sourceIds` must refer to
+the document's stored source registry. Storage validates references but does not
+claim to verify source content. Text is plain text; render it safely in the UI.
+Documents allow up to 100 sections, 200 sources, 50,000 characters per section,
+and 200,000 serialized characters overall; the server's HTTP body limit also
+applies. IDs use letters, numbers, underscores or hyphens, up to 100 characters.
+
+Initialization records version 1. Every successful save or restore commits both
+the new document and a complete revision snapshot in one database transaction.
+Revisions record author, timestamp, action (`INITIALIZE`, `EDIT`, `RESTORE`) and,
+for restores, the original version. Sources are part of each snapshot and survive
+restarts independently of the bot's in-memory chat history. Versions and history
+belong to this research workspace, not the deliverable's submission versions.
+
+Send the last-read version as `expectedVersion` on every edit/restore. A stale
+request returns HTTP 409 / `VERSION_CONFLICT`, with no changes committed; reload
+and reconcile rather than blindly retrying. Restore replaces the **whole research
+document**, including its sources, and creates a new version. It does not erase
+history, alter submissions, or automatically approve work. A later UI should
+make the scope of restore clear when multiple consultants share a workspace.
+
+Uninitialized workspaces return 404 / `WORKSPACE_NOT_INITIALIZED`; unknown
+sections/revisions return 404; invalid payloads return 400 / `INVALID_ARGUMENT`.
+Unauthorized or mismatched parent records return a generic 404 without reading
+research content. Access is checked again before writes and before returning
+content/history. Storage lives behind `ResearchDocumentAdapter`, implemented by
+`CmsResearchDocumentAdapter`. A future Google Docs adapter must preserve these
+permissions, conflict checks and durable history; adding a URL alone does not
+connect synchronization.
+
+Validation: `research-workspace.http.spec.ts` uses the actual module/global guard
+with synthetic authentication and mocked storage. It covers flag-off/default-off
+and flag-on operation, ordinary CMS availability, malformed tokens, enrollment,
+pilot admission, assigned/read-only users, manager roles and mid-request access
+changes. `research-workspace.integration.spec.ts` applies committed migrations to
+an isolated local PostgreSQL schema and checks shared initialization, persistence,
+source snapshots, concurrent saves, rollback, restore and real permission scopes.
+Run `npm --prefix backend run test:integration` to include it in the dedicated
+local test database suite. No model, Google API or real client material is used.
+
 ## Backend enforcement
 
 The globally registered `AgenticCmsGuard` protects every Nest HTTP controller

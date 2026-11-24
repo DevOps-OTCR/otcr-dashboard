@@ -18,11 +18,18 @@ import { CmsReadTools } from './tools/cms-read.tools';
 import { LoadSkillTool } from './tools/load-skill.tool';
 import { ToolRegistry } from './tools/tool-registry';
 import { WebSearchTool } from './tools/web-search.tool';
+import { ResearchAccessService } from './research/research-access.service';
+import { CmsResearchDocumentAdapter, ResearchDocumentAdapter } from './research/research-document.adapter';
+import { ResearchWorkspaceController } from './research/research-workspace.controller';
+import { ResearchWorkspaceService } from './research/research-workspace.service';
 
 @Module({
   imports: [FeatureFlagsModule, PrismaModule, ProjectsModule],
-  controllers: [AgenticCmsController, McpController, ChatController],
+  controllers: [AgenticCmsController, McpController, ChatController, ResearchWorkspaceController],
   providers: [
+    ResearchAccessService,
+    ResearchWorkspaceService,
+    { provide: ResearchDocumentAdapter, useClass: CmsResearchDocumentAdapter },
     CmsReadAccessService,
     CmsReadService,
     ReadCursorService,

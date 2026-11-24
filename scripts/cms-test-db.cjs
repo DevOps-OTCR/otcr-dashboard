@@ -43,6 +43,7 @@ if (action === 'down') {
     run(process.execPath, [path.join(backend, 'node_modules/prisma/build/index.js'), 'generate'], env);
     run(process.execPath, [path.join(backend, 'node_modules/jest/bin/jest.js'), '--runInBand', '--runTestsByPath',
       'src/agentic-cms/reads/cms-read.integration.spec.ts',
-      'src/agentic-cms/mcp/mcp.integration.spec.ts', ...process.argv.slice(3)], env);
+      'src/agentic-cms/mcp/mcp.integration.spec.ts',
+      'src/agentic-cms/research/research-workspace.integration.spec.ts', ...process.argv.slice(3)], env);
   }
 }
