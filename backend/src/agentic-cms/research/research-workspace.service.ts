@@ -26,7 +26,18 @@ export class ResearchWorkspaceService {
 
   async read(user: CmsReader, projectId: string, deliverableId: string) {
     await this.access.check(user, projectId, deliverableId);
-    return this.response(user, projectId, deliverableId, await this.documents.read(deliverableId));
+    let workspace: ResearchWorkspace;
+    try {
+      workspace = await this.documents.read(deliverableId);
+    } catch (error) {
+      if (error instanceof NotFoundException && (error.getResponse() as { code?: string }).code === 'WORKSPACE_NOT_INITIALIZED') {
+        // Let the UI offer initialization only when the server permits editing.
+        const canEdit = await this.access.check(user, projectId, deliverableId);
+        throw new NotFoundException({ code: 'WORKSPACE_NOT_INITIALIZED', message: 'Research has not been initialized.', canEdit });
+      }
+      throw error;
+    }
+    return this.response(user, projectId, deliverableId, workspace);
   }
 
   async save(user: CmsReader, projectId: string, deliverableId: string, raw: unknown) {

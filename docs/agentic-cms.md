@@ -264,7 +264,8 @@ same project access rules. It does not fetch linked files.
 Research is currently a CMS-native, plain-text document stored in PostgreSQL,
 with one shared workspace per deliverable. This is the functional storage
 fallback while Google Docs integration is being investigated. There is no
-research UI, release hook, model generation or research bot tool yet. Existing
+release hook, model generation or research bot tool yet. The manual research UI
+is described below. Existing
 project-context editors and submission/approval flows are unchanged.
 
 Apply the committed `20261124202640_research_workspace` migration to a local
@@ -286,7 +287,7 @@ access. Read responses include `canEdit` for the future interface.
 | Method / suffix | Behavior |
 | --- | --- |
 | `POST` base path | Explicitly initialize three empty root sections; repeat calls reuse the existing workspace without resetting content or adding history. Requires write access. |
-| `GET` base path | Read saved content and current version; never creates a workspace implicitly. |
+| `GET` base path | Read saved content and current version; never creates a workspace implicitly. An authorized `WORKSPACE_NOT_INITIALIZED` error includes `canEdit` for the create button. |
 | `PUT` base path | Save `{ expectedVersion, document }` as a new revision. |
 | `PATCH /sections/:sectionId` | Save `{ expectedVersion, content?, title?, sourceIds? }` to one existing section without replacing other sections. |
 | `GET /revisions?limit=20&beforeVersion=…` | List revision metadata newest first; continue with `nextBeforeVersion` until null. Maximum page size is 50. |
@@ -349,6 +350,52 @@ an isolated local PostgreSQL schema and checks shared initialization, persistenc
 source snapshots, concurrent saves, rollback, restore and real permission scopes.
 Run `npm --prefix backend run test:integration` to include it in the dedicated
 local test database suite. No model, Google API or real client material is used.
+
+### Manual research UI (Step 2)
+
+Run the frontend and backend using the README's local development instructions,
+with the research migration applied. Enable the existing backend flag and limit
+the pilot allowlist to your account locally. Keep the checked-in flag default
+off. No model key is needed to use the manual research workspace. Sign in with
+your normal enrolled Microsoft account and open `/agentic-cms`, then choose
+**Research**, a project and a deliverable. Project selection is shared with the
+existing context panels. Selecting a deliverable reads its workspace without
+creating anything automatically. If it is missing, the server's `canEdit`
+response determines whether **Create research workspace** is offered. Other
+404s and connection failures show a retry state instead of offering creation.
+
+The three research tabs support manual titles and plain-text content. The
+interface displays saved version, last-save time and unsaved status; **Save
+research** saves the complete draft across all three tabs. Stored sources are
+rendered as links beside their associated section. Source retrieval, automatic
+framework headings, adding/removing framework sections and bot edits arrive in
+later steps. Saved documents remain CMS-native until an external adapter is
+connected.
+
+Switching research tabs or existing Agentic CMS tool tabs preserves the draft.
+Switching projects/deliverables or reloading saved research asks before discarding
+unsaved text; closing/reloading the browser uses the native unsaved-changes
+warning. Drafts are held in memory, not local storage. Navigate away only after
+saving: internal navigation away from the Agentic CMS page unmounts its editor.
+Save failures retain the draft. A version conflict keeps it visible and disables
+further saves until the user copies anything needed and explicitly reloads the
+latest document. No automatic overwrite or conflict merge is attempted.
+
+**Version history** loads revision metadata in pages. Restoring requires an
+explicit confirmation explaining that all three tabs and sources will be
+replaced; it creates a new version. Restore is disabled while a draft is unsaved.
+Read-only users can view research/history but cannot create, save or restore.
+Late read/write responses from a previous selection are ignored. Sign-out,
+account change or feature revocation unmounts the gated feature and clears its
+in-memory drafts.
+
+`frontend/tests/agentic-research-browser.test.cjs` uses the real gated feature,
+editor and API client with synthetic sign-in/API responses. It covers flag-off
+blocking before project/research reads, flag-on creation/edit/save/reload,
+permissions, pagination, retries, conflicts, restoration, draft protection,
+late responses, sign-out/revocation, source links and narrow-screen layout.
+It runs as part of `npm --prefix frontend run test:navigation:browser`; it does
+not verify live Microsoft sign-in or Google Docs.
 
 ## Backend enforcement
 

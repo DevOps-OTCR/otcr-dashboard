@@ -1,4 +1,4 @@
-import { Controller, Get, INestApplication, Module, UseGuards } from '@nestjs/common';
+import { Controller, Get, INestApplication, Module, NotFoundException, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { AuthGuard } from '../../auth/auth.guard';
@@ -127,6 +127,20 @@ describe('Research HTTP boundary and permissions', () => {
   it('preserves legacy assignee editing', async () => {
     assigned = false; legacyAssigned = true;
     expect((await request(operations[2])).status).toBe(200);
+  });
+
+  it('reports initialization permission only after authorized reads and rechecks access', async () => {
+    documents.read.mockRejectedValue(new NotFoundException({ code: 'WORKSPACE_NOT_INITIALIZED' }));
+    expect(await (await request()).json()).toMatchObject({ code: 'WORKSPACE_NOT_INITIALIZED', canEdit: true });
+    assigned = false;
+    expect(await (await request()).json()).toMatchObject({ code: 'WORKSPACE_NOT_INITIALIZED', canEdit: false });
+    documents.read.mockImplementation(async () => {
+      member = false;
+      throw new NotFoundException({ code: 'WORKSPACE_NOT_INITIALIZED' });
+    });
+    const response = await request();
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ code: 'NOT_FOUND_OR_FORBIDDEN' });
   });
 
   it.each(['CONSULTANT', 'PARTNER', 'EXECUTIVE', 'PM'])('keeps unassigned/nonowning member %s read-only', async userRole => {
