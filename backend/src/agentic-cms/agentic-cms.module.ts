@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { AuthModule } from '../auth/auth.module';
 import { FeatureFlagsModule } from '../feature-flags/feature-flags.module';
 import { ProjectsModule } from '../projects/projects.module';
 import { AgentService } from './agent/agent.service';
@@ -22,11 +24,15 @@ import { ResearchAccessService } from './research/research-access.service';
 import { CmsResearchDocumentAdapter, ResearchDocumentAdapter } from './research/research-document.adapter';
 import { ResearchWorkspaceController } from './research/research-workspace.controller';
 import { ResearchWorkspaceService } from './research/research-workspace.service';
+import { ResearchPreparationService } from './research/research-preparation.service';
+import { ResearchReleaseInterceptor } from './research/research-release.interceptor';
 
 @Module({
-  imports: [FeatureFlagsModule, PrismaModule, ProjectsModule],
+  imports: [FeatureFlagsModule, PrismaModule, ProjectsModule, AuthModule],
   controllers: [AgenticCmsController, McpController, ChatController, ResearchWorkspaceController],
   providers: [
+    ResearchPreparationService,
+    { provide: APP_INTERCEPTOR, useClass: ResearchReleaseInterceptor },
     ResearchAccessService,
     ResearchWorkspaceService,
     { provide: ResearchDocumentAdapter, useClass: CmsResearchDocumentAdapter },

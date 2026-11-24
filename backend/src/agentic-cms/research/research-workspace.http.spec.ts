@@ -35,6 +35,8 @@ const operations: Operation[] = [
   { method: 'PATCH', suffix: '/sections/findings', body: { expectedVersion: 1, content: 'A finding' } },
   { method: 'GET', suffix: '/revisions', body: undefined },
   { method: 'POST', suffix: '/restore', body: { expectedVersion: 1, targetVersion: 1 } },
+  { method: 'GET', suffix: '/preparation', body: undefined },
+  { method: 'POST', suffix: '/preparation/retry', body: undefined },
 ];
 
 describe('Research HTTP boundary and permissions', () => {
@@ -47,7 +49,11 @@ describe('Research HTTP boundary and permissions', () => {
   let legacyAssigned: boolean;
   let owner: string;
   let released: boolean;
-  const prisma = { project: { findUnique: jest.fn() }, deliverable: { findFirst: jest.fn() } };
+  const prisma = {
+    project: { findUnique: jest.fn() }, deliverable: { findFirst: jest.fn() },
+    researchPreparation: { findUnique: jest.fn(), createMany: jest.fn(), updateMany: jest.fn() },
+    researchWorkspace: { findUnique: jest.fn() },
+  };
   const documents = { initialize: jest.fn(), read: jest.fn(), revise: jest.fn(), history: jest.fn() };
   const request = (op = operations[1], token = 'Bearer verified-token', projectId = 'project', deliverableId = 'deliverable') => fetch(
     `${base}/agentic-cms/research/projects/${projectId}/deliverables/${deliverableId}${op.suffix}`,
@@ -66,7 +72,8 @@ describe('Research HTTP boundary and permissions', () => {
       id: where.id, pmId: owner,
       members: member && where.id === 'project' ? [{ userId: 'reader' }] : [],
     }));
-    prisma.deliverable.findFirst.mockImplementation(async ({ where }) => {
+    prisma.deliverable.findFirst.mockImplementation(async ({ where, select }) => {
+      if (select.sprint) return { sprint: { projectId: 'project', status: released ? 'RELEASED' : 'DRAFT' } };
       const [scope, filter] = where.AND;
       if (filter.id !== 'deliverable' || scope.projectId !== 'project' || (scope.sprint && !released)) return null;
       return { assigneeId: legacyAssigned ? 'reader' : null, assignments: assigned ? [{ userId: 'reader' }] : [], project: { pmId: owner } };
@@ -76,6 +83,10 @@ describe('Research HTTP boundary and permissions', () => {
     documents.read.mockResolvedValue(workspace);
     documents.revise.mockImplementation(async (_id, _input, context) => { await context.assertWrite(); return { ...workspace, version: 2 }; });
     documents.history.mockResolvedValue({ items: [], nextBeforeVersion: null });
+    prisma.researchPreparation.findUnique.mockResolvedValue(null);
+    prisma.researchWorkspace.findUnique.mockResolvedValue(null);
+    prisma.researchPreparation.createMany.mockResolvedValue({ count: 1 });
+    prisma.researchPreparation.updateMany.mockResolvedValue({ count: 1 });
     const module = await Test.createTestingModule({ imports: [AgenticCmsModule, AuthModule], controllers: [OrdinaryController] })
       .overrideModule(AuthModule).useModule(TestAuthModule)
       .overrideProvider(PrismaService).useValue(prisma)

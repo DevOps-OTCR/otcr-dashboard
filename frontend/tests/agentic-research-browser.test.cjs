@@ -67,6 +67,26 @@ async function setup(t, options = {}) {
     const [, projectId, id, suffix] = match;
     if ((id === 'd3') !== (projectId === 'p2')) return json(route, { code: 'NOT_FOUND_OR_FORBIDDEN' }, 404);
     const workspace = state.workspaces[id];
+    if (request.method() === 'GET' && suffix === '/preparation') {
+      if (state.preparingPolls !== undefined) {
+        state.preparingPolls += 1;
+        if (state.preparingPolls > 1 && !workspace) seed(id);
+      }
+      const ready = !!state.workspaces[id];
+      const preparing = state.preparingPolls !== undefined && !ready;
+      return json(route, {
+        state: ready ? 'READY' : preparing ? 'PREPARING' : state.preparationFailed ? 'FAILED' : 'NOT_STARTED',
+        attempts: state.preparationFailed || preparing ? 1 : 0,
+        interrupted: false, canRetry: state.editable && !ready && !preparing,
+        lastAttemptAt: null, completedAt: null,
+        message: state.preparationFailed && !ready ? 'Research preparation could not finish. Retry to create the workspace.' : null,
+      });
+    }
+    if (request.method() === 'POST' && suffix === '/preparation/retry') {
+      if (!state.editable) return json(route, { code: 'NOT_FOUND_OR_FORBIDDEN' }, 404);
+      if (!workspace) seed(id);
+      return json(route, { state: 'READY', attempts: 2, interrupted: false, canRetry: false, message: null, lastAttemptAt: null, completedAt: null });
+    }
     if (request.method() === 'GET' && suffix === '') {
       if (state.failReadOnce) { state.failReadOnce = false; return json(route, {}, 503); }
       const result = workspace ? { ...clone(workspace), canEdit: state.editable } : { code: 'WORKSPACE_NOT_INITIALIZED', canEdit: state.editable };
@@ -315,6 +335,28 @@ test('empty projects show a useful message without research requests', async t =
   const { page, state } = await setup(t, { empty: true });
   await page.getByText('No deliverables are available for this project. Ask your PM to create or release an assignment.').waitFor();
   assert.equal(state.calls.some(call => call.path.includes('/research/')), false);
+});
+
+test('retries failed preparation and opens the prepared workspace', async t => {
+  const { page, state } = await setup(t, { preparationFailed: true });
+  await page.getByRole('button', { name: 'Retry research preparation' }).click();
+  await editor(page).waitFor();
+  await page.getByText('Ready', { exact: true }).waitFor();
+  assert.equal(state.workspaces.d1.version, 1);
+  assert.equal(state.calls.filter(call => call.path.endsWith('/preparation/retry')).length, 1);
+});
+
+test('polls active preparation and loads the workspace when it becomes ready', async t => {
+  const { page } = await setup(t, { preparingPolls: 0 });
+  await page.getByText('Preparing…', { exact: true }).waitFor();
+  await editor(page).waitFor();
+  await page.getByText('Ready', { exact: true }).waitFor();
+});
+
+test('does not offer preparation retries to a read-only consultant', async t => {
+  const { page } = await setup(t, { preparationFailed: true, editable: false });
+  await page.getByText('Needs retry', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Retry research preparation' }).count(), 0);
 });
 
 test('manual editor fits a narrow screen and renders source links safely', async t => {

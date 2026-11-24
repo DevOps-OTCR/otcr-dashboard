@@ -1,13 +1,24 @@
 import { Body, Controller, Get, Param, Patch, Post, Put, Query, Req } from '@nestjs/common';
 import { CmsReader } from '../authorization/cms-read-access.service';
 import { ResearchWorkspaceService } from './research-workspace.service';
+import { ResearchPreparationService } from './research-preparation.service';
 
 type ResearchRequest = { user: CmsReader };
 
 // Inherits verified authentication and pilot gating from the global guard.
 @Controller('agentic-cms/research/projects/:projectId/deliverables/:deliverableId')
 export class ResearchWorkspaceController {
-  constructor(private readonly research: ResearchWorkspaceService) {}
+  constructor(private readonly research: ResearchWorkspaceService, private readonly preparation: ResearchPreparationService) {}
+
+  @Get('preparation')
+  preparationStatus(@Param('projectId') projectId: string, @Param('deliverableId') deliverableId: string, @Req() req: ResearchRequest) {
+    return this.preparation.status(req.user, projectId, deliverableId);
+  }
+
+  @Post('preparation/retry')
+  retryPreparation(@Param('projectId') projectId: string, @Param('deliverableId') deliverableId: string, @Req() req: ResearchRequest) {
+    return this.preparation.prepare(req.user, projectId, deliverableId);
+  }
 
   @Post()
   initialize(@Param('projectId') projectId: string, @Param('deliverableId') deliverableId: string, @Req() req: ResearchRequest) {

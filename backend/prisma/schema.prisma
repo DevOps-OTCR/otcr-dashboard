@@ -521,6 +521,7 @@ model Deliverable {
   submissions Submission[]
   extensions  Extension[]
   researchWorkspace ResearchWorkspace?
+  researchPreparation ResearchPreparation?
 
   @@index([projectId])
   @@index([sprintId])
@@ -540,6 +541,29 @@ model ResearchWorkspace {
 
   deliverable Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
   revisions ResearchRevision[]
+}
+
+model ResearchPreparation {
+  id            String @id @default(cuid())
+  deliverableId String @unique
+  status        ResearchPreparationStatus @default(PENDING)
+  attempts      Int @default(0)
+  leaseToken    String?
+  leaseExpiresAt DateTime?
+  lastAttemptAt DateTime?
+  completedAt   DateTime?
+  errorCode     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  deliverable Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+}
+
+enum ResearchPreparationStatus {
+  PENDING
+  PREPARING
+  READY
+  FAILED
 }
 
 model ResearchRevision {

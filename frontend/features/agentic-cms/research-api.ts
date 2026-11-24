@@ -16,11 +16,22 @@ export type ResearchRevision = {
   restoredFromVersion: number | null; authorId: string | null; createdAt: string;
 };
 export type ResearchHistory = { items: ResearchRevision[]; nextBeforeVersion: number | null };
+export type ResearchPreparation = {
+  state: 'NOT_STARTED' | 'PENDING' | 'PREPARING' | 'READY' | 'FAILED';
+  attempts: number; lastAttemptAt: string | null; completedAt: string | null;
+  interrupted: boolean; canRetry: boolean; message: string | null;
+};
 export type ResearchDeliverable = { id: string; title: string; sprint?: { label: string } | null };
 const base = (projectId: string, deliverableId: string) =>
   `/agentic-cms/research/projects/${encodeURIComponent(projectId)}/deliverables/${encodeURIComponent(deliverableId)}`;
 
 export const researchAPI = {
+  async preparation(projectId: string, deliverableId: string) {
+    return (await api.get<ResearchPreparation>(`${base(projectId, deliverableId)}/preparation`)).data;
+  },
+  async retryPreparation(projectId: string, deliverableId: string) {
+    return (await api.post<ResearchPreparation>(`${base(projectId, deliverableId)}/preparation/retry`)).data;
+  },
   async deliverables(projectId: string): Promise<ResearchDeliverable[]> {
     const items: ResearchDeliverable[] = [];
     let page = 1;

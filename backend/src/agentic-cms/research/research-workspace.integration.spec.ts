@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { ConfigService } from '@nestjs/config';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
@@ -12,6 +14,18 @@ import { ResearchAccessService } from './research-access.service';
 import { CmsResearchDocumentAdapter } from './research-document.adapter';
 import { emptyResearchDocument } from './research.schemas';
 import { ResearchWorkspaceService } from './research-workspace.service';
+import { ResearchPreparationService } from './research-preparation.service';
+import { ResearchWorkspaceController } from './research-workspace.controller';
+import { ResearchReleaseInterceptor } from './research-release.interceptor';
+import { AgenticCmsGuard } from '../../feature-flags/agentic-cms.guard';
+import { AuthGuard } from '../../auth/auth.guard';
+import { AuthService } from '../../auth/auth.service';
+import { ProjectsController } from '../../projects/projects.controller';
+import { ProjectsService } from '../../projects/projects.service';
+import { NotificationsService } from '../../notifications/notifications.service';
+import { getVerifiedUser } from '../../common/utils/verify';
+
+jest.mock('../../common/utils/verify', () => ({ getVerifiedUser: jest.fn() }));
 
 const databaseUrl = process.env.CMS_READ_TEST_DATABASE_URL;
 const integration = databaseUrl ? describe : describe.skip;
@@ -22,6 +36,7 @@ integration('Research workspace against migrated PostgreSQL', () => {
   let db: PrismaClient;
   let service: ResearchWorkspaceService;
   let adapter: CmsResearchDocumentAdapter;
+  let preparation: ResearchPreparationService;
   let settings: Record<string, string>;
   const user: CmsReader = { id: 'consultant', email: 'consultant@example.test', role: 'CONSULTANT' };
   const teammate: CmsReader = { id: 'teammate', email: 'teammate@example.test', role: 'CONSULTANT' };
@@ -42,6 +57,7 @@ integration('Research workspace against migrated PostgreSQL', () => {
     const access = new ResearchAccessService(new CmsReadAccessService(prisma, flags), prisma, flags);
     adapter = new CmsResearchDocumentAdapter(prisma);
     service = new ResearchWorkspaceService(access, adapter);
+    preparation = new ResearchPreparationService(prisma, flags, new CmsReadAccessService(prisma, flags), access, adapter);
     await db.user.createMany({ data: ['pm', 'consultant', 'teammate', 'unassigned'].map(id => ({ id, email: `${id}@example.test` })) });
     await db.project.createMany({ data: ['project', 'other'].map(id => ({ id, name: id, pmId: 'pm', startDate: new Date() })) });
     await db.projectMember.createMany({ data: ['consultant', 'teammate', 'unassigned'].map(userId => ({ projectId: 'project', userId })) });
@@ -169,5 +185,115 @@ integration('Research workspace against migrated PostgreSQL', () => {
     await expect(service.history(user, 'project', 'deliverable', {})).rejects.toMatchObject({ status: 404 });
     expect(await db.researchWorkspace.count()).toBe(0);
     expect(await db.researchRevision.count()).toBe(0);
+  });
+
+  it('prepares every released deliverable, leaves drafts/other projects alone and preserves edits on repeat release', async () => {
+    const pm: CmsReader = { id: 'pm', email: 'pm@example.test', role: 'PM' };
+    await preparation.prepareReleasedWorkstream(pm, 'project', 'week');
+    expect(await db.researchWorkspace.count()).toBe(2);
+    expect(await db.researchPreparation.findMany({ orderBy: { deliverableId: 'asc' } })).toEqual([
+      expect.objectContaining({ deliverableId: 'deliverable', status: 'READY', attempts: 1 }),
+      expect.objectContaining({ deliverableId: 'second', status: 'READY', attempts: 1 }),
+    ]);
+    await service.editSection(user, 'project', 'deliverable', 'findings', { expectedVersion: 1, content: 'Keep my research' });
+    await preparation.prepareReleasedWorkstream(pm, 'project', 'week');
+    expect((await service.read(user, 'project', 'deliverable')).document.sections[2].content).toBe('Keep my research');
+    expect(await db.researchRevision.count()).toBe(3);
+    expect((await preparation.status(user, 'project', 'deliverable')).attempts).toBe(1);
+  });
+
+  it('deduplicates concurrent retries, recovers expired leases and retains durable status', async () => {
+    await Promise.all([preparation.prepare(user, 'project', 'deliverable'), preparation.prepare(teammate, 'project', 'deliverable')]);
+    expect(await db.researchWorkspace.count()).toBe(1);
+    expect(await db.researchRevision.count()).toBe(1);
+    await db.researchPreparation.create({ data: { deliverableId: 'second', status: 'PREPARING', attempts: 1, leaseToken: 'interrupted', leaseExpiresAt: new Date(Date.now() - 1000) } });
+    expect(await preparation.status(user, 'project', 'second')).toMatchObject({ state: 'PREPARING', interrupted: true, canRetry: true });
+    expect(await preparation.prepare(user, 'project', 'second')).toMatchObject({ state: 'READY', attempts: 2 });
+    expect((await db.researchPreparation.findUnique({ where: { deliverableId: 'second' } })).leaseToken).toBeNull();
+  });
+
+  it('records failures without resetting another workspace and allows a later retry', async () => {
+    const initialize = jest.spyOn(adapter, 'initialize').mockRejectedValueOnce(new Error('Synthetic storage failure'));
+    try {
+      expect(await preparation.prepare(user, 'project', 'deliverable')).toMatchObject({ state: 'FAILED', attempts: 1, canRetry: true });
+      expect(await db.researchWorkspace.count()).toBe(0);
+      expect(await preparation.prepare(user, 'project', 'deliverable')).toMatchObject({ state: 'READY', attempts: 2, canRetry: false });
+    } finally { initialize.mockRestore(); }
+  });
+
+  it('does not reclaim a live lease or let assignment override project/draft visibility', async () => {
+    await db.researchPreparation.create({ data: { deliverableId: 'deliverable', status: 'PREPARING', attempts: 1, leaseToken: 'active', leaseExpiresAt: new Date(Date.now() + 120_000) } });
+    expect(await preparation.prepare(user, 'project', 'deliverable')).toMatchObject({ state: 'PREPARING', canRetry: false, attempts: 1 });
+    expect(await db.researchWorkspace.count()).toBe(0);
+    for (const id of ['draft-item', 'other-item', 'inconsistent']) {
+      await expect(preparation.prepare(user, 'project', id)).rejects.toMatchObject({ status: 404 });
+    }
+    const unassigned: CmsReader = { id: 'unassigned', email: 'unassigned@example.test', role: 'CONSULTANT' };
+    expect(await preparation.status(unassigned, 'project', 'second')).toMatchObject({ canRetry: false });
+    await expect(preparation.prepare(unassigned, 'project', 'second')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('stops preparation writes when the flag/pilot is revoked during initialization', async () => {
+    const initialize = jest.spyOn(adapter, 'initialize').mockImplementationOnce(async (_id, context) => {
+      settings.AGENTIC_CMS_ALLOWED_EMAILS = 'other@example.test';
+      await context.assertWrite();
+      throw new Error('Must not get here');
+    });
+    try {
+      await expect(preparation.prepare(user, 'project', 'deliverable')).rejects.toMatchObject({ status: 404 });
+      expect(await db.researchWorkspace.count()).toBe(0);
+      expect(await db.researchPreparation.findUnique({ where: { deliverableId: 'deliverable' } })).toMatchObject({ status: 'PREPARING', attempts: 1 });
+    } finally { initialize.mockRestore(); }
+  });
+
+  it('does not read, create or queue preparation with the flag off', async () => {
+    settings.AGENTIC_CMS_ENABLED = 'false';
+    await expect(preparation.prepareReleasedWorkstream(user, 'project', 'week')).rejects.toMatchObject({ status: 404 });
+    await expect(preparation.prepare(user, 'project', 'deliverable')).rejects.toMatchObject({ status: 404 });
+    await expect(preparation.status(user, 'project', 'deliverable')).rejects.toMatchObject({ status: 404 });
+    expect(await db.researchPreparation.count()).toBe(0);
+    expect(await db.researchWorkspace.count()).toBe(0);
+  });
+
+  it.each([false, true])('releases through the real HTTP handler and database with research enabled=%s', async enabled => {
+    settings.AGENTIC_CMS_ENABLED = String(enabled);
+    const prisma = db as unknown as PrismaService;
+    const flags = new FeatureFlagsService({ get: (key: string) => settings[key] } as ConfigService);
+    const notifications = { queueNotification: jest.fn().mockResolvedValue(undefined) };
+    const pm = { id: 'pm', email: 'pm@example.test', role: 'PM', active: true };
+    jest.mocked(getVerifiedUser).mockResolvedValue(pm.email);
+    const module = await Test.createTestingModule({
+      controllers: [ProjectsController, ResearchWorkspaceController],
+      providers: [
+        AuthGuard,
+        { provide: AuthService, useValue: { getUserByEmail: jest.fn().mockResolvedValue(pm), isEmailAllowed: jest.fn().mockResolvedValue(true) } },
+        { provide: PrismaService, useValue: prisma },
+        { provide: FeatureFlagsService, useValue: flags },
+        { provide: ProjectsService, useValue: new ProjectsService(prisma, notifications as unknown as NotificationsService) },
+        { provide: ResearchWorkspaceService, useValue: service },
+        { provide: ResearchPreparationService, useValue: preparation },
+        { provide: APP_GUARD, useClass: AgenticCmsGuard },
+        { provide: APP_INTERCEPTOR, useClass: ResearchReleaseInterceptor },
+      ],
+    }).compile();
+    const app = module.createNestApplication();
+    await app.listen(0, '127.0.0.1');
+    try {
+      await db.sprint.update({ where: { id: 'week' }, data: { status: 'DRAFT' } });
+      const base = await app.getUrl();
+      const response = await fetch(`${base}/projects/project/sprints/week/status`, {
+        method: 'PATCH', headers: { authorization: 'Bearer synthetic-token', 'content-type': 'application/json' }, body: JSON.stringify({ status: 'RELEASED' }),
+      });
+      expect(response.status).toBe(200);
+      expect((await db.sprint.findUnique({ where: { id: 'week' } })).status).toBe('RELEASED');
+      expect(notifications.queueNotification).toHaveBeenCalled();
+      expect(await db.researchWorkspace.count()).toBe(enabled ? 2 : 0);
+      expect(await db.researchPreparation.count()).toBe(enabled ? 2 : 0);
+      if (enabled) {
+        const read = await fetch(`${base}/agentic-cms/research/projects/project/deliverables/deliverable`, { headers: { authorization: 'Bearer synthetic-token' } });
+        expect(read.status).toBe(200);
+        expect(await read.json()).toMatchObject({ version: 1, document: emptyResearchDocument() });
+      }
+    } finally { await app.close(); }
   });
 });

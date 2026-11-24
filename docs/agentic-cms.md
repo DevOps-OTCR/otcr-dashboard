@@ -264,7 +264,7 @@ same project access rules. It does not fetch linked files.
 Research is currently a CMS-native, plain-text document stored in PostgreSQL,
 with one shared workspace per deliverable. This is the functional storage
 fallback while Google Docs integration is being investigated. There is no
-release hook, model generation or research bot tool yet. The manual research UI
+model generation or research bot tool yet. The manual research UI
 is described below. Existing
 project-context editors and submission/approval flows are unchanged.
 
@@ -396,6 +396,74 @@ permissions, pagination, retries, conflicts, restoration, draft protection,
 late responses, sign-out/revocation, source links and narrow-screen layout.
 It runs as part of `npm --prefix frontend run test:navigation:browser`; it does
 not verify live Microsoft sign-in or Google Docs.
+
+### Research initialization on release (Step 3)
+
+Successful calls to the existing `PATCH /projects/:id/sprints/:sprintId/status`
+with `status: "RELEASED"` now initialize research for each deliverable in that
+project/week. The `ResearchReleaseInterceptor`, registered from AgenticCmsModule,
+observes that exact controller handler after it succeeds. Shared CMS controllers,
+pages and release services do not import feature code. Draft changes and failed
+release requests do not start preparation.
+
+The hook checks the existing flag/pilot before any research operation, then reuses
+`AuthGuard.canActivate(context, { verifiedOnly: true })`: the same verified-only
+Microsoft token, enrollment and active-user policy used by Agentic CMS routes.
+Legacy email credentials can still release an ordinary week, but cannot start
+research. Non-pilot users and users without project/deliverable access cannot
+prepare research. The ordinary release result and notifications stay independent:
+disabled/denied/failed preparation does not fail a successful release. This
+non-prefix entry point needs Isaiah's boundary review before integration.
+
+Apply migration `20261124210930_research_preparation` and regenerate Prisma before
+running the updated backend. `ResearchPreparation` stores one status record per
+deliverable, attempts, timestamps, a generic failure code and a two-minute claim
+lease. It stores no bearer tokens, prompts or client content. Atomic claims and
+the workspace's unique deliverable key prevent duplicate initialization. Each
+workspace and its first revision are still created together; repeated releases,
+retries or manual initialization preserve existing text, sources and history.
+
+Preparation currently means creating the three blank sections, not calling a
+model or retrieving history. It runs inline after release; there is no queue,
+startup worker, scheduler, automatic retry or release-time AI call. Existing
+released weeks are not backfilled at startup. Releasing a week again prepares
+missing workspaces. A newly added deliverable after release needs manual creation,
+a preparation retry, or another release request.
+
+Project access, assignment/manager write permission, pilot access and the week's
+released status are rechecked before initialization and status writes. Changing
+the flag, membership or week back to draft stops further preparation writes. A
+claim left by interrupted work becomes retryable after two minutes; old claim
+owners cannot overwrite the new claim's status. Durable status is recoverable
+through the APIs below, not by resuming background work automatically.
+
+| Method / suffix on the existing research base path | Behavior |
+| --- | --- |
+| `GET /preparation` | Return `state`, `attempts`, timestamps, `interrupted`, generic `message` and server-calculated `canRetry`. |
+| `POST /preparation/retry` | Retry initialization for an authorized editor of a released deliverable; return the current preparation status. |
+
+States are `NOT_STARTED`, `PENDING`, `PREPARING`, `READY` and `FAILED`. An existing
+workspace is authoritative for `READY`, including manually created research or a
+successful initialization whose final status write failed. An active lease cannot
+be claimed by another retry. Failures after a claim are recorded when access and
+storage allow it; loss of access leaves the lease untouched for later recovery.
+If storage fails before a status record can be created, the UI may show not
+started or a status-read error rather than a recorded failure.
+
+The Research tab shows workspace preparation status and an authorized retry
+button for failed, pending or interrupted work. It polls only active preparation,
+stops on unmount/revocation, and opens newly prepared research without replacing
+an existing editor draft. Manual creation remains available for older workspaces
+and permitted draft deliverables.
+
+Validation includes the real release controller, global guard and interceptor
+with synthetic verification, plus PostgreSQL integration cases for actual
+release-to-workspace creation with the flag off/on. Tests cover independent
+release success, legacy-credential exclusion, revoked enrollment/pilot, role
+denial, concurrent initialization, failure/retry, active/expired claims,
+preserving saved research and mid-operation access changes. Browser tests cover
+status display, retry, polling and read-only access. No live model or external
+document operation is used.
 
 ## Backend enforcement
 

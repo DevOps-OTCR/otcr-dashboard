@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ResearchPreparationStatus } from './ResearchPreparationStatus';
 import {
   researchAPI, researchFailure,
   type ResearchDeliverable, type ResearchDocument, type ResearchHistory, type ResearchTab,
@@ -107,6 +108,10 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
       setError('Research changed elsewhere. Your draft is still here. Copy any text you want to keep, then reload the saved research before continuing.');
     } else setError(fallback);
   };
+  const preparationUnavailable = useCallback(() => {
+    setWorkspace(null); setDraft(null); setMissing(null); setHistory(null); setHistoryOpen(false);
+    setError('This research is unavailable or your access has changed. Check with your PM and reload.');
+  }, []);
   const load = useCallback(() => {
     const request = ++generation.current;
     return researchAPI.read(projectId, deliverableId).then(saved => {
@@ -158,6 +163,7 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
 
   if (loading) return <p role="status">Loading research…</p>;
   return <div className="space-y-4">
+    <ResearchPreparationStatus projectId={projectId} deliverableId={deliverableId} refreshKey={workspace?.id ?? 'missing'} onReady={workspace ? undefined : load} onUnavailable={preparationUnavailable} />
     {error && <div role="alert" className="rounded-lg border border-amber-500/50 bg-amber-500/10 p-3 text-sm">{error}</div>}
     {message && <p role="status" className="text-sm">{message}</p>}
     {!workspace && !missing && <button className={button} onClick={reload}>Retry research</button>}
