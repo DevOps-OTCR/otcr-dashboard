@@ -184,6 +184,9 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
           }}>Version history</button>
         </div>
       </div>
+      <p className="text-sm leading-relaxed text-[var(--text-muted)]">
+        These three sections guide your research: <strong>Relevant Past Data</strong> captures what’s already known, and <strong>Framework / Structure</strong> defines the questions to answer. Use <strong>Findings</strong> to record what you learn, with sources that support your conclusions.
+      </p>
       <div role="tablist" aria-label="Research sections" className="flex flex-wrap gap-2 border-b border-[var(--border)] pb-3">
         {tabs.map(item => <button key={item.id} id={`research-tab-${item.id}`} role="tab" aria-selected={tab === item.id} aria-controls={`research-panel-${item.id}`} className={`${button} ${tab === item.id ? 'border-[var(--primary)] bg-[var(--secondary)] font-semibold' : ''}`} onClick={() => setTab(item.id)}>{item.label}</button>)}
       </div>
