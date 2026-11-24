@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { FeatureFlagsService } from '../../feature-flags/feature-flags.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CmsReadAccessService, CmsReader } from '../authorization/cms-read-access.service';
 import { ResearchAccessService } from './research-access.service';
 import { ResearchDocumentAdapter } from './research-document.adapter';
+import { ResearchPastDataService } from './research-past-data.service';
 
 const LEASE_MS = 2 * 60_000;
 
@@ -16,6 +17,7 @@ export class ResearchPreparationService {
     private readonly reads: CmsReadAccessService,
     private readonly access: ResearchAccessService,
     private readonly documents: ResearchDocumentAdapter,
+    @Optional() private readonly pastData?: ResearchPastDataService,
   ) {}
 
   private async released(user: CmsReader, projectId: string, deliverableId: string, write: boolean) {
@@ -111,6 +113,10 @@ export class ResearchPreparationService {
     for (const deliverable of deliverables) {
       this.flags.assertAgenticCmsEnabledFor(user.email);
       await this.prepare(user, projectId, deliverable.id);
+      if (this.pastData) {
+        try { await this.pastData.scheduleAutomatic(user, projectId, deliverable.id); }
+        catch { /* Saved workspaces and ordinary release survive research-generation failures. */ }
+      }
     }
   }
 }

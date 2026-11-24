@@ -35,6 +35,7 @@ async function setup(t, options = {}) {
     failReadOnce: false, failDeliverablesOnce: false, failHistoryOnce: false,
     failInitializeOnce: false, empty: false, paged: false, acceptDialog: true,
     calls: [], workspaces: {}, revisions: {}, holdWrite: null, holdRead: null,
+    pastData: {}, pastDataPolls: 0, modelConfigured: true,
     dialogs: [], ...options,
   };
   const seed = (id = 'd1', doc = blank(), version = 1) => {
@@ -72,6 +73,38 @@ async function setup(t, options = {}) {
     const [, projectId, id, suffix] = match;
     if ((id === 'd3') !== (projectId === 'p2')) return json(route, { code: 'NOT_FOUND_OR_FORBIDDEN' }, 404);
     const workspace = state.workspaces[id];
+    const pastSource = { id: 'pd_note', kind: 'note', recordId: 'note-one', title: 'Prior client decision', text: 'The client excluded enterprise buyers because of rollout costs.', date: '2026-11-16T12:00:00Z', truncated: false,
+      url: `http://research.test/agentic-cms?researchProject=${projectId}&researchDeliverable=${id}&researchSourceKind=note&researchSourceRecord=note-one` };
+    const diagnostics = { candidatesConsidered: 5, sourcesSent: 1, queryTerms: ['budget', 'client'], limitsReached: false, linkedFilesRead: false };
+    const pastStatus = () => state.pastData[id] ?? { state: 'NOT_STARTED', focus: '', attempts: 0, model: null, modelConfigured: state.modelConfigured, canGenerate: state.editable, released: true, interrupted: false, message: null, result: null };
+    const finishPastData = () => {
+      workspace.version += 1;
+      workspace.document.sections[0].content = `Prior context: ${pastSource.text}`;
+      workspace.document.sections[0].sourceIds = [pastSource.id];
+      workspace.document.sources = [{ id: pastSource.id, title: pastSource.title, url: pastSource.url }];
+      state.pastData[id] = { ...pastStatus(), state: 'READY', model: 'synthetic-model', canGenerate: state.editable, result: {
+        items: [{ sourceId: pastSource.id, summary: 'The client excluded enterprise buyers.', whyRelevant: 'Keep the assignment within client constraints.', quote: pastSource.text, source: pastSource }],
+        gaps: [], sparse: false, diagnostics, savedVersion: workspace.version, generatedAt: '2026-11-24T12:00:00Z',
+      } };
+    };
+    if (request.method() === 'GET' && suffix === '/past-data') {
+      if (state.autoPastData) {
+        state.pastDataPolls += 1;
+        if (state.pastDataPolls === 1) state.pastData[id] = { ...pastStatus(), state: 'RUNNING', canGenerate: false };
+        else if (pastStatus().state === 'RUNNING') finishPastData();
+      }
+      return json(route, pastStatus());
+    }
+    if (request.method() === 'GET' && suffix === '/past-data/source') return json(route, pastSource);
+    if (request.method() === 'POST' && suffix === '/past-data/preview') return json(route, { assignment: { title: 'Research assignment' }, sources: [pastSource], diagnostics });
+    if (request.method() === 'POST' && suffix === '/past-data/generate') {
+      if (!state.editable) return json(route, { code: 'NOT_FOUND_OR_FORBIDDEN' }, 404);
+      const body = request.postDataJSON();
+      if (body.expectedVersion !== workspace.version) return json(route, { code: 'VERSION_CONFLICT' }, 409);
+      state.pastData[id] = { ...pastStatus(), focus: body.focus, attempts: 1 };
+      finishPastData();
+      return json(route, state.pastData[id], 201);
+    }
     if (request.method() === 'GET' && suffix === '/preparation') {
       if (state.preparingPolls !== undefined) {
         state.preparingPolls += 1;
@@ -340,6 +373,60 @@ test('empty projects show a useful message without research requests', async t =
   const { page, state } = await setup(t, { empty: true });
   await page.getByText('No deliverables are available for this project. Ask your PM to create or release an assignment.').waitFor();
   assert.equal(state.calls.some(call => call.path.includes('/research/')), false);
+});
+
+test('previews sources without a model key and opens the actual source viewer', async t => {
+  const { page, state } = await setup(t, { seed: true, modelConfigured: false });
+  await page.getByText('Configure your own Lumen key in the local backend to generate a summary. You can preview sources without a model key.').waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Generate past data', exact: true }).isDisabled(), true);
+  await page.getByRole('textbox', { name: 'Past data focus' }).fill('Client budget');
+  await page.getByRole('button', { name: 'Preview sources', exact: true }).click();
+  await page.getByText('Retrieved sources (1)', { exact: true }).waitFor();
+  await page.getByText('Prior client decision · note · 2026-11-16', { exact: true }).click();
+  const link = page.getByRole('link', { name: 'Open source record', exact: true });
+  const popup = page.waitForEvent('popup'); await link.click();
+  const source = await popup;
+  await source.getByRole('heading', { name: 'Research source record', exact: true }).waitFor();
+  await source.getByText('The client excluded enterprise buyers because of rollout costs.', { exact: true }).waitFor();
+  assert.equal(state.calls.some(call => call.path.endsWith('/past-data/generate')), false);
+});
+
+test('generates and refreshes past data with a focus, preserving the other tabs and enabling undo', async t => {
+  const { page, state } = await setup(t, { seed: true });
+  await editor(page).waitFor();
+  await page.getByRole('textbox', { name: 'Past data focus', exact: true }).fill('Client constraints');
+  await page.getByRole('button', { name: 'Generate past data', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Relevant Past Data text past-data"]')?.value?.includes('Prior context:'));
+  assert.equal(state.workspaces.d1.version, 2);
+  assert.equal(state.workspaces.d1.document.sections[1].content, '');
+  assert.equal(state.pastData.d1.focus, 'Client constraints');
+  await editor(page).fill('My unsaved edits');
+  assert.equal(await page.getByRole('button', { name: 'Refresh past data', exact: true }).isDisabled(), true);
+});
+
+test('automatic generation keeps an unsaved draft visible when a new saved version arrives', async t => {
+  const { page } = await setup(t, { seed: true, autoPastData: true });
+  await editor(page).fill('Do not replace my unsaved draft');
+  await page.getByText('Past data: Saved', { exact: false }).waitFor();
+  assert.equal(await editor(page).inputValue(), 'Do not replace my unsaved draft');
+});
+
+test('typing during a delayed bot-result reload does not lose the new draft', async t => {
+  let finish;
+  let reads = 0;
+  const { page } = await setup(t, { seed: true, holdRead: async () => {
+    reads += 1;
+    if (reads === 2) await new Promise(resolve => { finish = resolve; });
+  } });
+  await editor(page).waitFor();
+  const pending = page.waitForRequest(request => request.method() === 'GET' && /\/deliverables\/d1$/.test(new URL(request.url()).pathname));
+  await page.getByRole('button', { name: 'Generate past data', exact: true }).click();
+  await pending;
+  await editor(page).fill('Keep my newly typed text');
+  const response = page.waitForResponse(response => response.request().method() === 'GET' && /\/deliverables\/d1$/.test(new URL(response.url()).pathname));
+  finish(); await response;
+  await page.getByText('The bot saved a new version. Your unsaved draft is kept; reload saved research when ready.', { exact: true }).waitFor();
+  assert.equal(await editor(page).inputValue(), 'Keep my newly typed text');
 });
 
 test('filters deliverables by workstream and protects drafts when switching workstreams', async t => {

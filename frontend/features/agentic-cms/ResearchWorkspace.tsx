@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ResearchPreparationStatus } from './ResearchPreparationStatus';
+import { PastDataPanel } from './PastDataPanel';
 import {
   researchAPI, researchFailure,
   type ResearchDeliverable, type ResearchDocument, type ResearchHistory, type ResearchTab,
@@ -114,6 +115,7 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
   const [historyError, setHistoryError] = useState('');
   const generation = useRef(0);
   const historyGeneration = useRef(0);
+  const draftRevision = useRef(0);
   const dirty = !!workspace && !!draft && JSON.stringify(workspace.document) !== JSON.stringify(draft);
   useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
   useEffect(() => {
@@ -153,6 +155,22 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
       else setError('Could not load this research. Check your connection and access, then try again.');
     }).finally(() => { if (request === generation.current) setLoading(false); });
   }, [projectId, deliverableId]);
+  const loadGenerated = useCallback(() => {
+    const request = generation.current;
+    const edits = draftRevision.current;
+    void researchAPI.read(projectId, deliverableId).then(saved => {
+      if (request !== generation.current) return;
+      if (edits !== draftRevision.current) {
+        setMessage('The bot saved a new version. Your unsaved draft is kept; reload saved research when ready.');
+        return;
+      }
+      setWorkspace(saved); setDraft(saved.document);
+    }).catch((error: unknown) => {
+      if (request !== generation.current) return;
+      if ([401, 403, 404].includes(researchFailure(error).status ?? 0)) preparationUnavailable();
+      else setError('The bot saved a new version, but it could not be loaded. Your draft is kept. Use Reload saved research when ready.');
+    });
+  }, [projectId, deliverableId, preparationUnavailable]);
   useEffect(() => {
     const requests = generation;
     void load();
@@ -227,15 +245,18 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
         {tabs.map(item => <button key={item.id} id={`research-tab-${item.id}`} role="tab" aria-selected={tab === item.id} aria-controls={`research-panel-${item.id}`} className={`${button} ${tab === item.id ? 'border-[var(--primary)] bg-[var(--secondary)] font-semibold' : ''}`} onClick={() => setTab(item.id)}>{item.label}</button>)}
       </div>
       {tabs.map(item => <div key={item.id} id={`research-panel-${item.id}`} role="tabpanel" aria-labelledby={`research-tab-${item.id}`} hidden={tab !== item.id} className="space-y-4">
+        {item.id === 'past-data' && <PastDataPanel projectId={projectId} deliverableId={deliverableId} version={workspace.version} dirty={dirty} canEdit={workspace.canEdit} hasPastData={!!draft.sections.find(section => section.id === 'past-data')?.content.trim()} onGenerated={dirty ? undefined : loadGenerated} onUnavailable={preparationUnavailable} />}
         <p className="text-sm text-[var(--text-muted)]">{item.hint}</p>
         {draft.sections.filter(section => section.tab === item.id).map(section => <div key={section.id} className="space-y-3">
           <label className="block space-y-1 text-sm">Section title
             <input aria-label={`${item.label} title ${section.id}`} className={field} maxLength={300} readOnly={!workspace.canEdit} disabled={busy} value={section.title} onChange={event => {
+              ++draftRevision.current;
               setMessage(''); setDraft({ ...draft, sections: draft.sections.map(current => current.id === section.id ? { ...current, title: event.target.value } : current) });
             }} />
           </label>
           <label className="block space-y-1 text-sm">{section.title || item.label}
             <textarea aria-label={`${item.label} text ${section.id}`} className={`${field} min-h-72 resize-y leading-relaxed`} maxLength={50_000} readOnly={!workspace.canEdit} disabled={busy} value={section.content} placeholder={item.hint} onChange={event => {
+              ++draftRevision.current;
               setMessage(''); setDraft({ ...draft, sections: draft.sections.map(current => current.id === section.id ? { ...current, content: event.target.value } : current) });
             }} />
           </label>

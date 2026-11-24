@@ -26,11 +26,16 @@ import { ResearchWorkspaceController } from './research/research-workspace.contr
 import { ResearchWorkspaceService } from './research/research-workspace.service';
 import { ResearchPreparationService } from './research/research-preparation.service';
 import { ResearchReleaseInterceptor } from './research/research-release.interceptor';
+import { PastDataRetrievalService } from './research/past-data-retrieval.service';
+import { ResearchPastDataService } from './research/research-past-data.service';
+import { ResearchPastDataController } from './research/research-past-data.controller';
 
 @Module({
   imports: [FeatureFlagsModule, PrismaModule, ProjectsModule, AuthModule],
-  controllers: [AgenticCmsController, McpController, ChatController, ResearchWorkspaceController],
+  controllers: [AgenticCmsController, McpController, ChatController, ResearchWorkspaceController, ResearchPastDataController],
   providers: [
+    PastDataRetrievalService,
+    ResearchPastDataService,
     ResearchPreparationService,
     { provide: APP_INTERCEPTOR, useClass: ResearchReleaseInterceptor },
     ResearchAccessService,

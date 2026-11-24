@@ -3,7 +3,10 @@ import { Prisma, ResearchRevisionAction, ResearchWorkspace } from '@prisma/clien
 import { PrismaService } from '../../prisma/prisma.service';
 import { emptyResearchDocument, ResearchDocument } from './research.schemas';
 
-export type ResearchWriteContext = { authorId: string; assertWrite: () => Promise<void> };
+export type ResearchWriteContext = {
+  authorId: string; assertWrite: () => Promise<void>;
+  afterRevision?: (tx: Prisma.TransactionClient) => Promise<void>;
+};
 type RevisionInput = { expectedVersion: number; targetVersion?: number; document?: ResearchDocument };
 
 // Keep storage out of controllers/tools. This step uses CMS-native documents;
@@ -76,6 +79,7 @@ export class CmsResearchDocumentAdapter extends ResearchDocumentAdapter {
           restoredFromVersion: input.targetVersion, authorId: context.authorId,
         },
       });
+      await context.afterRevision?.(tx);
       return tx.researchWorkspace.findUniqueOrThrow({ where: { id: workspace.id } });
     });
   }

@@ -263,9 +263,9 @@ same project access rules. It does not fetch linked files.
 
 Research is currently a CMS-native, plain-text document stored in PostgreSQL,
 with one shared workspace per deliverable. This is the functional storage
-fallback while Google Docs integration is being investigated. There is no
-model generation or research bot tool yet. The manual research UI
-is described below. Existing
+fallback while Google Docs integration is being investigated. Relevant Past Data
+now has the retrieval/generation workflow described in Step 4. General chat-based
+research editing remains a later step. The manual research UI is described below. Existing
 project-context editors and submission/approval flows are unchanged.
 
 Apply the committed `20261124202640_research_workspace` migration to a local
@@ -370,9 +370,9 @@ response determines whether **Create research workspace** is offered. Other
 The three research tabs support manual titles and plain-text content. The
 interface displays saved version, last-save time and unsaved status; **Save
 research** saves the complete draft across all three tabs. Stored sources are
-rendered as links beside their associated section. Source retrieval, automatic
-framework headings, adding/removing framework sections and bot edits arrive in
-later steps. Saved documents remain CMS-native until an external adapter is
+rendered as links beside their associated section. Relevant Past Data retrieval
+is described in Step 4. Automatic framework headings, adding/removing framework
+sections and general bot edits arrive in later steps. Saved documents remain CMS-native until an external adapter is
 connected.
 
 Switching research tabs or existing Agentic CMS tool tabs preserves the draft.
@@ -426,9 +426,10 @@ the workspace's unique deliverable key prevent duplicate initialization. Each
 workspace and its first revision are still created together; repeated releases,
 retries or manual initialization preserve existing text, sources and history.
 
-Preparation currently means creating the three blank sections, not calling a
-model or retrieving history. It runs inline after release; there is no queue,
-startup worker, scheduler, automatic retry or release-time AI call. Existing
+Workspace preparation creates the three blank sections and runs inline after
+release. Step 4 then queues optional Relevant Past Data generation separately;
+the release response does not await the model. There is no startup worker,
+scheduler or automatic retry. Existing
 released weeks are not backfilled at startup. Releasing a week again prepares
 missing workspaces. A newly added deliverable after release needs manual creation,
 a preparation retry, or another release request.
@@ -467,6 +468,125 @@ denial, concurrent initialization, failure/retry, active/expired claims,
 preserving saved research and mid-operation access changes. Browser tests cover
 status display, retry, polling and read-only access. No live model or external
 document operation is used.
+
+### Relevant Past Data first pass (Step 4)
+
+The dedicated workflow uses the existing OTCR Bot `MODEL_CLIENT` and on-demand
+`relevant-past-data` skill. It performs retrieval before generation rather than
+running a free-form chat/tool loop. There is no vector index, embedding service,
+web search, linked-file reader or Google Docs dependency in this pass.
+
+The input is the selected deliverable title/brief, workstream notes, project
+overview/scope, and an optional consultant focus (maximum 1000 characters).
+Retrieval stays within the current project. It considers:
+
+- Project overview and scope, plus the 60 most recent available pasted call notes.
+- Notes from up to 20 earlier **released** workstreams.
+- Up to 60 deliverables in earlier released workstreams: assignment descriptions,
+  up to three recorded feedback entries each, and saved Framework/Findings text.
+- No current/future workstream outputs, unreleased workstreams, linked submission
+  contents or recursively copied Past Data summaries.
+
+Keyword overlap with the assignment and optional focus ranks candidates, with
+extra weight for focus terms and project constraints retained. Up to 24 source
+excerpts of 2400 characters each reach the model. These are candidate leads:
+the model can reject irrelevant material or return zero items. The preview and
+saved diagnostics expose counts, query terms and whether limits were reached;
+this is explicitly not exhaustive semantic search. Limits and stopwords live in
+`past-data-retrieval.service.ts`, not a browser switch.
+
+The skill distinguishes client decisions from assumptions, prior assignment
+briefs and preliminary findings. Model output is bounded JSON containing at
+most eight source-linked items and six gaps. Every item must name a supplied
+source ID and quote a continuous verbatim substring of its supplied text. The
+backend rejects fabricated IDs, duplicate IDs, invented quotations, malformed
+JSON and tool calls. This validates traceability, not the truth or entailment of
+every paraphrase: consultants must still review summaries against their sources.
+Sparse results explicitly state that little history was found in the searched
+records. The input is wrapped as untrusted `<tool_data>`; only the repository
+skill is passed as instructions.
+
+Generation is auto-scheduled after release prepares each workspace, only if its
+Past Data is blank and it has never had a generation record. Repeat releases
+do not regenerate existing results or overwrite manual past data. Existing
+released workstreams can use the manual button. No model call runs while the
+release flag is off, pilot access is denied, enrollment is revoked, the actor is
+inactive, project/assignment access is lost or the target workstream is not
+released. Actor permissions and original sources are rechecked after generation
+and before saving. Changed sources/assignment or a changed workspace version
+cause a conflict instead of overwriting work.
+
+`ResearchPastData` stores durable status, focus, attempts, request token, base
+workspace version, last successful result and retrieval diagnostics. New work
+starts only from an authorized release/action; a single in-process drain limits
+model concurrency to one per backend instance, with a 45-second model timeout
+and two-minute running lease. There is no restart-time worker. Interrupted queued
+requests become manually retryable after 30 seconds; interrupted running work
+after lease expiry. A new request token invalidates superseded requests. Missing
+Lumen configuration creates a clear failure, never a fake summary, and does not
+block manual editing or source preview. The queue is a prototype, not a
+distributed job processor; restarting the backend can require a manual retry.
+
+Successful output changes only the `past-data` root section and its source
+registry. Framework/Findings and extra manual sections remain intact. The new
+workspace revision and successful generation status commit in one transaction.
+Refresh confirms replacement of saved past data, is disabled with unsaved edits,
+and remains undoable through Version history. Failed runs keep the previous
+document/result. The UI never replaces an unsaved draft when a newer bot save
+arrives; it tells the consultant to copy needed text and reload explicitly.
+
+| Method / suffix on the research base path | Behavior |
+| --- | --- |
+| `GET /past-data` | Current generation status, configuration availability and last successful result; read-only viewers cannot generate. |
+| `POST /past-data/preview` | `{ focus? }`: retrieve authorized candidate sources without a model call or document write. Requires edit access and a released target. |
+| `POST /past-data/generate` | `{ focus?, expectedVersion }`: queue a version-checked generation/refresh and return status. |
+| `GET /past-data/source?kind=…&recordId=…` | Read a bounded current source excerpt with fresh project, record and release checks. |
+
+Source links open the gated `/agentic-cms` source viewer using project,
+deliverable, source kind and record IDs. They never put bearer tokens or client
+text in the URL. The viewer shows the current source/date, explicitly warns that
+an earlier summary may refer to an older version, and denies deleted, moved,
+unreleased or inaccessible source records. A source link is not a claim that a
+linked native document was read.
+
+Apply migration `20261124214831_research_past_data` and regenerate the backend
+Prisma client before running this step. Continue to use your own Lumen key in
+the backend's ignored local environment. No new provider/release switch is added.
+
+#### Local test and tuning walkthrough
+
+1. Add two synthetic Client Call Notes in the same project: one clear relevant
+   decision (e.g. “Exclude enterprise buyers because rollout exceeds budget”),
+   and one irrelevant note (e.g. lunch logistics). Add useful Findings to an
+   earlier released deliverable if you want to test research reuse.
+2. Choose a later released workstream and deliverable in Research. Click
+   **Preview sources**. Check that relevant notes/history appear, foreign or
+   unreleased records do not, and **Open source record** shows the original text.
+   This works without a model key.
+3. Configure your own `LUMEN_API_KEY` locally and restart the backend if needed.
+   Click **Generate past data**, or release a new draft workstream to test the
+   automatic path. Model errors should be visible without affecting release.
+4. Review the saved summary: does it retain the relevant decision, explain its
+   effect on the assignment, avoid irrelevant notes, and quote/link real sources?
+   Open **Last bot retrieval** to inspect the focus, model, source count and limits.
+5. Try a focus such as “Prior client constraints and rejected customer segments”.
+   Preview again, then refresh. Compare the result and use Version history to
+   undo. Clear focus to test the assignment-only baseline.
+6. Improve the brief/workstream notes first. If good sources are retrieved but
+   summarized poorly, edit `agentic-cms/skills/relevant-past-data/SKILL.md` and
+   rerun (skills load on demand). If sources are missing from preview, inspect
+   dates/release state, keywords and `PAST_DATA_LIMITS`; backend code changes
+   require a rebuild/restart. Keep a small before/after example rather than
+   increasing retrieval limits blindly.
+
+Tests use a counting fake model only inside test files and synthetic PostgreSQL
+schemas. Coverage includes source isolation, flag-off blocking, enrollment,
+permissions, output/citation validation, sparse history, injection markers,
+conflicts, revoked access, status/save atomicity, automatic scheduling and repeat
+release behavior. HTTP tests exercise the existing global guard. Browser tests
+cover preview/source links, missing configuration, generation and draft safety.
+Run the same backend/integration/browser commands documented above. No live model
+quality evaluation or production/client-material upload is performed by tests.
 
 ## Backend enforcement
 

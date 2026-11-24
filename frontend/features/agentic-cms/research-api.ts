@@ -25,10 +25,36 @@ export type ResearchDeliverable = {
   id: string; title: string; sprintId?: string | null;
   sprint?: { id: string; label: string; sequenceNumber?: number; weekStartDate?: string } | null;
 };
+export type PastDataSource = {
+  id: string; kind: string; recordId: string; title: string; text: string; date: string; url: string; truncated: boolean;
+};
+export type PastDataPreview = {
+  sources: PastDataSource[];
+  diagnostics: { candidatesConsidered: number; sourcesSent: number; queryTerms: string[]; limitsReached: boolean; linkedFilesRead: boolean };
+};
+export type PastDataStatus = {
+  state: 'NOT_STARTED' | 'PENDING' | 'RUNNING' | 'READY' | 'FAILED' | 'CONFLICT';
+  focus: string; attempts: number; model: string | null; modelConfigured: boolean;
+  canGenerate: boolean; released: boolean; interrupted: boolean; message: string | null;
+  result: null | { items: { sourceId: string; summary: string; whyRelevant: string; quote: string; source: PastDataSource }[];
+    gaps: string[]; sparse: boolean; focus?: string; model?: string; diagnostics: PastDataPreview['diagnostics']; savedVersion: number; generatedAt: string };
+};
 const base = (projectId: string, deliverableId: string) =>
   `/agentic-cms/research/projects/${encodeURIComponent(projectId)}/deliverables/${encodeURIComponent(deliverableId)}`;
 
 export const researchAPI = {
+  async pastDataStatus(projectId: string, deliverableId: string) {
+    return (await api.get<PastDataStatus>(`${base(projectId, deliverableId)}/past-data`)).data;
+  },
+  async previewPastData(projectId: string, deliverableId: string, focus: string) {
+    return (await api.post<PastDataPreview>(`${base(projectId, deliverableId)}/past-data/preview`, { focus })).data;
+  },
+  async generatePastData(projectId: string, deliverableId: string, expectedVersion: number, focus: string) {
+    return (await api.post<PastDataStatus>(`${base(projectId, deliverableId)}/past-data/generate`, { focus, expectedVersion })).data;
+  },
+  async pastDataSource(projectId: string, deliverableId: string, kind: string, recordId: string) {
+    return (await api.get<PastDataSource>(`${base(projectId, deliverableId)}/past-data/source`, { params: { kind, recordId } })).data;
+  },
   async preparation(projectId: string, deliverableId: string) {
     return (await api.get<ResearchPreparation>(`${base(projectId, deliverableId)}/preparation`)).data;
   },
