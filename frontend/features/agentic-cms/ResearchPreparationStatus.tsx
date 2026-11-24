@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { researchButton } from './research-button-styles';
 import { researchAPI, researchFailure, type ResearchPreparation } from './research-api';
 
 export function ResearchPreparationStatus({ projectId, deliverableId, refreshKey, onReady, onUnavailable }: {
@@ -60,7 +61,7 @@ export function ResearchPreparationStatus({ projectId, deliverableId, refreshKey
     {status?.message && <p className="mt-1 text-[var(--text-muted)]">{status.message}</p>}
     {status?.state === 'NOT_STARTED' && <p className="mt-1 text-[var(--text-muted)]">Research is created when the workstream is released. You can also start it manually below.</p>}
     {error && <p role="alert">{error}</p>}
-    {error && <button className="mt-2 rounded border px-3 py-2" onClick={() => setRefresh(value => value + 1)}>Check preparation again</button>}
-    {status?.canRetry && status.state !== 'NOT_STARTED' && <button disabled={busy} className="mt-2 rounded border px-3 py-2 disabled:opacity-50" onClick={() => void retry()}>{busy ? 'Retrying preparation…' : 'Retry research preparation'}</button>}
+    {error && <button className={`${researchButton} mt-2`} onClick={() => setRefresh(value => value + 1)}>Check preparation again</button>}
+    {status?.canRetry && status.state !== 'NOT_STARTED' && <button disabled={busy} className={`${researchButton} mt-2`} onClick={() => void retry()}>{busy ? 'Retrying preparation…' : 'Retry research preparation'}</button>}
   </div>;
 }

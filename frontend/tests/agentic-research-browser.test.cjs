@@ -378,7 +378,7 @@ test('empty projects show a useful message without research requests', async t =
 test('previews sources without a model key and opens the actual source viewer', async t => {
   const { page, state } = await setup(t, { seed: true, modelConfigured: false });
   await page.getByText('Configure your own Lumen key in the local backend to generate a summary. You can preview sources without a model key.').waitFor();
-  assert.equal(await page.getByRole('button', { name: 'Generate past data', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Generate', exact: true }).isDisabled(), true);
   await page.getByRole('textbox', { name: 'Past data focus' }).fill('Client budget');
   await page.getByRole('button', { name: 'Preview sources', exact: true }).click();
   await page.getByText('Retrieved sources (1)', { exact: true }).waitFor();
@@ -395,13 +395,13 @@ test('generates and refreshes past data with a focus, preserving the other tabs 
   const { page, state } = await setup(t, { seed: true });
   await editor(page).waitFor();
   await page.getByRole('textbox', { name: 'Past data focus', exact: true }).fill('Client constraints');
-  await page.getByRole('button', { name: 'Generate past data', exact: true }).click();
+  await page.getByRole('button', { name: 'Generate', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('[aria-label="Relevant Past Data text past-data"]')?.value?.includes('Prior context:'));
   assert.equal(state.workspaces.d1.version, 2);
   assert.equal(state.workspaces.d1.document.sections[1].content, '');
   assert.equal(state.pastData.d1.focus, 'Client constraints');
   await editor(page).fill('My unsaved edits');
-  assert.equal(await page.getByRole('button', { name: 'Refresh past data', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Generate', exact: true }).isDisabled(), true);
 });
 
 test('automatic generation keeps an unsaved draft visible when a new saved version arrives', async t => {
@@ -420,7 +420,7 @@ test('typing during a delayed bot-result reload does not lose the new draft', as
   } });
   await editor(page).waitFor();
   const pending = page.waitForRequest(request => request.method() === 'GET' && /\/deliverables\/d1$/.test(new URL(request.url()).pathname));
-  await page.getByRole('button', { name: 'Generate past data', exact: true }).click();
+  await page.getByRole('button', { name: 'Generate', exact: true }).click();
   await pending;
   await editor(page).fill('Keep my newly typed text');
   const response = page.waitForResponse(response => response.request().method() === 'GET' && /\/deliverables\/d1$/.test(new URL(response.url()).pathname));

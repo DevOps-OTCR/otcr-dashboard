@@ -14,7 +14,7 @@ const tabs: { id: ResearchTab; label: string; hint: string }[] = [
   { id: 'framework', label: 'Framework / Structure', hint: 'Start with the questions and headings that will guide your research.' },
   { id: 'findings', label: 'Findings', hint: 'Record your findings, supporting evidence, and what they mean for the assignment.' },
 ];
-const button = 'rounded-lg border border-[var(--border)] px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50';
+import { researchButton as button, researchPrimaryButton } from './research-button-styles';
 const field = 'w-full rounded-lg border border-[var(--border)] bg-[var(--background)] p-3 text-[var(--foreground)]';
 const discard = () => window.confirm('Discard your unsaved research changes? Copy any text you want to keep before continuing.');
 
@@ -218,7 +218,7 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
     {missing && <div className="rounded-xl border border-dashed border-[var(--border)] p-6">
       <h3 className="font-semibold">Research has not been started</h3>
       <p className="mt-2 text-sm text-[var(--text-muted)]">{missing.canEdit ? 'Create a shared workspace with three blank sections for this deliverable.' : 'An assigned consultant or project manager can create this workspace.'}</p>
-      {missing.canEdit && <button disabled={busy} className={`${button} mt-4`} onClick={() => void mutate(() => researchAPI.initialize(projectId, deliverableId), 'Research workspace created.')}>
+      {missing.canEdit && <button disabled={busy} className={`${researchPrimaryButton} mt-4`} onClick={() => void mutate(() => researchAPI.initialize(projectId, deliverableId), 'Research workspace created.')}>
         {busy ? 'Creating…' : 'Create research workspace'}
       </button>}
     </div>}
@@ -229,7 +229,7 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
           <p className="mt-1 text-xs text-[var(--text-muted)]">{workspace.canEdit ? 'Shared editing for assigned consultants' : 'Read-only access'} · {new Date(workspace.updatedAt).toLocaleString()}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {workspace.canEdit && <button disabled={!dirty || busy || conflict} className={`${button} bg-[var(--primary)] text-white`} onClick={() => void mutate(
+          {workspace.canEdit && <button disabled={!dirty || busy || conflict} className={researchPrimaryButton} onClick={() => void mutate(
             () => researchAPI.save(projectId, deliverableId, workspace.version, draft), 'Research saved.',
           )}>{busy ? 'Saving…' : 'Save research'}</button>}
           <button disabled={busy} className={button} onClick={() => { if (!dirty || discard()) reload(); }}>Reload saved research</button>
@@ -242,7 +242,7 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
         These three sections guide your research: <strong>Relevant Past Data</strong> captures what’s already known, and <strong>Framework / Structure</strong> defines the questions to answer. Use <strong>Findings</strong> to record what you learn, with sources that support your conclusions.
       </p>
       <div role="tablist" aria-label="Research sections" className="flex flex-wrap gap-2 border-b border-[var(--border)] pb-3">
-        {tabs.map(item => <button key={item.id} id={`research-tab-${item.id}`} role="tab" aria-selected={tab === item.id} aria-controls={`research-panel-${item.id}`} className={`${button} ${tab === item.id ? 'border-[var(--primary)] bg-[var(--secondary)] font-semibold' : ''}`} onClick={() => setTab(item.id)}>{item.label}</button>)}
+        {tabs.map(item => <button key={item.id} id={`research-tab-${item.id}`} role="tab" aria-selected={tab === item.id} aria-controls={`research-panel-${item.id}`} className={tab === item.id ? researchPrimaryButton : button} onClick={() => setTab(item.id)}>{item.label}</button>)}
       </div>
       {tabs.map(item => <div key={item.id} id={`research-panel-${item.id}`} role="tabpanel" aria-labelledby={`research-tab-${item.id}`} hidden={tab !== item.id} className="space-y-4">
         {item.id === 'past-data' && <PastDataPanel projectId={projectId} deliverableId={deliverableId} version={workspace.version} dirty={dirty} canEdit={workspace.canEdit} hasPastData={!!draft.sections.find(section => section.id === 'past-data')?.content.trim()} onGenerated={dirty ? undefined : loadGenerated} onUnavailable={preparationUnavailable} />}

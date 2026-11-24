@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { researchAPI, researchFailure, type PastDataPreview, type PastDataStatus } from './research-api';
 
-const button = 'rounded-lg border border-[var(--border)] px-3 py-2 text-sm disabled:opacity-50';
+import { researchButton as button, researchPrimaryButton } from './research-button-styles';
 export function PastDataPanel({ projectId, deliverableId, version, dirty, canEdit, hasPastData, onGenerated, onUnavailable }: {
   projectId: string; deliverableId: string; version: number; dirty: boolean; canEdit: boolean; hasPastData: boolean;
   onGenerated?: () => void; onUnavailable: () => void;
@@ -66,18 +66,18 @@ export function PastDataPanel({ projectId, deliverableId, version, dirty, canEdi
     {status && !status.modelConfigured && <p className="text-sm">Configure your own Lumen key in the local backend to generate a summary. You can preview sources without a model key.</p>}
     {dirty && <p className="text-sm">Save or discard your edits before asking the bot to update past data.</p>}
     {canEdit && <div className="flex flex-wrap gap-2">
+      <button className={researchPrimaryButton} disabled={busy || dirty || !status?.canGenerate || !status.modelConfigured} onClick={() => void act(true)}>Generate</button>
       <button className={button} disabled={busy || !status?.released} onClick={() => void act(false)}>{busy ? 'Working…' : 'Preview sources'}</button>
-      <button className={button} disabled={busy || dirty || !status?.canGenerate || !status.modelConfigured} onClick={() => void act(true)}>{status?.result ? 'Refresh past data' : 'Generate past data'}</button>
     </div>}
     {error && <div role="alert" className="text-sm">{error} <button className={button} onClick={() => { setError(''); setRefresh(value => value + 1); }}>Check past data again</button></div>}
-    {preview && <details open className="space-y-2 text-sm"><summary>Retrieved sources ({preview.sources.length})</summary>
+    {preview && <details open className="space-y-2 text-sm"><summary className="cursor-pointer rounded-md px-2 py-2 font-medium text-[var(--primary)] hover:bg-[var(--accent)] focus-visible:outline-2 focus-visible:outline-[var(--ring)]">Retrieved sources ({preview.sources.length})</summary>
       <p>{preview.diagnostics.candidatesConsidered} candidate records considered. {preview.diagnostics.limitsReached ? 'Some records or excerpts were limited.' : 'Within retrieval limits.'}</p>
       {preview.sources.length === 0 && <p>Little relevant history was found in the records searched.</p>}
-      {preview.sources.map(source => <details key={source.id} className="rounded border border-[var(--border)] p-2"><summary>{source.title} · {source.kind} · {source.date.slice(0, 10)}</summary>
+      {preview.sources.map(source => <details key={source.id} className="rounded border border-[var(--border)] p-2"><summary className="cursor-pointer rounded-md px-2 py-2 font-medium text-[var(--primary)] hover:bg-[var(--accent)] focus-visible:outline-2 focus-visible:outline-[var(--ring)]">{source.title} · {source.kind} · {source.date.slice(0, 10)}</summary>
         <p className="my-2 whitespace-pre-wrap break-words">{source.text}</p><a className="underline" href={source.url} target="_blank" rel="noopener noreferrer">Open source record</a>
       </details>)}
     </details>}
-    {status?.result && <details className="space-y-2 text-sm"><summary>Last bot retrieval: {status.result.items.length} sources · {status.result.model ?? status.model}</summary>
+    {status?.result && <details className="space-y-2 text-sm"><summary className="cursor-pointer rounded-md px-2 py-2 font-medium text-[var(--primary)] hover:bg-[var(--accent)] focus-visible:outline-2 focus-visible:outline-[var(--ring)]">Last bot retrieval: {status.result.items.length} sources · {status.result.model ?? status.model}</summary>
       <p>Saved as version {status.result.savedVersion} on {new Date(status.result.generatedAt).toLocaleString()}. Later manual edits may differ.</p>
       {status.result.savedVersion > version && <p>A newer saved version is available. Copy any unsaved text you need, then reload saved research to see it.</p>}
       {status.result.sparse && <p>Little relevant prior history was found in the records searched.</p>}
