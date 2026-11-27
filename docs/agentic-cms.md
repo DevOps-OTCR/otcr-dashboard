@@ -806,3 +806,92 @@ in this tab; existing text remains editable under Additional framework notes
 (optional). Legacy subgroup-shaped trees are normalized on read/restore into
 bucket-level questions with stable question IDs, preserving linked findings and
 revision history. No database migration or content deletion is required.
+
+### Research step 6: Context-aware bucket findings
+
+In Framework / Structure, expand a chosen bucket and select **Research this
+bucket** to open Findings with that bucket selected. Save framework/manual drafts
+before starting. The Findings panel accepts an optional focus and offers **Add
+findings** (default) or **Revise findings**, with confirmation before replacement.
+Results auto-save as one research revision. Other buckets and tabs are preserved;
+whole-document Version history provides undo. A question with no newly supported
+claims keeps its previous findings, even in Revise mode, and receives a gap note.
+
+Routes under the existing research project/deliverable base:
+- `GET /findings/capabilities` checks access, release, model and search availability.
+- `POST /findings/buckets/:bucketId/research` accepts
+  `{expectedVersion, mode: "add" | "revise", focus?}`. Verified server identity,
+  active enrollment, backend feature flag/pilot and project/editor permissions are
+  enforced. Only released workstreams and adopted buckets with 1–8 questions can
+  run. No startup jobs, automatic bucket research, new flags or browser bypasses.
+
+The pipeline uses the existing `research` skill's evidence/appraisal/attribution
+standards with a CMS JSON output protocol. Search planning now receives the
+brief, project scope/overview, workstream notes, research objective, bucket,
+questions/evidence requirements, optional focus, saved Past Data/planning notes,
+and bounded prior project context. Large context fields are clipped to bound
+model input. All records and web material are untrusted data. The planner must
+turn that context into public topic queries, omitting private client identity,
+internal quotations, secrets, emails and private URLs.
+
+1. Plan up to **6 focused initial searches** (fewer for narrow/private questions).
+   A malformed/oversized plan gets one bounded correction, then an explicit
+   `INVALID_SEARCH_PLAN` error if still invalid.
+2. Search through the existing Tavily client, at most **2 calls concurrently**.
+   Deduplicate equivalent/tracking URLs and sample results across queries so the
+   first query cannot consume the entire page budget. Extract up to **8 initial
+   public pages** through Tavily's fixed extraction endpoint.
+3. Assess evidence coverage against the brief, geography, every question and
+   compared company. If needed, make **one follow-up round**, at most **2 additional
+   queries and 4 additional pages**. Duplicate queries/pages are not repeated.
+   Total maximum: **8 searches / 12 extracted pages**. If optional coverage review
+   fails, keep available evidence and disclose that limitation.
+4. Synthesize each chosen question from the combined evidence. Search snippets
+   and unread pages are leads, never claim evidence. No linked client files or
+   interviews are read/performed. Without a Tavily key, use authorized project
+   records and report missing external evidence.
+5. Validate and recover before a single version-checked document save.
+
+Claim text may be paraphrased. Its supporting quotation must match a continuous
+span of a known retrieved source. Differences only in layout whitespace are
+accepted, then replaced with the actual source span for storage. Changed words,
+joined passages and unknown source IDs are not accepted as quotations. A draft gets at most one correction turn, for unreadable JSON/schema formatting or
+for untraceable citations. Each question may contain up to eight claims/gaps;
+multiple supported comparison details are not rejected by the old three-claim cap. If a claim still
+cannot be verified, omit that claim and add an explicit gap while retaining
+supported claims and other questions. Missing/duplicate question answers become
+gaps; unknown question IDs are never used as write targets. An implication is
+removed when it could depend on an omitted claim. An unreadable overall JSON
+response still fails safely without replacing saved research.
+
+Source provenance is determined from retrieved metadata, not the model's label.
+Internal records are attributed as project records; mixed evidence is labeled
+accordingly. A client statement cannot become an independently verified external
+fact through a model label. Exact citation checks do not prove semantic entailment,
+independent corroboration or source quality: review the source originals before
+client use. Geographic relevance is assessed by the planning/coverage/synthesis
+instructions, not guaranteed by URL validation.
+
+Feature/pilot and current project/editor access are rechecked before every model,
+search, extraction and source read, and immediately before the save. Changed CMS
+sources/assignments, permission loss or concurrent saves prevent overwriting the
+workspace. Successful partial recovery returns omitted-claim/missing-answer counts,
+search/page counts and follow-up status. The UI explicitly reports saved findings
+with gaps instead of a whole-run citation failure.
+
+Requests have a **180-second overall deadline**; the browser allows 210 seconds.
+Per-instance limits remain one active request/user, two active requests globally,
+and 12 runs/user/hour. These counters reset on restart. Requests are synchronous,
+not durable jobs: after a disconnect, reload before retrying in case work saved.
+Source IDs fingerprint the excerpt; optional `readStatus`, `excerpt`, `accessedAt`
+metadata and all findings remain in the existing workspace JSON/revisions. No new
+migration is needed. Extraction accepts at most 12 public URLs and bounds provider
+responses to 1 MB and individual excerpts to 5000 characters.
+
+Validation includes flag-off/on and real HTTP guard tests; project/editor/release
+boundaries; expanded budget/concurrency and fair selection; context passed to the
+planner; targeted follow-up; revocation between coverage and search; exact and
+whitespace-normalized quotes; missing/unknown citations; partial recovery; existing
+answer preservation; concurrent edits, restore and source snapshots. Browser tests
+cover normal runs, add/revise, progress, failure/retry, read-only/dirty controls and
+successful partial results with visible gap warnings.

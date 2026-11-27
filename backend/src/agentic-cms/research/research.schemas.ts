@@ -14,6 +14,9 @@ const sectionSchema = z.strictObject({
 });
 const sourceSchema = z.strictObject({
   id,
+  readStatus: z.enum(['cms-record', 'extracted-page']).optional(),
+  excerpt: z.string().max(5000).optional(),
+  accessedAt: z.iso.datetime().optional(),
   title: z.string().trim().min(1).max(500),
   url: z.url().max(2048).refine(value => ['http:', 'https:'].includes(new URL(value).protocol)),
 });

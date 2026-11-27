@@ -1,3 +1,6 @@
+import { ResearchFindingsController } from './research/research-findings.controller';
+import { ResearchFindingsService } from './research/research-findings.service';
+import { TavilyExtractClient } from './search/tavily-extract.client';
 import { ResearchFrameworkController } from './research/research-framework.controller';
 import { ResearchFrameworkService } from './research/research-framework.service';
 import { Module } from '@nestjs/common';
@@ -34,8 +37,10 @@ import { ResearchPastDataController } from './research/research-past-data.contro
 
 @Module({
   imports: [FeatureFlagsModule, PrismaModule, ProjectsModule, AuthModule],
-  controllers: [ResearchFrameworkController, AgenticCmsController, McpController, ChatController, ResearchWorkspaceController, ResearchPastDataController],
+  controllers: [ResearchFindingsController, ResearchFrameworkController, AgenticCmsController, McpController, ChatController, ResearchWorkspaceController, ResearchPastDataController],
   providers: [
+    ResearchFindingsService,
+    TavilyExtractClient,
     ResearchFrameworkService,
     PastDataRetrievalService,
     ResearchPastDataService,

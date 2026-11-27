@@ -10,11 +10,12 @@ export type ResearchDocument = {
   framework?: ResearchFramework;
   frameworkSuggestion?: ResearchFramework;
   sections: ResearchSection[];
-  sources: { id: string; title: string; url: string }[];
+  sources: { id: string; title: string; url: string; readStatus?: 'cms-record' | 'extracted-page'; excerpt?: string; accessedAt?: string }[];
 };
 export type ResearchWorkspace = {
   id: string; projectId: string; deliverableId: string; version: number;
   document: ResearchDocument; canEdit: boolean; storage: 'cms'; updatedAt: string;
+  researchSummary?: { searches: number; pagesRead: number; followUp: boolean; omittedClaims: number; missingAnswers: number };
 };
 export type ResearchRevision = {
   version: number; action: 'INITIALIZE' | 'EDIT' | 'RESTORE';
@@ -47,7 +48,15 @@ export type PastDataStatus = {
 const base = (projectId: string, deliverableId: string) =>
   `/agentic-cms/research/projects/${encodeURIComponent(projectId)}/deliverables/${encodeURIComponent(deliverableId)}`;
 
+export type FindingsCapabilities = { canEdit: boolean; released: boolean; modelConfigured: boolean; webSearchConfigured: boolean };
+export type FindingsMode = 'add' | 'revise';
 export const researchAPI = {
+  async findingsCapabilities(projectId: string, deliverableId: string) {
+    return (await api.get<FindingsCapabilities>(`${base(projectId, deliverableId)}/findings/capabilities`)).data;
+  },
+  async researchBucket(projectId: string, deliverableId: string, bucketId: string, expectedVersion: number, mode: FindingsMode, focus: string) {
+    return (await api.post<ResearchWorkspace>(`${base(projectId, deliverableId)}/findings/buckets/${encodeURIComponent(bucketId)}/research`, { expectedVersion, mode, focus }, { timeout: 210000 })).data;
+  },
   async generateFramework(projectId: string, deliverableId: string, expectedVersion: number, focus: string) {
     return (await api.post<ResearchWorkspace>(`${base(projectId, deliverableId)}/framework/generate`, { expectedVersion, focus }, { timeout: 60000 })).data;
   },

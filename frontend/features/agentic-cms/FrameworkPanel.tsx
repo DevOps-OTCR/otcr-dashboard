@@ -13,8 +13,9 @@ function move<T>(items: T[], index: number, offset: number) {
   [result[index], result[index + offset]] = [result[index + offset], result[index]];
   return result;
 }
-export function FrameworkPanel({ document, canEdit, busy, dirty, onChange, onGenerate }: {
+export function FrameworkPanel({ document, canEdit, busy, dirty, onChange, onGenerate, onResearch }: {
   document: ResearchDocument; canEdit: boolean; busy: boolean; dirty: boolean;
+  onResearch?: (bucketId: string) => void;
   onChange: (document: ResearchDocument) => void; onGenerate: (focus: string) => void;
 }) {
   const [focus, setFocus] = useState('');
@@ -79,6 +80,7 @@ export function FrameworkPanel({ document, canEdit, busy, dirty, onChange, onGen
             <label className="block text-sm">Evidence needed<textarea aria-label={`Evidence ${bi + 1}.${qi + 1}`} className={field} maxLength={1000} value={q.evidence} onChange={e => update(t => { t.buckets[bi].questions[qi].evidence = e.target.value; })} /></label>
             <div className="flex flex-wrap gap-2"><button className={button} disabled={qi === 0} onClick={() => update(t => { t.buckets[bi].questions = move(t.buckets[bi].questions, qi, -1); })}>Move question up</button><button className={button} disabled={qi === b.questions.length - 1} onClick={() => update(t => { t.buckets[bi].questions = move(t.buckets[bi].questions, qi, 1); })}>Move question down</button><button className={button} onClick={() => remove(t => { t.buckets[bi].questions.splice(qi, 1); })}>Remove question</button></div>
           </div>)}
+          {canEdit && onResearch && <div className="space-y-1"><button className={primary} disabled={dirty || !b.questions.length || b.questions.length > 8} onClick={() => onResearch(b.id)}>Research this bucket</button>{dirty && <p className="text-sm">Save your changes before researching.</p>}</div>}
           <button className={button} disabled={tree.buckets.flatMap(b => b.questions).length >= 30} onClick={() => update(t => { t.buckets[bi].questions.push({ id: newId(), title: 'New research question?', evidence: '' }); })}>Add question</button>
         </div>
       </details>)}

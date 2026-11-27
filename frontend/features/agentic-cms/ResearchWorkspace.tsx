@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ResearchPreparationStatus } from './ResearchPreparationStatus';
+import { BucketResearchPanel } from './BucketResearchPanel';
 import { FrameworkPanel } from './FrameworkPanel';
 import { PastDataPanel } from './PastDataPanel';
 import {
@@ -109,6 +110,8 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [researching, setResearching] = useState(false);
+  const [researchBucket, setResearchBucket] = useState('');
   const [conflict, setConflict] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [history, setHistory] = useState<ResearchHistory | null>(null);
@@ -140,7 +143,7 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
       setConflict(true);
       setError('Research changed elsewhere. Your draft is still here. Copy any text you want to keep, then reload the saved research before continuing.');
     } else {
-      const modelErrors: Record<string, string> = { MODEL_NOT_CONFIGURED: 'Configure your local Lumen key and restart the backend before generating.', MODEL_FAILED: 'Generation could not finish. Your saved research was kept. Try again or check your model configuration.', INVALID_MODEL_OUTPUT: 'The bot returned an invalid framework. Your saved research was kept. Try a narrower focus.', SKILL_UNAVAILABLE: 'The framework skill could not be loaded. Check the backend skill directory.' };
+      const modelErrors: Record<string, string> = { MODEL_NOT_CONFIGURED: 'Configure your local Lumen key and restart the backend before generating.', INVALID_SEARCH_PLAN: 'The bot could not create a valid web-search plan after one correction. Your saved research was kept. Retry this bucket.', INVALID_FINDINGS_OUTPUT: 'The bot returned a response that could not be read. Your saved research was kept. Retry this bucket.', RESEARCH_BUSY: 'Research is busy or the hourly limit has been reached. Try again later.', BUCKET_QUESTION_LIMIT: 'Use a bucket with 1–8 questions for this first pass.', MODEL_FAILED: 'Generation could not finish. Your saved research was kept. Try again or check your model configuration.', INVALID_MODEL_OUTPUT: 'The bot returned an invalid framework. Your saved research was kept. Try a narrower focus.', SKILL_UNAVAILABLE: 'The framework skill could not be loaded. Check the backend skill directory.' };
       setError(modelErrors[failure.code ?? ''] ?? fallback);
     }
   };
@@ -186,12 +189,12 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
     void load();
   };
 
-  const mutate = async (operation: () => Promise<Workspace>, success: string) => {
+  const mutate = async (operation: () => Promise<Workspace>, success: string | ((saved: Workspace) => string)) => {
     const request = generation.current;
     setBusy(true); setError(''); setMessage('');
     try {
       const saved = await operation();
-      if (request === generation.current) { accept(saved); setMessage(success); }
+      if (request === generation.current) { accept(saved); setMessage(typeof success === 'function' ? success(saved) : success); }
     } catch (error) {
       if (request === generation.current) denyOrExplain(researchFailure(error), 'Could not save research. Your draft is still here. Try again when your connection is restored.');
     } finally { if (request === generation.current) setBusy(false); }
@@ -235,7 +238,7 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
         <div className="flex flex-wrap gap-2">
           {workspace.canEdit && <button disabled={!dirty || busy || conflict} className={researchPrimaryButton} onClick={() => void mutate(
             () => researchAPI.save(projectId, deliverableId, workspace.version, draft), 'Research saved.',
-          )}>{busy ? 'Saving…' : 'Save research'}</button>}
+          )}>{researching ? 'Researching…' : busy ? 'Saving…' : 'Save research'}</button>}
           <button disabled={busy} className={button} onClick={() => { if (!dirty || discard()) reload(); }}>Reload saved research</button>
           <button disabled={busy} aria-expanded={historyOpen} className={button} onClick={() => {
             setHistoryOpen(!historyOpen); if (!historyOpen) void loadHistory();
@@ -250,7 +253,11 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
       </div>
       {tabs.map(item => <div key={item.id} id={`research-panel-${item.id}`} role="tabpanel" aria-labelledby={`research-tab-${item.id}`} hidden={tab !== item.id} className="space-y-4">
         {item.id === 'past-data' && <PastDataPanel projectId={projectId} deliverableId={deliverableId} version={workspace.version} dirty={dirty} canEdit={workspace.canEdit} hasPastData={!!draft.sections.find(section => section.id === 'past-data')?.content.trim()} onGenerated={dirty ? undefined : loadGenerated} onUnavailable={preparationUnavailable} />}
-        {item.id === 'framework' && <FrameworkPanel document={draft} canEdit={workspace.canEdit} busy={busy || conflict} dirty={dirty} onChange={next => { ++draftRevision.current; setMessage(''); setDraft(next); }} onGenerate={focus => void mutate(() => researchAPI.generateFramework(projectId, deliverableId, workspace.version, focus), 'Framework suggestion saved. Choose the buckets you want to adopt.')} />}
+        {item.id === 'framework' && <FrameworkPanel document={draft} canEdit={workspace.canEdit} busy={busy || conflict} dirty={dirty} onResearch={id => { setResearchBucket(id); setTab('findings'); }} onChange={next => { ++draftRevision.current; setMessage(''); setDraft(next); }} onGenerate={focus => void mutate(() => researchAPI.generateFramework(projectId, deliverableId, workspace.version, focus), 'Framework suggestion saved. Choose the buckets you want to adopt.')} />}
+        {item.id === 'findings' && <BucketResearchPanel projectId={projectId} deliverableId={deliverableId} document={draft} canEdit={workspace.canEdit} dirty={dirty} busy={busy || conflict} researching={researching} summary={workspace.researchSummary} selected={researchBucket} onSelect={setResearchBucket} onUnavailable={preparationUnavailable} onResearch={(bucketId, mode, focus) => {
+          setResearching(true);
+          void mutate(() => researchAPI.researchBucket(projectId, deliverableId, bucketId, workspace.version, mode, focus), saved => saved.researchSummary?.omittedClaims || saved.researchSummary?.missingAnswers ? 'Bucket findings saved with evidence gaps. Unsupported draft claims were omitted; existing findings for unanswered questions were kept. Review the gaps below.' : 'Bucket findings saved. Review the sources below; use Version history to undo.').finally(() => setResearching(false));
+        }} />}
         {item.id !== 'framework' && <p className="text-sm text-[var(--text-muted)]">{item.hint}</p>}
         {draft.sections.filter(section => section.tab === item.id).map(section => { const Container = item.id === 'framework' ? 'details' : 'div'; return <Container key={section.id} className="space-y-3">
           {item.id === 'framework' && <summary className="cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--secondary)] p-3 text-sm font-medium">Additional framework notes (optional)</summary>}

@@ -73,6 +73,7 @@ async function setup(t, options = {}) {
     const [, projectId, id, suffix] = match;
     if ((id === 'd3') !== (projectId === 'p2')) return json(route, { code: 'NOT_FOUND_OR_FORBIDDEN' }, 404);
     const workspace = state.workspaces[id];
+    if (request.method() === 'GET' && suffix === '/findings/capabilities') return json(route, { canEdit: state.editable, released: true, modelConfigured: state.modelConfigured, webSearchConfigured: false });
     const pastSource = { id: 'pd_note', kind: 'note', recordId: 'note-one', title: 'Prior client decision', text: 'The client excluded enterprise buyers because of rollout costs.', date: '2026-11-16T12:00:00Z', truncated: false,
       url: `http://research.test/agentic-cms?researchProject=${projectId}&researchDeliverable=${id}&researchSourceKind=note&researchSourceRecord=note-one` };
     const diagnostics = { candidatesConsidered: 5, sourcesSent: 1, queryTerms: ['budget', 'client'], limitsReached: false, linkedFilesRead: false };
@@ -163,6 +164,22 @@ async function setup(t, options = {}) {
       workspace.version += 1;
       state.revisions[id].push({ version: workspace.version, document: clone(workspace.document), action: 'EDIT', authorId: 'synthetic-user', createdAt: '2026-11-26T12:00:00Z' });
       return json(route, { ...workspace, canEdit: true }, 201);
+    }
+    if (suffix.startsWith('/findings/buckets/') && suffix.endsWith('/research')) {
+      if (state.findingsFail) return json(route, { code: state.findingsFailureCode ?? 'INVALID_FINDINGS_OUTPUT' }, 503);
+      const bucketId = suffix.split('/')[3];
+      const bucket = workspace.document.framework.buckets.find(b => b.id === bucketId);
+      const source = { id: 'bf_note', title: 'Client constraint source', url: 'https://example.org/client-note', readStatus: 'cms-record', excerpt: 'Client excluded enterprise buyers due to implementation costs.', accessedAt: '2026-11-27T12:00:00Z' };
+      for (const q of bucket.questions) {
+        const section = workspace.document.sections.find(s => s.frameworkQuestionId === q.id);
+        const text = `Sourced finding for ${q.title}. Evidence: Client excluded enterprise buyers due to implementation costs.`;
+        section.content = body.mode === 'add' ? [section.content, text].filter(Boolean).join('\n\n') : text;
+        section.sourceIds = body.mode === 'add' ? [...new Set([...section.sourceIds, source.id])] : [source.id];
+      }
+      if (!workspace.document.sources.some(s => s.id === source.id)) workspace.document.sources.push(source);
+      workspace.version += 1;
+      state.revisions[id].push({ version: workspace.version, document: clone(workspace.document), action: 'EDIT', authorId: 'synthetic-user', createdAt: '2026-11-27T12:00:00Z' });
+      return json(route, { ...workspace, canEdit: true, ...(state.recoveredFindings ? { researchSummary: { searches: 4, pagesRead: 8, followUp: true, omittedClaims: 1, missingAnswers: 0 } } : {}) }, 201);
     }
     const savedDocument = suffix === '/restore'  ? state.revisions[id].find(revision => revision.version === body.targetVersion).document : body.document;
     workspace.document = clone(savedDocument); workspace.version += 1;
@@ -568,4 +585,94 @@ test('manual framework can be built without generation and is read-only for view
   await page.getByRole('textbox', { name: 'Question 1.1', exact: true }).waitFor();
   assert.equal(await page.getByRole('textbox', { name: 'Question 1.1', exact: true }).isDisabled(), true);
   assert.equal(state.calls.some(c => c.path.endsWith('/framework/generate')), false);
+});
+
+
+async function adoptedBucket(t) {
+  const fixture = await setup(t, { seed: true });
+  const { page } = fixture;
+  await page.getByRole('tab', { name: 'Framework / Structure', exact: true }).click();
+  await page.getByRole('button', { name: 'Generate framework', exact: true }).click();
+  await page.getByRole('button', { name: 'Adopt all', exact: true }).click();
+  await page.getByRole('button', { name: 'Save research', exact: true }).click();
+  await page.getByText('Research saved.', { exact: true }).waitFor();
+  return fixture;
+}
+
+test('researches an adopted bucket, adds or revises its findings, preserves other buckets and supports undo', async t => {
+  const { page, state } = await adoptedBucket(t);
+  await page.locator('summary[aria-label="Chosen bucket 1"]').click();
+  await page.getByRole('button', { name: 'Research this bucket', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Findings text finding_q1', exact: true }).fill('Manual evidence to keep');
+  await page.getByRole('button', { name: 'Save research', exact: true }).click();
+  await page.getByText('Research saved.', { exact: true }).waitFor();
+  const beforeVersion = state.workspaces.d1.version;
+  await page.getByRole('textbox', { name: 'Bucket research focus', exact: true }).fill('Client constraints');
+  await page.getByRole('button', { name: 'Research this bucket', exact: true }).click();
+  await page.getByText('Bucket findings saved. Review the sources below; use Version history to undo.', { exact: true }).waitFor();
+  assert.match(await page.getByRole('textbox', { name: 'Findings text finding_q1', exact: true }).inputValue(), /Manual evidence to keep/);
+  assert.match(await page.getByRole('textbox', { name: 'Findings text finding_q2', exact: true }).inputValue(), /Sourced finding/);
+  assert.equal(await page.getByRole('textbox', { name: 'Findings text finding_q3', exact: true }).inputValue(), '');
+  assert.equal(await page.getByRole('link', { name: 'Client constraint source', exact: true }).count(), 2);
+  const call = state.calls.find(c => c.path.endsWith('/findings/buckets/b1/research'));
+  assert.deepEqual(call.body, { expectedVersion: beforeVersion, mode: 'add', focus: 'Client constraints' });
+  await page.getByRole('combobox', { name: 'Existing findings action', exact: true }).selectOption('revise');
+  state.acceptDialog = false;
+  await page.getByRole('button', { name: 'Research this bucket', exact: true }).click();
+  assert.equal(state.calls.filter(c => c.path.endsWith('/findings/buckets/b1/research')).length, 1);
+  state.acceptDialog = true;
+  await page.getByRole('button', { name: 'Research this bucket', exact: true }).click();
+  await page.getByText('Bucket findings saved. Review the sources below; use Version history to undo.', { exact: true }).waitFor();
+  assert.doesNotMatch(await page.getByRole('textbox', { name: 'Findings text finding_q1', exact: true }).inputValue(), /Manual evidence/);
+  await page.getByRole('button', { name: 'Version history', exact: true }).click();
+  await page.getByRole('button', { name: `Restore version ${beforeVersion}`, exact: true }).click();
+  await page.getByText(`Restored version ${beforeVersion} as a new version.`, { exact: true }).waitFor();
+  assert.equal(await page.getByRole('textbox', { name: 'Findings text finding_q1', exact: true }).inputValue(), 'Manual evidence to keep');
+});
+
+test('bucket research shows progress, keeps errors retryable and blocks unsaved or read-only edits', async t => {
+  const { page, state } = await adoptedBucket(t);
+  await page.getByRole('tab', { name: 'Findings', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Findings text finding_q1', exact: true }).fill('Unsaved text');
+  assert.equal(await page.getByRole('button', { name: 'Research this bucket', exact: true }).isDisabled(), true);
+  await page.getByRole('button', { name: 'Save research', exact: true }).click();
+  await page.getByText('Research saved.', { exact: true }).waitFor();
+  let finish;
+  state.holdWrite = () => new Promise(resolve => { finish = resolve; });
+  await page.getByRole('button', { name: 'Research this bucket', exact: true }).click();
+  await page.getByRole('button', { name: 'Researching bucket…', exact: true }).waitFor();
+  assert.equal(await page.getByRole('textbox', { name: 'Findings text finding_q1', exact: true }).isDisabled(), true);
+  state.findingsFail = true; state.holdWrite = null; finish();
+  await page.getByRole('alert').filter({ hasText: 'could not be read' }).waitFor();
+  assert.equal(await page.getByRole('textbox', { name: 'Findings text finding_q1', exact: true }).inputValue(), 'Unsaved text');
+  state.findingsFail = false;
+  await page.getByRole('button', { name: 'Research this bucket', exact: true }).click();
+  await page.getByText('Bucket findings saved. Review the sources below; use Version history to undo.', { exact: true }).waitFor();
+  state.editable = false;
+  await page.getByRole('button', { name: 'Reload saved research', exact: true }).click();
+  await page.getByRole('region', { name: 'Research a bucket', exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Research this bucket', exact: true }).count(), 0);
+});
+
+
+test('bucket planning failures are explained separately and keep saved research', async t => {
+  const { page, state } = await adoptedBucket(t);
+  await page.getByRole('tab', { name: 'Findings', exact: true }).click();
+  state.findingsFail = true; state.findingsFailureCode = 'INVALID_SEARCH_PLAN';
+  const version = state.workspaces.d1.version;
+  await page.getByRole('button', { name: 'Research this bucket', exact: true }).click();
+  await page.getByRole('alert').filter({ hasText: 'web-search plan after one correction' }).waitFor();
+  assert.equal(state.workspaces.d1.version, version);
+  assert.equal(await page.getByRole('textbox', { name: 'Findings text finding_q1', exact: true }).inputValue(), '');
+});
+
+
+test('recovered bucket findings report gaps without showing a whole-run failure', async t => {
+  const { page, state } = await adoptedBucket(t);
+  state.recoveredFindings = true;
+  await page.getByRole('tab', { name: 'Findings', exact: true }).click();
+  await page.getByRole('button', { name: 'Research this bucket', exact: true }).click();
+  await page.getByText('Bucket findings saved with evidence gaps. Unsupported draft claims were omitted; existing findings for unanswered questions were kept. Review the gaps below.', { exact: true }).waitFor();
+  assert.match(await page.getByRole('textbox', { name: 'Findings text finding_q1', exact: true }).inputValue(), /Sourced finding/);
+  assert.equal(await page.getByRole('alert').count(), 0);
 });

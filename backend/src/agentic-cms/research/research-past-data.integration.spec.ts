@@ -1,3 +1,6 @@
+import { ResearchFindingsService } from './research-findings.service';
+import { TavilySearchClient } from '../search/tavily-search.client';
+import { TavilyExtractClient } from '../search/tavily-extract.client';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -339,6 +342,331 @@ integration('Relevant past data against migrated PostgreSQL with a counting test
     const restored = await workspace.restore(user, 'project', 'target', { expectedVersion: 2, targetVersion: 1 });
     expect(restored.document.framework.buckets[0].questions[0].id).toBe('q');
     expect(restored.document.sections[3].content).toBe('Existing evidence');
+  });
+
+  const bucketSetup = async (web = false) => {
+    const doc = emptyResearchDocument();
+    doc.sections[0].content = 'Past data to preserve';
+    doc.framework = { objective: 'Choose a hospital segment', assumptions: [], clarificationQuestions: [], buckets: [
+      { id: 'bucket', title: 'Client constraints', questions: [{ id: 'q1', title: 'Which buyers are excluded?', evidence: 'Client notes' }, { id: 'q2', title: 'Why is implementation constrained?', evidence: 'Client budget records' }] },
+      { id: 'other-bucket', title: 'Other research', questions: [{ id: 'q3', title: 'Other question?', evidence: 'Other records' }] },
+    ] };
+    for (const id of ['q1', 'q2', 'q3']) doc.sections.push({ id: `finding_${id}`, tab: 'findings', title: id, content: id === 'q1' ? 'Existing manual finding' : id === 'q3' ? 'Keep other bucket' : '', sourceIds: [], frameworkQuestionId: id });
+    await workspace.save(user, 'project', 'target', { expectedVersion: 1, document: doc });
+    const search = { isConfigured: jest.fn(() => web), search: jest.fn() };
+    const extract = { extract: jest.fn() };
+    skills.load.mockResolvedValue({ name: 'research', instructions: 'Use evidence standards.' });
+    const reply = (req: ModelRequest) => {
+      if (req.system.startsWith('Assess evidence coverage')) return JSON.stringify({ queries: [], gaps: [] });
+      if (req.system.startsWith('Plan at most')) return JSON.stringify({ queries: ['hospital buyer constraints'] });
+      const data = payload(req); const source = data.sources.find((s: { id: string }) => s.id.startsWith('wf_')) ?? data.sources.find((s: { text: string }) => s.text === quote);
+      return JSON.stringify({ questions: data.bucket.questions.map((q: { id: string }) => ({ questionId: q.id,
+        claims: source ? [{ text: source.kind === 'web' ? 'The published study documents buyer constraints.' : 'The client excluded enterprise buyers because implementation exceeds its budget.', type: source.kind === 'web' ? 'FACT' : 'SUPPLIED', evidence: [{ sourceId: source.id, quote: source.text.slice(0, 80) }] }] : [],
+        implication: source ? 'Keep segment recommendations within documented constraints.' : '', gaps: ['Confirm the specific budget amount.'],
+      })) });
+    };
+    model.stream.mockImplementation(async req => { const text = reply(req); return { text, toolCalls: [], message: assistantMessage(text, []) }; });
+    const service = new ResearchFindingsService(flags, retrieval, documents, model, skills as unknown as SkillLibrary, search as unknown as TavilySearchClient, extract as unknown as TavilyExtractClient);
+    return { service, search, extract, reply, doc };
+  };
+
+  it('bucket research adds source-linked findings for all chosen questions, keeps other tabs/buckets, and can undo', async () => {
+    const { service, search, doc } = await bucketSetup();
+    const saved = await service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add', focus: 'Budget constraints' });
+    expect(saved.version).toBe(3);
+    expect(saved.document.sections[3].content).toContain('Existing manual finding');
+    expect(saved.document.sections[3].content).toContain('enterprise');
+    expect(saved.document.sections[4].content).toContain('enterprise');
+    expect(saved.document.sections[5].content).toBe('Keep other bucket');
+    expect(saved.document.sections[0]).toEqual(doc.sections[0]);
+    expect(saved.document.framework).toEqual(doc.framework);
+    expect(saved.document.sources[0]).toMatchObject({ readStatus: 'cms-record', excerpt: quote });
+    expect(model.stream).toHaveBeenCalledTimes(1); expect(search.search).not.toHaveBeenCalled();
+    expect(skills.load).toHaveBeenCalledWith('research');
+    expect(saved.researchSummary.webStatus).toBe('not-configured');
+    await workspace.restore(user, 'project', 'target', { expectedVersion: 3, targetVersion: 2 });
+    expect((await workspace.read(user, 'project', 'target')).document.sections[3].content).toBe('Existing manual finding');
+  });
+
+  it('bucket research revises only the selected bucket when explicitly requested', async () => {
+    const { service } = await bucketSetup();
+    const saved = await service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'revise' });
+    expect(saved.document.sections[3].content).not.toContain('Existing manual finding');
+    expect(saved.document.sections[5].content).toBe('Keep other bucket');
+  });
+
+  it.each(['invented-source', 'invented-quote', 'second-question-quote', 'missing-question', 'duplicate-question', 'internal-fact', 'unsupported-answer'])('bucket research retains supported work and records gaps for %s', async mode => {
+    const { service, reply } = await bucketSetup();
+    model.stream.mockImplementation(async req => {
+      const output = JSON.parse(reply(req));
+      if (mode === 'invented-source') output.questions[0].claims[0].evidence[0].sourceId = 'invented';
+      if (mode === 'invented-quote') output.questions[0].claims[0].evidence[0].quote = 'The client approved millions of dollars.';
+      if (mode === 'second-question-quote') output.questions[1].claims[0].evidence[0].quote = 'This is a fabricated second answer quotation.';
+      if (mode === 'missing-question') output.questions.pop();
+      if (mode === 'duplicate-question') output.questions[1].questionId = output.questions[0].questionId;
+      if (mode === 'internal-fact') output.questions[0].claims[0].type = 'FACT';
+      if (mode === 'unsupported-answer') { output.questions[0].claims = []; output.questions[0].implication = 'An unsupported recommendation.'; }
+      const text = JSON.stringify(output); return { text, toolCalls: [], message: assistantMessage(text, []) };
+    });
+    const saved = await service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add' });
+    expect(saved.version).toBe(3);
+    expect(saved.document.sections[3].content).toContain('Existing manual finding');
+    expect(saved.document.sections[5].content).toBe('Keep other bucket');
+    const text = saved.document.sections.map(s => s.content).join(' ');
+    expect(text).not.toMatch(/approved millions|fabricated second answer|unsupported recommendation/);
+    if (mode === 'internal-fact') expect(saved.document.sections[3].content).toContain('Project records:');
+    else expect(text).toMatch(/Evidence gaps/);
+  });
+
+  it('bucket research shares extracted web evidence across questions and keeps unread snippets as leads', async () => {
+    const { service, search, extract } = await bucketSetup(true);
+    search.search.mockResolvedValue([{ title: 'Primary study', url: 'https://example.org/study', excerpt: 'Search snippet only.' }, { title: 'Unread report', url: 'https://example.org/unread', excerpt: 'Unsupported search claim.' }]);
+    extract.extract.mockResolvedValue([{ url: 'https://example.org/study', text: 'Published study: hospital buyers reported procurement and implementation constraints.' }]);
+    const saved = await service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add' });
+    expect(search.search).toHaveBeenCalledTimes(1); expect(extract.extract).toHaveBeenCalledTimes(1);
+    expect(model.stream).toHaveBeenCalledTimes(3);
+    expect(saved.document.sections[3].sourceIds).toEqual(saved.document.sections[4].sourceIds);
+    expect(saved.document.sources[0].readStatus).toBe('extracted-page');
+    expect(saved.document.sources).toHaveLength(1);
+    expect(saved.document.sections[3].content).toContain('Sources to open and check (not used as evidence)');
+    expect(saved.document.sections[3].content).not.toContain('Unsupported search claim.');
+  });
+
+  it('bucket research writes explicit evidence gaps instead of fabricated answers', async () => {
+    const { service } = await bucketSetup();
+    model.stream.mockImplementation(async req => { const text = JSON.stringify({ questions: payload(req).bucket.questions.map((q: { id: string }) => ({ questionId: q.id, claims: [], implication: '', gaps: ['Client interviews are required; none were performed.'] })) }); return { text, toolCalls: [], message: assistantMessage(text, []) }; });
+    const saved = await service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add' });
+    expect(saved.document.sections[4].content).toContain('Client interviews are required');
+    expect(saved.document.sections[4].sourceIds).toEqual([]);
+  });
+
+  it('bucket research flag-off and project/editor boundaries stop all model and search work', async () => {
+    const { service, search, extract } = await bucketSetup(true);
+    settings.AGENTIC_CMS_ENABLED = 'false';
+    await expect(service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add' })).rejects.toMatchObject({ status: 404 });
+    settings.AGENTIC_CMS_ENABLED = 'true';
+    await expect(service.research(user, 'other', 'target', 'bucket', { expectedVersion: 2, mode: 'add' })).rejects.toMatchObject({ status: 404 });
+    await expect(service.research({ id: 'readonly', email: 'readonly@example.test', role: 'CONSULTANT' }, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add' })).rejects.toMatchObject({ status: 404 });
+    await expect(service.research(user, 'project', 'draft-item', 'bucket', { expectedVersion: 2, mode: 'add' })).rejects.toMatchObject({ status: 404 });
+    expect(model.stream).not.toHaveBeenCalled(); expect(search.search).not.toHaveBeenCalled(); expect(extract.extract).not.toHaveBeenCalled();
+  });
+
+  it('bucket research preserves a concurrent consultant edit and rejects the stale result', async () => {
+    const { service, reply } = await bucketSetup();
+    model.stream.mockImplementation(async req => {
+      const current = await workspace.read(user, 'project', 'target'); current.document.sections[3].content = 'A teammate updated this';
+      await workspace.save(user, 'project', 'target', { expectedVersion: 2, document: current.document });
+      const text = reply(req); return { text, toolCalls: [], message: assistantMessage(text, []) };
+    });
+    await expect(service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'revise' })).rejects.toMatchObject({ status: 409 });
+    expect((await workspace.read(user, 'project', 'target')).document.sections[3].content).toBe('A teammate updated this');
+  });
+
+  it('bucket research rejects changed evidence and revoked pilot access after generation', async () => {
+    const { service, reply } = await bucketSetup();
+    model.stream.mockImplementationOnce(async req => { await db.projectContextNote.update({ where: { id: 'note-relevant' }, data: { content: 'The source changed' } }); const text = reply(req); return { text, toolCalls: [], message: assistantMessage(text, []) }; });
+    await expect(service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add' })).rejects.toMatchObject({ status: 409 });
+    model.stream.mockImplementationOnce(async req => { settings.AGENTIC_CMS_ALLOWED_EMAILS = 'someoneelse@example.test'; const text = reply(req); return { text, toolCalls: [], message: assistantMessage(text, []) }; });
+    await expect(service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add' })).rejects.toMatchObject({ status: 404 });
+    expect((await db.researchWorkspace.findUnique({ where: { deliverableId: 'target' } })).version).toBe(2);
+  });
+
+  it('bucket research stops before extraction or another model call if access is revoked during search', async () => {
+    const { service, search, extract } = await bucketSetup(true);
+    search.search.mockImplementation(async () => { settings.AGENTIC_CMS_ENABLED = 'false'; return [{ title: 'Study', url: 'https://example.org/study', excerpt: 'Search only' }]; });
+    await expect(service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add' })).rejects.toMatchObject({ status: 404 });
+    expect(extract.extract).not.toHaveBeenCalled(); expect(model.stream).toHaveBeenCalledTimes(1);
+    expect((await db.researchWorkspace.findUnique({ where: { deliverableId: 'target' } })).version).toBe(2);
+  });
+
+  it('bucket research does not duplicate an active run and releases its lock after failure', async () => {
+    const { service, reply } = await bucketSetup();
+    let finish: () => void;
+    const gate = new Promise<void>(resolve => { finish = resolve; });
+    model.stream.mockImplementationOnce(async req => { await gate; const text = reply(req); return { text, toolCalls: [], message: assistantMessage(text, []) }; });
+    const first = service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add' });
+    for (let i = 0; i < 100 && !model.stream.mock.calls.length; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    await expect(service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add' })).rejects.toMatchObject({ status: 429 });
+    finish(); await first;
+    expect(model.stream).toHaveBeenCalledTimes(1);
+  });
+
+  it('bucket findings keep the earlier cited excerpt when the same source changes before a later run', async () => {
+    const { service, reply } = await bucketSetup();
+    const first = await service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add' });
+    const oldId = first.document.sections[3].sourceIds[0];
+    await db.projectContextNote.update({ where: { id: 'note-relevant' }, data: { content: 'Updated client decision: enterprise remains excluded until budget is confirmed.' } });
+    model.stream.mockImplementation(async req => {
+      const data = payload(req); const source = data.sources.find((s: { title: string }) => s.title === 'Hospital client constraints');
+      const output = JSON.parse(reply(req));
+      for (const question of output.questions) question.claims = [{ text: 'The updated decision remains provisional.', type: 'SUPPLIED', evidence: [{ sourceId: source.id, quote: source.text }] }];
+      const text = JSON.stringify(output); return { text, toolCalls: [], message: assistantMessage(text, []) };
+    });
+    const second = await service.research(user, 'project', 'target', 'bucket', { expectedVersion: 3, mode: 'add' });
+    expect(second.document.sources.find(s => s.id === oldId).excerpt).toBe(quote);
+    expect(second.document.sections[3].sourceIds).toHaveLength(2);
+    const newId = second.document.sections[3].sourceIds[1];
+    expect(newId).not.toBe(oldId);
+    expect(second.document.sources.find(s => s.id === newId).excerpt).toContain('Updated client decision');
+  });
+
+  it('bucket research tolerates web-provider failure without claiming external verification', async () => {
+    const { service, search, extract } = await bucketSetup(true);
+    search.search.mockRejectedValue(new Error('Provider unavailable'));
+    const saved = await service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add' });
+    expect(saved.researchSummary.webStatus).toBe('unavailable');
+    expect(saved.document.sections[3].content).toContain('Project records only');
+    expect(extract.extract).not.toHaveBeenCalled();
+  });
+
+  it('bucket research corrects an oversized search plan once without exceeding the expanded search budget', async () => {
+    const { service, search, reply } = await bucketSetup(true);
+    let plans = 0;
+    model.stream.mockImplementation(async req => {
+      const text = req.system.startsWith('Plan at most')
+        ? JSON.stringify({ queries: ++plans === 1 ? ['menu A', 'menu B', 'app A', 'app B', 'pricing A', 'pricing B', 'extra A', 'extra B'] : ['menu and app A', 'menu and app B'] }) : reply(req);
+      return { text, toolCalls: [], message: assistantMessage(text, []) };
+    });
+    search.search.mockResolvedValue([]);
+    const saved = await service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add' });
+    expect(saved.version).toBe(3); expect(plans).toBe(2);
+    expect(search.search).toHaveBeenCalledTimes(2);
+    expect(model.stream).toHaveBeenCalledTimes(3);
+  });
+
+  it('bucket research reports repeated invalid planning separately from invalid citations', async () => {
+    const { service, search, extract } = await bucketSetup(true);
+    model.stream.mockResolvedValue({ text: '{"queries":["menu A","menu B","app A","app B","extra A","extra B","extra C"]}', toolCalls: [], message: assistantMessage('', []) });
+    await expect(service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add' })).rejects.toMatchObject({ response: expect.objectContaining({ code: 'INVALID_SEARCH_PLAN' }) });
+    expect(model.stream).toHaveBeenCalledTimes(2);
+    expect(search.search).not.toHaveBeenCalled(); expect(extract.extract).not.toHaveBeenCalled();
+    expect((await workspace.read(user, 'project', 'target')).version).toBe(2);
+  });
+
+  it('bucket research rechecks pilot access before correcting an invalid plan', async () => {
+    const { service, search } = await bucketSetup(true);
+    model.stream.mockImplementationOnce(async () => { settings.AGENTIC_CMS_ALLOWED_EMAILS = 'someoneelse@example.test'; return { text: 'bad plan', toolCalls: [], message: assistantMessage('', []) }; });
+    await expect(service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add' })).rejects.toMatchObject({ status: 404 });
+    expect(model.stream).toHaveBeenCalledTimes(1); expect(search.search).not.toHaveBeenCalled();
+  });
+
+  it('bucket research uses actual source provenance without rejecting a web evidence label', async () => {
+    const { service, search, extract, reply } = await bucketSetup(true);
+    search.search.mockResolvedValue([{ title: 'Primary study', url: 'https://example.org/study', excerpt: 'Search snippet' }]);
+    extract.extract.mockResolvedValue([{ url: 'https://example.org/study', text: 'The published hospital study describes implementation cost constraints.' }]);
+    let drafts = 0;
+    model.stream.mockImplementation(async req => {
+      const output = JSON.parse(reply(req));
+      if (output.questions && ++drafts === 1) for (const question of output.questions) question.claims[0].type = 'SUPPLIED';
+      const text = JSON.stringify(output); return { text, toolCalls: [], message: assistantMessage(text, []) };
+    });
+    const saved = await service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add' });
+    expect(saved.version).toBe(3); expect(drafts).toBe(1);
+    expect(model.stream).toHaveBeenCalledTimes(3);
+    expect(search.search).toHaveBeenCalledTimes(1); expect(extract.extract).toHaveBeenCalledTimes(1);
+    expect(saved.document.sources[0].readStatus).toBe('extracted-page');
+  });
+
+  it('bucket research corrects a non-verbatim quote once and still requires a source match', async () => {
+    const { service, reply } = await bucketSetup();
+    model.stream.mockImplementationOnce(async req => {
+      const output = JSON.parse(reply(req)); output.questions[0].claims[0].evidence[0].quote = 'Client decision: exclude enterprise because budget.';
+      const text = JSON.stringify(output); return { text, toolCalls: [], message: assistantMessage(text, []) };
+    });
+    const saved = await service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add' });
+    expect(saved.version).toBe(3); expect(model.stream).toHaveBeenCalledTimes(2);
+    expect(saved.document.sections[3].content).toContain(quote.slice(0, 80));
+    expect(saved.document.sections[3].content).not.toContain('exclude enterprise because budget.');
+  });
+
+  it('bucket planning includes the brief and prior context, searches fairly, and follows evidence gaps once', async () => {
+    const { service, search, extract, reply } = await bucketSetup(true);
+    let active = 0; let peak = 0;
+    search.search.mockImplementation(async query => {
+      active++; peak = Math.max(peak, active);
+      await new Promise(resolve => setTimeout(resolve, 5)); active--;
+      return Array.from({ length: 6 }, (_, i) => ({ title: `Study ${query} ${i}`, url: `https://example.org/${query.replaceAll(' ', '-')}/${i}`, excerpt: 'Search snippet only' }));
+    });
+    extract.extract.mockImplementation(async urls => urls.map(url => ({ url, text: `Published evidence retrieved for ${url} describes research constraints.` })));
+    model.stream.mockImplementation(async req => {
+      let text;
+      if (req.system.startsWith('Plan at most')) text = JSON.stringify({ queries: Array.from({ length: 6 }, (_, i) => `public topic ${i}`) });
+      else if (req.system.startsWith('Assess evidence coverage')) text = JSON.stringify({ queries: ['public missing menu'], gaps: [{ questionId: 'q2', missingEvidence: 'The second competitor menu is missing.' }] });
+      else text = reply(req);
+      return { text, toolCalls: [], message: assistantMessage(text, []) };
+    });
+    const saved = await service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add' });
+    expect(saved.researchSummary).toMatchObject({ searches: 7, pagesRead: 12, followUp: true });
+    expect(peak).toBeLessThanOrEqual(2);
+    expect(extract.extract.mock.calls.map(call => call[0].length)).toEqual([8, 4]);
+    const planner = payload(model.stream.mock.calls[0][0]);
+    expect(planner.assignment.brief).toBe('Assess hospital demand and client constraints.');
+    expect(planner.assignment.projectScope).toContain('client budget');
+    expect(planner.pastData).toContain('Past data to preserve');
+    expect(JSON.stringify(planner.priorContext)).toContain(quote);
+    const urls = extract.extract.mock.calls[0][0];
+    for (let i = 0; i < 6; i++) expect(urls).toContain(`https://example.org/public-topic-${i}/0`);
+    const final = payload(model.stream.mock.calls[model.stream.mock.calls.length - 1][0]);
+    expect(final.sources.filter(s => s.kind === 'web')).toHaveLength(12);
+    expect(search.search.mock.calls.map(call => call[0]).join(' ')).not.toContain(quote);
+  });
+
+  it('bucket research rechecks revocation between coverage review and follow-up search', async () => {
+    const { service, search, extract, reply } = await bucketSetup(true);
+    search.search.mockResolvedValue([{ title: 'Study', url: 'https://example.org/study', excerpt: 'Search text' }]);
+    extract.extract.mockResolvedValue([{ url: 'https://example.org/study', text: 'Published evidence on hospital constraints.' }]);
+    model.stream.mockImplementation(async req => {
+      if (req.system.startsWith('Assess evidence coverage')) {
+        settings.AGENTIC_CMS_ENABLED = 'false';
+        const text = JSON.stringify({ queries: ['follow up'], gaps: [] }); return { text, toolCalls: [], message: assistantMessage(text, []) };
+      }
+      const text = reply(req); return { text, toolCalls: [], message: assistantMessage(text, []) };
+    });
+    await expect(service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add' })).rejects.toMatchObject({ status: 404 });
+    expect(search.search).toHaveBeenCalledTimes(1);
+    expect((await db.researchWorkspace.findUnique({ where: { deliverableId: 'target' } })).version).toBe(2);
+  });
+
+  it('revise keeps existing answers when new evidence cannot support a replacement', async () => {
+    const { service, reply } = await bucketSetup();
+    model.stream.mockImplementation(async req => {
+      const json = JSON.parse(reply(req)); json.questions[0].claims[0].evidence[0].quote = 'Fabricated quote that cannot be found in the evidence.';
+      const text = JSON.stringify(json); return { text, toolCalls: [], message: assistantMessage(text, []) };
+    });
+    const saved = await service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'revise' });
+    expect(saved.researchSummary.omittedClaims).toBe(1);
+    expect(saved.document.sections[3].content).toContain('Existing manual finding');
+    expect(saved.document.sections[3].content).toContain('draft claim was omitted');
+    expect(saved.document.sections[4].content).toContain('enterprise');
+  });
+
+  it('bucket research corrects malformed findings JSON once before recovering evidence', async () => {
+    const { service } = await bucketSetup();
+    model.stream.mockResolvedValueOnce({ text: '{"questions":[', toolCalls: [], message: assistantMessage('', []) });
+    const saved = await service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add' });
+    expect(saved.version).toBe(3); expect(model.stream).toHaveBeenCalledTimes(2);
+    expect(saved.document.sections[3].content).toContain('enterprise');
+  });
+
+  it('bucket research keeps saved work if both findings format attempts fail', async () => {
+    const { service } = await bucketSetup();
+    model.stream.mockResolvedValue({ text: 'Not readable JSON', toolCalls: [], message: assistantMessage('', []) });
+    await expect(service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add' })).rejects.toMatchObject({ status: 503 });
+    expect(model.stream).toHaveBeenCalledTimes(2);
+    expect((await workspace.read(user, 'project', 'target')).version).toBe(2);
+  });
+
+  it('bucket research accepts several supported comparison findings without an arbitrary three-claim rejection', async () => {
+    const { service, reply } = await bucketSetup();
+    model.stream.mockImplementation(async req => {
+      const output = JSON.parse(reply(req)); const claim = output.questions[0].claims[0];
+      output.questions[0].claims = Array.from({ length: 4 }, (_, i) => ({ ...claim, text: `Supported comparison detail ${i + 1}` }));
+      const text = JSON.stringify(output); return { text, toolCalls: [], message: assistantMessage(text, []) };
+    });
+    const saved = await service.research(user, 'project', 'target', 'bucket', { expectedVersion: 2, mode: 'add' });
+    expect(saved.version).toBe(3); expect(saved.researchSummary.omittedClaims).toBe(0);
+    expect(saved.document.sections[3].content).toContain('Supported comparison detail 4');
+    expect(model.stream).toHaveBeenCalledTimes(1);
   });
 
 });

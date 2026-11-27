@@ -1,3 +1,4 @@
+import { ResearchFindingsService } from './research-findings.service';
 import { INestApplication, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
@@ -18,7 +19,7 @@ class TestAuthModule {}
 
 describe('Past-data routes share the existing verified-only Agentic CMS boundary', () => {
   let app: INestApplication; let base: string; let settings: Record<string, string>;
-  const calls = { status: jest.fn(), preview: jest.fn(), schedule: jest.fn(), readSource: jest.fn() };
+  const calls = { status: jest.fn(), preview: jest.fn(), schedule: jest.fn(), readSource: jest.fn(), findingsCapabilities: jest.fn(), researchBucket: jest.fn() };
   const ops: { method: string; suffix: string; body?: unknown }[] = [
     { method: 'GET', suffix: '', body: undefined },
     { method: 'POST', suffix: '/preview', body: { focus: 'Budget' } },
@@ -37,6 +38,7 @@ describe('Past-data routes share the existing verified-only Agentic CMS boundary
       .overrideModule(AuthModule).useModule(TestAuthModule)
       .overrideProvider(PrismaService).useValue({})
       .overrideProvider(ResearchPastDataService).useValue(calls)
+      .overrideProvider(ResearchFindingsService).useValue({ capabilities: calls.findingsCapabilities, research: calls.researchBucket })
       .overrideProvider(PastDataRetrievalService).useValue({ readSource: calls.readSource })
       .useMocker(token => token === ConfigService ? { get: (key: string) => settings[key] } : undefined).compile();
     app = module.createNestApplication(); await app.listen(0, '127.0.0.1'); base = await app.getUrl();
@@ -76,6 +78,23 @@ describe('Past-data routes share the existing verified-only Agentic CMS boundary
     settings.AGENTIC_CMS_ENABLED = 'true';
     expect((await fetch(endpoint, { method: 'POST', headers: { authorization: 'Bearer reader@example.test', 'content-type': 'application/json' }, body: '{"expectedVersion":1}' })).status).toBe(401);
     expect((await fetch(endpoint, { method: 'POST', headers: { authorization: 'Bearer verified-token', 'content-type': 'application/json' }, body: '{"expectedVersion":1,"authorId":"other"}' })).status).toBe(400);
+  });
+
+  it('bucket findings routes share flag and verified identity guards, validate inputs and use server identity', async () => {
+    const endpoint = `${base}/agentic-cms/research/projects/project/deliverables/item/findings`;
+    const capability = (token = 'Bearer verified-token') => fetch(`${endpoint}/capabilities`, { headers: { authorization: token } });
+    const run = (body: unknown = { expectedVersion: 1, mode: 'add', focus: 'Budget' }, token = 'Bearer verified-token') => fetch(`${endpoint}/buckets/bucket/research`, { method: 'POST', headers: { authorization: token, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    settings.AGENTIC_CMS_ENABLED = 'false';
+    expect((await capability()).status).toBe(404); expect((await run()).status).toBe(404);
+    expect(calls.researchBucket).not.toHaveBeenCalled(); expect(calls.findingsCapabilities).not.toHaveBeenCalled();
+    settings.AGENTIC_CMS_ENABLED = 'true';
+    expect((await capability('Bearer reader@example.test')).status).toBe(401);
+    expect((await run(undefined, 'Bearer reader@example.test')).status).toBe(401);
+    expect((await run({ expectedVersion: 1, mode: 'add', authorId: 'other' })).status).toBe(400);
+    expect((await run({ expectedVersion: 1, mode: 'erase' })).status).toBe(400);
+    expect((await run({ expectedVersion: 1, mode: 'add', focus: 'x'.repeat(1001) })).status).toBe(400);
+    expect((await capability()).status).toBe(200); expect((await run()).status).toBe(201);
+    expect(calls.researchBucket).toHaveBeenCalledWith(expect.objectContaining({ id: 'reader', email: 'reader@example.test' }), 'project', 'item', 'bucket', { expectedVersion: 1, mode: 'add', focus: 'Budget' });
   });
 
 });
