@@ -209,6 +209,7 @@ async function setup(t, options = {}) {
     const savedDocument = suffix === '/restore'  ? state.revisions[id].find(revision => revision.version === body.targetVersion).document : body.document;
     workspace.document = clone(savedDocument); workspace.version += 1;
     state.revisions[id].push({ version: workspace.version, document: clone(savedDocument), action: suffix === '/restore' ? 'RESTORE' : 'EDIT', restoredFromVersion: body.targetVersion ?? null, authorId: 'synthetic-user', createdAt: '2026-11-24T12:01:00Z' });
+    if (suffix === '/restore' && state.failRestoreAfterCommitOnce) { state.failRestoreAfterCommitOnce = false; return json(route, {}, 503); }
     return json(route, { ...workspace, canEdit: true }, suffix === '/restore' ? 201 : 200);
   });
   const page = await context.newPage();
@@ -802,4 +803,99 @@ test('saved edits retain Undo and cannot be blindly retried when the remaining c
   assert.equal(state.workspaces.d1.version, 2);
   await page.getByRole('button', { name: 'Undo bot edit', exact: true }).click();
   await page.getByRole('button', { name: 'Bot edit undone', exact: true }).waitFor();
+});
+
+async function editedWithBot(t) {
+  const item = await setup(t, { seed: true });
+  await editor(item.page).waitFor(); await openBot(item.page); await sendBot(item.page, 'Shorten context');
+  await item.page.getByRole('button', { name: 'Undo bot edit', exact: true }).waitFor();
+  await item.page.waitForFunction(() => !document.querySelector('[aria-label="Stop"]'));
+  return item;
+}
+
+test('Undo polish: progress blocks duplicate clicks and confirms a durable restore version', async t => {
+  const { page, state } = await editedWithBot(t);
+  let finish; state.holdWrite = () => new Promise(resolve => { finish = resolve; });
+  await page.getByRole('button', { name: 'Undo bot edit', exact: true }).evaluate(button => { button.click(); button.click(); });
+  await page.getByRole('button', { name: 'Undoing…', exact: true }).waitFor();
+  assert.equal(await editor(page).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Stop', exact: true }).count(), 0);
+  assert.equal(state.calls.filter(call => call.path.endsWith('/restore')).length, 1);
+  state.holdWrite = null; finish();
+  await page.getByRole('button', { name: 'Bot edit undone', exact: true }).waitFor();
+  await page.getByText('Restored version 1 as version 3. All earlier versions remain available.', { exact: true }).waitFor();
+  assert.deepEqual(state.revisions.d1.map(row => row.action), ['INITIALIZE', 'EDIT', 'RESTORE']);
+  await page.getByRole('button', { name: 'View version history', exact: true }).click();
+  await page.getByRole('region', { name: 'Research version history', exact: true }).waitFor();
+});
+
+test('Undo polish: a failed save preserves research and offers a version-checked retry', async t => {
+  const { page, state } = await editedWithBot(t); state.failSaveOnce = true;
+  await page.getByRole('button', { name: 'Undo bot edit', exact: true }).click();
+  await page.getByRole('alert').filter({ hasText: 'Your saved version is unchanged' }).waitFor();
+  assert.equal(state.workspaces.d1.version, 2);
+  assert.equal(await editor(page).inputValue(), 'Shortened client context.');
+  await page.getByRole('button', { name: 'Try Undo again', exact: true }).click();
+  await page.getByRole('button', { name: 'Bot edit undone', exact: true }).waitFor();
+  assert.equal(state.workspaces.d1.version, 3);
+  assert.equal(await page.getByRole('alert').count(), 0);
+  assert.deepEqual(state.calls.filter(call => call.path.endsWith('/restore')).map(call => call.body), [{ expectedVersion: 2, targetVersion: 1 }, { expectedVersion: 2, targetVersion: 1 }]);
+});
+
+test('Undo polish: a lost response is reconciled without a duplicate restore', async t => {
+  const { page, state } = await editedWithBot(t); state.failRestoreAfterCommitOnce = true;
+  await page.getByRole('button', { name: 'Undo bot edit', exact: true }).click();
+  await page.getByRole('button', { name: 'Bot edit undone', exact: true }).waitFor();
+  assert.equal(state.workspaces.d1.version, 3);
+  assert.deepEqual(state.workspaces.d1.document, blank());
+  assert.equal(state.calls.filter(call => call.path.endsWith('/restore')).length, 1);
+});
+
+test('Undo polish: an unknown outcome blocks blind retry and links to history', async t => {
+  const { page, state } = await editedWithBot(t); state.failSaveOnce = true; state.failHistoryOnce = true;
+  await page.getByRole('button', { name: 'Undo bot edit', exact: true }).click();
+  await page.getByRole('alert').filter({ hasText: 'Could not confirm whether Undo saved' }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Undo bot edit', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Try Undo again', exact: true }).count(), 0);
+  assert.equal(state.workspaces.d1.version, 2);
+  await page.getByRole('button', { name: 'View version history', exact: true }).click();
+  await page.getByRole('region', { name: 'Research version history', exact: true }).waitFor();
+});
+
+test('Undo polish: a teammate save racing with Undo is never overwritten', async t => {
+  const { page, state } = await editedWithBot(t); state.conflict = true;
+  await page.getByRole('button', { name: 'Undo bot edit', exact: true }).click();
+  await page.getByRole('alert').filter({ hasText: 'No later changes were overwritten' }).waitFor();
+  assert.equal(state.workspaces.d1.version, 3);
+  assert.equal(state.workspaces.d1.document.sections[0].content, 'Saved by a teammate');
+  assert.equal(state.revisions.d1.filter(row => row.action === 'RESTORE').length, 0);
+  assert.equal(await page.getByRole('button', { name: 'Undo bot edit', exact: true }).isDisabled(), true);
+});
+
+test('Undo polish: drafts explain the block and only the latest consecutive edit can be undone', async t => {
+  const { page, state } = await editedWithBot(t);
+  await closeBot(page); await editor(page).fill('Unsaved manual notes'); await openBot(page);
+  await page.getByText('Save or discard your unsaved draft before undoing.', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Undo bot edit', exact: true }).isDisabled(), true);
+  await closeBot(page); await page.getByRole('button', { name: 'Save research', exact: true }).click();
+  await page.getByText('Research saved.', { exact: true }).waitFor();
+  const before = clone(state.workspaces.d1.document);
+  await openBot(page); await sendBot(page, 'Revise the saved research again');
+  await page.waitForFunction(() => document.querySelectorAll('[aria-label="Bot edit result"]').length === 2 && !document.querySelector('[aria-label="Stop"]'));
+  const undo = page.getByRole('button', { name: 'Undo bot edit', exact: true });
+  assert.equal(await undo.nth(0).isDisabled(), true); await undo.nth(1).click();
+  await page.getByRole('button', { name: 'Bot edit undone', exact: true }).waitFor();
+  assert.equal(state.workspaces.d1.version, 5); assert.deepEqual(state.workspaces.d1.document, before);
+  assert.equal(await undo.isDisabled(), true);
+});
+
+test('Undo polish: history survives a page reload and can recover the bot edit after Undo', async t => {
+  const { page, state } = await editedWithBot(t);
+  await page.getByRole('button', { name: 'Undo bot edit', exact: true }).click();
+  await page.getByRole('button', { name: 'Bot edit undone', exact: true }).waitFor();
+  await page.reload(); await page.getByRole('tab', { name: 'Research', exact: true }).click(); await editor(page).waitFor();
+  await page.getByRole('button', { name: 'Version history', exact: true }).click();
+  await page.getByRole('button', { name: 'Restore version 2', exact: true }).click();
+  await page.getByText('Restored version 2 as a new version.', { exact: true }).waitFor();
+  assert.equal(state.workspaces.d1.version, 4); assert.equal(await editor(page).inputValue(), 'Shortened client context.');
 });

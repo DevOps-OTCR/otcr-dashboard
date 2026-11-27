@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ResearchChatTarget } from './research-chat';
+import type { ResearchChatTarget, ResearchUndoResult } from './research-chat';
 import { ResearchPreparationStatus } from './ResearchPreparationStatus';
 import { BucketResearchPanel } from './BucketResearchPanel';
 import { FrameworkPanel } from './FrameworkPanel';
@@ -137,7 +137,7 @@ function ResearchEditor({ projectId, projectName, workstreamTitle, deliverableId
     setWorkspace(saved); setDraft(saved.document); setMissing(null); setConflict(false);
     setHistory(null); setHistoryOpen(false); setHistoryError(''); setHistoryBusy(false);
   };
-  const denyOrExplain = (failure: ReturnType<typeof researchFailure>, fallback: string) => {
+  const denyOrExplain = useCallback((failure: ReturnType<typeof researchFailure>, fallback: string) => {
     if ([401, 403, 404].includes(failure.status ?? 0)) {
       setWorkspace(null); setDraft(null); setMissing(null);
       setHistory(null); setHistoryOpen(false);
@@ -149,7 +149,7 @@ function ResearchEditor({ projectId, projectName, workstreamTitle, deliverableId
       const modelErrors: Record<string, string> = { EDIT_BUSY: 'Bot editing is busy or the hourly limit was reached. Try again later.', INVALID_EDIT_OUTPUT: 'The bot could not produce valid edits. Saved research was kept. Try a more specific request.', EDIT_SKILL_UNAVAILABLE: 'The research editing skill could not be loaded.', MODEL_NOT_CONFIGURED: 'Configure your local Lumen key and restart the backend before generating.', INVALID_SEARCH_PLAN: 'The bot could not create a valid web-search plan after one correction. Your saved research was kept. Retry this bucket.', INVALID_FINDINGS_OUTPUT: 'The bot returned a response that could not be read. Your saved research was kept. Retry this bucket.', RESEARCH_BUSY: 'Research is busy or the hourly limit has been reached. Try again later.', BUCKET_QUESTION_LIMIT: 'Use a bucket with 1–8 questions for this first pass.', MODEL_FAILED: 'Generation could not finish. Your saved research was kept. Try again or check your model configuration.', INVALID_MODEL_OUTPUT: 'The bot returned an invalid framework. Your saved research was kept. Try a narrower focus.', SKILL_UNAVAILABLE: 'The framework skill could not be loaded. Check the backend skill directory.' };
       setError(modelErrors[failure.code ?? ''] ?? fallback);
     }
-  };
+  }, []);
   const preparationUnavailable = useCallback(() => {
     setWorkspace(null); setDraft(null); setMissing(null); setHistory(null); setHistoryOpen(false);
     setError('This research is unavailable or your access has changed. Check with your PM and reload.');
@@ -203,31 +203,57 @@ function ResearchEditor({ projectId, projectName, workstreamTitle, deliverableId
     } finally { if (request === generation.current) setBusy(false); }
   };
 
-  const undoBotEdit = useCallback(async (expectedVersion: number, targetVersion: number) => {
+  const undoBotEdit = useCallback(async (expectedVersion: number, targetVersion: number): Promise<ResearchUndoResult> => {
     const request = generation.current;
+    const failure = (message: string, retryable = false): ResearchUndoResult => ({ status: 'failed', message, retryable });
+    const restored = (saved: Workspace, restoredVersion = saved.version): ResearchUndoResult => {
+      if (request !== generation.current) return failure('This workspace is no longer selected.');
+      setWorkspace(saved); setDraft(saved.document); setConflict(false); setError('');
+      setHistory(null); setHistoryOpen(false); setHistoryBusy(false); setHistoryError(''); ++historyGeneration.current;
+      setMessage(`Bot edit undone. Restored version ${targetVersion} as version ${restoredVersion}. Earlier versions remain in Version history.`);
+      return { status: 'restored', version: restoredVersion };
+    };
+    setError(''); setMessage('');
     try {
       const saved = await researchAPI.restore(projectId, deliverableId, expectedVersion, targetVersion);
-      if (request !== generation.current) return false;
-      setWorkspace(saved); setDraft(saved.document); setConflict(false);
-      setHistory(null); setHistoryOpen(false); ++historyGeneration.current;
-      setMessage('Bot edit undone.'); return true;
-    } catch {
-      if (request === generation.current) setError('Could not undo this edit. Research may have changed or access was revoked. Reload and use Version history.');
-      return false;
+      return restored(saved);
+    } catch (error) {
+      if (request !== generation.current) return failure('This workspace is no longer selected.');
+      const problem = researchFailure(error);
+      if (problem.status === 409) {
+        setConflict(true);
+        return failure('Research changed before Undo could save. No later changes were overwritten. Reload saved research, then use Version history.');
+      }
+      if (problem.code === 'REVISION_NOT_FOUND') return failure('The earlier revision is unavailable. Check Version history for the versions you can restore.');
+      if ([401, 403, 404].includes(problem.status ?? 0)) {
+        preparationUnavailable(); return failure('Your access changed. Reload and check with your PM.');
+      }
+      // A lost response can follow a committed restore. Check the durable history
+      // before offering Retry, and always keep the original expected version.
+      try {
+        const [latest, revisions] = await Promise.all([
+          researchAPI.read(projectId, deliverableId), researchAPI.history(projectId, deliverableId),
+        ]);
+        if (request !== generation.current) return failure('This workspace is no longer selected.');
+        const committed = revisions.items.find(row => row.version === expectedVersion + 1 && row.action === 'RESTORE' && row.restoredFromVersion === targetVersion);
+        if (committed && latest.version >= committed.version) return restored(latest, committed.version);
+        if (latest.version !== expectedVersion) {
+          setConflict(true);
+          return failure('Research has a newer saved version. Reload it and use Version history to choose what to restore.');
+        }
+        return failure('Undo did not complete. Your saved version is unchanged. Check your connection and try Undo again.', true);
+      } catch (recoveryError) {
+        if (request !== generation.current) return failure('This workspace is no longer selected.');
+        if ([401, 403, 404].includes(researchFailure(recoveryError).status ?? 0)) {
+          preparationUnavailable(); return failure('Your access changed. Reload and check with your PM.');
+        }
+        setConflict(true);
+        return failure('Could not confirm whether Undo saved. Reload saved research and check Version history before trying again.');
+      }
     }
-  }, [projectId, deliverableId]);
-  const workspaceVersion = workspace?.version;
-  const workspaceEditable = workspace?.canEdit;
-  useEffect(() => {
-    onChatTargetChange?.(workspaceVersion ? {
-      projectId, projectName, workstreamTitle, deliverableId, title, sprintId, version: workspaceVersion,
-      blocked: dirty || conflict || mutating || !workspaceEditable,
-      setBusy: setChatBusy, refresh: loadGenerated, undo: undoBotEdit,
-    } : null);
-    return () => onChatTargetChange?.(null);
-  }, [projectId, projectName, workstreamTitle, deliverableId, title, sprintId, workspaceVersion, workspaceEditable, dirty, conflict, mutating, onChatTargetChange, loadGenerated, undoBotEdit]);
+  }, [projectId, deliverableId, preparationUnavailable]);
 
-  const loadHistory = async (beforeVersion?: number) => {
+  const loadHistory = useCallback(async (beforeVersion?: number) => {
     const request = generation.current;
     const historyRequest = ++historyGeneration.current;
     setHistoryBusy(true); setHistoryError('');
@@ -241,7 +267,19 @@ function ResearchEditor({ projectId, projectName, workstreamTitle, deliverableId
         else setHistoryError('Could not load version history. Try again.');
       }
     } finally { if (request === generation.current && historyRequest === historyGeneration.current) setHistoryBusy(false); }
-  };
+  }, [projectId, deliverableId, denyOrExplain]);
+  const showHistory = useCallback(() => { setHistoryOpen(true); void loadHistory(); }, [loadHistory]);
+  const workspaceVersion = workspace?.version;
+  const workspaceEditable = workspace?.canEdit;
+  useEffect(() => {
+    onChatTargetChange?.(workspaceVersion ? {
+      projectId, projectName, workstreamTitle, deliverableId, title, sprintId, version: workspaceVersion,
+      blocked: dirty || conflict || mutating || !workspaceEditable,
+      blockReason: !workspaceEditable ? 'You have read-only access to this research.' : dirty ? 'Save or discard your unsaved draft before undoing.' : conflict ? 'Reload saved research to resolve the version conflict before undoing.' : mutating ? 'Wait for the current research operation to finish.' : undefined,
+      showHistory, setBusy: setChatBusy, refresh: loadGenerated, undo: undoBotEdit,
+    } : null);
+    return () => onChatTargetChange?.(null);
+  }, [projectId, projectName, workstreamTitle, deliverableId, title, sprintId, workspaceVersion, workspaceEditable, dirty, conflict, mutating, onChatTargetChange, loadGenerated, undoBotEdit, showHistory]);
 
   if (loading) return <p role="status">Loading research…</p>;
   return <div className="space-y-4">

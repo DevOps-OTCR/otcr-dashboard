@@ -22,6 +22,8 @@ type BotEntry = {
   pending: boolean;
   researchEdit?: Extract<ResearchChatResult, { status: 'saved' }>;
   undone?: boolean;
+  undoneVersion?: number;
+  undoError?: { message: string; retryable: boolean };
 };
 type Entry = UserEntry | BotEntry;
 
@@ -69,6 +71,8 @@ export function OtcrBot({ researchTarget, initialOpen = false, onOpenChange }: {
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
+  const undoInFlight = useRef(false);
+  const [undoingId, setUndoingId] = useState<string | null>(null);
   const [pendingEdit, setPendingEdit] = useState<{ question: string; version: number; pending: NonNullable<ResearchChatRequest['pending']> } | null>(null);
   const [width, setWidth] = useState(savedWidth);
   const abortRef = useRef<AbortController | null>(null);
@@ -238,11 +242,19 @@ export function OtcrBot({ researchTarget, initialOpen = false, onOpenChange }: {
   }, [busy, projectId, sprintId, workstreamsReady, conversationId, getToken, updateBot, researchTarget, pendingEdit]);
 
   const undoResearch = async (botId: string, edit: Extract<ResearchChatResult, { status: 'saved' }>) => {
-    if (!researchTarget || researchTarget.blocked || researchTarget.version !== edit.savedVersion || busy) return;
-    setBusy(true); researchTarget.setBusy(true);
+    if (!researchTarget || researchTarget.blocked || researchTarget.version !== edit.savedVersion || busy || undoInFlight.current) return;
+    const generation = chatGeneration.current;
+    undoInFlight.current = true;
+    setBusy(true); setUndoingId(botId); researchTarget.setBusy(true);
+    updateBot(botId, entry => ({ ...entry, undoError: undefined }));
     try {
-      if (await researchTarget.undo(edit.savedVersion, edit.previousVersion)) updateBot(botId, entry => ({ ...entry, undone: true }));
-    } finally { researchTarget.setBusy(false); setBusy(false); }
+      const result = await researchTarget.undo(edit.savedVersion, edit.previousVersion);
+      if (generation !== chatGeneration.current) return;
+      if (result.status === 'restored') updateBot(botId, entry => ({ ...entry, undone: true, undoneVersion: result.version, undoError: undefined }));
+      else updateBot(botId, entry => ({ ...entry, undoError: { message: result.message, retryable: result.retryable } }));
+    } catch {
+      if (generation === chatGeneration.current) updateBot(botId, entry => ({ ...entry, undoError: { message: 'Could not confirm whether Undo saved. Reload saved research and check Version history.', retryable: false } }));
+    } finally { undoInFlight.current = false; researchTarget.setBusy(false); setUndoingId(null); setBusy(false); }
   };
 
   const retry = (botId: string) => {
@@ -309,7 +321,7 @@ export function OtcrBot({ researchTarget, initialOpen = false, onOpenChange }: {
         <div className="flex items-center gap-2">
           <Bot className="h-5 w-5 text-blue-700 dark:text-blue-400" aria-hidden />
           <h2 className="flex-1 text-sm font-semibold">OTCR Bot <span className="font-normal text-slate-500">(pilot)</span></h2>
-          <button type="button" onClick={newChat} className="rounded p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800" title="New chat" aria-label="New chat">
+          <button type="button" onClick={newChat} disabled={!!undoingId} className="rounded p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800" title="New chat" aria-label="New chat">
             <Plus className="h-4 w-4" aria-hidden />
           </button>
           <button type="button" onClick={() => setOpen(false)} className="rounded p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800" title="Close" aria-label="Close OTCR Bot">
@@ -390,9 +402,13 @@ export function OtcrBot({ researchTarget, initialOpen = false, onOpenChange }: {
             {entry.researchEdit && <div className="space-y-2 rounded-lg border border-blue-300 p-3 text-xs dark:border-blue-700" aria-label="Bot edit result">
               <p>{entry.researchEdit.summary} · Saved as version {entry.researchEdit.savedVersion}</p>
               <ul className="list-disc pl-4">{entry.researchEdit.changes.map(change => <li key={change}>{change}</li>)}</ul>
-              <p>Undo restores all three research sections to the version before this edit.</p>
-              <button type="button" className="rounded border border-blue-600 px-3 py-1 font-semibold disabled:opacity-40" disabled={busy || !researchTarget || researchTarget.blocked || researchTarget.version !== entry.researchEdit.savedVersion || entry.undone} onClick={() => void undoResearch(entry.id, entry.researchEdit!)}>{entry.undone ? 'Bot edit undone' : 'Undo bot edit'}</button>
-              {!entry.undone && researchTarget && researchTarget.version !== entry.researchEdit.savedVersion && <p>{researchTarget.version < entry.researchEdit.savedVersion ? 'Reload saved research to load this edit before undoing.' : 'Research changed after this edit. Use Version history to restore an earlier version.'}</p>}
+              <p>Undo restores all three research sections to version {entry.researchEdit.previousVersion}. The bot’s edit stays in Version history.</p>
+              <button type="button" className="rounded border border-blue-600 px-3 py-1 font-semibold disabled:opacity-40" disabled={busy || !researchTarget || researchTarget.blocked || researchTarget.version !== entry.researchEdit.savedVersion || entry.undone || (!!entry.undoError && !entry.undoError.retryable)} onClick={() => void undoResearch(entry.id, entry.researchEdit!)}>{entry.undone ? 'Bot edit undone' : undoingId === entry.id ? 'Undoing…' : entry.undoError?.retryable ? 'Try Undo again' : 'Undo bot edit'}</button>
+              {entry.undone && <p role="status">Restored version {entry.researchEdit.previousVersion} as version {entry.undoneVersion}. All earlier versions remain available.</p>}
+              {entry.undoError && <p role="alert">{entry.undoError.message}</p>}
+              {!entry.undone && !busy && researchTarget?.blockReason && <p>{researchTarget.blockReason}</p>}
+              {!entry.undone && !busy && researchTarget && researchTarget.version !== entry.researchEdit.savedVersion && <p>{researchTarget.version < entry.researchEdit.savedVersion ? 'Reload saved research to load this edit before undoing.' : 'Research changed after this edit. Use Version history to restore an earlier version.'}</p>}
+              {researchTarget && <button type="button" disabled={busy} className="ml-2 font-semibold text-blue-700 underline disabled:opacity-40 dark:text-blue-300" onClick={() => { researchTarget.showHistory(); setOpen(false); }}>View version history</button>}
             </div>}
             {entry.error && (
               <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
@@ -425,7 +441,9 @@ export function OtcrBot({ researchTarget, initialOpen = false, onOpenChange }: {
             disabled={!projectId}
             className="max-h-40 min-h-[2.75rem] flex-1 resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800"
           />
-          {busy ? (
+          {undoingId ? (
+            <button type="button" disabled className="rounded-lg bg-slate-200 p-2.5 dark:bg-slate-700" aria-label="Undoing research edit"><Loader2 className="h-4 w-4 animate-spin" aria-hidden /></button>
+          ) : busy ? (
             <button type="button" onClick={() => abortRef.current?.abort()} className="rounded-lg bg-slate-200 p-2.5 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600" aria-label="Stop">
               <Square className="h-4 w-4" aria-hidden />
             </button>

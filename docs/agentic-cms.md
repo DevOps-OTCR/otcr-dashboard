@@ -967,3 +967,25 @@ request “Shorten Relevant Past Data and rename [existing bucket] to [name].”
 Review the workspace and chat summary, then Undo in the reply. Try “Rename it”
 for clarification; answer in the normal message box. Switch deliverables and
 confirm the popup header changes and a new chat starts for the selected workspace.
+
+
+Undo polish: each saved edit names the snapshot it will restore and links directly
+to Version history. While restoring, the button shows Undoing, workspace inputs
+lock, and a synchronous guard prevents duplicate clicks. Success names both the
+restored snapshot and its new saved version; the bot edit remains recoverable.
+Drafts, read-only access, newer versions and conflicts explain why Undo is blocked.
+
+Failures appear beside Undo in the chat. A version conflict preserves the newer
+save and directs the user to reload/history. Other failed responses trigger an
+authorized workspace/history read: if the expected next revision is already a
+restore of the requested snapshot, it is shown as success without another write.
+If the saved version is still unchanged, Try Undo again resends the original
+expected version. If the outcome cannot be verified, direct retry stays blocked
+and the user is directed to reload/history. A concurrent or later save is never
+silently replaced; access revocation clears the workspace. No model call, schema
+migration or new backend endpoint is needed for this polish.
+
+Seven browser regression cases cover progress/duplicate clicks, failure/retry,
+a committed restore with a lost response, an unknown outcome, a teammate save
+racing with Undo, consecutive edits/draft blocking, and recovering the bot edit
+from history after a page reload.
