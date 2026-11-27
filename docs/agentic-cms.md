@@ -259,6 +259,335 @@ accessible projects do not see the context tabs. The read-only MCP tool
 `get_project_context` returns overview, scope and paginated call notes under the
 same project access rules. It does not fetch linked files.
 
+## Research workspace foundation (Step 1)
+
+Research is currently a CMS-native, plain-text document stored in PostgreSQL,
+with one shared workspace per deliverable. This is the functional storage
+fallback while Google Docs integration is being investigated. Relevant Past Data
+now has the retrieval/generation workflow described in Step 4. General chat-based
+research editing remains a later step. The manual research UI is described below. Existing
+project-context editors and submission/approval flows are unchanged.
+
+Apply the committed `20261124202640_research_workspace` migration to a local
+development database using the README's `prisma migrate deploy` instructions,
+and regenerate the backend Prisma client. No flag default or live configuration
+change is necessary. The API remains unavailable unless the existing Agentic CMS
+flag and pilot admission permit the signed-in user.
+
+The HTTP base path is
+`/agentic-cms/research/projects/:projectId/deliverables/:deliverableId`.
+Every request uses the same verified Microsoft authentication/enrollment policy
+as the other Agentic CMS endpoints. `ResearchAccessService` reuses CMS deliverable
+scopes, preserving membership, project relationships and draft-week visibility.
+Existing authorized readers can read research. Writes require an assigned
+consultant (including the legacy `assigneeId`), an admin, an LC with project
+access, or the project's owning PM. Assignment never overrides lost project
+access. Read responses include `canEdit` for the future interface.
+
+| Method / suffix | Behavior |
+| --- | --- |
+| `POST` base path | Explicitly initialize three empty root sections; repeat calls reuse the existing workspace without resetting content or adding history. Requires write access. |
+| `GET` base path | Read saved content and current version; never creates a workspace implicitly. An authorized `WORKSPACE_NOT_INITIALIZED` error includes `canEdit` for the create button. |
+| `PUT` base path | Save `{ expectedVersion, document }` as a new revision. |
+| `PATCH /sections/:sectionId` | Save `{ expectedVersion, content?, title?, sourceIds? }` to one existing section without replacing other sections. |
+| `GET /revisions?limit=20&beforeVersion=…` | List revision metadata newest first; continue with `nextBeforeVersion` until null. Maximum page size is 50. |
+| `POST /restore` | Restore `{ expectedVersion, targetVersion }` as a new revision; earlier versions remain available. |
+
+Workspace responses contain `id`, `deliverableId`, `projectId`, `storage: "cms"`,
+`version`, `document`, `canEdit`, `createdAt` and `updatedAt`. A document has:
+
+```json
+{
+  "schemaVersion": 1,
+  "sections": [
+    { "id": "past-data", "tab": "past-data", "title": "Relevant Past Data", "content": "", "sourceIds": [] },
+    { "id": "framework", "tab": "framework", "title": "Framework / Structure", "content": "", "sourceIds": [] },
+    { "id": "findings", "tab": "findings", "title": "Findings", "content": "", "sourceIds": [] }
+  ],
+  "sources": []
+}
+```
+
+The three root IDs are stable even when titles change. Additional sections can
+use distinct stable IDs and one of the three tab values. Array order is display
+order; section identity must never depend on its title or index. Sources are
+`{ id, title, url }` with HTTP(S) URLs. Each section's `sourceIds` must refer to
+the document's stored source registry. Storage validates references but does not
+claim to verify source content. Text is plain text; render it safely in the UI.
+Documents allow up to 100 sections, 200 sources, 50,000 characters per section,
+and 200,000 serialized characters overall; the server's HTTP body limit also
+applies. IDs use letters, numbers, underscores or hyphens, up to 100 characters.
+
+Initialization records version 1. Every successful save or restore commits both
+the new document and a complete revision snapshot in one database transaction.
+Revisions record author, timestamp, action (`INITIALIZE`, `EDIT`, `RESTORE`) and,
+for restores, the original version. Sources are part of each snapshot and survive
+restarts independently of the bot's in-memory chat history. Versions and history
+belong to this research workspace, not the deliverable's submission versions.
+
+Send the last-read version as `expectedVersion` on every edit/restore. A stale
+request returns HTTP 409 / `VERSION_CONFLICT`, with no changes committed; reload
+and reconcile rather than blindly retrying. Restore replaces the **whole research
+document**, including its sources, and creates a new version. It does not erase
+history, alter submissions, or automatically approve work. A later UI should
+make the scope of restore clear when multiple consultants share a workspace.
+
+Uninitialized workspaces return 404 / `WORKSPACE_NOT_INITIALIZED`; unknown
+sections/revisions return 404; invalid payloads return 400 / `INVALID_ARGUMENT`.
+Unauthorized or mismatched parent records return a generic 404 without reading
+research content. Access is checked again before writes and before returning
+content/history. Storage lives behind `ResearchDocumentAdapter`, implemented by
+`CmsResearchDocumentAdapter`. A future Google Docs adapter must preserve these
+permissions, conflict checks and durable history; adding a URL alone does not
+connect synchronization.
+
+Validation: `research-workspace.http.spec.ts` uses the actual module/global guard
+with synthetic authentication and mocked storage. It covers flag-off/default-off
+and flag-on operation, ordinary CMS availability, malformed tokens, enrollment,
+pilot admission, assigned/read-only users, manager roles and mid-request access
+changes. `research-workspace.integration.spec.ts` applies committed migrations to
+an isolated local PostgreSQL schema and checks shared initialization, persistence,
+source snapshots, concurrent saves, rollback, restore and real permission scopes.
+Run `npm --prefix backend run test:integration` to include it in the dedicated
+local test database suite. No model, Google API or real client material is used.
+
+### Manual research UI (Step 2)
+
+Run the frontend and backend using the README's local development instructions,
+with the research migration applied. Enable the existing backend flag and limit
+the pilot allowlist to your account locally. Keep the checked-in flag default
+off. No model key is needed to use the manual research workspace. Sign in with
+your normal enrolled Microsoft account and open `/agentic-cms`, then choose
+**Research**, a project, a workstream and a deliverable within that workstream.
+The two research dropdowns group by workstream ID, default to the newest available
+workstream, and retain standalone deliverables under **No workstream**. Only
+workstreams with visible deliverables appear. Project selection is shared with the
+existing context panels. Selecting a deliverable reads its workspace without
+creating anything automatically. If it is missing, the server's `canEdit`
+response determines whether **Create research workspace** is offered. Other
+404s and connection failures show a retry state instead of offering creation.
+
+The three research tabs support manual titles and plain-text content. The
+interface displays saved version, last-save time and unsaved status; **Save
+research** saves the complete draft across all three tabs. Stored sources are
+rendered as links beside their associated section. Relevant Past Data retrieval
+is described in Step 4. Automatic framework headings, adding/removing framework
+sections and general bot edits arrive in later steps. Saved documents remain CMS-native until an external adapter is
+connected.
+
+Switching research tabs or existing Agentic CMS tool tabs preserves the draft.
+Switching projects/workstreams/deliverables or reloading saved research asks before discarding
+unsaved text; closing/reloading the browser uses the native unsaved-changes
+warning. Drafts are held in memory, not local storage. Navigate away only after
+saving: internal navigation away from the Agentic CMS page unmounts its editor.
+Save failures retain the draft. A version conflict keeps it visible and disables
+further saves until the user copies anything needed and explicitly reloads the
+latest document. No automatic overwrite or conflict merge is attempted.
+
+**Version history** loads revision metadata in pages. Restoring requires an
+explicit confirmation explaining that all three tabs and sources will be
+replaced; it creates a new version. Restore is disabled while a draft is unsaved.
+Read-only users can view research/history but cannot create, save or restore.
+Late read/write responses from a previous selection are ignored. Sign-out,
+account change or feature revocation unmounts the gated feature and clears its
+in-memory drafts.
+
+`frontend/tests/agentic-research-browser.test.cjs` uses the real gated feature,
+editor and API client with synthetic sign-in/API responses. It covers flag-off
+blocking before project/research reads, flag-on creation/edit/save/reload,
+permissions, pagination, retries, conflicts, restoration, draft protection,
+late responses, sign-out/revocation, source links and narrow-screen layout.
+It runs as part of `npm --prefix frontend run test:navigation:browser`; it does
+not verify live Microsoft sign-in or Google Docs.
+
+### Research initialization on release (Step 3)
+
+Successful calls to the existing `PATCH /projects/:id/sprints/:sprintId/status`
+with `status: "RELEASED"` now initialize research for each deliverable in that
+project/week. The `ResearchReleaseInterceptor`, registered from AgenticCmsModule,
+observes that exact controller handler after it succeeds. Shared CMS controllers,
+pages and release services do not import feature code. Draft changes and failed
+release requests do not start preparation.
+
+The hook checks the existing flag/pilot before any research operation, then reuses
+`AuthGuard.canActivate(context, { verifiedOnly: true })`: the same verified-only
+Microsoft token, enrollment and active-user policy used by Agentic CMS routes.
+Legacy email credentials can still release an ordinary week, but cannot start
+research. Non-pilot users and users without project/deliverable access cannot
+prepare research. The ordinary release result and notifications stay independent:
+disabled/denied/failed preparation does not fail a successful release. This
+non-prefix entry point needs Isaiah's boundary review before integration.
+
+Apply migration `20261124210930_research_preparation` and regenerate Prisma before
+running the updated backend. `ResearchPreparation` stores one status record per
+deliverable, attempts, timestamps, a generic failure code and a two-minute claim
+lease. It stores no bearer tokens, prompts or client content. Atomic claims and
+the workspace's unique deliverable key prevent duplicate initialization. Each
+workspace and its first revision are still created together; repeated releases,
+retries or manual initialization preserve existing text, sources and history.
+
+Workspace preparation creates the three blank sections and runs inline after
+release. Step 4 then queues optional Relevant Past Data generation separately;
+the release response does not await the model. There is no startup worker,
+scheduler or automatic retry. Existing
+released weeks are not backfilled at startup. Releasing a week again prepares
+missing workspaces. A newly added deliverable after release needs manual creation,
+a preparation retry, or another release request.
+
+Project access, assignment/manager write permission, pilot access and the week's
+released status are rechecked before initialization and status writes. Changing
+the flag, membership or week back to draft stops further preparation writes. A
+claim left by interrupted work becomes retryable after two minutes; old claim
+owners cannot overwrite the new claim's status. Durable status is recoverable
+through the APIs below, not by resuming background work automatically.
+
+| Method / suffix on the existing research base path | Behavior |
+| --- | --- |
+| `GET /preparation` | Return `state`, `attempts`, timestamps, `interrupted`, generic `message` and server-calculated `canRetry`. |
+| `POST /preparation/retry` | Retry initialization for an authorized editor of a released deliverable; return the current preparation status. |
+
+States are `NOT_STARTED`, `PENDING`, `PREPARING`, `READY` and `FAILED`. An existing
+workspace is authoritative for `READY`, including manually created research or a
+successful initialization whose final status write failed. An active lease cannot
+be claimed by another retry. Failures after a claim are recorded when access and
+storage allow it; loss of access leaves the lease untouched for later recovery.
+If storage fails before a status record can be created, the UI may show not
+started or a status-read error rather than a recorded failure.
+
+The Research tab shows workspace preparation status and an authorized retry
+button for failed, pending or interrupted work. It polls only active preparation,
+stops on unmount/revocation, and opens newly prepared research without replacing
+an existing editor draft. Manual creation remains available for older workspaces
+and permitted draft deliverables.
+
+Validation includes the real release controller, global guard and interceptor
+with synthetic verification, plus PostgreSQL integration cases for actual
+release-to-workspace creation with the flag off/on. Tests cover independent
+release success, legacy-credential exclusion, revoked enrollment/pilot, role
+denial, concurrent initialization, failure/retry, active/expired claims,
+preserving saved research and mid-operation access changes. Browser tests cover
+status display, retry, polling and read-only access. No live model or external
+document operation is used.
+
+### Relevant Past Data first pass (Step 4)
+
+The dedicated workflow uses the existing OTCR Bot `MODEL_CLIENT` and on-demand
+`relevant-past-data` skill. It performs retrieval before generation rather than
+running a free-form chat/tool loop. There is no vector index, embedding service,
+web search, linked-file reader or Google Docs dependency in this pass.
+
+The input is the selected deliverable title/brief, workstream notes, project
+overview/scope, and an optional consultant focus (maximum 1000 characters).
+Retrieval stays within the current project. It considers:
+
+- Project overview and scope, plus the 60 most recent available pasted call notes.
+- Notes from up to 20 earlier **released** workstreams.
+- Up to 60 deliverables in earlier released workstreams: assignment descriptions,
+  up to three recorded feedback entries each, and saved Framework/Findings text.
+- No current/future workstream outputs, unreleased workstreams, linked submission
+  contents or recursively copied Past Data summaries.
+
+Keyword overlap with the assignment and optional focus ranks candidates, with
+extra weight for focus terms and project constraints retained. Up to 24 source
+excerpts of 2400 characters each reach the model. These are candidate leads:
+the model can reject irrelevant material or return zero items. The preview and
+saved diagnostics expose counts, query terms and whether limits were reached;
+this is explicitly not exhaustive semantic search. Limits and stopwords live in
+`past-data-retrieval.service.ts`, not a browser switch.
+
+The skill distinguishes client decisions from assumptions, prior assignment
+briefs and preliminary findings. Model output is bounded JSON containing at
+most eight source-linked items and six gaps. Every item must name a supplied
+source ID and quote a continuous verbatim substring of its supplied text. The
+backend rejects fabricated IDs, duplicate IDs, invented quotations, malformed
+JSON and tool calls. This validates traceability, not the truth or entailment of
+every paraphrase: consultants must still review summaries against their sources.
+Sparse results explicitly state that little history was found in the searched
+records. The input is wrapped as untrusted `<tool_data>`; only the repository
+skill is passed as instructions.
+
+Generation is auto-scheduled after release prepares each workspace, only if its
+Past Data is blank and it has never had a generation record. Repeat releases
+do not regenerate existing results or overwrite manual past data. Existing
+released workstreams can use the manual button. No model call runs while the
+release flag is off, pilot access is denied, enrollment is revoked, the actor is
+inactive, project/assignment access is lost or the target workstream is not
+released. Actor permissions and original sources are rechecked after generation
+and before saving. Changed sources/assignment or a changed workspace version
+cause a conflict instead of overwriting work.
+
+`ResearchPastData` stores durable status, focus, attempts, request token, base
+workspace version, last successful result and retrieval diagnostics. New work
+starts only from an authorized release/action; a single in-process drain limits
+model concurrency to one per backend instance, with a 45-second model timeout
+and two-minute running lease. There is no restart-time worker. Interrupted queued
+requests become manually retryable after 30 seconds; interrupted running work
+after lease expiry. A new request token invalidates superseded requests. Missing
+Lumen configuration creates a clear failure, never a fake summary, and does not
+block manual editing or source preview. The queue is a prototype, not a
+distributed job processor; restarting the backend can require a manual retry.
+
+Successful output changes only the `past-data` root section and its source
+registry. Framework/Findings and extra manual sections remain intact. The new
+workspace revision and successful generation status commit in one transaction.
+Refresh confirms replacement of saved past data, is disabled with unsaved edits,
+and remains undoable through Version history. Failed runs keep the previous
+document/result. The UI never replaces an unsaved draft when a newer bot save
+arrives; it tells the consultant to copy needed text and reload explicitly.
+
+| Method / suffix on the research base path | Behavior |
+| --- | --- |
+| `GET /past-data` | Current generation status, configuration availability and last successful result; read-only viewers cannot generate. |
+| `POST /past-data/preview` | `{ focus? }`: retrieve authorized candidate sources without a model call or document write. Requires edit access and a released target. |
+| `POST /past-data/generate` | `{ focus?, expectedVersion }`: queue a version-checked generation/refresh and return status. |
+| `GET /past-data/source?kind=…&recordId=…` | Read a bounded current source excerpt with fresh project, record and release checks. |
+
+Source links open the gated `/agentic-cms` source viewer using project,
+deliverable, source kind and record IDs. They never put bearer tokens or client
+text in the URL. The viewer shows the current source/date, explicitly warns that
+an earlier summary may refer to an older version, and denies deleted, moved,
+unreleased or inaccessible source records. A source link is not a claim that a
+linked native document was read.
+
+Apply migration `20261124214831_research_past_data` and regenerate the backend
+Prisma client before running this step. Continue to use your own Lumen key in
+the backend's ignored local environment. No new provider/release switch is added.
+
+#### Local test and tuning walkthrough
+
+1. Add two synthetic Client Call Notes in the same project: one clear relevant
+   decision (e.g. “Exclude enterprise buyers because rollout exceeds budget”),
+   and one irrelevant note (e.g. lunch logistics). Add useful Findings to an
+   earlier released deliverable if you want to test research reuse.
+2. Choose a later released workstream and deliverable in Research. Click
+   **Preview sources**. Check that relevant notes/history appear, foreign or
+   unreleased records do not, and **Open source record** shows the original text.
+   This works without a model key.
+3. Configure your own `LUMEN_API_KEY` locally and restart the backend if needed.
+   Click **Generate past data**, or release a new draft workstream to test the
+   automatic path. Model errors should be visible without affecting release.
+4. Review the saved summary: does it retain the relevant decision, explain its
+   effect on the assignment, avoid irrelevant notes, and quote/link real sources?
+   Open **Last bot retrieval** to inspect the focus, model, source count and limits.
+5. Try a focus such as “Prior client constraints and rejected customer segments”.
+   Preview again, then refresh. Compare the result and use Version history to
+   undo. Clear focus to test the assignment-only baseline.
+6. Improve the brief/workstream notes first. If good sources are retrieved but
+   summarized poorly, edit `agentic-cms/skills/relevant-past-data/SKILL.md` and
+   rerun (skills load on demand). If sources are missing from preview, inspect
+   dates/release state, keywords and `PAST_DATA_LIMITS`; backend code changes
+   require a rebuild/restart. Keep a small before/after example rather than
+   increasing retrieval limits blindly.
+
+Tests use a counting fake model only inside test files and synthetic PostgreSQL
+schemas. Coverage includes source isolation, flag-off blocking, enrollment,
+permissions, output/citation validation, sparse history, injection markers,
+conflicts, revoked access, status/save atomicity, automatic scheduling and repeat
+release behavior. HTTP tests exercise the existing global guard. Browser tests
+cover preview/source links, missing configuration, generation and draft safety.
+Run the same backend/integration/browser commands documented above. No live model
+quality evaluation or production/client-material upload is performed by tests.
+
 ## Backend enforcement
 
 The globally registered `AgenticCmsGuard` protects every Nest HTTP controller
@@ -407,3 +736,256 @@ context HTTP writes followed by MCP reads and denial after CMS enrollment is
 revoked. The context browser suite covers save/reload, project switching during
 reads and writes, note creation/deletion, and project-specific edit controls.
 Browser fixtures use synthetic sign-in. Record current validation results in the PR.
+
+### Research step 5: Framework / Structure
+
+The Framework tab keeps its blank writing area and adds a structured editor:
+objective → buckets → research questions, each with an evidence-needed
+note. Existing schema-v1 documents remain valid. Optional `framework` and
+`frameworkSuggestion` fields live in the same PostgreSQL JSON document and revision
+history; no database migration or Google Docs dependency is required.
+
+`POST /agentic-cms/research/projects/:projectId/deliverables/:deliverableId/framework/generate`
+accepts `{expectedVersion, focus?}` (focus ≤1000 characters). It uses the same
+verified guard, backend feature flag, active enrollment, project access and assigned
+editor checks. Generation requires a released workstream. The request runs one
+45-second-bounded Lumen call, no tools or web fetches, and loads
+`agentic-cms/skills/research-framework/SKILL.md` on demand. Context is the authorized
+brief, scope, workstream notes, saved Past Data and planning notes. It does not
+retrieve history again or research answers. Suggestions are provisional plans,
+not sourced findings. At most one framework generation per user per backend
+instance can run concurrently; this prototype does not use a durable job queue.
+A restart interrupts the request; retry manually. No generation happens at startup
+or automatically on release.
+
+Strict output validation rejects malformed trees and more than 30 questions; the
+server assigns IDs. The assignment and access are checked again before the
+existing version-checked revision save. Generation only replaces the suggestion.
+Errors, changed assignments or concurrent saves preserve the existing document.
+The UI blocks generation with unsaved edits and disables editing while the request
+is pending. A successful suggestion is auto-saved; adoption and manual framework
+edits are drafts until **Save research**.
+
+Consultants can adopt all or selected buckets, or build a tree manually without a
+model. Chosen questions create empty Findings sections linked by stable
+`frameworkQuestionId`. Renaming or reordering updates headings without changing
+content, IDs or citations. Removing a question/bucket asks for confirmation;
+nonempty findings or sections with citations become **Unassigned findings**.
+Empty removed sections are discarded. Existing freeform Findings and Framework
+text remain available. Rename linked headings through the framework editor.
+Restore uses the existing whole-document revision flow, including both trees and
+all findings.
+
+Local manual checks:
+1. Open `/agentic-cms`, select Research → a released workstream → deliverable →
+   Framework / Structure. Optionally generate Past Data first.
+2. Enter a focus, Generate framework; inspect question relevance, scope,
+   assumptions, evidence methods and missing-context questions.
+3. Adopt selected buckets, Save research, then open Findings. Each question has
+   an empty writing area under its bucket label.
+4. Write and save a finding. Rename/reorder its question in Framework, save, and
+   verify the content survives. Remove the question, save, and verify its text
+   remains as Unassigned findings.
+5. Reload; check persistence. Use Version history to restore the whole document.
+6. Without generation, Add bucket → Add question should also work.
+
+Automated flag-off/on evidence: framework integration cases in
+`research-past-data.integration.spec.ts` cover no model access with flag off,
+project/editor/release boundaries, malformed output, concurrent edits, revocation,
+revision restore and linked-section validation. `research-past-data.http.spec.ts`
+checks the real module's framework route authentication and flag boundary.
+Research browser tests cover selection/adoption, manual editing, rename/reorder,
+non-destructive removal and viewer restrictions with mocked API responses.
+
+The framework editor uses expandable bucket cards. Select suggested buckets using
+their highlighted checkboxes, expand Questions & evidence to inspect them, then
+adopt the selection. Chosen bucket cards expand to edit names, questions and
+evidence notes. A top disclosure makes clear
+that adoption keeps questions editable. The old freeform title editor is hidden
+in this tab; existing text remains editable under Additional framework notes
+(optional). Legacy subgroup-shaped trees are normalized on read/restore into
+bucket-level questions with stable question IDs, preserving linked findings and
+revision history. No database migration or content deletion is required.
+
+### Research step 6: Context-aware bucket findings
+
+In Framework / Structure, expand a chosen bucket and select **Research this
+bucket** to open Findings with that bucket selected. Save framework/manual drafts
+before starting. The Findings panel accepts an optional focus and offers **Add
+findings** (default) or **Revise findings**, with confirmation before replacement.
+Results auto-save as one research revision. Other buckets and tabs are preserved;
+whole-document Version history provides undo. A question with no newly supported
+claims keeps its previous findings, even in Revise mode, and receives a gap note.
+
+Routes under the existing research project/deliverable base:
+- `GET /findings/capabilities` checks access, release, model and search availability.
+- `POST /findings/buckets/:bucketId/research` accepts
+  `{expectedVersion, mode: "add" | "revise", focus?}`. Verified server identity,
+  active enrollment, backend feature flag/pilot and project/editor permissions are
+  enforced. Only released workstreams and adopted buckets with 1–8 questions can
+  run. No startup jobs, automatic bucket research, new flags or browser bypasses.
+
+The pipeline uses the existing `research` skill's evidence/appraisal/attribution
+standards with a CMS JSON output protocol. Search planning now receives the
+brief, project scope/overview, workstream notes, research objective, bucket,
+questions/evidence requirements, optional focus, saved Past Data/planning notes,
+and bounded prior project context. Large context fields are clipped to bound
+model input. All records and web material are untrusted data. The planner must
+turn that context into public topic queries, omitting private client identity,
+internal quotations, secrets, emails and private URLs.
+
+1. Plan up to **6 focused initial searches** (fewer for narrow/private questions).
+   A malformed/oversized plan gets one bounded correction, then an explicit
+   `INVALID_SEARCH_PLAN` error if still invalid.
+2. Search through the existing Tavily client, at most **2 calls concurrently**.
+   Deduplicate equivalent/tracking URLs and sample results across queries so the
+   first query cannot consume the entire page budget. Extract up to **8 initial
+   public pages** through Tavily's fixed extraction endpoint.
+3. Assess evidence coverage against the brief, geography, every question and
+   compared company. If needed, make **one follow-up round**, at most **2 additional
+   queries and 4 additional pages**. Duplicate queries/pages are not repeated.
+   Total maximum: **8 searches / 12 extracted pages**. If optional coverage review
+   fails, keep available evidence and disclose that limitation.
+4. Synthesize each chosen question from the combined evidence. Search snippets
+   and unread pages are leads, never claim evidence. No linked client files or
+   interviews are read/performed. Without a Tavily key, use authorized project
+   records and report missing external evidence.
+5. Validate and recover before a single version-checked document save.
+
+Claim text may be paraphrased. Its supporting quotation must match a continuous
+span of a known retrieved source. Differences only in layout whitespace are
+accepted, then replaced with the actual source span for storage. Changed words,
+joined passages and unknown source IDs are not accepted as quotations. A draft gets at most one correction turn, for unreadable JSON/schema formatting or
+for untraceable citations. Each question may contain up to eight claims/gaps;
+multiple supported comparison details are not rejected by the old three-claim cap. If a claim still
+cannot be verified, omit that claim and add an explicit gap while retaining
+supported claims and other questions. Missing/duplicate question answers become
+gaps; unknown question IDs are never used as write targets. An implication is
+removed when it could depend on an omitted claim. An unreadable overall JSON
+response still fails safely without replacing saved research.
+
+Source provenance is determined from retrieved metadata, not the model's label.
+Internal records are attributed as project records; mixed evidence is labeled
+accordingly. A client statement cannot become an independently verified external
+fact through a model label. Exact citation checks do not prove semantic entailment,
+independent corroboration or source quality: review the source originals before
+client use. Geographic relevance is assessed by the planning/coverage/synthesis
+instructions, not guaranteed by URL validation.
+
+Feature/pilot and current project/editor access are rechecked before every model,
+search, extraction and source read, and immediately before the save. Changed CMS
+sources/assignments, permission loss or concurrent saves prevent overwriting the
+workspace. Successful partial recovery returns omitted-claim/missing-answer counts,
+search/page counts and follow-up status. The UI explicitly reports saved findings
+with gaps instead of a whole-run citation failure.
+
+Requests have a **180-second overall deadline**; the browser allows 210 seconds.
+Per-instance limits remain one active request/user, two active requests globally,
+and 12 runs/user/hour. These counters reset on restart. Requests are synchronous,
+not durable jobs: after a disconnect, reload before retrying in case work saved.
+Source IDs fingerprint the excerpt; optional `readStatus`, `excerpt`, `accessedAt`
+metadata and all findings remain in the existing workspace JSON/revisions. No new
+migration is needed. Extraction accepts at most 12 public URLs and bounds provider
+responses to 1 MB and individual excerpts to 5000 characters.
+
+Validation includes flag-off/on and real HTTP guard tests; project/editor/release
+boundaries; expanded budget/concurrency and fair selection; context passed to the
+planner; targeted follow-up; revocation between coverage and search; exact and
+whitespace-normalized quotes; missing/unknown citations; partial recovery; existing
+answer preservation; concurrent edits, restore and source snapshots. Browser tests
+cover normal runs, add/revise, progress, failure/retry, read-only/dirty controls and
+successful partial results with visible gap warnings.
+
+
+### Research step 7: Editing through the existing OTCR Bot popup
+
+Open Research, select a deliverable and use the existing OTCR Bot popup. Its
+header names the selected deliverable and version. Type a requested edit to any
+combination of Relevant Past Data, Framework / Structure and Findings. Optional
+shortcuts fill the normal chat input without running anything. Ordinary questions
+remain discussion; edits auto-save. Save manual drafts first. The workstream must
+be released and the local Lumen model configured.
+
+The chat request carries a strict optional `research` context: selected
+`deliverableId`, `expectedVersion`, `editingBlocked`, and optional original prompt
+with up to three clarification answers. Project and workstream stay bound to the
+normal verified chat request. The model can choose `edit_research_workspace`, an
+argument-free action that uses the actual user message and selected workspace;
+it cannot pick a different deliverable, version, author or substitute a prompt.
+The editing service checks current membership, assignments, active enrollment,
+release status, feature flag/pilot and version before doing work and again before
+saving. Browser context and blocked state are UX hints, never authorization.
+
+The action invokes the existing ResearchEditService and its `research-editing`
+skill. The internal editing skill is omitted from the general bot's skill menu;
+only the editing service loads it. The original bounded `POST
+.../deliverables/:deliverableId/bot-edit` API also delegates to this same service.
+A targeted operation plan edits section text/titles/citations, objectives, buckets
+and questions, including ordering. The server assigns new IDs and creates empty
+Findings sections for added questions. Question renames keep linked findings;
+removal preserves nonempty findings as unassigned content. Source records stay
+intact and citations must reference saved sources. Invalid plans get one
+correction, then fail without overwriting saved research. This action edits
+existing content; use Research this bucket for new sources or external research.
+
+A `research_edit` stream event reports a saved edit, clarification or no change.
+Saved events contain version metadata and a summary, not the document body.
+The workspace refreshes after a successful edit and the reply displays changes
+and Undo. Clarification uses the same chat input, retaining the original request;
+no revision is created until a valid edit is ready. Start a New chat to replace a
+pending request. A changed version invalidates its clarification. One turn caches
+its edit outcome so repeated tool calls cannot apply the edit twice.
+
+Undo restores all three sections to the version immediately before that edit,
+creating another revision. It is available only while that edit is the latest
+saved version and there is no manual draft/conflict. After later changes, use
+Version history. Workspace controls lock while chat runs, but unsaved drafts
+still allow discussion with editing blocked. Switching deliverables, projects or
+out of Research resets the chat scope, cancels the old stream and ignores late
+results. Closing/reopening the popup retains the current scoped chat. Stop aborts
+in-flight editing and checks cancellation before saving; an already completed
+save stays in history. A saved edit still shows Undo if the remaining model reply
+fails, and does not offer Retry that could blindly repeat that edit.
+
+Editing limits remain 90 seconds overall, 55 seconds per model turn, one active
+edit per user, two per process, and 20 attempts per hour per user per process.
+Constructors do not read skills or start model work. The feature defaults off.
+Adding this optional chat write action requires Isaiah's boundary review before
+merge; this implementation does not deploy or change live configuration.
+
+Validation includes operation and PostgreSQL tests for stable links, source
+checks, server IDs, orphan preservation, auto-save, restore, authorization,
+revocation, conflicts and invalid plans. Chat action tests exercise real agent
+routing, flag off/on, exact request binding, repeated calls, clarification and
+nested input validation. HTTP tests verify authentication and flag boundaries.
+Browser tests cover popup edits/refresh/Undo, clarification, discussion with dirty
+workspaces, stale replies after switching deliverables, and saved edits followed
+by a failed reply. The flag-off browser test makes only the feature-status request.
+
+Manual check: select a released deliverable, save any draft, open OTCR Bot and
+request “Shorten Relevant Past Data and rename [existing bucket] to [name].”
+Review the workspace and chat summary, then Undo in the reply. Try “Rename it”
+for clarification; answer in the normal message box. Switch deliverables and
+confirm the popup header changes and a new chat starts for the selected workspace.
+
+
+Undo polish: each saved edit names the snapshot it will restore and links directly
+to Version history. While restoring, the button shows Undoing, workspace inputs
+lock, and a synchronous guard prevents duplicate clicks. Success names both the
+restored snapshot and its new saved version; the bot edit remains recoverable.
+Drafts, read-only access, newer versions and conflicts explain why Undo is blocked.
+
+Failures appear beside Undo in the chat. A version conflict preserves the newer
+save and directs the user to reload/history. Other failed responses trigger an
+authorized workspace/history read: if the expected next revision is already a
+restore of the requested snapshot, it is shown as success without another write.
+If the saved version is still unchanged, Try Undo again resends the original
+expected version. If the outcome cannot be verified, direct retry stays blocked
+and the user is directed to reload/history. A concurrent or later save is never
+silently replaced; access revocation clears the workspace. No model call, schema
+migration or new backend endpoint is needed for this polish.
+
+Seven browser regression cases cover progress/duplicate clicks, failure/retry,
+a committed restore with a lost response, an unknown outcome, a teammate save
+racing with Undo, consecutive edits/draft blocking, and recovering the bot edit
+from history after a page reload.

@@ -129,6 +129,7 @@ model User {
   attendanceAvailabilitySelections AttendanceEventAvailabilitySelection[]
   when2MeetPollsCreated When2MeetPoll[]          @relation("When2MeetPollCreator")
   when2MeetAvailabilities When2MeetAvailability[]
+  researchRevisions ResearchRevision[]
 
   @@index([googleId])
   @@index([email])
@@ -519,12 +520,101 @@ model Deliverable {
   subtasks    DeliverableSubtask[]
   submissions Submission[]
   extensions  Extension[]
+  researchWorkspace ResearchWorkspace?
+  researchPreparation ResearchPreparation?
+  researchPastData ResearchPastData?
 
   @@index([projectId])
   @@index([sprintId])
   @@index([assigneeId])
   @@index([deadline])
   @@index([status])
+}
+
+// CMS-native research content. Google Docs is a later adapter, not a second copy.
+model ResearchWorkspace {
+  id            String   @id @default(cuid())
+  deliverableId String   @unique
+  version       Int      @default(1)
+  document      Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  deliverable Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+  revisions ResearchRevision[]
+}
+
+model ResearchPastData {
+  id String @id @default(cuid())
+  deliverableId String @unique
+  status ResearchPastDataStatus @default(PENDING)
+  attempts Int @default(0)
+  focus String @default("")
+  baseVersion Int
+  requestToken String
+  leaseExpiresAt DateTime?
+  model String?
+  result Json?
+  errorCode String?
+  lastAttemptAt DateTime @default(now())
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deliverable Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+}
+
+enum ResearchPastDataStatus {
+  PENDING
+  RUNNING
+  READY
+  FAILED
+  CONFLICT
+}
+
+model ResearchPreparation {
+  id            String @id @default(cuid())
+  deliverableId String @unique
+  status        ResearchPreparationStatus @default(PENDING)
+  attempts      Int @default(0)
+  leaseToken    String?
+  leaseExpiresAt DateTime?
+  lastAttemptAt DateTime?
+  completedAt   DateTime?
+  errorCode     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  deliverable Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+}
+
+enum ResearchPreparationStatus {
+  PENDING
+  PREPARING
+  READY
+  FAILED
+}
+
+model ResearchRevision {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  version       Int
+  document      Json
+  action        ResearchRevisionAction
+  restoredFromVersion Int?
+  authorId      String?
+  createdAt     DateTime @default(now())
+
+  workspace ResearchWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  author User? @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@unique([workspaceId, version])
+  @@index([authorId])
+}
+
+enum ResearchRevisionAction {
+  INITIALIZE
+  EDIT
+  RESTORE
 }
 
 model DeliverableSubtask {

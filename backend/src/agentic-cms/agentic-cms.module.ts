@@ -1,4 +1,14 @@
+import { ResearchChatTool } from './research/research-chat.tool';
+import { ResearchEditController } from './research/research-edit.controller';
+import { ResearchEditService } from './research/research-edit.service';
+import { ResearchFindingsController } from './research/research-findings.controller';
+import { ResearchFindingsService } from './research/research-findings.service';
+import { TavilyExtractClient } from './search/tavily-extract.client';
+import { ResearchFrameworkController } from './research/research-framework.controller';
+import { ResearchFrameworkService } from './research/research-framework.service';
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { AuthModule } from '../auth/auth.module';
 import { FeatureFlagsModule } from '../feature-flags/feature-flags.module';
 import { ProjectsModule } from '../projects/projects.module';
 import { AgentService } from './agent/agent.service';
@@ -18,11 +28,32 @@ import { CmsReadTools } from './tools/cms-read.tools';
 import { LoadSkillTool } from './tools/load-skill.tool';
 import { ToolRegistry } from './tools/tool-registry';
 import { WebSearchTool } from './tools/web-search.tool';
+import { ResearchAccessService } from './research/research-access.service';
+import { CmsResearchDocumentAdapter, ResearchDocumentAdapter } from './research/research-document.adapter';
+import { ResearchWorkspaceController } from './research/research-workspace.controller';
+import { ResearchWorkspaceService } from './research/research-workspace.service';
+import { ResearchPreparationService } from './research/research-preparation.service';
+import { ResearchReleaseInterceptor } from './research/research-release.interceptor';
+import { PastDataRetrievalService } from './research/past-data-retrieval.service';
+import { ResearchPastDataService } from './research/research-past-data.service';
+import { ResearchPastDataController } from './research/research-past-data.controller';
 
 @Module({
-  imports: [FeatureFlagsModule, PrismaModule, ProjectsModule],
-  controllers: [AgenticCmsController, McpController, ChatController],
+  imports: [FeatureFlagsModule, PrismaModule, ProjectsModule, AuthModule],
+  controllers: [ResearchEditController, ResearchFindingsController, ResearchFrameworkController, AgenticCmsController, McpController, ChatController, ResearchWorkspaceController, ResearchPastDataController],
   providers: [
+    ResearchEditService,
+    ResearchChatTool,
+    ResearchFindingsService,
+    TavilyExtractClient,
+    ResearchFrameworkService,
+    PastDataRetrievalService,
+    ResearchPastDataService,
+    ResearchPreparationService,
+    { provide: APP_INTERCEPTOR, useClass: ResearchReleaseInterceptor },
+    ResearchAccessService,
+    ResearchWorkspaceService,
+    { provide: ResearchDocumentAdapter, useClass: CmsResearchDocumentAdapter },
     CmsReadAccessService,
     CmsReadService,
     ReadCursorService,

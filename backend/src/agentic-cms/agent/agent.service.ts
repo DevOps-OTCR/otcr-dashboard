@@ -1,4 +1,5 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ResearchChatTool } from '../research/research-chat.tool';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { FeatureFlagsService } from '../../feature-flags/feature-flags.service';
 import { assistantMessage, ChatMessage, MODEL_CLIENT, ModelClient, ModelRequest } from '../model/model-client';
@@ -54,6 +55,7 @@ export class AgentService {
     private readonly tools: ToolRegistry,
     private readonly skills: SkillLibrary,
     private readonly config: ConfigService,
+    @Optional() private readonly researchEdits?: ResearchChatTool,
   ) {}
 
   /** docs/agentic-cms.md: recheck before each new model or tool operation. */
@@ -91,8 +93,8 @@ export class AgentService {
     const prior = history[history.length - 1];
     const retrying = prior?.role === 'user' && prior.content === input.message;
     const turnMessages: ChatMessage[] = retrying ? [] : [userMsg];
-    const tools = await this.tools.available();
-    const skills = tools.some((t) => t.name === 'load_skill') ? await this.skills.list() : [];
+    const tools = [...await this.tools.available(), ...(this.researchEdits?.forTurn(input, send) ?? [])];
+    const skills = tools.some((t) => t.name === 'load_skill') ? (await this.skills.list()).filter(skill => skill.name !== 'research-editing') : [];
     const system = buildSystemPrompt({
       user: input.user,
       projectId: input.projectId,
@@ -102,7 +104,8 @@ export class AgentService {
       skills,
       // Older turns' search results may have dropped out of the history window; this keeps their [n] meaning visible.
       sources: await this.store.sources(convo.id),
-    });
+    }) + (input.research ? `
+The user is viewing a selected research workspace. For an explicit request to edit its saved content, call edit_research_workspace, which uses the actual user request and loads its own editing skill. Do not load research-editing directly. Never claim saved changes without a successful tool result. Ordinary questions remain discussion; no edit is authorized merely by viewing a workspace. New evidence belongs in Research this bucket. If a pending clarification is supplied, call edit_research_workspace to process the answer. Report its clarification question exactly and do not claim changes. After a successful edit, report the summary; the UI supplies Undo.` : '');
     const schemas = this.tools.schemas(tools);
 
     // Sources this turn's tools returned. Their [n] numbers come from the conversation's
