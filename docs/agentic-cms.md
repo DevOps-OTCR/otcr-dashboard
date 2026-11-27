@@ -800,7 +800,7 @@ non-destructive removal and viewer restrictions with mocked API responses.
 The framework editor uses expandable bucket cards. Select suggested buckets using
 their highlighted checkboxes, expand Questions & evidence to inspect them, then
 adopt the selection. Chosen bucket cards expand to edit names, questions and
-evidence notes; questions can move between buckets. A top disclosure makes clear
+evidence notes. A top disclosure makes clear
 that adoption keeps questions editable. The old freeform title editor is hidden
 in this tab; existing text remains editable under Additional framework notes
 (optional). Legacy subgroup-shaped trees are normalized on read/restore into

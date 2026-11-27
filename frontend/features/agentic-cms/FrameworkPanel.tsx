@@ -77,11 +77,6 @@ export function FrameworkPanel({ document, canEdit, busy, dirty, onChange, onGen
           {b.questions.map((q, qi) => <div key={q.id} className="space-y-2 rounded-lg bg-[var(--secondary)] p-3">
             <label className="block text-sm">Question / information to gather<input aria-label={`Question ${bi + 1}.${qi + 1}`} className={field} maxLength={300} value={q.title} onChange={e => update(t => { t.buckets[bi].questions[qi].title = e.target.value; })} /></label>
             <label className="block text-sm">Evidence needed<textarea aria-label={`Evidence ${bi + 1}.${qi + 1}`} className={field} maxLength={1000} value={q.evidence} onChange={e => update(t => { t.buckets[bi].questions[qi].evidence = e.target.value; })} /></label>
-            {tree.buckets.length > 1 && <label className="block text-sm">Move to bucket<select aria-label={`Question bucket ${bi + 1}.${qi + 1}`} className={field} value={b.id} onChange={e => update(t => {
-              const destination = t.buckets.find(bucket => bucket.id === e.target.value);
-              if (!destination) return;
-              const [question] = t.buckets[bi].questions.splice(qi, 1); destination.questions.push(question);
-            })}>{tree.buckets.map(bucket => <option key={bucket.id} value={bucket.id}>{bucket.title}</option>)}</select></label>}
             <div className="flex flex-wrap gap-2"><button className={button} disabled={qi === 0} onClick={() => update(t => { t.buckets[bi].questions = move(t.buckets[bi].questions, qi, -1); })}>Move question up</button><button className={button} disabled={qi === b.questions.length - 1} onClick={() => update(t => { t.buckets[bi].questions = move(t.buckets[bi].questions, qi, 1); })}>Move question down</button><button className={button} onClick={() => remove(t => { t.buckets[bi].questions.splice(qi, 1); })}>Remove question</button></div>
           </div>)}
           <button className={button} disabled={tree.buckets.flatMap(b => b.questions).length >= 30} onClick={() => update(t => { t.buckets[bi].questions.push({ id: newId(), title: 'New research question?', evidence: '' }); })}>Add question</button>
