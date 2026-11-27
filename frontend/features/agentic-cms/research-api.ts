@@ -1,9 +1,14 @@
 import { api } from '@/lib/api';
 
 export type ResearchTab = 'past-data' | 'framework' | 'findings';
-export type ResearchSection = { id: string; tab: ResearchTab; title: string; content: string; sourceIds: string[] };
+export type FrameworkQuestion = { id: string; title: string; evidence: string };
+export type FrameworkBucket = { id: string; title: string; questions: FrameworkQuestion[] };
+export type ResearchFramework = { objective: string; buckets: FrameworkBucket[]; assumptions: string[]; clarificationQuestions: string[] };
+export type ResearchSection = { id: string; tab: ResearchTab; title: string; content: string; sourceIds: string[]; frameworkQuestionId?: string };
 export type ResearchDocument = {
   schemaVersion: 1;
+  framework?: ResearchFramework;
+  frameworkSuggestion?: ResearchFramework;
   sections: ResearchSection[];
   sources: { id: string; title: string; url: string }[];
 };
@@ -43,6 +48,9 @@ const base = (projectId: string, deliverableId: string) =>
   `/agentic-cms/research/projects/${encodeURIComponent(projectId)}/deliverables/${encodeURIComponent(deliverableId)}`;
 
 export const researchAPI = {
+  async generateFramework(projectId: string, deliverableId: string, expectedVersion: number, focus: string) {
+    return (await api.post<ResearchWorkspace>(`${base(projectId, deliverableId)}/framework/generate`, { expectedVersion, focus }, { timeout: 60000 })).data;
+  },
   async pastDataStatus(projectId: string, deliverableId: string) {
     return (await api.get<PastDataStatus>(`${base(projectId, deliverableId)}/past-data`)).data;
   },

@@ -69,4 +69,13 @@ describe('Past-data routes share the existing verified-only Agentic CMS boundary
     expect((await request({ ...ops[3], suffix: '/source?kind=filesystem&recordId=anything' })).status).toBe(400);
     Object.values(calls).forEach(call => expect(call).not.toHaveBeenCalled());
   });
+  it('framework route requires verified identity and the enabled flag before reading records', async () => {
+    const endpoint = `${base}/agentic-cms/research/projects/project/deliverables/item/framework/generate`;
+    settings.AGENTIC_CMS_ENABLED = 'false';
+    expect((await fetch(endpoint, { method: 'POST', headers: { authorization: 'Bearer verified-token', 'content-type': 'application/json' }, body: '{"expectedVersion":1}' })).status).toBe(404);
+    settings.AGENTIC_CMS_ENABLED = 'true';
+    expect((await fetch(endpoint, { method: 'POST', headers: { authorization: 'Bearer reader@example.test', 'content-type': 'application/json' }, body: '{"expectedVersion":1}' })).status).toBe(401);
+    expect((await fetch(endpoint, { method: 'POST', headers: { authorization: 'Bearer verified-token', 'content-type': 'application/json' }, body: '{"expectedVersion":1,"authorId":"other"}' })).status).toBe(400);
+  });
+
 });

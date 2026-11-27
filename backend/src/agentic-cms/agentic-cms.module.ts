@@ -1,3 +1,5 @@
+import { ResearchFrameworkController } from './research/research-framework.controller';
+import { ResearchFrameworkService } from './research/research-framework.service';
 import { Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { AuthModule } from '../auth/auth.module';
@@ -32,8 +34,9 @@ import { ResearchPastDataController } from './research/research-past-data.contro
 
 @Module({
   imports: [FeatureFlagsModule, PrismaModule, ProjectsModule, AuthModule],
-  controllers: [AgenticCmsController, McpController, ChatController, ResearchWorkspaceController, ResearchPastDataController],
+  controllers: [ResearchFrameworkController, AgenticCmsController, McpController, ChatController, ResearchWorkspaceController, ResearchPastDataController],
   providers: [
+    ResearchFrameworkService,
     PastDataRetrievalService,
     ResearchPastDataService,
     ResearchPreparationService,

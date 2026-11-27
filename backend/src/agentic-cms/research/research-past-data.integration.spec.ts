@@ -16,6 +16,7 @@ import { emptyResearchDocument } from './research.schemas';
 import { ResearchWorkspaceService } from './research-workspace.service';
 import { PastDataRetrievalService } from './past-data-retrieval.service';
 import { ResearchPastDataService } from './research-past-data.service';
+import { ResearchFrameworkService } from './research-framework.service';
 import { ResearchPreparationService } from './research-preparation.service';
 
 const url = process.env.CMS_READ_TEST_DATABASE_URL;
@@ -248,4 +249,96 @@ integration('Relevant past data against migrated PostgreSQL with a counting test
     expect(model.stream).toHaveBeenCalledTimes(1);
     finish(); await wait('READY');
   });
+  const frameworkReply = () => ({ objective: 'Which hospital buyers should the client prioritize?', buckets: [{ title: 'Customer needs', questions: [{ title: 'Who approves a purchase?', evidence: 'Interview hospital procurement teams.' }] }], assumptions: ['Buyer access is available; validate this.'], clarificationQuestions: ['What is the pilot budget?'] });
+  const frameworkService = () => new ResearchFrameworkService(flags, retrieval, documents, workspace, model, skills as unknown as SkillLibrary);
+  const frameworkModel = () => model.stream.mockImplementation(async () => {
+    const text = JSON.stringify(frameworkReply()); return { text, toolCalls: [], message: assistantMessage(text, []) };
+  });
+
+  it('framework generation saves a suggestion with server IDs and preserves existing text and findings', async () => {
+    const doc = emptyResearchDocument(); doc.sections[0].content = quote; doc.sections[1].content = 'Manual outline'; doc.sections[2].content = 'Keep this finding';
+    await workspace.save(user, 'project', 'target', { expectedVersion: 1, document: doc });
+    frameworkModel();
+    const saved = await frameworkService().generate(user, 'project', 'target', { expectedVersion: 2, focus: 'hospital buyers' });
+    expect(saved.document.frameworkSuggestion.buckets[0].questions[0].id).toMatch(/^[a-z0-9-]+$/);
+    expect(saved.document.framework).toBeUndefined();
+    expect(saved.document.sections).toEqual(doc.sections);
+    expect(JSON.stringify(model.stream.mock.calls[0][0])).toContain(quote);
+    expect(model.stream.mock.calls[0][0].tools).toEqual([]);
+    expect((await workspace.read(user, 'project', 'target')).document.frameworkSuggestion.objective).toContain('hospital');
+    await workspace.restore(user, 'project', 'target', { expectedVersion: saved.version, targetVersion: 2 });
+    expect((await workspace.read(user, 'project', 'target')).document.frameworkSuggestion).toBeUndefined();
+  });
+
+  it('framework blocks flag-off, foreign projects, unassigned users, drafts and stale versions before model use', async () => {
+    const service = frameworkService();
+    settings.AGENTIC_CMS_ENABLED = 'false';
+    await expect(service.generate(user, 'project', 'target', { expectedVersion: 1 })).rejects.toMatchObject({ status: 404 });
+    settings.AGENTIC_CMS_ENABLED = 'true';
+    await expect(service.generate(user, 'other', 'target', { expectedVersion: 1 })).rejects.toMatchObject({ status: 404 });
+    await expect(service.generate({ id: 'readonly', email: 'readonly@example.test', role: 'CONSULTANT' }, 'project', 'target', { expectedVersion: 1 })).rejects.toMatchObject({ status: 404 });
+    await expect(service.generate(user, 'project', 'draft-item', { expectedVersion: 1 })).rejects.toMatchObject({ status: 404 });
+    await expect(service.generate(user, 'project', 'target', { expectedVersion: 9 })).rejects.toMatchObject({ status: 409 });
+    expect(model.stream).not.toHaveBeenCalled();
+  });
+
+  it('framework rejects malformed output and keeps the current document', async () => {
+    model.stream.mockResolvedValue({ text: '{"objective":"invented","buckets":[]}', toolCalls: [], message: assistantMessage('', []) });
+    await expect(frameworkService().generate(user, 'project', 'target', { expectedVersion: 1 })).rejects.toMatchObject({ status: 503 });
+    expect((await workspace.read(user, 'project', 'target')).version).toBe(1);
+  });
+
+  it('framework rechecks assignment, flag, and concurrent edits before saving', async () => {
+    const service = frameworkService();
+    model.stream.mockImplementation(async () => {
+      const doc = emptyResearchDocument(); doc.sections[2].content = 'New consultant work';
+      await workspace.save(user, 'project', 'target', { expectedVersion: 1, document: doc });
+      const text = JSON.stringify(frameworkReply()); return { text, toolCalls: [], message: assistantMessage(text, []) };
+    });
+    await expect(service.generate(user, 'project', 'target', { expectedVersion: 1 })).rejects.toMatchObject({ status: 409 });
+    expect((await workspace.read(user, 'project', 'target')).document.sections[2].content).toBe('New consultant work');
+    model.stream.mockImplementation(async () => { settings.AGENTIC_CMS_ENABLED = 'false'; const text = JSON.stringify(frameworkReply()); return { text, toolCalls: [], message: assistantMessage(text, []) }; });
+    await expect(service.generate(user, 'project', 'target', { expectedVersion: 2 })).rejects.toMatchObject({ status: 404 });
+    expect((await db.researchWorkspace.findUnique({ where: { deliverableId: 'target' } })).version).toBe(2);
+  });
+
+  it('framework IDs keep adopted question findings durable and validate the link', async () => {
+    const doc = emptyResearchDocument();
+    doc.framework = { ...frameworkReply(), buckets: [{ id: 'bucket', title: 'Customer needs', questions: [{ id: 'question', title: 'Who pays?', evidence: 'Interviews' }] }] };
+    await expect(workspace.save(user, 'project', 'target', { expectedVersion: 1, document: doc })).rejects.toMatchObject({ status: 400 });
+    doc.sections.push({ id: 'finding_question', tab: 'findings', title: 'Who pays?', content: 'Keep this evidence', sourceIds: [], frameworkQuestionId: 'question' });
+    const saved = await workspace.save(user, 'project', 'target', { expectedVersion: 1, document: doc });
+    expect(saved.document.sections[3].frameworkQuestionId).toBe('question');
+    expect((await workspace.read(user, 'project', 'target')).document.sections[3].content).toBe('Keep this evidence');
+  });
+
+  it('framework rejects changed assignment and concurrent duplicate generation', async () => {
+    const service = frameworkService();
+    let finish: () => void;
+    const gate = new Promise<void>(resolve => { finish = resolve; });
+    model.stream.mockImplementation(async () => { await gate; const text = JSON.stringify(frameworkReply()); return { text, toolCalls: [], message: assistantMessage(text, []) }; });
+    const first = service.generate(user, 'project', 'target', { expectedVersion: 1 });
+    for (let i = 0; i < 100 && !model.stream.mock.calls.length; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    await expect(service.generate(user, 'project', 'target', { expectedVersion: 1 })).rejects.toMatchObject({ status: 429 });
+    await db.deliverable.update({ where: { id: 'target' }, data: { description: 'Changed assignment after generation began.' } });
+    finish();
+    await expect(first).rejects.toMatchObject({ status: 409 });
+    expect(model.stream).toHaveBeenCalledTimes(1);
+    expect((await workspace.read(user, 'project', 'target')).version).toBe(1);
+  });
+
+  it('loads and restores older subgroup frameworks with the same question IDs and findings', async () => {
+    const legacy = { ...emptyResearchDocument(), framework: { objective: 'Choose buyers', assumptions: [], clarificationQuestions: [], buckets: [{ id: 'b', title: 'Needs', groups: [{ id: 'g', title: 'Buying', questions: [{ id: 'q', title: 'Who pays?', evidence: 'Interviews' }] }] }] } };
+    legacy.sections.push({ id: 'finding_q', tab: 'findings', title: 'Who pays?', content: 'Existing evidence', sourceIds: [], frameworkQuestionId: 'q' });
+    const original = await db.researchWorkspace.update({ where: { deliverableId: 'target' }, data: { document: legacy } });
+    await db.researchRevision.update({ where: { workspaceId_version: { workspaceId: original.id, version: 1 } }, data: { document: legacy } });
+    const read = await workspace.read(user, 'project', 'target');
+    expect(read.document.framework.buckets[0].questions[0].id).toBe('q');
+    expect(read.document.framework.buckets[0]).not.toHaveProperty('groups');
+    await workspace.save(user, 'project', 'target', { expectedVersion: 1, document: read.document });
+    const restored = await workspace.restore(user, 'project', 'target', { expectedVersion: 2, targetVersion: 1 });
+    expect(restored.document.framework.buckets[0].questions[0].id).toBe('q');
+    expect(restored.document.sections[3].content).toBe('Existing evidence');
+  });
+
 });

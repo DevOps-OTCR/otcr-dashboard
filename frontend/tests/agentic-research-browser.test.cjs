@@ -154,7 +154,17 @@ async function setup(t, options = {}) {
       workspace.document.sections[0].content = 'Saved by a teammate';
     }
     if (body.expectedVersion !== workspace.version) return json(route, { code: 'VERSION_CONFLICT' }, 409);
-    const savedDocument = suffix === '/restore' ? state.revisions[id].find(revision => revision.version === body.targetVersion).document : body.document;
+    if (suffix === '/framework/generate') {
+      if (state.frameworkFail) return json(route, { code: 'MODEL_FAILED' }, 503);
+      workspace.document.frameworkSuggestion = { objective: 'Which segment should we prioritize?', assumptions: ['Validate buyer access.'], clarificationQuestions: ['What is the budget?'], buckets: [
+        { id: 'b1', title: 'Customer needs', questions: [{ id: 'q1', title: 'Who approves a purchase?', evidence: 'Interview buyers.' }, { id: 'q2', title: 'What delays adoption?', evidence: 'Review onboarding interviews.' }] },
+        { id: 'b2', title: 'Commercial opportunity', questions: [{ id: 'q3', title: 'What will buyers pay?', evidence: 'Compare pricing.' }] },
+      ] };
+      workspace.version += 1;
+      state.revisions[id].push({ version: workspace.version, document: clone(workspace.document), action: 'EDIT', authorId: 'synthetic-user', createdAt: '2026-11-26T12:00:00Z' });
+      return json(route, { ...workspace, canEdit: true }, 201);
+    }
+    const savedDocument = suffix === '/restore'  ? state.revisions[id].find(revision => revision.version === body.targetVersion).document : body.document;
     workspace.document = clone(savedDocument); workspace.version += 1;
     state.revisions[id].push({ version: workspace.version, document: clone(savedDocument), action: suffix === '/restore' ? 'RESTORE' : 'EDIT', restoredFromVersion: body.targetVersion ?? null, authorId: 'synthetic-user', createdAt: '2026-11-24T12:01:00Z' });
     return json(route, { ...workspace, canEdit: true }, suffix === '/restore' ? 201 : 200);
@@ -191,6 +201,7 @@ test('creates a workspace, edits all three tabs and saves/reloads without a mode
   await openEditor(page);
   for (const tab of Object.keys(textName)) {
     await page.getByRole('tab', { name: tabName[tab], exact: true }).click();
+    if (tab === 'framework') await page.getByText('Additional framework notes (optional)', { exact: true }).click();
     await page.getByRole('textbox', { name: textName[tab], exact: true }).fill(`Research for ${tab}\nSecond line`);
   }
   await page.getByRole('button', { name: 'Save research', exact: true }).click();
@@ -201,6 +212,7 @@ test('creates a workspace, edits all three tabs and saves/reloads without a mode
   await editor(page).waitFor();
   for (const tab of Object.keys(textName)) {
     await page.getByRole('tab', { name: tabName[tab], exact: true }).click();
+    if (tab === 'framework') await page.getByText('Additional framework notes (optional)', { exact: true }).click();
     assert.equal(await page.getByRole('textbox', { name: textName[tab], exact: true }).inputValue(), `Research for ${tab}\nSecond line`);
   }
   assert.equal(state.calls.some(call => /\/(chat|search|mcp)(\/|$)/.test(call.path)), false);
@@ -496,4 +508,64 @@ test('manual editor fits a narrow screen and renders source links safely', async
   assert.equal(await source.getAttribute('rel'), 'noopener noreferrer');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
   await page.screenshot({ path: path.join(__dirname, '../build/agentic-research-browser/preview.png'), fullPage: true });
+});
+
+
+test('framework generation suggests buckets, adoption creates linked findings and rename/remove preserve evidence', async t => {
+  const { page, state } = await setup(t, { seed: true });
+  await page.getByRole('tab', { name: 'Framework / Structure', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Framework focus', exact: true }).fill('Customer segment choice');
+  await page.getByRole('button', { name: 'Generate framework', exact: true }).click();
+  await page.getByRole('region', { name: 'Suggested framework', exact: true }).waitFor();
+  assert.equal(state.workspaces.d1.document.framework, undefined);
+  assert.equal(await page.getByText('Interview buyers.', { exact: false }).isVisible(), false);
+  await page.locator('summary[aria-label="Preview Customer needs"]').click();
+  assert.equal(await page.getByText('Evidence needed: Interview buyers.', { exact: true }).isVisible(), true);
+  assert.equal(await page.getByRole('tabpanel', { name: 'Framework / Structure', exact: true }).getByText('Section title', { exact: true }).count(), 0);
+  assert.equal(await page.getByText(/After adopting a bucket, you can still edit/).isVisible(), true);
+  await page.getByRole('checkbox', { name: 'Customer needs', exact: true }).check();
+  assert.equal(await page.getByText('Selected', { exact: true }).isVisible(), true);
+  if (process.env.RESEARCH_UI_SCREENSHOT) await page.screenshot({ path: process.env.RESEARCH_UI_SCREENSHOT, fullPage: true });
+  await page.getByRole('button', { name: 'Adopt selected buckets', exact: true }).click();
+  await page.getByRole('button', { name: 'Save research', exact: true }).click();
+  await page.getByRole('tab', { name: 'Findings', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Findings text finding_q1', exact: true }).fill('Interview evidence to preserve');
+  assert.equal(await page.getByRole('textbox', { name: 'Findings text finding_q3', exact: true }).count(), 0);
+  await page.getByRole('button', { name: 'Save research', exact: true }).click();
+  await page.getByRole('tab', { name: 'Framework / Structure', exact: true }).click();
+  await page.locator('summary[aria-label="Chosen bucket 1"]').click();
+  await page.getByRole('textbox', { name: 'Question 1.1', exact: true }).fill('Who signs off on the purchase?');
+  await page.getByRole('button', { name: 'Move question down', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Save research', exact: true }).click();
+  assert.deepEqual(state.workspaces.d1.document.sections.filter(s => s.frameworkQuestionId).map(s => s.frameworkQuestionId), ['q2', 'q1']);
+  assert.equal(state.workspaces.d1.document.sections.find(s => s.frameworkQuestionId === 'q1').content, 'Interview evidence to preserve');
+  assert.equal(state.workspaces.d1.document.sections.find(s => s.frameworkQuestionId === 'q1').title, 'Who signs off on the purchase?');
+  await page.getByRole('button', { name: 'Remove question', exact: true }).nth(1).click();
+  await page.getByRole('button', { name: 'Save research', exact: true }).click();
+  const orphan = state.workspaces.d1.document.sections.find(s => s.id === 'finding_q1');
+  assert.equal(orphan.frameworkQuestionId, undefined);
+  assert.equal(orphan.content, 'Interview evidence to preserve');
+  assert.match(orphan.title, /Unassigned findings/);
+  await page.getByRole('button', { name: 'Reload saved research', exact: true }).click();
+  await page.getByRole('tab', { name: 'Findings', exact: true }).click();
+  assert.equal(await page.getByRole('textbox', { name: 'Findings text finding_q1', exact: true }).inputValue(), 'Interview evidence to preserve');
+});
+
+test('manual framework can be built without generation and is read-only for viewers', async t => {
+  const { page, state } = await setup(t, { seed: true });
+  await page.getByRole('tab', { name: 'Framework / Structure', exact: true }).click();
+  await page.getByRole('button', { name: 'Add bucket', exact: true }).click();
+  await page.locator('summary[aria-label="Chosen bucket 1"]').click();
+  await page.getByRole('textbox', { name: 'Bucket 1', exact: true }).fill('Feasibility');
+  await page.getByRole('button', { name: 'Add question', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Question 1.1', exact: true }).fill('Can we support the pilot?');
+  assert.equal(await page.getByRole('button', { name: 'Generate framework', exact: true }).isDisabled(), true);
+  await page.getByRole('button', { name: 'Save research', exact: true }).click();
+  assert.equal(state.workspaces.d1.document.sections.filter(s => s.frameworkQuestionId).length, 1);
+  state.editable = false;
+  await page.getByRole('button', { name: 'Reload saved research', exact: true }).click();
+  await page.locator('summary[aria-label="Chosen bucket 1"]').click();
+  await page.getByRole('textbox', { name: 'Question 1.1', exact: true }).waitFor();
+  assert.equal(await page.getByRole('textbox', { name: 'Question 1.1', exact: true }).isDisabled(), true);
+  assert.equal(state.calls.some(c => c.path.endsWith('/framework/generate')), false);
 });

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ResearchPreparationStatus } from './ResearchPreparationStatus';
+import { FrameworkPanel } from './FrameworkPanel';
 import { PastDataPanel } from './PastDataPanel';
 import {
   researchAPI, researchFailure,
@@ -138,7 +139,10 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
     } else if (failure.status === 409) {
       setConflict(true);
       setError('Research changed elsewhere. Your draft is still here. Copy any text you want to keep, then reload the saved research before continuing.');
-    } else setError(fallback);
+    } else {
+      const modelErrors: Record<string, string> = { MODEL_NOT_CONFIGURED: 'Configure your local Lumen key and restart the backend before generating.', MODEL_FAILED: 'Generation could not finish. Your saved research was kept. Try again or check your model configuration.', INVALID_MODEL_OUTPUT: 'The bot returned an invalid framework. Your saved research was kept. Try a narrower focus.', SKILL_UNAVAILABLE: 'The framework skill could not be loaded. Check the backend skill directory.' };
+      setError(modelErrors[failure.code ?? ''] ?? fallback);
+    }
   };
   const preparationUnavailable = useCallback(() => {
     setWorkspace(null); setDraft(null); setMissing(null); setHistory(null); setHistoryOpen(false);
@@ -246,15 +250,18 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
       </div>
       {tabs.map(item => <div key={item.id} id={`research-panel-${item.id}`} role="tabpanel" aria-labelledby={`research-tab-${item.id}`} hidden={tab !== item.id} className="space-y-4">
         {item.id === 'past-data' && <PastDataPanel projectId={projectId} deliverableId={deliverableId} version={workspace.version} dirty={dirty} canEdit={workspace.canEdit} hasPastData={!!draft.sections.find(section => section.id === 'past-data')?.content.trim()} onGenerated={dirty ? undefined : loadGenerated} onUnavailable={preparationUnavailable} />}
-        <p className="text-sm text-[var(--text-muted)]">{item.hint}</p>
-        {draft.sections.filter(section => section.tab === item.id).map(section => <div key={section.id} className="space-y-3">
-          <label className="block space-y-1 text-sm">Section title
-            <input aria-label={`${item.label} title ${section.id}`} className={field} maxLength={300} readOnly={!workspace.canEdit} disabled={busy} value={section.title} onChange={event => {
+        {item.id === 'framework' && <FrameworkPanel document={draft} canEdit={workspace.canEdit} busy={busy || conflict} dirty={dirty} onChange={next => { ++draftRevision.current; setMessage(''); setDraft(next); }} onGenerate={focus => void mutate(() => researchAPI.generateFramework(projectId, deliverableId, workspace.version, focus), 'Framework suggestion saved. Choose the buckets you want to adopt.')} />}
+        {item.id !== 'framework' && <p className="text-sm text-[var(--text-muted)]">{item.hint}</p>}
+        {draft.sections.filter(section => section.tab === item.id).map(section => { const Container = item.id === 'framework' ? 'details' : 'div'; return <Container key={section.id} className="space-y-3">
+          {item.id === 'framework' && <summary className="cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--secondary)] p-3 text-sm font-medium">Additional framework notes (optional)</summary>}
+          {section.frameworkQuestionId && <p className="text-sm font-medium text-[var(--primary)]">{draft.framework?.buckets.find(b => b.questions.some(q => q.id === section.frameworkQuestionId))?.title}</p>}
+          {item.id !== 'framework' && <label className="block space-y-1 text-sm">Section title
+            <input aria-label={`${item.label} title ${section.id}`} className={field} maxLength={300} readOnly={!workspace.canEdit || !!section.frameworkQuestionId} disabled={busy} value={section.title} onChange={event => {
               ++draftRevision.current;
               setMessage(''); setDraft({ ...draft, sections: draft.sections.map(current => current.id === section.id ? { ...current, title: event.target.value } : current) });
             }} />
-          </label>
-          <label className="block space-y-1 text-sm">{section.title || item.label}
+          </label>}
+          <label className="block space-y-1 text-sm">{item.id === 'framework' ? 'Planning notes' : section.title || item.label}
             <textarea aria-label={`${item.label} text ${section.id}`} className={`${field} min-h-72 resize-y leading-relaxed`} maxLength={50_000} readOnly={!workspace.canEdit} disabled={busy} value={section.content} placeholder={item.hint} onChange={event => {
               ++draftRevision.current;
               setMessage(''); setDraft({ ...draft, sections: draft.sections.map(current => current.id === section.id ? { ...current, content: event.target.value } : current) });
@@ -264,7 +271,7 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
             const source = draft.sources.find(source => source.id === id);
             return source && /^https?:\/\//i.test(source.url) ? <li key={id}><a href={source.url} target="_blank" rel="noopener noreferrer" className="break-words underline">{source.title}</a></li> : null;
           })}</ul>}
-        </div>)}
+        </Container>; })}
       </div>)}
       {historyOpen && <section aria-label="Research version history" className="space-y-3 rounded-xl border border-[var(--border)] p-4">
         <h3 className="font-semibold">Version history</h3>

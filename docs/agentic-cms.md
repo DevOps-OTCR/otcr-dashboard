@@ -736,3 +736,73 @@ context HTTP writes followed by MCP reads and denial after CMS enrollment is
 revoked. The context browser suite covers save/reload, project switching during
 reads and writes, note creation/deletion, and project-specific edit controls.
 Browser fixtures use synthetic sign-in. Record current validation results in the PR.
+
+### Research step 5: Framework / Structure
+
+The Framework tab keeps its blank writing area and adds a structured editor:
+objective → buckets → research questions, each with an evidence-needed
+note. Existing schema-v1 documents remain valid. Optional `framework` and
+`frameworkSuggestion` fields live in the same PostgreSQL JSON document and revision
+history; no database migration or Google Docs dependency is required.
+
+`POST /agentic-cms/research/projects/:projectId/deliverables/:deliverableId/framework/generate`
+accepts `{expectedVersion, focus?}` (focus ≤1000 characters). It uses the same
+verified guard, backend feature flag, active enrollment, project access and assigned
+editor checks. Generation requires a released workstream. The request runs one
+45-second-bounded Lumen call, no tools or web fetches, and loads
+`agentic-cms/skills/research-framework/SKILL.md` on demand. Context is the authorized
+brief, scope, workstream notes, saved Past Data and planning notes. It does not
+retrieve history again or research answers. Suggestions are provisional plans,
+not sourced findings. At most one framework generation per user per backend
+instance can run concurrently; this prototype does not use a durable job queue.
+A restart interrupts the request; retry manually. No generation happens at startup
+or automatically on release.
+
+Strict output validation rejects malformed trees and more than 30 questions; the
+server assigns IDs. The assignment and access are checked again before the
+existing version-checked revision save. Generation only replaces the suggestion.
+Errors, changed assignments or concurrent saves preserve the existing document.
+The UI blocks generation with unsaved edits and disables editing while the request
+is pending. A successful suggestion is auto-saved; adoption and manual framework
+edits are drafts until **Save research**.
+
+Consultants can adopt all or selected buckets, or build a tree manually without a
+model. Chosen questions create empty Findings sections linked by stable
+`frameworkQuestionId`. Renaming or reordering updates headings without changing
+content, IDs or citations. Removing a question/bucket asks for confirmation;
+nonempty findings or sections with citations become **Unassigned findings**.
+Empty removed sections are discarded. Existing freeform Findings and Framework
+text remain available. Rename linked headings through the framework editor.
+Restore uses the existing whole-document revision flow, including both trees and
+all findings.
+
+Local manual checks:
+1. Open `/agentic-cms`, select Research → a released workstream → deliverable →
+   Framework / Structure. Optionally generate Past Data first.
+2. Enter a focus, Generate framework; inspect question relevance, scope,
+   assumptions, evidence methods and missing-context questions.
+3. Adopt selected buckets, Save research, then open Findings. Each question has
+   an empty writing area under its bucket label.
+4. Write and save a finding. Rename/reorder its question in Framework, save, and
+   verify the content survives. Remove the question, save, and verify its text
+   remains as Unassigned findings.
+5. Reload; check persistence. Use Version history to restore the whole document.
+6. Without generation, Add bucket → Add question should also work.
+
+Automated flag-off/on evidence: framework integration cases in
+`research-past-data.integration.spec.ts` cover no model access with flag off,
+project/editor/release boundaries, malformed output, concurrent edits, revocation,
+revision restore and linked-section validation. `research-past-data.http.spec.ts`
+checks the real module's framework route authentication and flag boundary.
+Research browser tests cover selection/adoption, manual editing, rename/reorder,
+non-destructive removal and viewer restrictions with mocked API responses.
+
+The framework editor uses expandable bucket cards. Select suggested buckets using
+their highlighted checkboxes, expand Questions & evidence to inspect them, then
+adopt the selection. Chosen bucket cards expand to edit names, questions and
+evidence notes; questions can move between buckets. A top disclosure makes clear
+that adoption keeps questions editable. The old freeform title editor is hidden
+in this tab; existing text remains editable under Additional framework notes
+(optional). Legacy subgroup-shaped trees are normalized on read/restore into
+bucket-level questions with stable question IDs, preserving linked findings and
+revision history. No database migration or content deletion is required.
