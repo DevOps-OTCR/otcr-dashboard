@@ -196,4 +196,17 @@ describe('POST /agentic-cms/chat', () => {
       expect(model.stream).toHaveBeenCalledTimes(1);
     });
   });
+  it('validates selected research context before streaming and blocks it when the feature is off', async () => {
+    const research = { deliverableId: 'd1', expectedVersion: 1, editingBlocked: false };
+    settings.AGENTIC_CMS_ENABLED = 'false';
+    expect((await chat({ projectId: 'p1', message: 'Shorten research', research })).status).toBe(404);
+    expect(model.stream).not.toHaveBeenCalled();
+    settings.AGENTIC_CMS_ENABLED = 'true';
+    for (const invalid of [{ ...research, authorId: 'forged' }, { ...research, expectedVersion: -1 }, { ...research, deliverableId: '' }]) {
+      expect((await chat({ projectId: 'p1', message: 'Shorten research', research: invalid })).status).toBe(400);
+    }
+    expect(model.stream).not.toHaveBeenCalled();
+    expect((await chat({ projectId: 'p1', message: 'Discuss research', research })).status).toBe(200);
+  });
+
 });

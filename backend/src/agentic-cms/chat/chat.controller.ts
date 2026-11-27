@@ -1,3 +1,5 @@
+import { researchChatContext } from '../research/research-chat.tool';
+import { parseResearch } from '../research/research.schemas';
 import { Body, Controller, ForbiddenException, NotFoundException, Post, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { GetUser } from '../../common/get-user.decorator';
@@ -20,6 +22,7 @@ export class ChatController {
 // POST /agentic-cms/chat — streams AgentEvents as Server-Sent Events.
   @Post()
   async chat(@Body() dto: ChatDto, @GetUser() user: AgentUser, @Res() res: Response) {
+    const research = dto.research === undefined ? undefined : parseResearch(researchChatContext, dto.research);
     await this.projects.assertProjectAccess(dto.projectId, user);
     if (dto.sprintId) await this.assertSprintVisible(dto.projectId, dto.sprintId, user);
 
@@ -40,7 +43,7 @@ export class ChatController {
 
     try {
       await this.agent.run(
-        { user, projectId: dto.projectId, sprintId: dto.sprintId, conversationId: dto.conversationId, message: dto.message, signal: abort.signal },
+        { user, projectId: dto.projectId, sprintId: dto.sprintId, conversationId: dto.conversationId, message: dto.message, research, signal: abort.signal },
         send,
       );
     } catch (err) {

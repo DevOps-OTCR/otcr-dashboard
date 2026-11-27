@@ -50,6 +50,7 @@ const base = (projectId: string, deliverableId: string) =>
 
 export type FindingsCapabilities = { canEdit: boolean; released: boolean; modelConfigured: boolean; webSearchConfigured: boolean };
 export type FindingsMode = 'add' | 'revise';
+export type ResearchEditClarification = { question: string; answer: string };
 export const researchAPI = {
   async findingsCapabilities(projectId: string, deliverableId: string) {
     return (await api.get<FindingsCapabilities>(`${base(projectId, deliverableId)}/findings/capabilities`)).data;

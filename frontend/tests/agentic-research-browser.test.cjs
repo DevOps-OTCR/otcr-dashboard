@@ -68,6 +68,31 @@ async function setup(t, options = {}) {
         ];
       return json(route, { deliverables: state.empty ? [] : state.paged && page === 2 ? [{ id: 'd4', title: 'Second-page assignment', sprintId: 'w1', sprint: week1 }] : list, pagination: { totalPages: state.paged ? 2 : 1 } });
     }
+    if (url.pathname === '/api/agentic-cms/chat') {
+      const body = request.postDataJSON(); const selected = body.research;
+      const workspace = state.workspaces[selected?.deliverableId];
+      if (state.holdChat) await state.holdChat();
+      const events = [{ type: 'conversation', id: 'research-chat' }];
+      let text;
+      if (!selected || /explain/i.test(body.message)) text = 'This is a discussion answer. No research was changed.';
+      else if (selected.editingBlocked || selected.expectedVersion !== workspace.version) text = 'Research editing is blocked. Save or discard your draft first.';
+      else if (state.botClarify && !selected.pending) {
+        events.push({ type: 'research_edit', projectId: workspace.projectId, deliverableId: workspace.deliverableId, result: { status: 'clarification', question: 'Which section should I shorten?', pending: { prompt: body.message, clarifications: [] } } });
+        text = 'Which section should I shorten?';
+      } else {
+        const previousVersion = workspace.version;
+        workspace.document.sections[0].content = 'Shortened client context.';
+        workspace.document.sections[1].content = 'Revised planning notes.';
+        workspace.version += 1;
+        state.revisions[workspace.deliverableId].push({ version: workspace.version, document: clone(workspace.document), action: 'EDIT', authorId: 'synthetic-user', createdAt: '2026-11-27T12:00:00Z' });
+        events.push({ type: 'research_edit', projectId: workspace.projectId, deliverableId: workspace.deliverableId, result: { status: 'saved', summary: 'Shortened context and revised planning notes.', changes: ['Edited Relevant Past Data', 'Edited Framework / Structure'], previousVersion, savedVersion: workspace.version } });
+        text = 'Your requested edits were saved.';
+      }
+      events.push({ type: 'text_delta', text });
+      if (state.failAfterEdit) events.push({ type: 'error', kind: 'model', message: 'Reply interrupted', retryable: true });
+      events.push({ type: 'done' });
+      return route.fulfill({ contentType: 'text/event-stream', body: events.map(event => `data: ${JSON.stringify(event)}\n\n`).join('') });
+    }
     const match = url.pathname.match(/\/research\/projects\/(p[12])\/deliverables\/(d\d)(.*)$/);
     if (!match) { errors.push(`Unexpected request: ${url.pathname}`); return json(route, {}, 500); }
     const [, projectId, id, suffix] = match;
@@ -675,4 +700,106 @@ test('recovered bucket findings report gaps without showing a whole-run failure'
   await page.getByText('Bucket findings saved with evidence gaps. Unsupported draft claims were omitted; existing findings for unanswered questions were kept. Review the gaps below.', { exact: true }).waitFor();
   assert.match(await page.getByRole('textbox', { name: 'Findings text finding_q1', exact: true }).inputValue(), /Sourced finding/);
   assert.equal(await page.getByRole('alert').count(), 0);
+});
+
+
+
+async function openBot(page) {
+  await page.getByRole('button', { name: 'Open OTCR Bot', exact: true }).click();
+  await page.getByRole('complementary', { name: 'OTCR Bot', exact: true }).waitFor();
+}
+async function sendBot(page, message) {
+  await page.getByRole('textbox', { name: 'Message OTCR Bot', exact: true }).fill(message);
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+}
+async function closeBot(page) { await page.getByRole('button', { name: 'Close OTCR Bot', exact: true }).click(); }
+
+test('existing bot popup edits across tabs, refreshes the workspace and offers Undo in the conversation', async t => {
+  const { page, state } = await setup(t, { seed: true });
+  await editor(page).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Edit with bot', exact: true }).count(), 0);
+  await openBot(page);
+  await page.getByLabel('Selected research workspace').filter({ hasText: 'Market research' }).waitFor();
+  await sendBot(page, 'Shorten past data and revise planning notes');
+  const undo = page.getByRole('button', { name: 'Undo bot edit', exact: true });
+  await undo.waitFor();
+  await page.waitForFunction(() => !document.querySelector('[aria-label="Stop"]'));
+  assert.equal(await editor(page).inputValue(), 'Shortened client context.');
+  assert.equal(state.workspaces.d1.version, 2);
+  const call = state.calls.find(call => call.path.endsWith('/chat'));
+  assert.deepEqual(call.body.research, { deliverableId: 'd1', expectedVersion: 1, editingBlocked: false });
+  assert.equal(call.body.projectId, 'p1');
+  assert.equal(call.body.sprintId, 'w1');
+  await undo.click();
+  await page.getByRole('button', { name: 'Bot edit undone', exact: true }).waitFor();
+  assert.equal(state.workspaces.d1.version, 3);
+  assert.deepEqual(state.workspaces.d1.document, blank());
+});
+
+test('popup clarification uses the same text input and retains the original edit request', async t => {
+  const { page, state } = await setup(t, { seed: true, botClarify: true });
+  await editor(page).waitFor(); await openBot(page);
+  await page.getByRole('button', { name: 'Shorten Relevant Past Data', exact: true }).click();
+  assert.equal(await page.getByRole('textbox', { name: 'Message OTCR Bot', exact: true }).inputValue(), 'Shorten Relevant Past Data: ');
+  await sendBot(page, 'Shorten it');
+  await page.getByRole('status').filter({ hasText: 'Reply below' }).waitFor();
+  assert.equal(state.workspaces.d1.version, 1);
+  await sendBot(page, 'Relevant Past Data');
+  await page.getByRole('button', { name: 'Undo bot edit', exact: true }).waitFor();
+  const calls = state.calls.filter(call => call.path.endsWith('/chat'));
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[1].body.research.pending, { prompt: 'Shorten it', clarifications: [{ question: 'Which section should I shorten?', answer: 'Relevant Past Data' }] });
+});
+
+test('popup keeps discussion available with drafts and blocks editing; later changes disable direct Undo', async t => {
+  const { page, state } = await setup(t, { seed: true });
+  await editor(page).fill('Manual draft'); await openBot(page);
+  await sendBot(page, 'Explain the research workflow');
+  await page.getByText('This is a discussion answer. No research was changed.', { exact: true }).waitFor();
+  assert.equal(state.workspaces.d1.version, 1);
+  await sendBot(page, 'Shorten context');
+  await page.getByText('Research editing is blocked. Save or discard your draft first.', { exact: true }).waitFor();
+  assert.equal(state.workspaces.d1.version, 1);
+  await closeBot(page);
+  await page.getByRole('button', { name: 'Save research', exact: true }).click();
+  await page.getByText('Research saved.', { exact: true }).waitFor();
+  await openBot(page); await sendBot(page, 'Shorten context');
+  await page.getByRole('button', { name: 'Undo bot edit', exact: true }).waitFor();
+  await closeBot(page);
+  await editor(page).fill('Later manual edit');
+  await page.getByRole('button', { name: 'Save research', exact: true }).click();
+  await page.getByText('Research saved.', { exact: true }).waitFor();
+  await openBot(page);
+  assert.equal(await page.getByRole('button', { name: 'Undo bot edit', exact: true }).isDisabled(), true);
+});
+
+test('switching deliverables resets popup context and ignores a late reply for the old workspace', async t => {
+  const { page, state, seed } = await setup(t, { seed: true }); seed('d2');
+  await editor(page).waitFor(); await openBot(page);
+  let finish; state.holdChat = () => new Promise(resolve => { finish = resolve; });
+  await sendBot(page, 'Shorten context');
+  await page.getByRole('button', { name: 'Stop', exact: true }).waitFor();
+  await closeBot(page);
+  await page.getByRole('combobox', { name: 'Research deliverable' }).selectOption('d2');
+  await editor(page).waitFor();
+  finish(); state.holdChat = null;
+  await openBot(page);
+  await page.getByLabel('Selected research workspace').filter({ hasText: 'Client recommendation' }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Undo bot edit', exact: true }).count(), 0);
+  assert.equal(await editor(page).inputValue(), '');
+  await sendBot(page, 'Shorten context');
+  await page.getByRole('button', { name: 'Undo bot edit', exact: true }).waitFor();
+  const calls = state.calls.filter(call => call.path.endsWith('/chat'));
+  assert.equal(calls.at(-1).body.research.deliverableId, 'd2');
+  assert.equal(calls.at(-1).body.conversationId, undefined);
+});
+
+test('saved edits retain Undo and cannot be blindly retried when the remaining chat reply fails', async t => {
+  const { page, state } = await setup(t, { seed: true, failAfterEdit: true });
+  await editor(page).waitFor(); await openBot(page); await sendBot(page, 'Shorten context');
+  await page.getByRole('alert').filter({ hasText: 'edit was saved' }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Retry', exact: true }).count(), 0);
+  assert.equal(state.workspaces.d1.version, 2);
+  await page.getByRole('button', { name: 'Undo bot edit', exact: true }).click();
+  await page.getByRole('button', { name: 'Bot edit undone', exact: true }).waitFor();
 });

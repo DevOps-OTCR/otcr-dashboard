@@ -1,3 +1,6 @@
+import { ResearchChatTool } from './research/research-chat.tool';
+import { ResearchEditController } from './research/research-edit.controller';
+import { ResearchEditService } from './research/research-edit.service';
 import { ResearchFindingsController } from './research/research-findings.controller';
 import { ResearchFindingsService } from './research/research-findings.service';
 import { TavilyExtractClient } from './search/tavily-extract.client';
@@ -37,8 +40,10 @@ import { ResearchPastDataController } from './research/research-past-data.contro
 
 @Module({
   imports: [FeatureFlagsModule, PrismaModule, ProjectsModule, AuthModule],
-  controllers: [ResearchFindingsController, ResearchFrameworkController, AgenticCmsController, McpController, ChatController, ResearchWorkspaceController, ResearchPastDataController],
+  controllers: [ResearchEditController, ResearchFindingsController, ResearchFrameworkController, AgenticCmsController, McpController, ChatController, ResearchWorkspaceController, ResearchPastDataController],
   providers: [
+    ResearchEditService,
+    ResearchChatTool,
     ResearchFindingsService,
     TavilyExtractClient,
     ResearchFrameworkService,

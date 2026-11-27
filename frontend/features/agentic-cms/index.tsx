@@ -6,6 +6,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { api, setAuthToken, projectsAPI } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
 import { getEffectiveRole } from '@/lib/permissions';
+import type { ResearchChatTarget } from './research-chat';
 import { OtcrBot } from './OtcrBot';
 import { ResearchWorkspace } from './ResearchWorkspace';
 import { PastDataSourceViewer } from './PastDataSourceViewer';
@@ -38,6 +39,8 @@ export default function AgenticCms() {
   const [panel, setPanel] = useState<'context' | 'notes' | 'research'>('context');
   const [researchOpened, setResearchOpened] = useState(false);
   const [researchDirty, setResearchDirty] = useState(false);
+  const [researchTarget, setResearchTarget] = useState<ResearchChatTarget | null>(null);
+  const [botOpen, setBotOpen] = useState(false);
 
   const load = async (id: string) => {
     const request = ++requestId.current;
@@ -169,7 +172,7 @@ export default function AgenticCms() {
       if (researchDirty && !window.confirm('Discard your unsaved research changes before switching projects?')) return;
       setResearchDirty(false); void load(e.target.value);
     }} className="my-2 w-full rounded border p-2">{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>}
-    {researchOpened && projectId && <div hidden={panel !== 'research'}><ResearchWorkspace key={projectId} projectId={projectId} onDirtyChange={setResearchDirty} /></div>}
+    {researchOpened && projectId && <div hidden={panel !== 'research'}><ResearchWorkspace key={projectId} projectId={projectId} projectName={projects.find(project => project.id === projectId)?.name} onDirtyChange={setResearchDirty} onChatTargetChange={setResearchTarget} /></div>}
     <div hidden={panel === 'research'}>
     {error && <p role="alert" className="text-sm">{error}</p>}
     {actionError && !error && <div role="alert" className="flex items-center gap-3 text-sm"><span>{actionError}</span>{retryAction && <button disabled={saving} className="rounded border px-3 py-1" onClick={() => void retry()}>Retry</button>}</div>}
@@ -179,9 +182,10 @@ export default function AgenticCms() {
     </div>
   </main>, mount) : null;
 
+  const activeResearch = pathname === '/agentic-cms' && panel === 'research' && !sourceView && researchTarget?.projectId === projectId ? researchTarget : undefined;
   return (
     <>
-      <OtcrBot />
+      <OtcrBot key={activeResearch ? `${activeResearch.projectId}/${activeResearch.deliverableId}` : 'general'} researchTarget={activeResearch} initialOpen={botOpen} onOpenChange={setBotOpen} />
       {editor}
     </>
   );

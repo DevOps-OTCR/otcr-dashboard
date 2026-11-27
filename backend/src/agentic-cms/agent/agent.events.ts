@@ -1,3 +1,4 @@
+import type { ResearchChatResult } from '../research/research-chat.tool';
 // Events streamed from POST /agentic-cms/chat as Server-Sent Events
 export type AgentSource = { id: number; title: string; url: string };
 
@@ -13,6 +14,7 @@ export type AgentEvent =
   | { type: 'tool_end'; id: string; ok: boolean; note?: string }
   | { type: 'sources'; sources: AgentSource[] }
   | { type: 'error'; kind: AgentErrorKind; retryable: boolean; message: string }
+  | { type: 'research_edit'; projectId: string; deliverableId: string; result: ResearchChatResult }
   | { type: 'done' };
 
 export type SendEvent = (event: AgentEvent) => void;

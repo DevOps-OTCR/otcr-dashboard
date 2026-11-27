@@ -1,3 +1,4 @@
+import { ResearchEditService } from './research-edit.service';
 import { ResearchFindingsService } from './research-findings.service';
 import { TavilySearchClient } from '../search/tavily-search.client';
 import { TavilyExtractClient } from '../search/tavily-extract.client';
@@ -667,6 +668,78 @@ integration('Relevant past data against migrated PostgreSQL with a counting test
     expect(saved.version).toBe(3); expect(saved.researchSummary.omittedClaims).toBe(0);
     expect(saved.document.sections[3].content).toContain('Supported comparison detail 4');
     expect(model.stream).toHaveBeenCalledTimes(1);
+  });
+
+  const editService = () => new ResearchEditService(flags, retrieval, documents, model, skills as unknown as SkillLibrary);
+  const editReply = (output: unknown) => model.stream.mockImplementation(async () => {
+    const text = JSON.stringify(output); return { text, toolCalls: [], message: assistantMessage(text, []) };
+  });
+  it('bot editing auto-saves cross-tab changes, keeps other findings, and supports restoring the previous version', async () => {
+    await bucketSetup();
+    editReply({ status: 'edit', summary: 'Shortened context and renamed the bucket.', operations: [
+      { kind: 'set_section', sectionId: 'past-data', content: 'Short context.' },
+      { kind: 'rename_bucket', bucketId: 'bucket', title: 'Budget constraints' },
+    ] });
+    const result = await editService().edit(user, 'project', 'target', { expectedVersion: 2, prompt: 'Shorten past data and rename Client constraints to Budget constraints.' });
+    expect(result.status).toBe('saved');
+    const saved = await documents.read('target');
+    expect(saved.version).toBe(3);
+    expect(saved.document).toMatchObject({ sections: expect.arrayContaining([expect.objectContaining({ id: 'finding_q1', content: 'Existing manual finding' })]) });
+    expect(model.stream.mock.calls[0][0].tools).toEqual([]);
+    const restored = await workspace.restore(user, 'project', 'target', { expectedVersion: 3, targetVersion: 2 });
+    expect(restored.document.sections[0].content).toBe('Past data to preserve');
+  });
+  it('bot clarification and no-change responses create no revision', async () => {
+    await bucketSetup(); const service = editService();
+    editReply({ status: 'clarification', question: 'Which bucket should I rename?' });
+    expect(await service.edit(user, 'project', 'target', { expectedVersion: 2, prompt: 'Rename it' })).toMatchObject({ status: 'clarification' });
+    expect((await documents.read('target')).version).toBe(2);
+    editReply({ status: 'no_change', message: 'Already done.' });
+    await service.edit(user, 'project', 'target', { expectedVersion: 2, prompt: 'Rename it', clarifications: [{ question: 'Which bucket?', answer: 'Client constraints' }] });
+    expect(JSON.stringify(model.stream.mock.calls[1][0].messages)).toContain('Client constraints');
+    expect((await documents.read('target')).version).toBe(2);
+  });
+  it('bot editing refuses disabled, non-pilot, unassigned, foreign and draft targets before model calls', async () => {
+    await bucketSetup(); const service = editService(); const input = { expectedVersion: 2, prompt: 'Shorten context' };
+    settings.AGENTIC_CMS_ENABLED = 'false';
+    await expect(service.edit(user, 'project', 'target', input)).rejects.toThrow();
+    settings.AGENTIC_CMS_ENABLED = 'true'; settings.AGENTIC_CMS_ALLOWED_EMAILS = 'other@example.test';
+    await expect(service.edit(user, 'project', 'target', input)).rejects.toThrow();
+    settings.AGENTIC_CMS_ALLOWED_EMAILS = '';
+    await expect(service.edit({ ...user, id: 'readonly', email: 'readonly@example.test' }, 'project', 'target', input)).rejects.toThrow();
+    await expect(service.edit(user, 'project', 'foreign-item', input)).rejects.toThrow();
+    await expect(service.edit(pm, 'project', 'draft-item', input)).rejects.toThrow();
+    expect(model.stream).not.toHaveBeenCalled(); expect(skills.load).not.toHaveBeenCalled();
+  });
+  it.each(['flag', 'membership', 'version'])('bot editing rechecks %s after the model and keeps saved research', async change => {
+    await bucketSetup();
+    model.stream.mockImplementation(async () => {
+      if (change === 'flag') settings.AGENTIC_CMS_ENABLED = 'false';
+      if (change === 'membership') await db.projectMember.updateMany({ where: { userId: user.id }, data: { leftAt: new Date() } });
+      if (change === 'version') await workspace.save(user, 'project', 'target', { expectedVersion: 2, document: (await workspace.read(user, 'project', 'target')).document });
+      const text = JSON.stringify({ status: 'edit', summary: 'Edit', operations: [{ kind: 'set_section', sectionId: 'past-data', content: 'Unsafe overwrite' }] });
+      return { text, toolCalls: [], message: assistantMessage(text, []) };
+    });
+    await expect(editService().edit(user, 'project', 'target', { expectedVersion: 2, prompt: 'Shorten context' })).rejects.toThrow();
+    expect((await documents.read('target')).document).toMatchObject({ sections: expect.arrayContaining([expect.objectContaining({ id: 'past-data', content: 'Past data to preserve' })]) });
+  });
+  it('invalid bot edits receive one correction and never save an invalid source reference', async () => {
+    await bucketSetup();
+    editReply({ status: 'edit', summary: 'Edit', operations: [{ kind: 'set_section', sectionId: 'past-data', sourceIds: ['invented'] }] });
+    await expect(editService().edit(user, 'project', 'target', { expectedVersion: 2, prompt: 'Revise context' })).rejects.toMatchObject({ response: { code: 'INVALID_EDIT_OUTPUT' } });
+    expect(model.stream).toHaveBeenCalledTimes(2); expect((await documents.read('target')).version).toBe(2);
+  });
+
+  it('stopping a chat edit before saving leaves the stored workspace untouched', async () => {
+    await bucketSetup(); const abort = new AbortController();
+    model.stream.mockImplementation(async () => {
+      abort.abort();
+      const text = JSON.stringify({ status: 'edit', summary: 'Edit', operations: [{ kind: 'set_section', sectionId: 'past-data', content: 'Cancelled edit' }] });
+      return { text, toolCalls: [], message: assistantMessage(text, []) };
+    });
+    await expect(editService().edit(user, 'project', 'target', { expectedVersion: 2, prompt: 'Shorten context' }, abort.signal)).rejects.toThrow();
+    const saved = await documents.read('target'); expect(saved.version).toBe(2);
+    expect(saved.document).toMatchObject({ sections: expect.arrayContaining([expect.objectContaining({ id: 'past-data', content: 'Past data to preserve' })]) });
   });
 
 });

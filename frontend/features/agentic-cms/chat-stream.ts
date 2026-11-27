@@ -1,3 +1,4 @@
+import type { ResearchChatRequest, ResearchChatResult } from './research-chat';
 import { api } from '@/lib/api';
 import { createSseParser } from './sse';
 
@@ -12,9 +13,10 @@ export type AgentEvent =
   | { type: 'tool_end'; id: string; ok: boolean; note?: string }
   | { type: 'sources'; sources: AgentSource[] }
   | { type: 'error'; kind: AgentErrorKind; retryable: boolean; message: string }
+  | { type: 'research_edit'; projectId: string; deliverableId: string; result: ResearchChatResult }
   | { type: 'done' };
 
-export type ChatRequest = { projectId: string; sprintId?: string; conversationId?: string; message: string };
+export type ChatRequest = { projectId: string; sprintId?: string; conversationId?: string; message: string; research?: ResearchChatRequest };
 
 /** A request that failed before the stream started (HTTP error or network). */
 export class ChatRequestError extends Error {

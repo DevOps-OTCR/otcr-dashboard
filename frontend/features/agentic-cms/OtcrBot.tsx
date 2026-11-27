@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties, type Form
 import { useAuth } from '@/components/AuthContext';
 import { projectsAPI } from '@/lib/api';
 import { ChatRequestError, streamChat, type AgentEvent, type AgentSource } from './chat-stream';
+import type { ResearchChatTarget, ResearchChatResult, ResearchChatRequest } from './research-chat';
 import { MessageText } from './MessageText';
 import { pickWorkstream, type WorkstreamOption } from './workstream';
 
@@ -19,6 +20,8 @@ type BotEntry = {
   sources: AgentSource[];
   error?: { message: string; retryable: boolean };
   pending: boolean;
+  researchEdit?: Extract<ResearchChatResult, { status: 'saved' }>;
+  undone?: boolean;
 };
 type Entry = UserEntry | BotEntry;
 
@@ -50,21 +53,23 @@ function savedWidth() {
 let nextId = 0;
 const newId = () => `m${++nextId}`;
 
-export function OtcrBot() {
+export function OtcrBot({ researchTarget, initialOpen = false, onOpenChange }: { researchTarget?: ResearchChatTarget; initialOpen?: boolean; onOpenChange?: (open: boolean) => void } = {}) {
   const { getToken } = useAuth();
-  const [open, setOpen] = useState(false);
-  const [projects, setProjects] = useState<ProjectOption[] | null>(null);
+  const [open, updateOpen] = useState(initialOpen);
+  const setOpen = useCallback((value: boolean) => { updateOpen(value); onOpenChange?.(value); }, [onOpenChange]);
+  const [projects, setProjects] = useState<ProjectOption[] | null>(() => researchTarget ? [{ id: researchTarget.projectId, name: researchTarget.projectName ?? 'Selected project' }] : null);
   const [projectsError, setProjectsError] = useState(false);
-  const [projectId, setProjectId] = useState('');
-  const [sprints, setSprints] = useState<WorkstreamOption[]>([]);
-  const [sprintId, setSprintId] = useState('');
+  const [projectId, setProjectId] = useState(researchTarget?.projectId ?? '');
+  const [sprints, setSprints] = useState<WorkstreamOption[]>(() => researchTarget?.sprintId ? [{ id: researchTarget.sprintId, name: researchTarget.workstreamTitle ?? 'Selected workstream', weekStartDate: '', weekEndDate: '' }] : []);
+  const [sprintId, setSprintId] = useState(researchTarget?.sprintId ?? '');
   // Which project's workstreams are loaded. Chat waits for them so the default week
   // can't change after a conversation has started.
-  const [sprintsFor, setSprintsFor] = useState('');
+  const [sprintsFor, setSprintsFor] = useState(researchTarget?.projectId ?? '');
   const [entries, setEntries] = useState<Entry[]>([]);
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
+  const [pendingEdit, setPendingEdit] = useState<{ question: string; version: number; pending: NonNullable<ResearchChatRequest['pending']> } | null>(null);
   const [width, setWidth] = useState(savedWidth);
   const abortRef = useRef<AbortController | null>(null);
   const chatGeneration = useRef(0); // bumped on every reset so an older request's events are ignored
@@ -73,11 +78,11 @@ export function OtcrBot() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Stop any reply in flight if the feature is unmounted (flag off, sign-out, account change).
-  useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(() => () => { ++chatGeneration.current; abortRef.current?.abort(); }, []);
 
   // Load the user's projects the first time the panel opens.
   useEffect(() => {
-    if (!open || projects !== null) return;
+    if (researchTarget || !open || projects !== null) return;
     let cancelled = false;
     projectsAPI.getAll({ limit: 100 })
       .then((res) => {
@@ -88,11 +93,11 @@ export function OtcrBot() {
       })
       .catch(() => { if (!cancelled) { setProjects([]); setProjectsError(true); } });
     return () => { cancelled = true; };
-  }, [open, projects]);
+  }, [open, projects, researchTarget]);
 
   // Load the project's workstreams (sprints) and select the current one, if any.
   useEffect(() => {
-    if (!projectId) return; // the project-change handler already cleared the workstreams
+    if (researchTarget || !projectId) return; // the project-change handler already cleared the workstreams
     let cancelled = false;
     const timeZone = projects?.find((p) => p.id === projectId)?.sprintTimezone;
     projectsAPI.getSprints(projectId)
@@ -108,7 +113,7 @@ export function OtcrBot() {
       })
       .catch(() => { if (!cancelled) { setSprints([]); setSprintId(''); setSprintsFor(projectId); } });
     return () => { cancelled = true; };
-  }, [projectId, projects]);
+  }, [projectId, projects, researchTarget]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
@@ -120,7 +125,7 @@ export function OtcrBot() {
     const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open]);
+  }, [open, setOpen]);
 
   useEffect(() => {
     try {
@@ -139,12 +144,16 @@ export function OtcrBot() {
     abortRef.current?.abort();
     setEntries([]);
     setConversationId(undefined);
+    setPendingEdit(null);
   }, []);
 
   const send = useCallback(async (text: string) => {
     const message = text.trim();
     if (!message || busy || !projectId || !workstreamsReady) return;
+    if (pendingEdit && researchTarget?.version !== pendingEdit.version) return;
     const generation = chatGeneration.current;
+    let savedResearch = false;
+    let refreshed: Promise<void> | undefined;
     const botId = newId();
     setEntries((list) => [
       ...list,
@@ -153,11 +162,12 @@ export function OtcrBot() {
     ]);
     setDraft('');
     setBusy(true);
+    researchTarget?.setBusy(true);
     const abort = new AbortController();
     abortRef.current = abort;
 
     const onEvent = (event: AgentEvent) => {
-      if (generation !== chatGeneration.current) return; // the chat was reset: this reply no longer belongs to it
+      if (generation !== chatGeneration.current || abort.signal.aborted) return; // the chat was reset: this reply no longer belongs to it
       switch (event.type) {
         case 'conversation':
           setConversationId(event.id);
@@ -180,8 +190,22 @@ export function OtcrBot() {
         case 'sources':
           updateBot(botId, (e) => ({ ...e, sources: event.sources }));
           break;
+        case 'research_edit': {
+          if (!researchTarget || event.projectId !== researchTarget.projectId || event.deliverableId !== researchTarget.deliverableId) break;
+          const result = event.result;
+          if (result.status === 'clarification') setPendingEdit({ question: result.question, version: researchTarget.version, pending: result.pending });
+          else {
+            setPendingEdit(null);
+            if (result.status === 'saved') {
+              savedResearch = true;
+              updateBot(botId, entry => ({ ...entry, researchEdit: result }));
+              refreshed = researchTarget.refresh();
+            }
+          }
+          break;
+        }
         case 'error':
-          updateBot(botId, (e) => ({ ...e, error: { message: event.message, retryable: event.retryable } }));
+          updateBot(botId, (e) => ({ ...e, error: { message: savedResearch ? 'Your research edit was saved, but the chat reply could not finish. Review the saved change below.' : event.message, retryable: !savedResearch && event.retryable } }));
           break;
       }
     };
@@ -189,22 +213,37 @@ export function OtcrBot() {
     try {
       const token = await getToken();
       if (!token) throw new ChatRequestError('Your session expired. Sign in again.', false);
-      await streamChat({ projectId, sprintId: sprintId || undefined, conversationId, message }, token, onEvent, abort.signal);
+      const research: ResearchChatRequest | undefined = researchTarget ? {
+        deliverableId: researchTarget.deliverableId, expectedVersion: researchTarget.version, editingBlocked: researchTarget.blocked,
+        ...(pendingEdit ? { pending: { prompt: pendingEdit.pending.prompt, clarifications: [...pendingEdit.pending.clarifications, { question: pendingEdit.question, answer: message }] } } : {}),
+      } : undefined;
+      await streamChat({ projectId, sprintId: sprintId || undefined, conversationId, message, ...(research ? { research } : {}) }, token, onEvent, abort.signal);
     } catch (err) {
       if (abort.signal.aborted) {
-        updateBot(botId, (e) => ({ ...e, text: e.text ? `${e.text}\n\n(Stopped)` : '(Stopped)' }));
+        updateBot(botId, (e) => ({ ...e, text: `${e.text}${e.text ? '\n\n' : ''}${researchTarget ? '(Stopped. Check Version history if a save had already completed.)' : '(Stopped)'}` }));
       } else {
         const error = err instanceof ChatRequestError
           ? { message: err.message, retryable: err.retryable }
           : { message: 'The reply was interrupted. Try again.', retryable: true };
-        updateBot(botId, (e) => ({ ...e, error }));
+        updateBot(botId, (e) => ({ ...e, error: savedResearch ? { message: 'The edit was saved; the remaining chat reply was interrupted.', retryable: false } : error }));
       }
     } finally {
+      if (refreshed) await refreshed;
+      else if (abort.signal.aborted && researchTarget) await researchTarget.refresh();
+      researchTarget?.setBusy(false);
       updateBot(botId, (e) => ({ ...e, pending: false, tools: e.tools.map((t) => (t.status === 'running' ? { ...t, status: 'failed' } : t)) }));
       if (abortRef.current === abort) abortRef.current = null;
       setBusy(false);
     }
-  }, [busy, projectId, sprintId, workstreamsReady, conversationId, getToken, updateBot]);
+  }, [busy, projectId, sprintId, workstreamsReady, conversationId, getToken, updateBot, researchTarget, pendingEdit]);
+
+  const undoResearch = async (botId: string, edit: Extract<ResearchChatResult, { status: 'saved' }>) => {
+    if (!researchTarget || researchTarget.blocked || researchTarget.version !== edit.savedVersion || busy) return;
+    setBusy(true); researchTarget.setBusy(true);
+    try {
+      if (await researchTarget.undo(edit.savedVersion, edit.previousVersion)) updateBot(botId, entry => ({ ...entry, undone: true }));
+    } finally { researchTarget.setBusy(false); setBusy(false); }
+  };
 
   const retry = (botId: string) => {
     const index = entries.findIndex((e) => e.id === botId);
@@ -283,7 +322,7 @@ export function OtcrBot() {
             id="otcr-bot-project"
             className={selectClass}
             value={projectId}
-            disabled={busy || !projects?.length}
+            disabled={!!researchTarget || busy || !projects?.length}
             onChange={(e) => { newChat(); setSprints([]); setSprintId(''); setSprintsFor(''); setProjectId(e.target.value); }}
           >
             {projects === null && <option value="">Loading projects…</option>}
@@ -291,11 +330,13 @@ export function OtcrBot() {
             {projects?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
           <label className="sr-only" htmlFor="otcr-bot-workstream">Workstream</label>
-          <select id="otcr-bot-workstream" className={selectClass} value={sprintId} disabled={busy || !workstreamsReady} onChange={(e) => { newChat(); setSprintId(e.target.value); }}>
+          <select id="otcr-bot-workstream" className={selectClass} value={sprintId} disabled={!!researchTarget || busy || !workstreamsReady} onChange={(e) => { newChat(); setSprintId(e.target.value); }}>
             <option value="">No workstream</option>
             {sprints.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>
+        {researchTarget && <p className="text-xs text-blue-700 dark:text-blue-300" aria-label="Selected research workspace">Research: {researchTarget.title} · Version {researchTarget.version}. Requested edits auto-save.</p>}
+        {researchTarget?.blocked && <p className="text-xs text-amber-700 dark:text-amber-300">Research editing is blocked while a draft, conflict, other operation, or read-only restriction is present. You can still ask questions.</p>}
       </header>
 
       <div ref={listRef} className="flex-1 space-y-4 overflow-y-auto px-4 py-4 text-sm" aria-live="polite">
@@ -303,10 +344,10 @@ export function OtcrBot() {
         {projects?.length === 0 && !projectsError && <Notice text="OTCR Bot works within a project. You aren't on any projects yet." />}
         {entries.length === 0 && !!projects?.length && (
           <div className="space-y-3 text-slate-600 dark:text-slate-300">
-            <p>Ask about your workstream, research a topic with cited sources, or draft text for a whitepaper or slides. Check everything before you use it.</p>
+            <p>{researchTarget ? 'Ask a question or request edits to this deliverable’s research. Requested edits auto-save, with a summary and Undo in the reply.' : 'Ask about your workstream, research a topic with cited sources, or draft text for a whitepaper or slides. Check everything before you use it.'}</p>
             <div className="flex flex-col gap-2">
-              {EXAMPLES.map((example) => (
-                <button key={example} type="button" onClick={() => void send(example)} disabled={busy || !workstreamsReady}
+              {(researchTarget ? ['Shorten Relevant Past Data', 'Change the framework', 'Revise findings'] : EXAMPLES).map((example) => (
+                <button key={example} type="button" onClick={() => researchTarget ? setDraft(`${example}: `) : void send(example)} disabled={busy || !workstreamsReady}
                   className="rounded-lg border border-slate-200 px-3 py-2 text-left text-xs hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
                   {example}
                 </button>
@@ -346,6 +387,13 @@ export function OtcrBot() {
                 </ol>
               </div>
             )}
+            {entry.researchEdit && <div className="space-y-2 rounded-lg border border-blue-300 p-3 text-xs dark:border-blue-700" aria-label="Bot edit result">
+              <p>{entry.researchEdit.summary} · Saved as version {entry.researchEdit.savedVersion}</p>
+              <ul className="list-disc pl-4">{entry.researchEdit.changes.map(change => <li key={change}>{change}</li>)}</ul>
+              <p>Undo restores all three research sections to the version before this edit.</p>
+              <button type="button" className="rounded border border-blue-600 px-3 py-1 font-semibold disabled:opacity-40" disabled={busy || !researchTarget || researchTarget.blocked || researchTarget.version !== entry.researchEdit.savedVersion || entry.undone} onClick={() => void undoResearch(entry.id, entry.researchEdit!)}>{entry.undone ? 'Bot edit undone' : 'Undo bot edit'}</button>
+              {!entry.undone && researchTarget && researchTarget.version !== entry.researchEdit.savedVersion && <p>{researchTarget.version < entry.researchEdit.savedVersion ? 'Reload saved research to load this edit before undoing.' : 'Research changed after this edit. Use Version history to restore an earlier version.'}</p>}
+            </div>}
             {entry.error && (
               <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
                 <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -361,6 +409,7 @@ export function OtcrBot() {
         ))}
       </div>
 
+      {pendingEdit && <p role="status" className="border-t border-slate-200 px-4 py-2 text-xs">{pendingEdit.question} {pendingEdit.pending.clarifications.length >= 3 || pendingEdit.version !== researchTarget?.version ? 'Start a new chat with the full request; the clarification limit or saved version changed.' : 'Reply below, or start a New chat for a different request.'}</p>}
       <form onSubmit={onSubmit} className="border-t border-slate-200 p-3 dark:border-slate-700">
         <div className="flex items-end gap-2">
           <label className="sr-only" htmlFor="otcr-bot-input">Message OTCR Bot</label>
@@ -381,7 +430,7 @@ export function OtcrBot() {
               <Square className="h-4 w-4" aria-hidden />
             </button>
           ) : (
-            <button type="submit" disabled={!draft.trim() || !projectId || !workstreamsReady} className="rounded-lg bg-blue-700 p-2.5 text-white hover:bg-blue-800 disabled:opacity-40" aria-label="Send">
+            <button type="submit" disabled={!draft.trim() || !projectId || !workstreamsReady || (!!pendingEdit && (pendingEdit.pending.clarifications.length >= 3 || pendingEdit.version !== researchTarget?.version))} className="rounded-lg bg-blue-700 p-2.5 text-white hover:bg-blue-800 disabled:opacity-40" aria-label="Send">
               <Send className="h-4 w-4" aria-hidden />
             </button>
           )}

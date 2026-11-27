@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ResearchChatTarget } from './research-chat';
 import { ResearchPreparationStatus } from './ResearchPreparationStatus';
 import { BucketResearchPanel } from './BucketResearchPanel';
 import { FrameworkPanel } from './FrameworkPanel';
@@ -33,7 +34,7 @@ function groupDeliverables(items: ResearchDeliverable[]) {
   return [...groups.values()].sort((a, b) => Number(!a.id) - Number(!b.id) || b.start.localeCompare(a.start) || b.sequence - a.sequence);
 }
 
-export function ResearchWorkspace({ projectId, onDirtyChange }: { projectId: string; onDirtyChange: (dirty: boolean) => void }) {
+export function ResearchWorkspace({ projectId, projectName, onDirtyChange, onChatTargetChange }: { projectId: string; projectName?: string; onDirtyChange: (dirty: boolean) => void; onChatTargetChange?: (target: ResearchChatTarget | null) => void }) {
   const [deliverables, setDeliverables] = useState<ResearchDeliverable[]>([]);
   const [workstream, setWorkstream] = useState('');
   const [selected, setSelected] = useState('');
@@ -94,13 +95,13 @@ export function ResearchWorkspace({ projectId, onDirtyChange }: { projectId: str
           </select>
         </label>
       </div>
-      {selected && <ResearchEditor key={selected} projectId={projectId} deliverableId={selected} onDirtyChange={updateDirty} />}
+      {selected && <ResearchEditor key={selected} projectId={projectId} deliverableId={selected} projectName={projectName} workstreamTitle={currentGroup?.label} title={deliverables.find(item => item.id === selected)?.title ?? 'Research'} sprintId={currentGroup?.id || undefined} onChatTargetChange={onChatTargetChange} onDirtyChange={updateDirty} />}
     </>}
   </section>;
 }
 
-function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
-  projectId: string; deliverableId: string; onDirtyChange: (dirty: boolean) => void;
+function ResearchEditor({ projectId, projectName, workstreamTitle, deliverableId, title, sprintId, onDirtyChange, onChatTargetChange }: {
+  projectId: string; projectName?: string; workstreamTitle?: string; deliverableId: string; title: string; sprintId?: string; onChatTargetChange?: (target: ResearchChatTarget | null) => void; onDirtyChange: (dirty: boolean) => void;
 }) {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [draft, setDraft] = useState<ResearchDocument | null>(null);
@@ -109,7 +110,9 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
   const [missing, setMissing] = useState<{ canEdit: boolean } | null>(null);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [mutating, setBusy] = useState(false);
+  const [chatBusy, setChatBusy] = useState(false);
+  const busy = mutating || chatBusy;
   const [researching, setResearching] = useState(false);
   const [researchBucket, setResearchBucket] = useState('');
   const [conflict, setConflict] = useState(false);
@@ -143,7 +146,7 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
       setConflict(true);
       setError('Research changed elsewhere. Your draft is still here. Copy any text you want to keep, then reload the saved research before continuing.');
     } else {
-      const modelErrors: Record<string, string> = { MODEL_NOT_CONFIGURED: 'Configure your local Lumen key and restart the backend before generating.', INVALID_SEARCH_PLAN: 'The bot could not create a valid web-search plan after one correction. Your saved research was kept. Retry this bucket.', INVALID_FINDINGS_OUTPUT: 'The bot returned a response that could not be read. Your saved research was kept. Retry this bucket.', RESEARCH_BUSY: 'Research is busy or the hourly limit has been reached. Try again later.', BUCKET_QUESTION_LIMIT: 'Use a bucket with 1–8 questions for this first pass.', MODEL_FAILED: 'Generation could not finish. Your saved research was kept. Try again or check your model configuration.', INVALID_MODEL_OUTPUT: 'The bot returned an invalid framework. Your saved research was kept. Try a narrower focus.', SKILL_UNAVAILABLE: 'The framework skill could not be loaded. Check the backend skill directory.' };
+      const modelErrors: Record<string, string> = { EDIT_BUSY: 'Bot editing is busy or the hourly limit was reached. Try again later.', INVALID_EDIT_OUTPUT: 'The bot could not produce valid edits. Saved research was kept. Try a more specific request.', EDIT_SKILL_UNAVAILABLE: 'The research editing skill could not be loaded.', MODEL_NOT_CONFIGURED: 'Configure your local Lumen key and restart the backend before generating.', INVALID_SEARCH_PLAN: 'The bot could not create a valid web-search plan after one correction. Your saved research was kept. Retry this bucket.', INVALID_FINDINGS_OUTPUT: 'The bot returned a response that could not be read. Your saved research was kept. Retry this bucket.', RESEARCH_BUSY: 'Research is busy or the hourly limit has been reached. Try again later.', BUCKET_QUESTION_LIMIT: 'Use a bucket with 1–8 questions for this first pass.', MODEL_FAILED: 'Generation could not finish. Your saved research was kept. Try again or check your model configuration.', INVALID_MODEL_OUTPUT: 'The bot returned an invalid framework. Your saved research was kept. Try a narrower focus.', SKILL_UNAVAILABLE: 'The framework skill could not be loaded. Check the backend skill directory.' };
       setError(modelErrors[failure.code ?? ''] ?? fallback);
     }
   };
@@ -165,7 +168,7 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
   const loadGenerated = useCallback(() => {
     const request = generation.current;
     const edits = draftRevision.current;
-    void researchAPI.read(projectId, deliverableId).then(saved => {
+    return researchAPI.read(projectId, deliverableId).then(saved => {
       if (request !== generation.current) return;
       if (edits !== draftRevision.current) {
         setMessage('The bot saved a new version. Your unsaved draft is kept; reload saved research when ready.');
@@ -194,11 +197,35 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
     setBusy(true); setError(''); setMessage('');
     try {
       const saved = await operation();
-      if (request === generation.current) { accept(saved); setMessage(typeof success === 'function' ? success(saved) : success); }
+      if (request === generation.current) { accept(saved); setMessage(typeof success === 'function' ? success(saved) : success); return saved; }
     } catch (error) {
       if (request === generation.current) denyOrExplain(researchFailure(error), 'Could not save research. Your draft is still here. Try again when your connection is restored.');
     } finally { if (request === generation.current) setBusy(false); }
   };
+
+  const undoBotEdit = useCallback(async (expectedVersion: number, targetVersion: number) => {
+    const request = generation.current;
+    try {
+      const saved = await researchAPI.restore(projectId, deliverableId, expectedVersion, targetVersion);
+      if (request !== generation.current) return false;
+      setWorkspace(saved); setDraft(saved.document); setConflict(false);
+      setHistory(null); setHistoryOpen(false); ++historyGeneration.current;
+      setMessage('Bot edit undone.'); return true;
+    } catch {
+      if (request === generation.current) setError('Could not undo this edit. Research may have changed or access was revoked. Reload and use Version history.');
+      return false;
+    }
+  }, [projectId, deliverableId]);
+  const workspaceVersion = workspace?.version;
+  const workspaceEditable = workspace?.canEdit;
+  useEffect(() => {
+    onChatTargetChange?.(workspaceVersion ? {
+      projectId, projectName, workstreamTitle, deliverableId, title, sprintId, version: workspaceVersion,
+      blocked: dirty || conflict || mutating || !workspaceEditable,
+      setBusy: setChatBusy, refresh: loadGenerated, undo: undoBotEdit,
+    } : null);
+    return () => onChatTargetChange?.(null);
+  }, [projectId, projectName, workstreamTitle, deliverableId, title, sprintId, workspaceVersion, workspaceEditable, dirty, conflict, mutating, onChatTargetChange, loadGenerated, undoBotEdit]);
 
   const loadHistory = async (beforeVersion?: number) => {
     const request = generation.current;
@@ -245,6 +272,7 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
           }}>Version history</button>
         </div>
       </div>
+      <p className="text-sm text-[var(--text-muted)]">Use the OTCR Bot popup to edit this deliverable’s research by typing a request. Bot edits auto-save and can be undone in the chat.</p>
       <p className="text-sm leading-relaxed text-[var(--text-muted)]">
         These three sections guide your research: <strong>Relevant Past Data</strong> captures what’s already known, and <strong>Framework / Structure</strong> defines the questions to answer. Use <strong>Findings</strong> to record what you learn, with sources that support your conclusions.
       </p>
@@ -252,7 +280,7 @@ function ResearchEditor({ projectId, deliverableId, onDirtyChange }: {
         {tabs.map(item => <button key={item.id} id={`research-tab-${item.id}`} role="tab" aria-selected={tab === item.id} aria-controls={`research-panel-${item.id}`} className={tab === item.id ? researchPrimaryButton : button} onClick={() => setTab(item.id)}>{item.label}</button>)}
       </div>
       {tabs.map(item => <div key={item.id} id={`research-panel-${item.id}`} role="tabpanel" aria-labelledby={`research-tab-${item.id}`} hidden={tab !== item.id} className="space-y-4">
-        {item.id === 'past-data' && <PastDataPanel projectId={projectId} deliverableId={deliverableId} version={workspace.version} dirty={dirty} canEdit={workspace.canEdit} hasPastData={!!draft.sections.find(section => section.id === 'past-data')?.content.trim()} onGenerated={dirty ? undefined : loadGenerated} onUnavailable={preparationUnavailable} />}
+        {item.id === 'past-data' && <PastDataPanel projectId={projectId} deliverableId={deliverableId} version={workspace.version} dirty={dirty || busy} canEdit={workspace.canEdit} hasPastData={!!draft.sections.find(section => section.id === 'past-data')?.content.trim()} onGenerated={dirty ? undefined : loadGenerated} onUnavailable={preparationUnavailable} />}
         {item.id === 'framework' && <FrameworkPanel document={draft} canEdit={workspace.canEdit} busy={busy || conflict} dirty={dirty} onResearch={id => { setResearchBucket(id); setTab('findings'); }} onChange={next => { ++draftRevision.current; setMessage(''); setDraft(next); }} onGenerate={focus => void mutate(() => researchAPI.generateFramework(projectId, deliverableId, workspace.version, focus), 'Framework suggestion saved. Choose the buckets you want to adopt.')} />}
         {item.id === 'findings' && <BucketResearchPanel projectId={projectId} deliverableId={deliverableId} document={draft} canEdit={workspace.canEdit} dirty={dirty} busy={busy || conflict} researching={researching} summary={workspace.researchSummary} selected={researchBucket} onSelect={setResearchBucket} onUnavailable={preparationUnavailable} onResearch={(bucketId, mode, focus) => {
           setResearching(true);

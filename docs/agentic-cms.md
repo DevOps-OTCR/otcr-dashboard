@@ -895,3 +895,75 @@ whitespace-normalized quotes; missing/unknown citations; partial recovery; exist
 answer preservation; concurrent edits, restore and source snapshots. Browser tests
 cover normal runs, add/revise, progress, failure/retry, read-only/dirty controls and
 successful partial results with visible gap warnings.
+
+
+### Research step 7: Editing through the existing OTCR Bot popup
+
+Open Research, select a deliverable and use the existing OTCR Bot popup. Its
+header names the selected deliverable and version. Type a requested edit to any
+combination of Relevant Past Data, Framework / Structure and Findings. Optional
+shortcuts fill the normal chat input without running anything. Ordinary questions
+remain discussion; edits auto-save. Save manual drafts first. The workstream must
+be released and the local Lumen model configured.
+
+The chat request carries a strict optional `research` context: selected
+`deliverableId`, `expectedVersion`, `editingBlocked`, and optional original prompt
+with up to three clarification answers. Project and workstream stay bound to the
+normal verified chat request. The model can choose `edit_research_workspace`, an
+argument-free action that uses the actual user message and selected workspace;
+it cannot pick a different deliverable, version, author or substitute a prompt.
+The editing service checks current membership, assignments, active enrollment,
+release status, feature flag/pilot and version before doing work and again before
+saving. Browser context and blocked state are UX hints, never authorization.
+
+The action invokes the existing ResearchEditService and its `research-editing`
+skill. The internal editing skill is omitted from the general bot's skill menu;
+only the editing service loads it. The original bounded `POST
+.../deliverables/:deliverableId/bot-edit` API also delegates to this same service.
+A targeted operation plan edits section text/titles/citations, objectives, buckets
+and questions, including ordering. The server assigns new IDs and creates empty
+Findings sections for added questions. Question renames keep linked findings;
+removal preserves nonempty findings as unassigned content. Source records stay
+intact and citations must reference saved sources. Invalid plans get one
+correction, then fail without overwriting saved research. This action edits
+existing content; use Research this bucket for new sources or external research.
+
+A `research_edit` stream event reports a saved edit, clarification or no change.
+Saved events contain version metadata and a summary, not the document body.
+The workspace refreshes after a successful edit and the reply displays changes
+and Undo. Clarification uses the same chat input, retaining the original request;
+no revision is created until a valid edit is ready. Start a New chat to replace a
+pending request. A changed version invalidates its clarification. One turn caches
+its edit outcome so repeated tool calls cannot apply the edit twice.
+
+Undo restores all three sections to the version immediately before that edit,
+creating another revision. It is available only while that edit is the latest
+saved version and there is no manual draft/conflict. After later changes, use
+Version history. Workspace controls lock while chat runs, but unsaved drafts
+still allow discussion with editing blocked. Switching deliverables, projects or
+out of Research resets the chat scope, cancels the old stream and ignores late
+results. Closing/reopening the popup retains the current scoped chat. Stop aborts
+in-flight editing and checks cancellation before saving; an already completed
+save stays in history. A saved edit still shows Undo if the remaining model reply
+fails, and does not offer Retry that could blindly repeat that edit.
+
+Editing limits remain 90 seconds overall, 55 seconds per model turn, one active
+edit per user, two per process, and 20 attempts per hour per user per process.
+Constructors do not read skills or start model work. The feature defaults off.
+Adding this optional chat write action requires Isaiah's boundary review before
+merge; this implementation does not deploy or change live configuration.
+
+Validation includes operation and PostgreSQL tests for stable links, source
+checks, server IDs, orphan preservation, auto-save, restore, authorization,
+revocation, conflicts and invalid plans. Chat action tests exercise real agent
+routing, flag off/on, exact request binding, repeated calls, clarification and
+nested input validation. HTTP tests verify authentication and flag boundaries.
+Browser tests cover popup edits/refresh/Undo, clarification, discussion with dirty
+workspaces, stale replies after switching deliverables, and saved edits followed
+by a failed reply. The flag-off browser test makes only the feature-status request.
+
+Manual check: select a released deliverable, save any draft, open OTCR Bot and
+request “Shorten Relevant Past Data and rename [existing bucket] to [name].”
+Review the workspace and chat summary, then Undo in the reply. Try “Rename it”
+for clarification; answer in the normal message box. Switch deliverables and
+confirm the popup header changes and a new chat starts for the selected workspace.

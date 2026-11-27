@@ -1,3 +1,4 @@
+import { ResearchEditService } from './research-edit.service';
 import { ResearchFindingsService } from './research-findings.service';
 import { INestApplication, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -19,7 +20,7 @@ class TestAuthModule {}
 
 describe('Past-data routes share the existing verified-only Agentic CMS boundary', () => {
   let app: INestApplication; let base: string; let settings: Record<string, string>;
-  const calls = { status: jest.fn(), preview: jest.fn(), schedule: jest.fn(), readSource: jest.fn(), findingsCapabilities: jest.fn(), researchBucket: jest.fn() };
+  const calls = { botEdit: jest.fn(), status: jest.fn(), preview: jest.fn(), schedule: jest.fn(), readSource: jest.fn(), findingsCapabilities: jest.fn(), researchBucket: jest.fn() };
   const ops: { method: string; suffix: string; body?: unknown }[] = [
     { method: 'GET', suffix: '', body: undefined },
     { method: 'POST', suffix: '/preview', body: { focus: 'Budget' } },
@@ -37,6 +38,7 @@ describe('Past-data routes share the existing verified-only Agentic CMS boundary
     const module = await Test.createTestingModule({ imports: [AgenticCmsModule, AuthModule] })
       .overrideModule(AuthModule).useModule(TestAuthModule)
       .overrideProvider(PrismaService).useValue({})
+      .overrideProvider(ResearchEditService).useValue({ edit: calls.botEdit })
       .overrideProvider(ResearchPastDataService).useValue(calls)
       .overrideProvider(ResearchFindingsService).useValue({ capabilities: calls.findingsCapabilities, research: calls.researchBucket })
       .overrideProvider(PastDataRetrievalService).useValue({ readSource: calls.readSource })
@@ -95,6 +97,18 @@ describe('Past-data routes share the existing verified-only Agentic CMS boundary
     expect((await run({ expectedVersion: 1, mode: 'add', focus: 'x'.repeat(1001) })).status).toBe(400);
     expect((await capability()).status).toBe(200); expect((await run()).status).toBe(201);
     expect(calls.researchBucket).toHaveBeenCalledWith(expect.objectContaining({ id: 'reader', email: 'reader@example.test' }), 'project', 'item', 'bucket', { expectedVersion: 1, mode: 'add', focus: 'Budget' });
+  });
+
+  it('generic bot edit route checks flag and identity, rejects forged fields, and forwards the verified user', async () => {
+    const send = (body: unknown, token = 'Bearer verified-token') => fetch(`${base}/agentic-cms/research/projects/project/deliverables/item/bot-edit`, { method: 'POST', headers: { authorization: token, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const input = { expectedVersion: 1, prompt: 'Shorten past data' };
+    settings.AGENTIC_CMS_ENABLED = 'false'; expect((await send(input)).status).toBe(404);
+    settings.AGENTIC_CMS_ENABLED = 'true'; expect((await send(input, 'Bearer reader@example.test')).status).toBe(401);
+    expect((await send({ ...input, authorId: 'forged' })).status).toBe(400);
+    expect((await send({ ...input, prompt: 'x'.repeat(4001) })).status).toBe(400);
+    expect(calls.botEdit).not.toHaveBeenCalled();
+    expect((await send(input)).status).toBe(201);
+    expect(calls.botEdit).toHaveBeenCalledWith(expect.objectContaining({ id: 'reader' }), 'project', 'item', { ...input, clarifications: [] });
   });
 
 });
